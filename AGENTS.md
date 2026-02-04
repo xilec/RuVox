@@ -452,9 +452,21 @@ class PipelineConfig:
 
 ### Environment Setup
 
+**ВАЖНО:** Разработка ведётся на NixOS. Используется пакетный менеджер `nix` для управления окружением.
+
 ```bash
 cd /home/evgen/work/tts_fast_tests/fast_tts
 nix-shell  # Enters dev environment with Python 3.11 + uv
+```
+
+После входа в `nix-shell` доступен `uv` для управления Python-зависимостями:
+
+```bash
+uv sync                    # Install all dependencies
+uv sync --extra g2p        # With G2P support
+uv sync --extra tts        # With TTS (torch, silero)
+uv run pytest              # Run tests
+uv run python script.py    # Run scripts
 ```
 
 ### Running Tests
