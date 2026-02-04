@@ -197,6 +197,37 @@ class TTSPipeline:
 
         def replace_inline(match):
             code = match.group(1)
+            original_code = code
+
+            # Pre-process Greek letters and special symbols
+            has_greek_or_special = False
+            for char, replacement in self.code_block_handler.GREEK_LETTERS.items():
+                if char in code:
+                    code = code.replace(char, f' {replacement} ')
+                    has_greek_or_special = True
+            for char, replacement in self.code_block_handler.SPECIAL_SYMBOLS.items():
+                if char in code:
+                    code = code.replace(char, f' {replacement} ')
+                    has_greek_or_special = True
+
+            # Clean up multiple spaces
+            code = ' '.join(code.split())
+
+            # If we had Greek letters or special symbols, process words individually
+            if has_greek_or_special:
+                words = code.split()
+                result = []
+                for word in words:
+                    word_lower = word.lower()
+                    if word_lower in self.code_normalizer.CODE_WORDS:
+                        result.append(self.code_normalizer.CODE_WORDS[word_lower])
+                    elif word_lower in self.english_normalizer.IT_TERMS:
+                        result.append(self.english_normalizer.IT_TERMS[word_lower])
+                    else:
+                        # Keep already converted words (альфа, стрелка, etc.)
+                        result.append(word)
+                return ' '.join(result)
+
             # Process the inline code through code normalizer
             # Detect pattern
             if '_' in code:

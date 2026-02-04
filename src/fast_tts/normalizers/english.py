@@ -42,6 +42,7 @@ class EnglishNormalizer:
         'twenty': 'твенти',
         # Common code terms
         'eval': 'эвал',
+        'plus': 'плас',
         'succ': 'сакс',
         'synthesize': 'синтесайз',
         'addition': 'эдишн',

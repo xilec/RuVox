@@ -484,6 +484,60 @@ class TestConfiguration:
         pass  # placeholder
 
 
+class TestGreekLettersInCode:
+    """Tests for Greek letters in code context (Lean, math, etc.)."""
+
+    def test_lean_class_declaration_inline_code(self, pipeline):
+        """Greek letters in inline code should be converted to Russian names.
+
+        Text from Lean documentation about type classes.
+        """
+        text = "В следующем объявлении класса типов `Plus` — это имя класса, `α : Type` — единственный аргумент, а `plus : α → α → α` — единственный метод."
+        result = pipeline.process(text)
+
+        # Check that Greek alpha is converted to "альфа"
+        assert "альфа" in result.lower(), f"α should be converted to 'альфа', got: {result}"
+        # All 3 alphas in `plus : α → α → α` should be converted
+        assert result.lower().count("альфа") >= 3, f"Expected at least 3 'альфа', got {result.lower().count('альфа')} in: {result}"
+        # Arrow should be converted
+        assert "стрелка" in result.lower(), f"→ should be converted to 'стрелка', got: {result}"
+
+    def test_lean_class_declaration_code_block(self, pipeline):
+        """Greek letters in code blocks should be converted to Russian names.
+
+        Full Lean code block with Greek letters.
+        """
+        text = '''```lean
+class Plus (α : Type) where
+  plus : α → α → α
+```'''
+        pipeline.config.code_block_mode = "full"
+        result = pipeline.process(text)
+
+        # Check that Greek alpha is converted to "альфа" in code block too
+        assert "альфа" in result.lower(), f"α in code block should be converted to 'альфа', got: {result}"
+        # Should have multiple alphas
+        assert result.lower().count("альфа") >= 2, f"Expected at least 2 'альфа' in code block, got {result.lower().count('альфа')} in: {result}"
+
+    def test_lean_full_example(self, pipeline):
+        """Full Lean example with both inline code and code block."""
+        text = '''В следующем объявлении класса типов `Plus` — это имя класса, `α : Type` — единственный аргумент, а `plus : α → α → α` — единственный метод:
+
+```lean
+class Plus (α : Type) where
+  plus : α → α → α
+```'''
+        pipeline.config.code_block_mode = "full"
+        result = pipeline.process(text)
+
+        # Total alphas: 3 in inline code + 3 in code block = 6
+        alpha_count = result.lower().count("альфа")
+        assert alpha_count >= 5, f"Expected at least 5 'альфа' (inline + code block), got {alpha_count} in: {result}"
+
+        # No Greek α should remain
+        assert "α" not in result, f"Greek α should not remain in result: {result}"
+
+
 class TestPreprocessing:
     """Tests for text preprocessing."""
 

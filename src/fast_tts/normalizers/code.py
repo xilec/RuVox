@@ -328,6 +328,7 @@ class CodeIdentifierNormalizer:
         # Common words
         'hello': 'хелло',
         'world': 'ворлд',
+        'plus': 'плас',
         'foo': 'фу',
         'bar': 'бар',
         'baz': 'баз',
@@ -544,13 +545,46 @@ class CodeBlockHandler:
 
         return ' '.join(result)
 
+    # Greek letters mapping (for code blocks)
+    GREEK_LETTERS = {
+        # Lowercase
+        'α': 'альфа', 'β': 'бета', 'γ': 'гамма', 'δ': 'дельта',
+        'ε': 'эпсилон', 'ζ': 'дзета', 'η': 'эта', 'θ': 'тета',
+        'ι': 'йота', 'κ': 'каппа', 'λ': 'лямбда', 'μ': 'мю',
+        'ν': 'ню', 'ξ': 'кси', 'π': 'пи', 'ρ': 'ро',
+        'σ': 'сигма', 'τ': 'тау', 'υ': 'ипсилон', 'φ': 'фи',
+        'χ': 'хи', 'ψ': 'пси', 'ω': 'омега',
+        # Uppercase
+        'Α': 'альфа', 'Β': 'бета', 'Γ': 'гамма', 'Δ': 'дельта',
+        'Ε': 'эпсилон', 'Ζ': 'дзета', 'Η': 'эта', 'Θ': 'тета',
+        'Ι': 'йота', 'Κ': 'каппа', 'Λ': 'лямбда', 'Μ': 'мю',
+        'Ν': 'ню', 'Ξ': 'кси', 'Π': 'пи', 'Ρ': 'ро',
+        'Σ': 'сигма', 'Τ': 'тау', 'Υ': 'ипсилон', 'Φ': 'фи',
+        'Χ': 'хи', 'Ψ': 'пси', 'Ω': 'омега',
+    }
+
+    # Special symbols (arrows, etc.)
+    SPECIAL_SYMBOLS = {
+        '→': 'стрелка', '←': 'стрелка влево', '↔': 'двунаправленная стрелка',
+        '⇒': 'следует', '⇐': 'следует из', '⇔': 'эквивалентно',
+        '∞': 'бесконечность', '∈': 'принадлежит', '∉': 'не принадлежит',
+        '∀': 'для всех', '∃': 'существует', '≠': 'не равно',
+        '≤': 'меньше или равно', '≥': 'больше или равно',
+    }
+
     def _tokenize(self, code: str) -> list[str]:
         """Simple tokenization of code."""
         # Split on whitespace and common delimiters
         # Keep meaningful tokens
+        # Build pattern for Greek letters and special symbols
+        greek_pattern = '|'.join(re.escape(c) for c in self.GREEK_LETTERS.keys())
+        special_pattern = '|'.join(re.escape(c) for c in self.SPECIAL_SYMBOLS.keys())
+
         tokens = re.findall(
             r"[a-zA-Z_][a-zA-Z0-9_]*|"  # identifiers
             r"\d+|"  # numbers
+            rf"{greek_pattern}|"  # Greek letters
+            rf"{special_pattern}|"  # special symbols (arrows, etc.)
             r"[()[\]{}]|"  # brackets
             r"[+\-*/=<>!&|]+|"  # operators
             r"['\"][^'\"]*['\"]|"  # strings
@@ -564,6 +598,14 @@ class CodeBlockHandler:
         # Skip empty tokens
         if not token:
             return ""
+
+        # Greek letters
+        if token in self.GREEK_LETTERS:
+            return self.GREEK_LETTERS[token]
+
+        # Special symbols (arrows, etc.)
+        if token in self.SPECIAL_SYMBOLS:
+            return self.SPECIAL_SYMBOLS[token]
 
         # String literals - extract content and transliterate
         if token.startswith(("'", '"')) and token.endswith(("'", '"')):
