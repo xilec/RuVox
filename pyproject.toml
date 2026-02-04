@@ -25,6 +25,12 @@ g2p = [
     "g2p-en>=2.1.0",
     "eng-to-ipa>=0.0.2",
 ]
+tts = [
+    "torch>=2.0",
+    "scipy>=1.10",
+    "numpy>=1.24",
+    "omegaconf>=2.3",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/fast_tts"]
