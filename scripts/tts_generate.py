@@ -164,8 +164,11 @@ def synthesize_long_text(model, text: str, speaker: str = DEFAULT_SPEAKER,
 def save_audio(waveform, sample_rate: int, filepath: Path):
     """Save waveform to WAV file."""
     # Normalize to int16 range
-    if waveform.max() <= 1.0:
-        waveform_int16 = (waveform * 32767).astype("int16")
+    # Check if it's float data (typically in range [-1, 1] or slightly beyond)
+    if waveform.dtype in (np.float32, np.float64):
+        # Clip to [-1, 1] and scale to int16 range
+        waveform_clipped = np.clip(waveform, -1.0, 1.0)
+        waveform_int16 = (waveform_clipped * 32767).astype("int16")
     else:
         waveform_int16 = waveform.astype("int16")
     wavfile.write(filepath, sample_rate, waveform_int16)
