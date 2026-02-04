@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fast-tts"
+version = "0.1.0"
+description = "Text preprocessing pipeline for TTS Silero"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [
+    { name = "evgen" }
+]
+dependencies = [
+    "num2words>=0.5.12",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.0",
+]
+g2p = [
+    "g2p-en>=2.1.0",
+    "eng-to-ipa>=0.0.2",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fast_tts"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["src/fast_tts"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.0",
+]
