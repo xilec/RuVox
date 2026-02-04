@@ -6,6 +6,63 @@ class EnglishNormalizer:
 
     # IT terms with established Russian pronunciation
     IT_TERMS = {
+        # Programming languages (including special syntax)
+        'c++': 'си плюс плюс',
+        'c#': 'си шарп',
+        'f#': 'эф шарп',
+        'c': 'си',
+        'lean': 'лин',
+        'haskell': 'хаскелл',
+        'ocaml': 'окамл',
+        'erlang': 'эрланг',
+        'elixir': 'эликсир',
+        'clojure': 'кложур',
+        'lisp': 'лисп',
+        'prolog': 'пролог',
+        'fortran': 'фортран',
+        'cobol': 'кобол',
+        'pascal': 'паскаль',
+        'delphi': 'делфи',
+        'lua': 'луа',
+        'perl': 'перл',
+        'php': 'пи эйч пи',
+        'sql': 'эс кью эль',
+        'html': 'эйч ти эм эль',
+        'css': 'си эс эс',
+        'xml': 'икс эм эль',
+        'json': 'джейсон',
+        'yaml': 'ямл',
+        'toml': 'томл',
+        'js': 'джи эс',
+        'ts': 'ти эс',
+        # Common type/term names
+        'nat': 'нат',
+        'int': 'инт',
+        'uint': 'юинт',
+        'float': 'флоат',
+        'double': 'дабл',
+        'bool': 'бул',
+        'char': 'чар',
+        'byte': 'байт',
+        'void': 'войд',
+        'enum': 'энам',
+        'struct': 'стракт',
+        'trait': 'трейт',
+        'traits': 'трейтс',
+        'impl': 'импл',
+        'async': 'асинк',
+        'await': 'эвейт',
+        'const': 'конст',
+        'static': 'статик',
+        'final': 'файнал',
+        'override': 'оверрайд',
+        'virtual': 'виртуал',
+        'abstract': 'абстракт',
+        'public': 'паблик',
+        'private': 'прайвит',
+        'protected': 'протектед',
+        'generic': 'дженерик',
+        'template': 'темплейт',
         # Git/VCS terms
         'feature': 'фича',
         'branch': 'бранч',
@@ -133,11 +190,51 @@ class EnglishNormalizer:
         'use': 'юз',
         'case': 'кейс',
         'edge': 'эдж',
+        # Common words in paths/URLs
+        'docs': 'докс',
+        'home': 'хоум',
+        'user': 'юзер',
+        'users': 'юзерс',
+        'admin': 'админ',
+        'support': 'саппорт',
+        'config': 'конфиг',
+        'data': 'дата',
+        'file': 'файл',
+        'files': 'файлс',
+        'download': 'даунлоад',
+        'upload': 'аплоад',
+        'report': 'репорт',
+        'documents': 'документс',
+        'localhost': 'локалхост',
+        'api': 'эй пи ай',
+        'app': 'апп',
+        'web': 'веб',
+        'src': 'сорс',
+        'lib': 'либ',
+        'bin': 'бин',
+        'var': 'вар',
+        'log': 'лог',
+        'tmp': 'темп',
+        'etc': 'етс',
+        'opt': 'опт',
+        # File extensions
+        'pdf': 'пдф',
+        'doc': 'док',
+        'txt': 'тэкст',
+        'csv': 'си эс ви',
+        'png': 'пнг',
+        'jpg': 'джэйпег',
+        'gif': 'гиф',
+        'svg': 'эс ви джи',
+        'mp3': 'эм пэ три',
+        'mp4': 'эм пэ четыре',
         # Unknown word fallbacks
         'hello': 'хеллоу',
         'world': 'ворлд',
         'example': 'экзампл',
         'tutorial': 'тьюториал',
+        'company': 'компани',
+        'repo': 'репо',
     }
 
     # Multi-word phrases (checked first, longest match)
@@ -159,6 +256,27 @@ class EnglishNormalizer:
         'edge case': 'эдж кейс',
     }
 
+    # Improved transliteration map with common letter combinations
+    TRANSLIT_MAP = {
+        # Digraphs and common combinations (order matters - check longer first)
+        'sh': 'ш', 'ch': 'ч', 'th': 'з', 'ph': 'ф', 'wh': 'в',
+        'ck': 'к', 'gh': 'г', 'ng': 'нг', 'qu': 'кв',
+        'ee': 'и', 'oo': 'у', 'ea': 'и', 'ou': 'ау', 'ow': 'оу',
+        'ai': 'эй', 'ay': 'эй', 'ey': 'эй', 'ei': 'эй',
+        'ie': 'и', 'oa': 'оу', 'oi': 'ой', 'oy': 'ой',
+        'au': 'о', 'aw': 'о', 'ew': 'ью',
+        # Single letters
+        'a': 'а', 'b': 'б', 'c': 'к', 'd': 'д', 'e': 'е',
+        'f': 'ф', 'g': 'г', 'h': 'х', 'i': 'и', 'j': 'дж',
+        'k': 'к', 'l': 'л', 'm': 'м', 'n': 'н', 'o': 'о',
+        'p': 'п', 'q': 'к', 'r': 'р', 's': 'с', 't': 'т',
+        'u': 'у', 'v': 'в', 'w': 'в', 'x': 'кс', 'y': 'й',
+        'z': 'з',
+    }
+
+    # Sorted keys by length (longest first) for proper matching
+    _TRANSLIT_KEYS = sorted(TRANSLIT_MAP.keys(), key=len, reverse=True)
+
     def __init__(self):
         self.custom_terms: dict[str, str] = {}
         # Sort multi-word phrases by length (longest first) for matching
@@ -167,12 +285,14 @@ class EnglishNormalizer:
             key=lambda x: len(x),
             reverse=True
         )
+        # Track unknown words that were transliterated via fallback
+        self._unknown_words: dict[str, str] = {}
 
     def add_custom_terms(self, terms: dict[str, str]) -> None:
         """Add custom IT terms to the dictionary."""
         self.custom_terms.update({k.lower(): v for k, v in terms.items()})
 
-    def normalize(self, text: str) -> str:
+    def normalize(self, text: str, track_unknown: bool = True) -> str:
         """Convert English word or phrase to Russian phonetic spelling."""
         if not text:
             return text
@@ -192,30 +312,42 @@ class EnglishNormalizer:
         if text_lower in self.IT_TERMS:
             return self.IT_TERMS[text_lower]
 
-        # Fallback: basic transliteration for unknown words
-        return self._transliterate(text)
+        # Fallback: transliteration for unknown words
+        result = self._transliterate(text)
+
+        # Track unknown word
+        if track_unknown and text_lower not in self._unknown_words:
+            self._unknown_words[text_lower] = result
+
+        return result
+
+    def get_unknown_words(self) -> dict[str, str]:
+        """Get dictionary of unknown words that were transliterated."""
+        return self._unknown_words.copy()
+
+    def clear_unknown_words(self) -> None:
+        """Clear the unknown words tracking."""
+        self._unknown_words.clear()
 
     def _transliterate(self, word: str) -> str:
-        """Basic transliteration for unknown English words."""
-        # Simple character-based transliteration map
-        translit_map = {
-            'a': 'а', 'b': 'б', 'c': 'к', 'd': 'д', 'e': 'е',
-            'f': 'ф', 'g': 'г', 'h': 'х', 'i': 'и', 'j': 'дж',
-            'k': 'к', 'l': 'л', 'm': 'м', 'n': 'н', 'o': 'о',
-            'p': 'п', 'q': 'к', 'r': 'р', 's': 'с', 't': 'т',
-            'u': 'у', 'v': 'в', 'w': 'в', 'x': 'кс', 'y': 'й',
-            'z': 'з',
-        }
-
+        """Transliterate unknown English word using improved rules."""
         result = []
         word_lower = word.lower()
         i = 0
+
         while i < len(word_lower):
-            char = word_lower[i]
-            if char in translit_map:
-                result.append(translit_map[char])
-            else:
-                result.append(char)
-            i += 1
+            matched = False
+            # Try to match longer combinations first
+            for key in self._TRANSLIT_KEYS:
+                if word_lower[i:i+len(key)] == key:
+                    result.append(self.TRANSLIT_MAP[key])
+                    i += len(key)
+                    matched = True
+                    break
+
+            if not matched:
+                # Keep character as-is (digits, special chars, etc.)
+                result.append(word_lower[i])
+                i += 1
 
         return ''.join(result)

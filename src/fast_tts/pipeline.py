@@ -37,6 +37,9 @@ class TTSPipeline:
         if not text:
             return ""
 
+        # Clear unknown words tracking for new processing
+        self.english_normalizer.clear_unknown_words()
+
         # Preprocessing
         text = self._preprocess(text)
 
@@ -99,6 +102,38 @@ class TTSPipeline:
         if mode in ("full", "brief"):
             self.config.code_block_mode = mode
             self.code_block_handler.set_mode(mode)
+
+    def get_unknown_words(self) -> dict[str, str]:
+        """Get dictionary of unknown words that were transliterated via fallback.
+
+        Returns:
+            Dict mapping original word to its transliteration.
+        """
+        return self.english_normalizer.get_unknown_words()
+
+    def get_warnings(self) -> list[str]:
+        """Get list of warning messages about unknown words.
+
+        Returns:
+            List of warning strings.
+        """
+        unknown = self.get_unknown_words()
+        if not unknown:
+            return []
+
+        warnings = ["Следующие слова были транслитерированы автоматически:"]
+        for original, transliterated in sorted(unknown.items()):
+            warnings.append(f"  {original} → {transliterated}")
+        warnings.append("Добавьте их в словарь IT_TERMS для точного произношения.")
+        return warnings
+
+    def print_warnings(self) -> None:
+        """Print warnings about unknown words to stderr."""
+        import sys
+        warnings = self.get_warnings()
+        if warnings:
+            for line in warnings:
+                print(line, file=sys.stderr)
 
     def _preprocess(self, text: str) -> str:
         """Preprocess text before normalization."""
@@ -390,8 +425,20 @@ class TTSPipeline:
 
     def _process_english_words(self, text: str) -> str:
         """Process English words and IT terms."""
-        # Pattern for English words (surrounded by non-Latin chars or whitespace)
-        # This is a simplified approach - match English words
+        # First handle special cases like C++, C#, F#
+        # These need special handling because + and # are not word characters
+        special_terms = {
+            'C++': 'си плюс плюс',
+            'c++': 'си плюс плюс',
+            'C#': 'си шарп',
+            'c#': 'си шарп',
+            'F#': 'эф шарп',
+            'f#': 'эф шарп',
+        }
+        for term, replacement in special_terms.items():
+            text = text.replace(term, replacement)
+
+        # Pattern for regular English words
         english_word_pattern = r'\b([A-Za-z][A-Za-z]+)\b'
 
         def replace_english(match):
@@ -402,6 +449,10 @@ class TTSPipeline:
             if word_lower in self.english_normalizer.IT_TERMS:
                 return self.english_normalizer.IT_TERMS[word_lower]
 
+            # Check custom terms
+            if word_lower in self.english_normalizer.custom_terms:
+                return self.english_normalizer.custom_terms[word_lower]
+
             # Check if it's an abbreviation (all caps)
             if word.isupper() and len(word) >= 2:
                 return self.abbrev_normalizer.normalize(word)
@@ -410,9 +461,8 @@ class TTSPipeline:
             if word_lower in self.abbrev_normalizer.AS_WORD:
                 return self.abbrev_normalizer.AS_WORD[word_lower]
 
-            # If it's a common English word, keep it (for Russian context)
-            # Otherwise, try to transliterate
-            return word
+            # Fallback: transliterate unknown word and track it
+            return self.english_normalizer.normalize(word, track_unknown=True)
 
         text = re.sub(english_word_pattern, replace_english, text)
         return text
