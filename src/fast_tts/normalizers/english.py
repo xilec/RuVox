@@ -4,27 +4,23 @@
 class EnglishNormalizer:
     """Transliterates English words to Russian phonetic spelling."""
 
-    # IT terms with established Russian pronunciation
+    # IT terms with Russian pronunciation that differs from G2P
+    # (Words matching G2P output are handled by _transliterate_g2p)
     IT_TERMS = {
-        # Programming languages (including special syntax)
+        # Programming languages (special syntax or differs from G2P)
         'c++': 'си плюс плюс',
         'c#': 'си шарп',
         'f#': 'эф шарп',
-        'c': 'си',
-        'lean': 'лин',
         'haskell': 'хаскелл',
         'ocaml': 'окамл',
         'erlang': 'эрланг',
         'elixir': 'эликсир',
         'clojure': 'кложур',
-        'lisp': 'лисп',
         'prolog': 'пролог',
         'fortran': 'фортран',
         'cobol': 'кобол',
         'pascal': 'паскаль',
         'delphi': 'делфи',
-        'lua': 'луа',
-        'perl': 'перл',
         'php': 'пи эйч пи',
         'sql': 'эс кью эль',
         'html': 'эйч ти эм эль',
@@ -35,44 +31,23 @@ class EnglishNormalizer:
         'toml': 'томл',
         'js': 'джи эс',
         'ts': 'ти эс',
-        # English numerals (0-20)
+        # English numerals (where G2P differs)
         'zero': 'зиро',
-        'one': 'ван',
-        'two': 'ту',
-        'three': 'сри',
-        'four': 'фор',
-        'five': 'файв',
-        'six': 'сикс',
         'seven': 'сэвен',
-        'eight': 'эйт',
-        'nine': 'найн',
         'ten': 'тен',
         'eleven': 'илэвен',
         'twelve': 'твелв',
         'thirteen': 'сёртин',
-        'fourteen': 'фортин',
-        'fifteen': 'фифтин',
-        'sixteen': 'сикстин',
         'seventeen': 'сэвентин',
-        'eighteen': 'эйтин',
-        'nineteen': 'найнтин',
         'twenty': 'твенти',
         # Common code terms
-        'plus': 'плас',
         'eval': 'эвал',
         'succ': 'сакс',
         # Common type/term names
         'nat': 'нат',
-        'int': 'инт',
         'uint': 'юинт',
         'float': 'флоат',
         'double': 'дабл',
-        'bool': 'бул',
-        'char': 'чар',
-        'byte': 'байт',
-        'void': 'войд',
-        'enum': 'энам',
-        'struct': 'стракт',
         'trait': 'трейт',
         'traits': 'трейтс',
         'impl': 'импл',
@@ -80,11 +55,9 @@ class EnglishNormalizer:
         'await': 'эвейт',
         'const': 'конст',
         'static': 'статик',
-        'final': 'файнал',
         'override': 'оверрайд',
         'virtual': 'виртуал',
         'abstract': 'абстракт',
-        'public': 'паблик',
         'private': 'прайвит',
         'protected': 'протектед',
         'generic': 'дженерик',
@@ -94,21 +67,15 @@ class EnglishNormalizer:
         'branch': 'бранч',
         'merge': 'мёрдж',
         'commit': 'коммит',
-        'push': 'пуш',
         'pull': 'пулл',
         'checkout': 'чекаут',
         'rebase': 'рибейз',
-        'stash': 'стэш',
         # Development process
         'review': 'ревью',
         'deploy': 'деплой',
         'release': 'релиз',
         'debug': 'дебаг',
-        'bug': 'баг',
-        'fix': 'фикс',
         'refactor': 'рефакторинг',
-        'sprint': 'спринт',
-        'scrum': 'скрам',
         'agile': 'эджайл',
         # Architecture/Code
         'framework': 'фреймворк',
@@ -131,7 +98,6 @@ class EnglishNormalizer:
         'service': 'сервис',
         'repository': 'репозиторий',
         # Data
-        'cache': 'кэш',
         'queue': 'кью',
         'array': 'массив',
         'string': 'строка',
@@ -145,37 +111,24 @@ class EnglishNormalizer:
         'docker': 'докер',
         'container': 'контейнер',
         'kubernetes': 'кубернетис',
-        'cluster': 'кластер',
         'node': 'нода',
         'pod': 'под',
         'nginx': 'энджинкс',
-        'backup': 'бэкап',
-        'server': 'сервер',
         'client': 'клиент',
         # Testing
         'test': 'тест',
         'mock': 'мок',
-        'stub': 'стаб',
         'spec': 'спек',
         # Build
-        'build': 'билд',
         'bundle': 'бандл',
         'compile': 'компайл',
-        'lint': 'линт',
         'webpack': 'вебпак',
         # Programming languages
         'python': 'пайтон',
-        'javascript': 'джаваскрипт',
         'typescript': 'тайпскрипт',
-        'rust': 'раст',
         'golang': 'голанг',
         'kotlin': 'котлин',
-        'swift': 'свифт',
-        'java': 'джава',
-        'ruby': 'руби',
-        'scala': 'скала',
         # Frameworks and tools
-        'react': 'риэкт',
         'angular': 'ангуляр',
         'vue': 'вью',
         'svelte': 'свелт',
@@ -185,28 +138,19 @@ class EnglishNormalizer:
         'flask': 'фласк',
         'fastapi': 'фаст эй пи ай',
         'laravel': 'ларавел',
-        'spring': 'спринг',
         'redis': 'редис',
         'mongo': 'монго',
         'postgres': 'постгрес',
-        'kafka': 'кафка',
         'github': 'гитхаб',
-        'gitlab': 'гитлаб',
         'jira': 'джира',
-        'slack': 'слэк',
-        'figma': 'фигма',
         'postman': 'постман',
         # Additional common terms
         'request': 'реквест',
         'trace': 'трейс',
-        'stack': 'стэк',
         'daily': 'дейли',
         'standup': 'стендап',
         'hot': 'хот',
         'reload': 'релоуд',
-        'live': 'лайв',
-        'dry': 'драй',
-        'run': 'ран',
         'tech': 'тек',
         'debt': 'дет',
         'code': 'код',
@@ -215,17 +159,14 @@ class EnglishNormalizer:
         'practice': 'практис',
         'use': 'юз',
         'case': 'кейс',
-        'edge': 'эдж',
         # Common words in paths/URLs
         'docs': 'докс',
-        'home': 'хоум',
         'user': 'юзер',
         'users': 'юзерс',
         'admin': 'админ',
         'support': 'саппорт',
         'config': 'конфиг',
         'data': 'дата',
-        'file': 'файл',
         'files': 'файлс',
         'download': 'даунлоад',
         'upload': 'аплоад',
@@ -236,10 +177,6 @@ class EnglishNormalizer:
         'app': 'апп',
         'web': 'веб',
         'src': 'сорс',
-        'lib': 'либ',
-        'bin': 'бин',
-        'var': 'вар',
-        'log': 'лог',
         'tmp': 'темп',
         'etc': 'етс',
         'opt': 'опт',
@@ -250,11 +187,10 @@ class EnglishNormalizer:
         'csv': 'си эс ви',
         'png': 'пнг',
         'jpg': 'джэйпег',
-        'gif': 'гиф',
         'svg': 'эс ви джи',
         'mp3': 'эм пэ три',
         'mp4': 'эм пэ четыре',
-        # Unknown word fallbacks
+        # Common words
         'hello': 'хеллоу',
         'world': 'ворлд',
         'example': 'экзампл',
@@ -282,11 +218,57 @@ class EnglishNormalizer:
         'edge case': 'эдж кейс',
     }
 
-    # Improved transliteration map with common letter combinations
+    # ARPAbet to Russian phonetic mapping (for G2P fallback)
+    ARPABET_MAP = {
+        # Vowels
+        'AA': 'а',    # father
+        'AE': 'э',    # cat
+        'AH': 'а',    # but (schwa) - можно 'э' в безударной
+        'AO': 'о',    # dog
+        'AW': 'ау',   # cow
+        'AY': 'ай',   # my
+        'EH': 'э',    # bed
+        'ER': 'ер',   # bird
+        'EY': 'эй',   # say
+        'IH': 'и',    # bit
+        'IY': 'и',    # bee
+        'OW': 'оу',   # go
+        'OY': 'ой',   # boy
+        'UH': 'у',    # book
+        'UW': 'у',    # too
+        # Consonants
+        'B': 'б',
+        'CH': 'ч',
+        'D': 'д',
+        'DH': 'з',    # the (voiced th)
+        'F': 'ф',
+        'G': 'г',
+        'HH': 'х',
+        'JH': 'дж',
+        'K': 'к',
+        'L': 'л',
+        'M': 'м',
+        'N': 'н',
+        'NG': 'нг',
+        'P': 'п',
+        'R': 'р',
+        'S': 'с',
+        'SH': 'ш',
+        'T': 'т',
+        'TH': 'с',    # think (unvoiced th)
+        'V': 'в',
+        'W': 'в',
+        'Y': 'й',
+        'Z': 'з',
+        'ZH': 'ж',
+    }
+
+    # Simple transliteration map (fallback when G2P not available)
     TRANSLIT_MAP = {
         # Digraphs and common combinations (order matters - check longer first)
-        'sh': 'ш', 'ch': 'ч', 'th': 'з', 'ph': 'ф', 'wh': 'в',
+        'sh': 'ш', 'ch': 'ч', 'th': 'с', 'ph': 'ф', 'wh': 'в',
         'ck': 'к', 'gh': 'г', 'ng': 'нг', 'qu': 'кв',
+        'tion': 'шн', 'sion': 'жн',  # common suffixes
         'ee': 'и', 'oo': 'у', 'ea': 'и', 'ou': 'ау', 'ow': 'оу',
         'ai': 'эй', 'ay': 'эй', 'ey': 'эй', 'ei': 'эй',
         'ie': 'и', 'oa': 'оу', 'oi': 'ой', 'oy': 'ой',
@@ -296,14 +278,14 @@ class EnglishNormalizer:
         'f': 'ф', 'g': 'г', 'h': 'х', 'i': 'и', 'j': 'дж',
         'k': 'к', 'l': 'л', 'm': 'м', 'n': 'н', 'o': 'о',
         'p': 'п', 'q': 'к', 'r': 'р', 's': 'с', 't': 'т',
-        'u': 'у', 'v': 'в', 'w': 'в', 'x': 'кс', 'y': 'й',
+        'u': 'у', 'v': 'в', 'w': 'в', 'x': 'кс', 'y': 'и',
         'z': 'з',
     }
 
     # Sorted keys by length (longest first) for proper matching
     _TRANSLIT_KEYS = sorted(TRANSLIT_MAP.keys(), key=len, reverse=True)
 
-    def __init__(self):
+    def __init__(self, use_g2p: bool = True):
         self.custom_terms: dict[str, str] = {}
         # Sort multi-word phrases by length (longest first) for matching
         self._sorted_phrases = sorted(
@@ -313,6 +295,11 @@ class EnglishNormalizer:
         )
         # Track unknown words that were transliterated via fallback
         self._unknown_words: dict[str, str] = {}
+
+        # Lazy-load G2P
+        self._g2p = None
+        self._use_g2p = use_g2p
+        self._g2p_available = None  # None = not checked yet
 
     def add_custom_terms(self, terms: dict[str, str]) -> None:
         """Add custom IT terms to the dictionary."""
@@ -355,8 +342,43 @@ class EnglishNormalizer:
         """Clear the unknown words tracking."""
         self._unknown_words.clear()
 
-    def _transliterate(self, word: str) -> str:
-        """Transliterate unknown English word using improved rules."""
+    def _get_g2p(self):
+        """Lazy-load G2P model."""
+        if self._g2p_available is None:
+            try:
+                from g2p_en import G2p
+                self._g2p = G2p()
+                self._g2p_available = True
+            except ImportError:
+                self._g2p_available = False
+        return self._g2p if self._g2p_available else None
+
+    def _transliterate_g2p(self, word: str) -> str | None:
+        """Transliterate using G2P (ARPAbet phonemes)."""
+        if not self._use_g2p:
+            return None
+
+        g2p = self._get_g2p()
+        if g2p is None:
+            return None
+
+        try:
+            phonemes = g2p(word)
+            result = []
+            for phoneme in phonemes:
+                # Remove stress markers (0, 1, 2)
+                phoneme_clean = phoneme.rstrip('012')
+                if phoneme_clean in self.ARPABET_MAP:
+                    result.append(self.ARPABET_MAP[phoneme_clean])
+                elif phoneme_clean:
+                    # Unknown phoneme, keep as-is
+                    result.append(phoneme_clean.lower())
+            return ''.join(result)
+        except Exception:
+            return None
+
+    def _transliterate_simple(self, word: str) -> str:
+        """Simple transliteration using character mapping."""
         result = []
         word_lower = word.lower()
         i = 0
@@ -377,3 +399,13 @@ class EnglishNormalizer:
                 i += 1
 
         return ''.join(result)
+
+    def _transliterate(self, word: str) -> str:
+        """Transliterate unknown English word. Uses G2P if available."""
+        # Try G2P first
+        result = self._transliterate_g2p(word)
+        if result:
+            return result
+
+        # Fallback to simple transliteration
+        return self._transliterate_simple(word)
