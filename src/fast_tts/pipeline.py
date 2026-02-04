@@ -83,6 +83,9 @@ class TTSPipeline:
         if self.config.read_operators:
             text = self._process_operators(text)
 
+        # Process special symbols (Greek letters, etc.)
+        text = self._process_symbols(text)
+
         # Process code identifiers (camelCase, snake_case, kebab-case)
         text = self._process_code_identifiers(text)
 
@@ -380,6 +383,43 @@ class TTSPipeline:
 
         for op, replacement in operators:
             text = text.replace(op, f' {replacement} ')
+
+        return text
+
+    def _process_symbols(self, text: str) -> str:
+        """Process special symbols (Greek letters, etc.) to speakable text."""
+        # Only process symbols that are standalone (not letters, digits, or common punct)
+        # Focus on Greek letters and special Unicode symbols
+        greek_and_special = {
+            # Greek letters (lowercase)
+            'α': 'альфа', 'β': 'бета', 'γ': 'гамма', 'δ': 'дельта',
+            'ε': 'эпсилон', 'ζ': 'дзета', 'η': 'эта', 'θ': 'тета',
+            'ι': 'йота', 'κ': 'каппа', 'λ': 'лямбда', 'μ': 'мю',
+            'ν': 'ню', 'ξ': 'кси', 'π': 'пи', 'ρ': 'ро',
+            'σ': 'сигма', 'τ': 'тау', 'υ': 'ипсилон', 'φ': 'фи',
+            'χ': 'хи', 'ψ': 'пси', 'ω': 'омега',
+            # Greek letters (uppercase)
+            'Α': 'альфа', 'Β': 'бета', 'Γ': 'гамма', 'Δ': 'дельта',
+            'Ε': 'эпсилон', 'Ζ': 'дзета', 'Η': 'эта', 'Θ': 'тета',
+            'Ι': 'йота', 'Κ': 'каппа', 'Λ': 'лямбда', 'Μ': 'мю',
+            'Ν': 'ню', 'Ξ': 'кси', 'Π': 'пи', 'Ρ': 'ро',
+            'Σ': 'сигма', 'Τ': 'тау', 'Υ': 'ипсилон', 'Φ': 'фи',
+            'Χ': 'хи', 'Ψ': 'пси', 'Ω': 'омега',
+            # Math symbols
+            '∞': 'бесконечность', '∈': 'принадлежит', '∉': 'не принадлежит',
+            '∀': 'для всех', '∃': 'существует', '∅': 'пустое множество',
+            '∩': 'пересечение', '∪': 'объединение', '⊂': 'подмножество',
+            '≠': 'не равно', '≈': 'приблизительно равно', '≤': 'меньше или равно',
+            '≥': 'больше или равно', '×': 'умножить', '÷': 'разделить',
+            '√': 'корень', '∑': 'сумма', '∏': 'произведение',
+            # Arrows
+            '→': 'стрелка', '←': 'стрелка влево', '↔': 'двунаправленная стрелка',
+            '⇒': 'следует', '⇐': 'следует из', '⇔': 'эквивалентно',
+        }
+
+        for symbol, replacement in greek_and_special.items():
+            if symbol in text:
+                text = text.replace(symbol, f' {replacement} ')
 
         return text
 
