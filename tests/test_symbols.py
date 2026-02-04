@@ -262,8 +262,8 @@ class TestSpreadAndRest:
         assert result == expected
 
 
-class TestUnknownSymbols:
-    """Tests for unknown symbols."""
+class TestUnicodeSymbols:
+    """Tests for Unicode symbols."""
 
     @pytest.mark.parametrize(
         "symbol,expected",
@@ -279,3 +279,66 @@ class TestUnknownSymbols:
         """Common Unicode symbols should be handled."""
         result = symbol_normalizer.normalize(symbol)
         assert result == expected
+
+
+class TestGreekLetters:
+    """Tests for Greek letters."""
+
+    @pytest.mark.parametrize(
+        "symbol,expected",
+        [
+            ("α", "альфа"),
+            ("β", "бета"),
+            ("γ", "гамма"),
+            ("δ", "дельта"),
+            ("ε", "эпсилон"),
+            ("λ", "лямбда"),
+            ("π", "пи"),
+            ("σ", "сигма"),
+            ("τ", "тау"),
+            ("φ", "фи"),
+            ("ω", "омега"),
+        ],
+    )
+    def test_lowercase_greek_letters(self, symbol_normalizer, symbol, expected):
+        """Lowercase Greek letters should have Russian names."""
+        result = symbol_normalizer.normalize(symbol)
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "symbol,expected",
+        [
+            ("Α", "альфа"),
+            ("Β", "бета"),
+            ("Γ", "гамма"),
+            ("Δ", "дельта"),
+            ("Λ", "лямбда"),
+            ("Π", "пи"),
+            ("Σ", "сигма"),
+            ("Ω", "омега"),
+        ],
+    )
+    def test_uppercase_greek_letters(self, symbol_normalizer, symbol, expected):
+        """Uppercase Greek letters should have Russian names."""
+        result = symbol_normalizer.normalize(symbol)
+        assert result == expected
+
+
+class TestGreekLettersInPipeline:
+    """Tests for Greek letters in full pipeline."""
+
+    @pytest.mark.parametrize(
+        "text,expected_fragment",
+        [
+            ("α : Type", "альфа"),
+            ("plus : α → α → α", "альфа стрелка альфа"),
+            ("тип α", "тип альфа"),
+            ("переменная β", "бета"),
+            ("λ-исчисление", "лямбда"),
+            ("Σ типы", "сигма типы"),
+        ],
+    )
+    def test_greek_in_context(self, pipeline, text, expected_fragment):
+        """Greek letters should be converted in text context."""
+        result = pipeline.process(text)
+        assert expected_fragment in result
