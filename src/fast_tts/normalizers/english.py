@@ -43,6 +43,8 @@ class EnglishNormalizer:
         # Common code terms
         'eval': 'эвал',
         'succ': 'сакс',
+        'synthesize': 'синтесайз',
+        'addition': 'эдишн',
         # Common type/term names
         'nat': 'нат',
         'uint': 'юинт',
