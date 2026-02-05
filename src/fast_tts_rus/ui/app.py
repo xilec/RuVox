@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
 
 from fast_tts_rus.ui.models.config import UIConfig
 from fast_tts_rus.ui.services.storage import StorageService
+from fast_tts_rus.ui.services.cleanup import CleanupWorker
 
 
 class TTSApplication(QObject):
@@ -36,6 +37,7 @@ class TTSApplication(QObject):
 
         self.config: UIConfig | None = None
         self.storage: StorageService | None = None
+        self.cleanup_worker: CleanupWorker | None = None
         self.tray_icon: QSystemTrayIcon | None = None
         self._main_window = None  # Lazy loaded
 
@@ -56,6 +58,9 @@ class TTSApplication(QObject):
     def _init_services(self) -> None:
         """Initialize services."""
         self.storage = StorageService(self.config)
+        self.cleanup_worker = CleanupWorker(self.config, self.storage, self)
+        # Run initial cleanup
+        self.cleanup_worker.run_cleanup()
 
     def _init_tray(self) -> None:
         """Initialize system tray icon and menu."""
@@ -147,6 +152,9 @@ class TTSApplication(QObject):
             return
 
         entry = self.storage.add_entry(text.strip())
+        # Update window if open
+        if self._main_window is not None:
+            self._main_window.add_entry(entry)
         # TODO: Start TTS processing with play_when_ready=True
         self.tray_icon.showMessage(
             "Fast TTS RUS",
@@ -170,6 +178,9 @@ class TTSApplication(QObject):
             return
 
         entry = self.storage.add_entry(text.strip())
+        # Update window if open
+        if self._main_window is not None:
+            self._main_window.add_entry(entry)
         # TODO: Start TTS processing with play_when_ready=False
         self.tray_icon.showMessage(
             "Fast TTS RUS",
@@ -184,6 +195,8 @@ class TTSApplication(QObject):
             # Lazy load main window to reduce startup time
             from fast_tts_rus.ui.main_window import MainWindow
             self._main_window = MainWindow(self)
+            # Load existing entries
+            self._main_window.load_entries()
 
         self._main_window.show()
         self._main_window.raise_()

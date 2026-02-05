@@ -5,11 +5,12 @@ from PyQt6.QtWidgets import (
     QMainWindow,
     QWidget,
     QVBoxLayout,
-    QHBoxLayout,
     QSplitter,
     QLabel,
     QStatusBar,
 )
+
+from fast_tts_rus.ui.widgets.queue_list import QueueListWidget
 
 
 class MainWindow(QMainWindow):
@@ -57,14 +58,13 @@ class MainWindow(QMainWindow):
         # Splitter for queue and text viewer
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
-        # Queue list placeholder (left)
-        queue_placeholder = QLabel("[ Очередь/История ]")
-        queue_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        queue_placeholder.setStyleSheet(
-            "background-color: #f8f8f8; border: 1px solid #ccc;"
-        )
-        queue_placeholder.setMinimumWidth(200)
-        splitter.addWidget(queue_placeholder)
+        # Queue list (left)
+        self.queue_list = QueueListWidget()
+        self.queue_list.setMinimumWidth(200)
+        splitter.addWidget(self.queue_list)
+
+        # Connect queue signals
+        self._connect_queue_signals()
 
         # Text viewer placeholder (right)
         text_placeholder = QLabel("[ Текст ]")
@@ -80,9 +80,58 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(splitter, 1)  # stretch factor 1
 
         # Status bar
-        status_bar = QStatusBar()
-        self.setStatusBar(status_bar)
-        status_bar.showMessage("Готово | Очередь: 0")
+        self.status_bar = QStatusBar()
+        self.setStatusBar(self.status_bar)
+        self._update_status_bar()
+
+    def _connect_queue_signals(self) -> None:
+        """Connect queue list signals."""
+        self.queue_list.entry_selected.connect(self._on_entry_selected)
+        self.queue_list.entry_play_requested.connect(self._on_entry_play_requested)
+        self.queue_list.entry_regenerate_requested.connect(self._on_entry_regenerate_requested)
+        self.queue_list.entry_delete_requested.connect(self._on_entry_delete_requested)
+
+    def _on_entry_selected(self, entry) -> None:
+        """Handle entry selection - show text in viewer."""
+        # TODO: Update text viewer
+        pass
+
+    def _on_entry_play_requested(self, entry) -> None:
+        """Handle play request."""
+        # TODO: Start playback
+        pass
+
+    def _on_entry_regenerate_requested(self, entry) -> None:
+        """Handle regenerate request."""
+        # TODO: Queue for TTS regeneration
+        pass
+
+    def _on_entry_delete_requested(self, entry) -> None:
+        """Handle delete request."""
+        if self.app.storage:
+            self.app.storage.delete_entry(entry.id)
+            self.queue_list.remove_entry(entry.id)
+            self._update_status_bar()
+
+    def _update_status_bar(self) -> None:
+        """Update status bar with current state."""
+        queue_count = 0
+        if self.app.storage:
+            entries = self.app.storage.get_all_entries()
+            queue_count = len(entries)
+        self.status_bar.showMessage(f"Готово | Очередь: {queue_count}")
+
+    def load_entries(self) -> None:
+        """Load entries from storage into queue list."""
+        if self.app.storage:
+            entries = self.app.storage.get_all_entries()
+            self.queue_list.update_entries(entries)
+            self._update_status_bar()
+
+    def add_entry(self, entry) -> None:
+        """Add a new entry to the queue list."""
+        self.queue_list.add_entry(entry)
+        self._update_status_bar()
 
     def _setup_shortcuts(self) -> None:
         """Setup keyboard shortcuts."""
