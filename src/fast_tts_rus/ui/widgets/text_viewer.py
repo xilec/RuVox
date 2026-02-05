@@ -32,7 +32,7 @@ class TextViewerWidget(QTextBrowser):
 
         self.current_entry: TextEntry | None = None
         self.timestamps: list[dict[str, Any]] | None = None
-        self.text_format: TextFormat = TextFormat.MARKDOWN
+        self.text_format: TextFormat = TextFormat.PLAIN
         self._last_highlighted_pos: tuple[int, int] | None = None
 
         # Setup highlighting format

@@ -51,7 +51,7 @@ class UIConfig:
     # Behavior
     notify_on_ready: bool = True
     notify_on_error: bool = True
-    text_format: str = "markdown"
+    text_format: str = "plain"
 
     # Player hotkeys (local, in window)
     player_hotkeys: dict[str, str] = field(
