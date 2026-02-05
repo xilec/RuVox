@@ -138,7 +138,7 @@ class TestFrameworksAndTools:
     @pytest.mark.parametrize(
         "name,expected",
         [
-            ("react", "риэкт"),
+            ("react", "риакт"),
             ("angular", "ангуляр"),
             ("vue", "вью"),
             ("svelte", "свелт"),

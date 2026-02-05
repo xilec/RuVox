@@ -73,13 +73,16 @@ class EnglishNormalizer:
         'pull': 'пулл',
         'checkout': 'чекаут',
         'rebase': 'рибейз',
+        'stash': 'стэш',
         # Development process
         'review': 'ревью',
         'deploy': 'деплой',
         'release': 'релиз',
         'debug': 'дебаг',
+        'bug': 'баг',
         'refactor': 'рефакторинг',
         'agile': 'эджайл',
+        'scrum': 'скрам',
         # Architecture/Code
         'framework': 'фреймворк',
         'library': 'лайбрари',
@@ -101,6 +104,7 @@ class EnglishNormalizer:
         'service': 'сервис',
         'repository': 'репозиторий',
         # Data
+        'cache': 'кэш',
         'queue': 'кью',
         'array': 'массив',
         'string': 'строка',
@@ -114,24 +118,30 @@ class EnglishNormalizer:
         'docker': 'докер',
         'container': 'контейнер',
         'kubernetes': 'кубернетис',
+        'cluster': 'кластер',
         'node': 'нода',
         'pod': 'под',
         'nginx': 'энджинкс',
+        'backup': 'бэкап',
         'client': 'клиент',
         # Testing
         'test': 'тест',
         'mock': 'мок',
+        'stub': 'стаб',
         'spec': 'спек',
         # Build
+        'build': 'билд',
         'bundle': 'бандл',
         'compile': 'компайл',
         'webpack': 'вебпак',
         # Programming languages
         'python': 'пайтон',
         'typescript': 'тайпскрипт',
+        'rust': 'раст',
         'golang': 'голанг',
         'kotlin': 'котлин',
         # Frameworks and tools
+        'react': 'риакт',
         'angular': 'ангуляр',
         'vue': 'вью',
         'svelte': 'свелт',
@@ -146,6 +156,7 @@ class EnglishNormalizer:
         'postgres': 'постгрес',
         'github': 'гитхаб',
         'jira': 'джира',
+        'slack': 'слэк',
         'postman': 'постман',
         # Additional common terms
         'request': 'реквест',
@@ -163,6 +174,7 @@ class EnglishNormalizer:
         'use': 'юз',
         'case': 'кейс',
         # Common words in paths/URLs
+        'home': 'хоум',
         'docs': 'докс',
         'user': 'юзер',
         'users': 'юзерс',

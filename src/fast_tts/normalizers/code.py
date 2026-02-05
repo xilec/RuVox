@@ -302,7 +302,7 @@ class CodeIdentifierNormalizer:
         'package': 'пакет',
         'dom': 'дом',
         'router': 'роутер',
-        'react': 'риэкт',
+        'react': 'риакт',
         'vue': 'вью',
         'variable': 'вэриабл',
         'side': 'сайд',

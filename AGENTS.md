@@ -188,7 +188,7 @@ class EnglishNormalizer:
     "kubernetes": "кубернетис",
     "python": "пайтон",
     "javascript": "джаваскрипт",
-    "react": "риэкт",
+    "react": "риакт",
     "github": "гитхаб",
     # ... 150+ more
 }

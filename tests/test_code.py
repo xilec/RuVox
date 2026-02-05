@@ -122,7 +122,7 @@ class TestKebabCase:
             ("dry-run", "драй ран"),
             # Package names
             ("my-awesome-package", "май авесом пакет"),
-            ("react-dom", "риэкт дом"),
+            ("react-dom", "риакт дом"),
             ("vue-router", "вью роутер"),
         ],
     )
