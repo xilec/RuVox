@@ -1,8 +1,8 @@
-# Fast TTS - Project Documentation for Development
+# Fast TTS RUS - Project Documentation for Development
 
 ## Overview
 
-**Fast TTS** — пайплайн предобработки текста для TTS Silero. Преобразует технический текст (документация, статьи, мануалы) в форму, пригодную для качественного озвучивания русской TTS-моделью.
+**Fast TTS RUS** — пайплайн предобработки текста для TTS Silero. Преобразует технический текст (документация, статьи, мануалы) в форму, пригодную для качественного озвучивания русской TTS-моделью.
 
 ### Проблема
 
@@ -115,7 +115,7 @@ Input Text (Markdown/Plain)
 ## Project Structure
 
 ```
-fast_tts/
+fast_tts_rus/
 ├── pyproject.toml           # Project config, dependencies
 ├── shell.nix                 # NixOS dev environment
 ├── README.md                 # User documentation
@@ -124,7 +124,7 @@ fast_tts/
 ├── scripts/
 │   └── test.sh              # Test runner helper
 │
-├── src/fast_tts/
+├── src/fast_tts_rus/
 │   ├── __init__.py          # Package exports
 │   ├── config.py            # PipelineConfig dataclass
 │   ├── pipeline.py          # Main TTSPipeline class

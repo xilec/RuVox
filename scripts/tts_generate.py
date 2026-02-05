@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-TTS Generation Script - Fast TTS Pipeline + Silero v5
+TTS Generation Script - Fast TTS RUS Pipeline + Silero v5
 
 Usage:
     python scripts/tts_generate.py input.txt              # Output: input.wav
@@ -21,7 +21,7 @@ import scipy.io.wavfile as wavfile
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from fast_tts.pipeline import TTSPipeline
+from fast_tts_rus.pipeline import TTSPipeline
 
 
 # Available speakers for Silero v5 Russian model

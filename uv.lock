@@ -168,7 +168,7 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/62/3d/8656290e2d537ef66e984a04e903d1a0028ea01524e9dd89e45bb165bc7b/eng_to_ipa-0.0.2.tar.gz", hash = "sha256:0e4fac8370b0ffeaf696193e971b3ff9bd3762e4d153c6d0d280147887e008b1", size = 2808070, upload-time = "2020-04-17T05:02:07.852Z" }
 
 [[package]]
-name = "fast-tts"
+name = "fast-tts-rus"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

@@ -1,9 +1,9 @@
 """Pytest configuration and fixtures."""
 
 import pytest
-from fast_tts.config import PipelineConfig
-from fast_tts.pipeline import TTSPipeline
-from fast_tts.normalizers import (
+from fast_tts_rus.config import PipelineConfig
+from fast_tts_rus.pipeline import TTSPipeline
+from fast_tts_rus.normalizers import (
     EnglishNormalizer,
     AbbreviationNormalizer,
     NumberNormalizer,

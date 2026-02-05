@@ -1,6 +1,6 @@
-# Fast TTS
+# Fast TTS RUS
 
-Text preprocessing pipeline for TTS Silero.
+Russian text preprocessing pipeline for TTS Silero.
 
 ## Installation
 

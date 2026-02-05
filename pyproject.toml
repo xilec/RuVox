@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "fast-tts"
+name = "fast-tts-rus"
 version = "0.1.0"
-description = "Text preprocessing pipeline for TTS Silero"
+description = "Russian text preprocessing pipeline for TTS Silero"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -33,7 +33,7 @@ tts = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/fast_tts"]
+packages = ["src/fast_tts_rus"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -41,7 +41,7 @@ pythonpath = ["src"]
 addopts = "-v --tb=short"
 
 [tool.coverage.run]
-source = ["src/fast_tts"]
+source = ["src/fast_tts_rus"]
 branch = true
 
 [tool.coverage.report]
