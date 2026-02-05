@@ -38,6 +38,10 @@ pkgs.mkShell {
     # Audio libs
     libpulseaudio
     pipewire
+    # GStreamer for Qt Multimedia
+    gst_all_1.gstreamer
+    gst_all_1.gst-plugins-base
+    gst_all_1.gst-plugins-good
     # Additional libs
     zstd
     krb5
@@ -70,6 +74,9 @@ pkgs.mkShell {
     pkgs.libdecor
     pkgs.libpulseaudio
     pkgs.pipewire
+    pkgs.gst_all_1.gstreamer
+    pkgs.gst_all_1.gst-plugins-base
+    pkgs.gst_all_1.gst-plugins-good
     pkgs.zstd
     pkgs.krb5
   ];
@@ -82,6 +89,9 @@ pkgs.mkShell {
 
     # Unset QT_PLUGIN_PATH to let PyQt6 use its bundled plugins
     unset QT_PLUGIN_PATH
+
+    # Set GStreamer plugin path for Qt Multimedia
+    export GST_PLUGIN_PATH="${pkgs.gst_all_1.gst-plugins-base}/lib/gstreamer-1.0:${pkgs.gst_all_1.gst-plugins-good}/lib/gstreamer-1.0"
 
     echo "Fast TTS development environment"
     echo "Python: $(python3 --version)"
