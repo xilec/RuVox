@@ -1,8 +1,8 @@
 """Main TTS text preprocessing pipeline."""
 
 import re
-from fast_tts_rus.config import PipelineConfig
-from fast_tts_rus.normalizers import (
+from fast_tts_rus.tts_pipeline.config import PipelineConfig
+from fast_tts_rus.tts_pipeline.normalizers import (
     NumberNormalizer,
     EnglishNormalizer,
     AbbreviationNormalizer,

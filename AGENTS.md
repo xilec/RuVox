@@ -117,45 +117,54 @@ Input Text (Markdown/Plain)
 ```
 fast_tts_rus/
 ├── pyproject.toml           # Project config, dependencies
-├── shell.nix                 # NixOS dev environment
-├── README.md                 # User documentation
-├── AGENTS.md                 # This file - dev documentation
+├── shell.nix                # NixOS dev environment
+├── README.md                # User documentation
+├── AGENTS.md                # This file - dev documentation
+├── MvpPlan.md               # UI MVP implementation plan
+├── FutureFeatures.md        # Future features roadmap
 │
 ├── scripts/
 │   └── test.sh              # Test runner helper
 │
 ├── src/fast_tts_rus/
-│   ├── __init__.py          # Package exports
-│   ├── config.py            # PipelineConfig dataclass
-│   ├── pipeline.py          # Main TTSPipeline class
+│   ├── __init__.py          # Package exports (re-exports from normalization)
 │   │
-│   └── normalizers/
-│       ├── __init__.py      # Normalizer exports
-│       ├── english.py       # EnglishNormalizer - IT terms + G2P
-│       ├── abbreviations.py # AbbreviationNormalizer
-│       ├── numbers.py       # NumberNormalizer - all numeric types
-│       ├── urls.py          # URLPathNormalizer - URLs, emails, IPs, paths
-│       ├── symbols.py       # SymbolNormalizer - operators, punctuation
-│       └── code.py          # CodeIdentifierNormalizer, CodeBlockHandler
+│   ├── tts_pipeline/        # Text normalization pipeline
+│   │   ├── __init__.py      # Pipeline exports
+│   │   ├── config.py        # PipelineConfig dataclass
+│   │   ├── pipeline.py      # Main TTSPipeline class
+│   │   │
+│   │   └── normalizers/
+│   │       ├── __init__.py      # Normalizer exports
+│   │       ├── english.py       # EnglishNormalizer - IT terms + G2P
+│   │       ├── abbreviations.py # AbbreviationNormalizer
+│   │       ├── numbers.py       # NumberNormalizer - all numeric types
+│   │       ├── urls.py          # URLPathNormalizer - URLs, emails, IPs, paths
+│   │       ├── symbols.py       # SymbolNormalizer - operators, punctuation
+│   │       └── code.py          # CodeIdentifierNormalizer, CodeBlockHandler
+│   │
+│   └── ui/                  # Desktop UI application (planned)
+│       └── ...              # See MvpPlan.md
 │
 └── tests/
-    ├── conftest.py          # Pytest fixtures
-    ├── test_english.py      # 121 tests
-    ├── test_abbreviations.py # 108 tests
-    ├── test_numbers.py      # 108 tests
-    ├── test_urls.py         # 62 tests
-    ├── test_symbols.py      # 74 tests
-    ├── test_code.py         # 104 tests
-    └── test_pipeline.py     # 55 integration tests
-                             # ─────────────────
-                             # TOTAL: 632 tests
+    └── tts_pipeline/        # Tests for TTS pipeline
+        ├── conftest.py          # Pytest fixtures
+        ├── test_english.py      # 121 tests
+        ├── test_abbreviations.py # 108 tests
+        ├── test_numbers.py      # 108 tests
+        ├── test_urls.py         # 62 tests
+        ├── test_symbols.py      # 74 tests
+        ├── test_code.py         # 104 tests
+        └── test_pipeline.py     # 55 integration tests
+                                 # ─────────────────
+                                 # TOTAL: 654 tests
 ```
 
 ---
 
 ## Module Specifications
 
-### 1. EnglishNormalizer (`normalizers/english.py`)
+### 1. EnglishNormalizer (`tts_pipeline/normalizers/english.py`)
 
 **Purpose:** Transliterate English words to Russian phonetic spelling.
 
@@ -198,7 +207,7 @@ class EnglishNormalizer:
 
 ---
 
-### 2. AbbreviationNormalizer (`normalizers/abbreviations.py`)
+### 2. AbbreviationNormalizer (`tts_pipeline/normalizers/abbreviations.py`)
 
 **Purpose:** Convert abbreviations to speakable text.
 
@@ -248,7 +257,7 @@ LETTER_MAP = {
 
 ---
 
-### 3. NumberNormalizer (`normalizers/numbers.py`)
+### 3. NumberNormalizer (`tts_pipeline/normalizers/numbers.py`)
 
 **Purpose:** Convert all numeric types to Russian words.
 
@@ -289,7 +298,7 @@ class NumberNormalizer:
 
 ---
 
-### 4. URLPathNormalizer (`normalizers/urls.py`)
+### 4. URLPathNormalizer (`tts_pipeline/normalizers/urls.py`)
 
 **Purpose:** Normalize URLs, emails, IPs, and file paths.
 
@@ -328,7 +337,7 @@ class URLPathNormalizer:
 
 ---
 
-### 5. SymbolNormalizer (`normalizers/symbols.py`)
+### 5. SymbolNormalizer (`tts_pipeline/normalizers/symbols.py`)
 
 **Purpose:** Convert operators and special characters to words.
 
@@ -370,7 +379,7 @@ BRACKETS = {
 
 ---
 
-### 6. CodeIdentifierNormalizer & CodeBlockHandler (`normalizers/code.py`)
+### 6. CodeIdentifierNormalizer & CodeBlockHandler (`tts_pipeline/normalizers/code.py`)
 
 **Purpose:** Handle code identifiers and code blocks.
 
@@ -409,7 +418,7 @@ class CodeBlockHandler:
 
 ---
 
-### 7. TTSPipeline (`pipeline.py`)
+### 7. TTSPipeline (`tts_pipeline/pipeline.py`)
 
 **Purpose:** Main orchestrator combining all normalizers.
 
@@ -431,7 +440,7 @@ class TTSPipeline:
 
 ---
 
-### 8. PipelineConfig (`config.py`)
+### 8. PipelineConfig (`tts_pipeline/config.py`)
 
 **Interface:**
 ```python

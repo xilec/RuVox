@@ -213,7 +213,7 @@ class TestModeSwitch:
 
     def test_default_mode_is_full(self):
         """Default mode should be 'full'."""
-        from fast_tts_rus.normalizers import CodeBlockHandler
+        from fast_tts_rus.tts_pipeline import CodeBlockHandler
 
         handler = CodeBlockHandler()
         assert handler.mode == "full"
