@@ -11,7 +11,8 @@ from PyQt6.QtWidgets import (
 )
 
 from fast_tts_rus.ui.widgets.queue_list import QueueListWidget
-from fast_tts_rus.ui.models.entry import EntryStatus
+from fast_tts_rus.ui.widgets.player import PlayerWidget
+from fast_tts_rus.ui.models.entry import TextEntry, EntryStatus
 
 
 class MainWindow(QMainWindow):
@@ -48,14 +49,11 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(8, 8, 8, 8)
         main_layout.setSpacing(8)
 
-        # Player placeholder (top)
-        player_placeholder = QLabel("[ Плеер - будет реализован ]")
-        player_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        player_placeholder.setStyleSheet(
-            "background-color: #f0f0f0; border: 1px solid #ccc; padding: 20px;"
-        )
-        player_placeholder.setMinimumHeight(80)
-        main_layout.addWidget(player_placeholder)
+        # Player widget (top)
+        self.player = PlayerWidget()
+        self.player.setMinimumHeight(80)
+        self._connect_player_signals()
+        main_layout.addWidget(self.player)
 
         # Splitter for queue and text viewer
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -86,6 +84,13 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self.status_bar)
         self._update_status_bar()
 
+    def _connect_player_signals(self) -> None:
+        """Connect player widget signals."""
+        self.player.next_requested.connect(self._play_next)
+        self.player.prev_requested.connect(self._play_prev)
+        self.player.playback_started.connect(self._on_playback_started)
+        self.player.playback_stopped.connect(self._on_playback_stopped)
+
     def _connect_queue_signals(self) -> None:
         """Connect queue list signals."""
         self.queue_list.entry_selected.connect(self._on_entry_selected)
@@ -98,10 +103,16 @@ class MainWindow(QMainWindow):
         # TODO: Update text viewer
         pass
 
-    def _on_entry_play_requested(self, entry) -> None:
+    def _on_entry_play_requested(self, entry: TextEntry) -> None:
         """Handle play request."""
-        # TODO: Start playback
-        pass
+        if entry.status != EntryStatus.READY:
+            return
+
+        if self.app.storage:
+            audio_dir = self.app.storage.audio_dir
+            if self.player.load_entry(entry, audio_dir):
+                self.player.play()
+                self.queue_list.set_current_playing(entry.id)
 
     def _on_entry_regenerate_requested(self, entry) -> None:
         """Handle regenerate request."""
@@ -117,9 +128,77 @@ class MainWindow(QMainWindow):
     def _on_entry_delete_requested(self, entry) -> None:
         """Handle delete request."""
         if self.app.storage:
+            # Stop playback if deleting current entry
+            if self.player.current_entry and self.player.current_entry.id == entry.id:
+                self.player.stop()
             self.app.storage.delete_entry(entry.id)
             self.queue_list.remove_entry(entry.id)
             self._update_status_bar()
+
+    def _on_playback_started(self, entry_id: str) -> None:
+        """Handle playback started."""
+        self.queue_list.set_current_playing(entry_id)
+
+    def _on_playback_stopped(self) -> None:
+        """Handle playback stopped."""
+        self.queue_list.set_current_playing(None)
+
+    def _play_next(self) -> None:
+        """Play next entry in queue."""
+        entries = self._get_ready_entries()
+        if not entries:
+            return
+
+        current_id = self.player.current_entry.id if self.player.current_entry else None
+
+        # Find current index
+        current_idx = -1
+        for i, entry in enumerate(entries):
+            if entry.id == current_id:
+                current_idx = i
+                break
+
+        # Play next
+        next_idx = current_idx + 1
+        if next_idx < len(entries):
+            self._on_entry_play_requested(entries[next_idx])
+
+    def _play_prev(self) -> None:
+        """Play previous entry in queue."""
+        entries = self._get_ready_entries()
+        if not entries:
+            return
+
+        current_id = self.player.current_entry.id if self.player.current_entry else None
+
+        # Find current index
+        current_idx = len(entries)
+        for i, entry in enumerate(entries):
+            if entry.id == current_id:
+                current_idx = i
+                break
+
+        # Play previous
+        prev_idx = current_idx - 1
+        if prev_idx >= 0:
+            self._on_entry_play_requested(entries[prev_idx])
+
+    def _get_ready_entries(self) -> list[TextEntry]:
+        """Get list of entries that are ready to play."""
+        if not self.app.storage:
+            return []
+        return [
+            e for e in self.app.storage.get_all_entries()
+            if e.status == EntryStatus.READY
+        ]
+
+    def play_entry(self, entry_id: str) -> None:
+        """Play entry by ID (called from app on play_requested)."""
+        if not self.app.storage:
+            return
+        entry = self.app.storage.get_entry(entry_id)
+        if entry:
+            self._on_entry_play_requested(entry)
 
     def _update_status_bar(self) -> None:
         """Update status bar with current state."""
@@ -158,9 +237,25 @@ class MainWindow(QMainWindow):
         pass
 
     def _setup_shortcuts(self) -> None:
-        """Setup keyboard shortcuts."""
-        # TODO: Implement player hotkeys
-        pass
+        """Setup keyboard shortcuts for player."""
+        from PyQt6.QtGui import QShortcut, QKeySequence
+
+        # Play/Pause
+        QShortcut(QKeySequence(Qt.Key.Key_Space), self, self.player.toggle_play_pause)
+
+        # Seek
+        QShortcut(QKeySequence(Qt.Key.Key_Left), self, lambda: self.player.seek_relative(-5))
+        QShortcut(QKeySequence(Qt.Key.Key_Right), self, lambda: self.player.seek_relative(5))
+        QShortcut(QKeySequence("Shift+Left"), self, lambda: self.player.seek_relative(-30))
+        QShortcut(QKeySequence("Shift+Right"), self, lambda: self.player.seek_relative(30))
+
+        # Speed
+        QShortcut(QKeySequence(Qt.Key.Key_BracketLeft), self, self.player.speed_down)
+        QShortcut(QKeySequence(Qt.Key.Key_BracketRight), self, self.player.speed_up)
+
+        # Navigation
+        QShortcut(QKeySequence(Qt.Key.Key_N), self, self._play_next)
+        QShortcut(QKeySequence(Qt.Key.Key_P), self, self._play_prev)
 
     def _restore_geometry(self) -> None:
         """Restore window geometry from config."""

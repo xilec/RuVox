@@ -260,8 +260,10 @@ class TTSApplication(QObject):
 
     def _on_play_requested(self, entry_id: str) -> None:
         """Handle play request from TTS worker."""
-        # TODO: Implement playback in Phase 4
-        pass
+        # Show window and play
+        self.show_window()
+        if self._main_window:
+            self._main_window.play_entry(entry_id)
 
     def _on_model_loading(self) -> None:
         """Handle model loading started."""
