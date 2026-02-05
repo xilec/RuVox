@@ -1,5 +1,7 @@
 """Main application window."""
 
+import logging
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QMainWindow,
@@ -10,10 +12,13 @@ from PyQt6.QtWidgets import (
     QStatusBar,
 )
 
+from fast_tts_rus.ui.services.logging_service import safe_slot
 from fast_tts_rus.ui.widgets.queue_list import QueueListWidget
 from fast_tts_rus.ui.widgets.player import PlayerWidget
 from fast_tts_rus.ui.widgets.text_viewer import TextViewerWidget
 from fast_tts_rus.ui.models.entry import TextEntry, EntryStatus
+
+logger = logging.getLogger(__name__)
 
 
 class MainWindow(QMainWindow):
@@ -96,6 +101,7 @@ class MainWindow(QMainWindow):
         self.queue_list.entry_regenerate_requested.connect(self._on_entry_regenerate_requested)
         self.queue_list.entry_delete_requested.connect(self._on_entry_delete_requested)
 
+    @safe_slot
     def _on_entry_selected(self, entry: TextEntry) -> None:
         """Handle entry selection - show text in viewer."""
         # Load timestamps if available
@@ -104,14 +110,17 @@ class MainWindow(QMainWindow):
             timestamps = self.app.storage.load_timestamps(entry.id)
         self.text_viewer.set_entry(entry, timestamps)
 
+    @safe_slot
     def _on_entry_play_requested(self, entry: TextEntry) -> None:
         """Handle play request."""
         if entry.status != EntryStatus.READY:
+            logger.debug(f"Пропуск воспроизведения: статус {entry.status}")
             return
 
         if self.app.storage:
             audio_dir = self.app.storage.audio_dir
             if self.player.load_entry(entry, audio_dir):
+                logger.info(f"Воспроизведение: {entry.id[:8]}...")
                 # Load text and timestamps into viewer
                 timestamps = self.app.storage.load_timestamps(entry.id)
                 self.text_viewer.set_entry(entry, timestamps)
@@ -119,20 +128,40 @@ class MainWindow(QMainWindow):
                 self.player.play()
                 self.queue_list.set_current_playing(entry.id)
 
+    @safe_slot
     def _on_entry_regenerate_requested(self, entry) -> None:
         """Handle regenerate request."""
-        if self.app.tts_worker:
-            # Mark as regenerated for cleanup rules
-            entry.was_regenerated = True
-            entry.status = EntryStatus.PENDING
-            self.app.storage.update_entry(entry)
-            self.queue_list.update_entry(entry)
-            # Start TTS processing
-            self.app.tts_worker.process(entry, play_when_ready=False)
+        if not self.app.tts_worker or not self.app.storage:
+            return
 
+        logger.info(f"Перегенерация: {entry.id[:8]}...")
+
+        # Stop playback if this entry is currently playing
+        if self.player.current_entry and self.player.current_entry.id == entry.id:
+            self.player.stop()
+
+        # Delete existing audio file (this also resets entry status in storage)
+        self.app.storage.delete_audio(entry.id)
+
+        # Get the updated entry from storage
+        updated_entry = self.app.storage.get_entry(entry.id)
+        if not updated_entry:
+            logger.error(f"Запись не найдена после delete_audio: {entry.id}")
+            return
+
+        # Mark as regenerated for cleanup rules
+        updated_entry.was_regenerated = True
+        self.app.storage.update_entry(updated_entry)
+        self.queue_list.update_entry(updated_entry)
+
+        # Start TTS processing
+        self.app.tts_worker.process(updated_entry, play_when_ready=False)
+
+    @safe_slot
     def _on_entry_delete_requested(self, entry) -> None:
         """Handle delete request."""
         if self.app.storage:
+            logger.info(f"Удаление: {entry.id[:8]}...")
             # Stop playback if deleting current entry
             if self.player.current_entry and self.player.current_entry.id == entry.id:
                 self.player.stop()
@@ -140,18 +169,22 @@ class MainWindow(QMainWindow):
             self.queue_list.remove_entry(entry.id)
             self._update_status_bar()
 
+    @safe_slot
     def _on_playback_started(self, entry_id: str) -> None:
         """Handle playback started."""
         self.queue_list.set_current_playing(entry_id)
 
+    @safe_slot
     def _on_playback_stopped(self) -> None:
         """Handle playback stopped."""
         self.queue_list.set_current_playing(None)
 
+    @safe_slot
     def _on_playback_position_changed(self, position_sec: float) -> None:
         """Handle playback position change - update text highlighting."""
         self.text_viewer.highlight_at_position(position_sec)
 
+    @safe_slot
     def _play_next(self) -> None:
         """Play next entry in queue."""
         entries = self._get_ready_entries()
@@ -172,6 +205,7 @@ class MainWindow(QMainWindow):
         if next_idx < len(entries):
             self._on_entry_play_requested(entries[next_idx])
 
+    @safe_slot
     def _play_prev(self) -> None:
         """Play previous entry in queue."""
         entries = self._get_ready_entries()
@@ -235,11 +269,13 @@ class MainWindow(QMainWindow):
             self.app.tts_worker.started.connect(self._on_tts_started)
             self.app.tts_worker.progress.connect(self._on_tts_progress)
 
+    @safe_slot
     def _on_tts_started(self, entry_id: str) -> None:
         """Handle TTS processing started."""
         self.queue_list.update_entry_status(entry_id, EntryStatus.PROCESSING)
         self._update_status_bar()
 
+    @safe_slot
     def _on_tts_progress(self, entry_id: str, progress: float) -> None:
         """Handle TTS progress update."""
         # Could update a progress indicator in the queue item

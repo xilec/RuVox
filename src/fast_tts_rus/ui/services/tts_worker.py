@@ -1,12 +1,20 @@
 """Background TTS processing worker."""
 
+import logging
 from datetime import datetime
 from typing import Any
+
+# IMPORTANT: torch must be imported before QMediaPlayer/QAudioOutput are created.
+# If torch is imported in a worker thread after Qt multimedia components exist,
+# it causes "double free or corruption" crashes due to memory initialization conflicts.
+import torch
 
 from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal
 
 from fast_tts_rus.ui.models.entry import TextEntry, EntryStatus
 from fast_tts_rus.ui.models.config import UIConfig
+
+logger = logging.getLogger(__name__)
 
 
 class TTSSignals(QObject):
@@ -36,13 +44,13 @@ class ModelLoadRunnable(QRunnable):
         try:
             import torch
 
-            # Load Silero model
-            # Model will be downloaded on first run (~100MB)
+            # Load Silero model V5
+            # Model will be downloaded on first run
             model, _ = torch.hub.load(
                 repo_or_dir='snakers4/silero-models',
                 model='silero_tts',
                 language='ru',
-                speaker='v4_ru'
+                speaker='v5_ru'
             )
 
             self.signals.loaded.emit(model)
@@ -71,6 +79,7 @@ class TTSRunnable(QRunnable):
     def run(self) -> None:
         """Run TTS processing for the entry."""
         try:
+            logger.info(f"TTS начало: {self.entry.id[:8]}...")
             self.signals.started.emit(self.entry.id)
 
             # Import here to avoid loading at module level
@@ -80,6 +89,7 @@ class TTSRunnable(QRunnable):
             pipeline = TTSPipeline()
 
             # Step 1: Normalize text
+            logger.debug("Нормализация текста...")
             normalized = pipeline.process(self.entry.original_text)
             self.entry.normalized_text = normalized
 
@@ -89,11 +99,15 @@ class TTSRunnable(QRunnable):
             self.signals.progress.emit(self.entry.id, 0.3)
 
             # Step 2: Synthesize audio
-            audio = self.silero_model.apply_tts(
-                text=normalized,
-                speaker=self.config.speaker,
-                sample_rate=self.config.sample_rate,
-            )
+            logger.debug(f"Синтез аудио... Текст ({len(normalized)} символов): {normalized[:100]}...")
+            logger.debug(f"Model type: {type(self.silero_model)}, speaker={self.config.speaker}, rate={self.config.sample_rate}")
+
+            with torch.no_grad():
+                audio = self.silero_model.apply_tts(
+                    text=normalized,
+                    speaker=self.config.speaker,
+                    sample_rate=self.config.sample_rate,
+                )
 
             # Convert to numpy array
             if isinstance(audio, torch.Tensor):
@@ -112,6 +126,7 @@ class TTSRunnable(QRunnable):
             self.signals.progress.emit(self.entry.id, 0.9)
 
             # Step 4: Save audio and timestamps
+            logger.debug("Сохранение аудио...")
             audio_path = self.storage.save_audio(
                 self.entry.id,
                 audio_np,
@@ -133,8 +148,10 @@ class TTSRunnable(QRunnable):
 
             self.signals.progress.emit(self.entry.id, 1.0)
             self.signals.completed.emit(self.entry.id)
+            logger.info(f"TTS завершено: {self.entry.id[:8]}... ({duration_sec:.1f}s)")
 
         except Exception as e:
+            logger.error(f"TTS ошибка: {self.entry.id[:8]}... - {e}", exc_info=True)
             self.entry.status = EntryStatus.ERROR
             self.entry.error_message = str(e)
             self.storage.update_entry(self.entry)
