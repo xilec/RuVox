@@ -17,6 +17,11 @@ from fast_tts_rus.tts_pipeline.word_mapping import (
     build_word_mapping,
     tokenize_words,
 )
+from fast_tts_rus.tts_pipeline.tracked_text import (
+    TrackedText,
+    CharMapping,
+    create_tracked_text,
+)
 
 __all__ = [
     "TTSPipeline",
@@ -32,4 +37,7 @@ __all__ = [
     "WordSpan",
     "build_word_mapping",
     "tokenize_words",
+    "TrackedText",
+    "CharMapping",
+    "create_tracked_text",
 ]

@@ -12,6 +12,7 @@ from fast_tts_rus.tts_pipeline.normalizers import (
     CodeBlockHandler,
 )
 from fast_tts_rus.tts_pipeline.word_mapping import WordMapping, build_word_mapping
+from fast_tts_rus.tts_pipeline.tracked_text import TrackedText, CharMapping
 
 
 class TTSPipeline:
@@ -118,6 +119,112 @@ class TTSPipeline:
         transformed = self.process(text)
         mapping = build_word_mapping(original, transformed, self)
         return transformed, mapping
+
+    def process_with_char_mapping(self, text: str) -> tuple[str, CharMapping]:
+        """Process text for TTS with precise character-level mapping.
+
+        This method tracks all transformations precisely, allowing
+        exact mapping from any position in the transformed text back
+        to the corresponding position in the original text.
+
+        Args:
+            text: Original text to process
+
+        Returns:
+            Tuple of (transformed_text, CharMapping)
+        """
+        if not text:
+            return "", CharMapping(original="", transformed="", char_map=[])
+
+        # Clear unknown words tracking for new processing
+        self.english_normalizer.clear_unknown_words()
+
+        # Create tracked text
+        tracked = TrackedText(text)
+
+        # Preprocessing (inline, not tracked as these are normalization)
+        current = tracked.text
+        current = current.lstrip('\ufeff')
+        current = current.replace('«', '"').replace('»', '"')
+        current = current.replace('"', '"').replace('"', '"')
+        current = current.replace(''', "'").replace(''', "'")
+        current = current.replace('—', '-').replace('–', '-')
+        current = re.sub(r'\n{3,}', '\n\n', current)
+        current = re.sub(r'[ \t]+', ' ', current)
+
+        if not current.strip():
+            return "", CharMapping(original=text, transformed="", char_map=[])
+
+        # Create new tracked text after preprocessing
+        # Note: preprocessing changes are not tracked as they're normalization
+        tracked = TrackedText(current)
+
+        # Process code blocks (brief mode)
+        self._process_code_blocks_tracked(tracked)
+
+        # Process inline code
+        self._process_inline_code_tracked(tracked)
+
+        # Process markdown
+        self._process_markdown_tracked(tracked)
+
+        # Process URLs
+        self._process_urls_tracked(tracked)
+
+        # Process emails
+        self._process_emails_tracked(tracked)
+
+        # Process IP addresses
+        self._process_ips_tracked(tracked)
+
+        # Process file paths
+        self._process_paths_tracked(tracked)
+
+        # Process sizes
+        self._process_sizes_tracked(tracked)
+
+        # Process versions
+        self._process_versions_tracked(tracked)
+
+        # Process ranges
+        self._process_ranges_tracked(tracked)
+
+        # Process percentages
+        self._process_percentages_tracked(tracked)
+
+        # Process operators
+        if self.config.read_operators:
+            self._process_operators_tracked(tracked)
+
+        # Process symbols
+        self._process_symbols_tracked(tracked)
+
+        # Process code identifiers
+        self._process_code_identifiers_tracked(tracked)
+
+        # Process English words
+        self._process_english_words_tracked(tracked)
+
+        # Process numbers
+        self._process_numbers_tracked(tracked)
+
+        # Build mapping before postprocessing
+        mapping = tracked.build_mapping()
+
+        # Postprocess the final text
+        result = mapping.transformed
+        result = re.sub(r' +', ' ', result)
+        result = re.sub(r' +([.,!?;:])', r'\1', result)
+        result = re.sub(r'\n +', '\n', result)
+        result = re.sub(r' +\n', '\n', result)
+        result = result.strip()
+
+        # Return with original mapping (postprocessing doesn't change semantics)
+        return result, CharMapping(
+            original=mapping.original,
+            transformed=result,
+            char_map=mapping.char_map,
+        )
 
     def set_code_mode(self, mode: str) -> None:
         """Switch code block handling mode."""
@@ -569,3 +676,291 @@ class TTSPipeline:
 
         text = re.sub(number_pattern, replace_number, text)
         return text
+
+    # =========================================================================
+    # Tracked versions of processing methods for process_with_char_mapping
+    # =========================================================================
+
+    def _process_code_blocks_tracked(self, tracked: TrackedText) -> None:
+        """Process markdown code blocks with tracking."""
+        pattern = r'```(\w*)\n(.*?)```'
+
+        def replace_block(match):
+            language = match.group(1) or None
+            code = match.group(2)
+            self.code_block_handler.set_mode(self.config.code_block_mode)
+            return self.code_block_handler.process(code.strip(), language)
+
+        tracked.sub(pattern, replace_block, flags=re.DOTALL)
+
+    def _process_inline_code_tracked(self, tracked: TrackedText) -> None:
+        """Process inline code with tracking."""
+        pattern = r'`([^`]+)`'
+
+        def replace_inline(match):
+            code = match.group(1)
+
+            # Pre-process Greek letters and special symbols
+            has_greek_or_special = False
+            for char, replacement in self.code_block_handler.GREEK_LETTERS.items():
+                if char in code:
+                    code = code.replace(char, f' {replacement} ')
+                    has_greek_or_special = True
+            for char, replacement in self.code_block_handler.SPECIAL_SYMBOLS.items():
+                if char in code:
+                    code = code.replace(char, f' {replacement} ')
+                    has_greek_or_special = True
+
+            code = ' '.join(code.split())
+
+            if has_greek_or_special:
+                words = code.split()
+                result = []
+                for word in words:
+                    word_lower = word.lower()
+                    if word_lower in self.code_normalizer.CODE_WORDS:
+                        result.append(self.code_normalizer.CODE_WORDS[word_lower])
+                    elif word_lower in self.english_normalizer.IT_TERMS:
+                        result.append(self.english_normalizer.IT_TERMS[word_lower])
+                    else:
+                        result.append(word)
+                return ' '.join(result)
+
+            if '_' in code:
+                return self.code_normalizer.normalize_snake_case(code)
+            elif '-' in code and not code.startswith('-'):
+                return self.code_normalizer.normalize_kebab_case(code)
+            elif any(c.isupper() for c in code[1:]) and any(c.islower() for c in code):
+                return self.code_normalizer.normalize_camel_case(code)
+            else:
+                words = code.split()
+                result = []
+                for word in words:
+                    word_lower = word.lower()
+                    if word_lower in self.code_normalizer.CODE_WORDS:
+                        result.append(self.code_normalizer.CODE_WORDS[word_lower])
+                    elif word_lower in self.english_normalizer.IT_TERMS:
+                        result.append(self.english_normalizer.IT_TERMS[word_lower])
+                    else:
+                        result.append(word)
+                return ' '.join(result)
+
+        tracked.sub(pattern, replace_inline)
+
+    def _process_markdown_tracked(self, tracked: TrackedText) -> None:
+        """Process markdown structural elements with tracking."""
+        # Remove heading markers
+        tracked.sub(r'^#{1,6}\s+', '', flags=re.MULTILINE)
+
+        # Process links
+        def replace_link(match):
+            link_text = match.group(1)
+            url = match.group(2)
+            expanded_url = self.url_normalizer.normalize_url(url)
+            return f"{link_text} {expanded_url}"
+
+        tracked.sub(r'\[([^\]]+)\]\(([^)]+)\)', replace_link)
+
+        # Process numbered lists
+        def replace_list_number(match):
+            num = int(match.group(1))
+            ordinals = {
+                1: 'первое', 2: 'второе', 3: 'третье', 4: 'четвёртое',
+                5: 'пятое', 6: 'шестое', 7: 'седьмое', 8: 'восьмое',
+                9: 'девятое', 10: 'десятое',
+            }
+            ordinal = ordinals.get(num, self.number_normalizer.normalize_number(str(num)))
+            return ordinal + ':'
+
+        tracked.sub(r'^(\d+)\.\s+', replace_list_number, flags=re.MULTILINE)
+
+    def _process_urls_tracked(self, tracked: TrackedText) -> None:
+        """Process URLs with tracking."""
+        url_pattern = r'https?://[^\s<>"\'\)]+|ftp://[^\s<>"\'\)]+|ssh://[^\s<>"\'\)]+|git://[^\s<>"\'\)]+'
+
+        def replace_url(match):
+            return self.url_normalizer.normalize_url(match.group(0))
+
+        tracked.sub(url_pattern, replace_url)
+
+    def _process_emails_tracked(self, tracked: TrackedText) -> None:
+        """Process emails with tracking."""
+        email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+
+        def replace_email(match):
+            return self.url_normalizer.normalize_email(match.group(0))
+
+        tracked.sub(email_pattern, replace_email)
+
+    def _process_ips_tracked(self, tracked: TrackedText) -> None:
+        """Process IP addresses with tracking."""
+        ip_pattern = r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b'
+
+        def replace_ip(match):
+            return self.url_normalizer.normalize_ip(match.group(0))
+
+        tracked.sub(ip_pattern, replace_ip)
+
+    def _process_paths_tracked(self, tracked: TrackedText) -> None:
+        """Process file paths with tracking."""
+        unix_path_pattern = r'(?<![a-zA-Z0-9])([~/][a-zA-Z0-9_./\-]+\.[a-zA-Z0-9]+|[~/][a-zA-Z0-9_./\-]+)'
+
+        def replace_path(match):
+            path = match.group(1)
+            if '/' in path and (path.startswith('/') or path.startswith('~')):
+                return self.url_normalizer.normalize_filepath(path)
+            return path
+
+        tracked.sub(unix_path_pattern, replace_path)
+
+    def _process_sizes_tracked(self, tracked: TrackedText) -> None:
+        """Process size units with tracking."""
+        size_pattern = r'\b(\d+(?:\.\d+)?)\s*(KB|MB|GB|TB|ms|sec|min|hr|px|em|rem|vh|vw|кб|мб|гб|тб)\b'
+
+        def replace_size(match):
+            return self.number_normalizer.normalize_size(match.group(0))
+
+        tracked.sub(size_pattern, replace_size, flags=re.IGNORECASE)
+
+    def _process_versions_tracked(self, tracked: TrackedText) -> None:
+        """Process version numbers with tracking."""
+        version_pattern = r'\bv?(\d+\.\d+(?:\.\d+)?(?:-[a-zA-Z]+\d*)?)\b'
+
+        def replace_version(match):
+            version = match.group(0)
+            if '.' in version:
+                return self.number_normalizer.normalize_version(version)
+            return version
+
+        tracked.sub(version_pattern, replace_version)
+
+    def _process_ranges_tracked(self, tracked: TrackedText) -> None:
+        """Process number ranges with tracking."""
+        range_pattern = r'\b(\d+)\s*-\s*(\d+)\b'
+
+        def replace_range(match):
+            return self.number_normalizer.normalize_range(match.group(0))
+
+        tracked.sub(range_pattern, replace_range)
+
+    def _process_percentages_tracked(self, tracked: TrackedText) -> None:
+        """Process percentages with tracking."""
+        pct_pattern = r'\b(\d+(?:\.\d+)?)\s*%'
+
+        def replace_pct(match):
+            return self.number_normalizer.normalize_percentage(match.group(0))
+
+        tracked.sub(pct_pattern, replace_pct)
+
+    def _process_operators_tracked(self, tracked: TrackedText) -> None:
+        """Process operators with tracking."""
+        operators = [
+            ('===', 'строго равно'),
+            ('!==', 'строго не равно'),
+            ('->', 'стрелка'),
+            ('=>', 'толстая стрелка'),
+            ('>=', 'больше или равно'),
+            ('<=', 'меньше или равно'),
+            ('!=', 'не равно'),
+            ('==', 'равно равно'),
+            ('&&', 'и'),
+            ('||', 'или'),
+        ]
+
+        for op, replacement in operators:
+            tracked.replace(op, f' {replacement} ')
+
+    def _process_symbols_tracked(self, tracked: TrackedText) -> None:
+        """Process special symbols with tracking."""
+        greek_and_special = {
+            'α': 'альфа', 'β': 'бета', 'γ': 'гамма', 'δ': 'дельта',
+            'ε': 'эпсилон', 'ζ': 'дзета', 'η': 'эта', 'θ': 'тета',
+            'ι': 'йота', 'κ': 'каппа', 'λ': 'лямбда', 'μ': 'мю',
+            'ν': 'ню', 'ξ': 'кси', 'π': 'пи', 'ρ': 'ро',
+            'σ': 'сигма', 'τ': 'тау', 'υ': 'ипсилон', 'φ': 'фи',
+            'χ': 'хи', 'ψ': 'пси', 'ω': 'омега',
+            'Α': 'альфа', 'Β': 'бета', 'Γ': 'гамма', 'Δ': 'дельта',
+            'Ε': 'эпсилон', 'Ζ': 'дзета', 'Η': 'эта', 'Θ': 'тета',
+            'Ι': 'йота', 'Κ': 'каппа', 'Λ': 'лямбда', 'Μ': 'мю',
+            'Ν': 'ню', 'Ξ': 'кси', 'Π': 'пи', 'Ρ': 'ро',
+            'Σ': 'сигма', 'Τ': 'тау', 'Υ': 'ипсилон', 'Φ': 'фи',
+            'Χ': 'хи', 'Ψ': 'пси', 'Ω': 'омега',
+            '∞': 'бесконечность', '∈': 'принадлежит', '∉': 'не принадлежит',
+            '∀': 'для всех', '∃': 'существует', '∅': 'пустое множество',
+            '∩': 'пересечение', '∪': 'объединение', '⊂': 'подмножество',
+            '≠': 'не равно', '≈': 'приблизительно равно', '≤': 'меньше или равно',
+            '≥': 'больше или равно', '×': 'умножить', '÷': 'разделить',
+            '√': 'корень', '∑': 'сумма', '∏': 'произведение',
+            '→': 'стрелка', '←': 'стрелка влево', '↔': 'двунаправленная стрелка',
+            '⇒': 'следует', '⇐': 'следует из', '⇔': 'эквивалентно',
+        }
+
+        for symbol, replacement in greek_and_special.items():
+            tracked.replace(symbol, f' {replacement} ')
+
+    def _process_code_identifiers_tracked(self, tracked: TrackedText) -> None:
+        """Process code identifiers with tracking."""
+        # CamelCase
+        tracked.sub(
+            r'\b([a-z]+(?:[A-Z][a-z]*)+)\b',
+            lambda m: self.code_normalizer.normalize_camel_case(m.group(0))
+        )
+
+        # PascalCase
+        tracked.sub(
+            r'\b([A-Z][a-z]+(?:[A-Z][a-z]+)+)\b',
+            lambda m: self.code_normalizer.normalize_camel_case(m.group(0))
+        )
+
+        # Snake_case
+        tracked.sub(
+            r'\b([a-zA-Z_][a-zA-Z0-9]*(?:_[a-zA-Z0-9]+)+)\b',
+            lambda m: self.code_normalizer.normalize_snake_case(m.group(0))
+        )
+
+        # Kebab-case
+        tracked.sub(
+            r'\b([a-zA-Z][a-zA-Z0-9]*(?:-[a-zA-Z0-9]+)+)\b',
+            lambda m: self.code_normalizer.normalize_kebab_case(m.group(0))
+        )
+
+    def _process_english_words_tracked(self, tracked: TrackedText) -> None:
+        """Process English words with tracking."""
+        # Special terms first
+        special_terms = {
+            'C++': 'си плюс плюс', 'c++': 'си плюс плюс',
+            'C#': 'си шарп', 'c#': 'си шарп',
+            'F#': 'эф шарп', 'f#': 'эф шарп',
+        }
+        for term, replacement in special_terms.items():
+            tracked.replace(term, replacement)
+
+        # English words pattern
+        def replace_english(match):
+            word = match.group(0)
+            word_lower = word.lower()
+
+            if word_lower in self.english_normalizer.IT_TERMS:
+                return self.english_normalizer.IT_TERMS[word_lower]
+
+            if word_lower in self.english_normalizer.custom_terms:
+                return self.english_normalizer.custom_terms[word_lower]
+
+            if word.isupper() and len(word) >= 2:
+                return self.abbrev_normalizer.normalize(word)
+
+            if word_lower in self.abbrev_normalizer.AS_WORD:
+                return self.abbrev_normalizer.AS_WORD[word_lower]
+
+            return self.english_normalizer.normalize(word, track_unknown=True)
+
+        tracked.sub(r'\b([A-Za-z][A-Za-z]+)\b', replace_english)
+
+    def _process_numbers_tracked(self, tracked: TrackedText) -> None:
+        """Process numbers with tracking."""
+        number_pattern = r'(?<![.\d])(\d+)(?![.\d]|[a-zA-Zа-яА-Я])'
+
+        def replace_number(match):
+            return self.number_normalizer.normalize_number(match.group(0))
+
+        tracked.sub(number_pattern, replace_number)

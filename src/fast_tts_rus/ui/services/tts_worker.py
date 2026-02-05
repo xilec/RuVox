@@ -88,9 +88,11 @@ class TTSRunnable(QRunnable):
 
             pipeline = TTSPipeline()
 
-            # Step 1: Normalize text
+            # Step 1: Normalize text with precise character mapping
             logger.debug("Нормализация текста...")
-            normalized = pipeline.process(self.entry.original_text)
+            normalized, char_mapping = pipeline.process_with_char_mapping(
+                self.entry.original_text
+            )
             self.entry.normalized_text = normalized
 
             if not normalized.strip():
@@ -120,8 +122,8 @@ class TTSRunnable(QRunnable):
             # Calculate duration
             duration_sec = len(audio_np) / self.config.sample_rate
 
-            # Step 3: Estimate timestamps (fallback method based on word length)
-            timestamps = self._estimate_timestamps(normalized, duration_sec)
+            # Step 3: Estimate timestamps with precise mapping to original text
+            timestamps = self._estimate_timestamps(normalized, duration_sec, char_mapping)
 
             self.signals.progress.emit(self.entry.id, 0.9)
 
@@ -160,13 +162,19 @@ class TTSRunnable(QRunnable):
     def _estimate_timestamps(
         self,
         text: str,
-        total_duration: float
+        total_duration: float,
+        char_mapping=None,
     ) -> list[dict[str, Any]]:
         """Estimate word timestamps based on word length.
 
         This is a fallback method when Silero doesn't provide timestamps.
         It estimates timing based on the proportion of each word's length
         to the total text length.
+
+        Args:
+            text: Normalized text
+            total_duration: Total audio duration in seconds
+            char_mapping: CharMapping from TrackedText for precise position mapping
 
         Note: This is approximate and may not align perfectly with speech.
         """
@@ -181,27 +189,35 @@ class TTSRunnable(QRunnable):
 
         timestamps = []
         current_time = 0.0
-        current_pos = 0  # Position in original text
+        current_pos = 0  # Position in normalized text
 
         for word in words:
             # Estimate word duration proportionally to character count
             word_duration = (len(word) / total_chars) * total_duration
 
-            # Find word position in original text
-            # Note: This is simplified - in full implementation we'd need
-            # proper mapping from normalized to original text
-            word_start = current_pos
-            word_end = current_pos + len(word)
+            # Calculate word position in normalized text
+            word_start_norm = current_pos
+            word_end_norm = current_pos + len(word)
+
+            # Map to original text position using CharMapping
+            if char_mapping is not None:
+                orig_start, orig_end = char_mapping.get_original_range(
+                    word_start_norm, word_end_norm
+                )
+            else:
+                # Fallback: use normalized positions
+                orig_start = word_start_norm
+                orig_end = word_end_norm
 
             timestamps.append({
                 "word": word,
                 "start": round(current_time, 3),
                 "end": round(current_time + word_duration, 3),
-                "original_pos": [word_start, word_end]
+                "original_pos": [orig_start, orig_end]
             })
 
             current_time += word_duration
-            current_pos = word_end + 1  # +1 for space
+            current_pos = word_end_norm + 1  # +1 for space
 
         return timestamps
 

@@ -142,9 +142,10 @@ def build_word_mapping(
     """Build word mapping between original and transformed text.
 
     This uses heuristics to match words:
-    1. Exact matches
-    2. Prefix/suffix matches
-    3. Proportional position fallback
+    1. Exact matches (same word)
+    2. Transliteration matches (feature -> фича)
+    3. For unmatched words, use the last matched original word
+       (handles expansion like 12345 -> "двенадцать тысяч триста сорок пять")
 
     Args:
         original: Original text
@@ -170,9 +171,9 @@ def build_word_mapping(
     # Build mapping using alignment heuristics
     word_map = {}
 
-    # Track which original words have been mapped
-    orig_used = [False] * len(orig_words)
+    # Track current position in original words
     orig_idx = 0
+    last_matched_orig_idx = 0
 
     for trans_idx, trans_word in enumerate(trans_words):
         trans_lower = trans_word.text.lower()
@@ -181,48 +182,69 @@ def build_word_mapping(
         best_match = None
         best_score = 0
 
-        # Look ahead in original words for a match
-        for i in range(orig_idx, min(orig_idx + 10, len(orig_words))):
-            if orig_used[i]:
-                continue
-
+        # Look ahead in original words for a match (limited lookahead)
+        lookahead_limit = min(orig_idx + 5, len(orig_words))
+        for i in range(orig_idx, lookahead_limit):
             orig_word = orig_words[i]
             orig_lower = orig_word.text.lower()
 
             score = 0
 
-            # Exact match
+            # Exact match (highest priority)
             if trans_lower == orig_lower:
                 score = 100
-            # Original word starts with transformed (getUserData -> гет, юзер, дата)
-            elif orig_lower.startswith(trans_lower[:3]) if len(trans_lower) >= 3 else False:
-                score = 50
-            # Transformed is transliteration of original (check first letters)
+            # Transformed is transliteration of original
             elif _is_possible_transliteration(orig_lower, trans_lower):
-                score = 40
-            # Position-based fallback
+                score = 80
+            # Check if original is a number and transformed could be part of it
+            elif orig_word.text.isdigit() and _is_russian_number_word(trans_lower):
+                score = 70
+            # First position gets some score
             elif i == orig_idx:
-                score = 10
+                score = 20
 
             if score > best_score:
                 best_score = score
                 best_match = i
 
-        if best_match is not None:
+        if best_match is not None and best_score >= 70:
+            # Good match found - advance original index
             word_map[trans_idx] = (best_match, best_match + 1)
-            orig_used[best_match] = True
-            # Move orig_idx forward
-            while orig_idx < len(orig_words) and orig_used[orig_idx]:
-                orig_idx += 1
+            last_matched_orig_idx = best_match
+            orig_idx = best_match + 1
+        elif best_match is not None and best_score >= 20:
+            # Weak match - could be expansion of previous word
+            # Check if we should use previous or current
+            if orig_idx > 0 and orig_idx <= len(orig_words):
+                # Use previous original word (expansion case)
+                word_map[trans_idx] = (last_matched_orig_idx, last_matched_orig_idx + 1)
+            else:
+                word_map[trans_idx] = (best_match, best_match + 1)
+                last_matched_orig_idx = best_match
+                orig_idx = best_match + 1
         else:
-            # No match found, use proportional position
-            ratio = trans_idx / len(trans_words)
-            fallback_idx = int(ratio * len(orig_words))
-            fallback_idx = min(fallback_idx, len(orig_words) - 1)
-            word_map[trans_idx] = (fallback_idx, fallback_idx + 1)
+            # No match found - use last matched original word
+            # This handles cases like number expansion
+            word_map[trans_idx] = (last_matched_orig_idx, last_matched_orig_idx + 1)
 
     mapping.word_map = word_map
     return mapping
+
+
+def _is_russian_number_word(word: str) -> bool:
+    """Check if word is a Russian number word."""
+    number_words = {
+        'ноль', 'один', 'одна', 'одно', 'два', 'две', 'три', 'четыре', 'пять',
+        'шесть', 'семь', 'восемь', 'девять', 'десять', 'одиннадцать',
+        'двенадцать', 'тринадцать', 'четырнадцать', 'пятнадцать',
+        'шестнадцать', 'семнадцать', 'восемнадцать', 'девятнадцать',
+        'двадцать', 'тридцать', 'сорок', 'пятьдесят', 'шестьдесят',
+        'семьдесят', 'восемьдесят', 'девяносто', 'сто', 'двести', 'триста',
+        'четыреста', 'пятьсот', 'шестьсот', 'семьсот', 'восемьсот',
+        'девятьсот', 'тысяча', 'тысячи', 'тысяч', 'миллион', 'миллиона',
+        'миллионов', 'миллиард', 'миллиарда', 'миллиардов',
+    }
+    return word.lower() in number_words
 
 
 def _is_possible_transliteration(english: str, russian: str) -> bool:
@@ -233,18 +255,33 @@ def _is_possible_transliteration(english: str, russian: str) -> bool:
     if not english or not russian:
         return False
 
+    # Check if english contains only ASCII letters
+    if not english.isascii() or not any(c.isalpha() for c in english):
+        return False
+
+    # Check if russian contains Cyrillic
+    if not any('\u0400' <= c <= '\u04ff' for c in russian):
+        return False
+
     # Common first-letter transliterations
     first_letter_map = {
-        'a': 'а', 'b': 'б', 'c': 'с', 'd': 'д', 'e': 'е',
-        'f': 'ф', 'g': 'г', 'h': 'х', 'i': 'и', 'j': 'дж',
-        'k': 'к', 'l': 'л', 'm': 'м', 'n': 'н', 'o': 'о',
-        'p': 'п', 'q': 'к', 'r': 'р', 's': 'с', 't': 'т',
-        'u': 'у', 'v': 'в', 'w': 'в', 'x': 'кс', 'y': 'й',
-        'z': 'з',
+        'a': ['а', 'э'], 'b': ['б'], 'c': ['с', 'к', 'ц'],
+        'd': ['д'], 'e': ['е', 'э', 'и'], 'f': ['ф'],
+        'g': ['г', 'дж'], 'h': ['х', 'г'], 'i': ['и', 'ай'],
+        'j': ['дж', 'й', 'ж'], 'k': ['к'], 'l': ['л'],
+        'm': ['м'], 'n': ['н'], 'o': ['о', 'а'],
+        'p': ['п'], 'q': ['к', 'кв'], 'r': ['р'],
+        's': ['с', 'ш', 'з'], 't': ['т'], 'u': ['у', 'ю', 'а'],
+        'v': ['в'], 'w': ['в', 'у'], 'x': ['кс', 'х', 'з'],
+        'y': ['й', 'и', 'ы'], 'z': ['з', 'ц'],
     }
 
     eng_first = english[0].lower()
     rus_first = russian[0].lower()
 
-    expected_rus = first_letter_map.get(eng_first, '')
-    return rus_first == expected_rus or (len(expected_rus) > 1 and russian.lower().startswith(expected_rus))
+    expected_options = first_letter_map.get(eng_first, [])
+    for expected in expected_options:
+        if russian.lower().startswith(expected):
+            return True
+
+    return False

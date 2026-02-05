@@ -1,0 +1,273 @@
+"""Tracked text for precise position mapping during transformations.
+
+This module provides a TrackedText class that wraps text and tracks
+all modifications, allowing precise mapping between original and
+transformed positions.
+"""
+
+import re
+from dataclasses import dataclass, field
+from typing import Callable, Match
+
+
+@dataclass
+class Replacement:
+    """A single replacement operation."""
+
+    orig_start: int  # Start position in original text
+    orig_end: int  # End position in original text
+    orig_text: str  # Original text that was replaced
+    new_text: str  # New text after replacement
+
+
+@dataclass
+class CharMapping:
+    """Character-level mapping from transformed to original positions.
+
+    For each character in transformed text, stores the corresponding
+    range in original text.
+    """
+
+    original: str
+    transformed: str
+    # For each position in transformed, (orig_start, orig_end)
+    # If a transformed char maps to multiple original chars, orig_end > orig_start + 1
+    # If multiple transformed chars map to one original char, they share the same range
+    char_map: list[tuple[int, int]] = field(default_factory=list)
+
+    def get_original_range(self, trans_start: int, trans_end: int) -> tuple[int, int]:
+        """Map a range in transformed text to original text.
+
+        Args:
+            trans_start: Start position in transformed text
+            trans_end: End position in transformed text
+
+        Returns:
+            Tuple of (orig_start, orig_end)
+        """
+        if not self.char_map:
+            return (trans_start, trans_end)
+
+        # Clamp to valid range
+        trans_start = max(0, min(trans_start, len(self.char_map) - 1))
+        trans_end = max(0, min(trans_end, len(self.char_map)))
+
+        if trans_start >= len(self.char_map):
+            # Position is past end of text
+            if self.char_map:
+                return (self.char_map[-1][1], self.char_map[-1][1])
+            return (len(self.original), len(self.original))
+
+        # Get the range covered by all characters in the transformed range
+        orig_start = self.char_map[trans_start][0]
+        orig_end = self.char_map[trans_start][1]
+
+        for i in range(trans_start + 1, min(trans_end, len(self.char_map))):
+            orig_start = min(orig_start, self.char_map[i][0])
+            orig_end = max(orig_end, self.char_map[i][1])
+
+        return (orig_start, orig_end)
+
+    def get_original_word_range(self, trans_pos: int) -> tuple[int, int]:
+        """Get word boundaries in original text for a position in transformed.
+
+        Args:
+            trans_pos: Position in transformed text
+
+        Returns:
+            Tuple of (word_start, word_end) in original text
+        """
+        orig_start, orig_end = self.get_original_range(trans_pos, trans_pos + 1)
+
+        # Expand to word boundaries
+        word_start = orig_start
+        word_end = orig_end
+
+        # Find word start
+        while word_start > 0 and not self.original[word_start - 1].isspace():
+            word_start -= 1
+
+        # Find word end
+        while word_end < len(self.original) and not self.original[word_end].isspace():
+            word_end += 1
+
+        return (word_start, word_end)
+
+
+class TrackedText:
+    """Text wrapper that tracks all modifications for position mapping.
+
+    Usage:
+        tracked = TrackedText("Hello getUserData")
+        tracked.sub(r'getUserData', 'гет юзер дата')
+        mapping = tracked.build_mapping()
+        # mapping.get_original_range(6, 9) -> position of "getUserData"
+    """
+
+    def __init__(self, text: str):
+        self.original = text
+        self._current = text
+        self._replacements: list[Replacement] = []
+        # Offset tracking: list of (position_in_current, offset_delta)
+        # offset_delta = len(new) - len(old)
+        self._offsets: list[tuple[int, int, int]] = []
+        # (current_pos, orig_start, orig_end) for each replacement
+
+    @property
+    def text(self) -> str:
+        """Get current text."""
+        return self._current
+
+    def sub(
+        self,
+        pattern: str | re.Pattern,
+        repl: str | Callable[[Match], str],
+        count: int = 0,
+        flags: int = 0,
+    ) -> "TrackedText":
+        """Perform regex substitution with tracking.
+
+        Args:
+            pattern: Regex pattern
+            repl: Replacement string or function
+            count: Maximum replacements (0 = unlimited)
+            flags: Regex flags
+
+        Returns:
+            self for chaining
+        """
+        if isinstance(pattern, str):
+            pattern = re.compile(pattern, flags)
+
+        # Find all matches first
+        matches = list(pattern.finditer(self._current))
+        if count > 0:
+            matches = matches[:count]
+
+        # Process matches in reverse order to maintain positions
+        for match in reversed(matches):
+            start, end = match.start(), match.end()
+            old_text = match.group()
+
+            # Get replacement text
+            if callable(repl):
+                new_text = repl(match)
+            else:
+                new_text = match.expand(repl)
+
+            # Calculate original positions
+            orig_start = self._to_original_pos(start)
+            orig_end = self._to_original_pos(end)
+
+            # Record replacement
+            self._replacements.append(
+                Replacement(
+                    orig_start=orig_start,
+                    orig_end=orig_end,
+                    orig_text=old_text,
+                    new_text=new_text,
+                )
+            )
+
+            # Update text
+            self._current = self._current[:start] + new_text + self._current[end:]
+
+            # Record offset change
+            self._offsets.append((start, orig_start, orig_end))
+
+        return self
+
+    def replace(self, old: str, new: str, count: int = -1) -> "TrackedText":
+        """Perform string replacement with tracking.
+
+        Args:
+            old: String to replace
+            new: Replacement string
+            count: Maximum replacements (-1 = unlimited)
+
+        Returns:
+            self for chaining
+        """
+        # Escape special regex characters
+        pattern = re.escape(old)
+        max_count = 0 if count < 0 else count
+        return self.sub(pattern, new, count=max_count)
+
+    def _to_original_pos(self, current_pos: int) -> int:
+        """Convert position in current text to position in original text."""
+        # Start from original position = current position
+        orig_pos = current_pos
+
+        # Apply all offset adjustments
+        for repl in self._replacements:
+            # If this replacement was before our position, adjust
+            if repl.orig_start < orig_pos:
+                # How much did this replacement shift things?
+                shift = len(repl.new_text) - (repl.orig_end - repl.orig_start)
+                orig_pos -= shift
+
+        return orig_pos
+
+    def build_mapping(self) -> CharMapping:
+        """Build character-level mapping from tracked replacements.
+
+        Returns:
+            CharMapping with position mappings
+        """
+        if not self._replacements:
+            # No changes - identity mapping
+            char_map = [(i, i + 1) for i in range(len(self._current))]
+            return CharMapping(
+                original=self.original,
+                transformed=self._current,
+                char_map=char_map,
+            )
+
+        # Build character map by replaying replacements
+        # Start with identity mapping
+        char_map: list[tuple[int, int]] = [(i, i + 1) for i in range(len(self.original))]
+
+        # Sort replacements by original position
+        sorted_repls = sorted(self._replacements, key=lambda r: r.orig_start)
+
+        # Apply each replacement to build the mapping
+        offset = 0  # Cumulative offset in transformed text
+
+        new_char_map: list[tuple[int, int]] = []
+        orig_idx = 0
+
+        for repl in sorted_repls:
+            # Copy unchanged characters before this replacement
+            while orig_idx < repl.orig_start:
+                new_char_map.append((orig_idx, orig_idx + 1))
+                orig_idx += 1
+
+            # Add mapping for replacement
+            # All characters in new_text map to the original range
+            for _ in range(len(repl.new_text)):
+                new_char_map.append((repl.orig_start, repl.orig_end))
+
+            orig_idx = repl.orig_end
+
+        # Copy remaining unchanged characters
+        while orig_idx < len(self.original):
+            new_char_map.append((orig_idx, orig_idx + 1))
+            orig_idx += 1
+
+        return CharMapping(
+            original=self.original,
+            transformed=self._current,
+            char_map=new_char_map,
+        )
+
+
+def create_tracked_text(text: str) -> TrackedText:
+    """Create a new TrackedText instance.
+
+    Args:
+        text: Original text
+
+    Returns:
+        TrackedText instance
+    """
+    return TrackedText(text)
