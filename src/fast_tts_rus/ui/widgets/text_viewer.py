@@ -35,10 +35,6 @@ class TextViewerWidget(QTextBrowser):
         self.text_format: TextFormat = TextFormat.MARKDOWN
         self._last_highlighted_pos: tuple[int, int] | None = None
 
-        # Position mapping: original text position -> rendered document position
-        # Built after each render to enable precise cursor positioning
-        self._position_map: list[int] | None = None
-
         # Setup highlighting format
         self._highlight_format = QTextCharFormat()
         self._highlight_format.setBackground(QColor("#FFFF99"))  # Yellow background
@@ -83,7 +79,6 @@ class TextViewerWidget(QTextBrowser):
         """Render text in current format."""
         if not self.current_entry:
             self.clear()
-            self._position_map = None
             return
 
         text = self.current_entry.original_text
@@ -103,15 +98,8 @@ class TextViewerWidget(QTextBrowser):
             {html}
             """
             self.setHtml(styled_html)
-
-            # Build position map: original -> rendered
-            self._position_map = self._build_position_map(
-                text, self.document().toPlainText()
-            )
         else:
             self.setPlainText(text)
-            # In plain text mode, positions are 1:1
-            self._position_map = None
 
     def highlight_at_position(self, position_sec: float) -> None:
         """Highlight word at the given audio position.
@@ -141,12 +129,13 @@ class TextViewerWidget(QTextBrowser):
         # Clear previous highlight
         self._clear_highlight()
 
-        # Apply new highlight
-        self._highlight_range(start, end)
+        # Apply new highlight and get document position
+        doc_pos = self._highlight_range(start, end)
         self._last_highlighted_pos = (start, end)
 
         # Scroll to visible
-        self._ensure_visible(start)
+        if doc_pos is not None:
+            self._ensure_visible_at_doc_pos(doc_pos)
 
     def _find_word_at(self, position_sec: float) -> dict[str, Any] | None:
         """Find word timestamp at given position."""
@@ -161,80 +150,76 @@ class TextViewerWidget(QTextBrowser):
 
         return None
 
-    def _highlight_range(self, start: int, end: int) -> None:
-        """Highlight text range using position mapping.
+    def _highlight_range(self, start: int, end: int) -> int | None:
+        """Highlight text range in the document.
 
-        Uses pre-built position map to convert original text positions
-        to rendered document positions, avoiding unreliable word search.
+        For plain text: positions are 1:1.
+        For Markdown: finds the word in rendered document by searching.
+
+        Returns:
+            Document position of the highlighted word, or None if not found.
         """
-        if self.text_format == TextFormat.PLAIN or self._position_map is None:
+        if self.text_format == TextFormat.PLAIN:
             # Plain text mode: positions are 1:1
             cursor = self.textCursor()
             cursor.setPosition(start)
             cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
             cursor.mergeCharFormat(self._highlight_format)
+            return start
         else:
-            # Markdown mode: use position map
-            doc_len = len(self.document().toPlainText())
+            # Markdown mode: find the word in rendered document
+            if not self.current_entry:
+                return None
 
-            # Map original positions to rendered document positions
-            if start < len(self._position_map):
-                doc_start = self._position_map[start]
-            else:
-                doc_start = doc_len
+            original_text = self.current_entry.original_text
+            if start >= len(original_text) or end > len(original_text):
+                return None
 
-            # For end position, find the mapped position
-            if end <= len(self._position_map):
-                # Map end-1 and add 1 to get the end of the last character
-                doc_end = self._position_map[min(end - 1, len(self._position_map) - 1)] + 1
-            else:
-                doc_end = doc_len
+            # Get the word from original text
+            word = original_text[start:end].strip()
+            if not word:
+                return None
 
-            # Clamp to document bounds
-            doc_start = max(0, min(doc_start, doc_len))
-            doc_end = max(doc_start, min(doc_end, doc_len))
+            # Count which occurrence this is in the original text
+            occurrence = self._count_word_occurrences_before(original_text, word, start)
 
-            cursor = self.textCursor()
-            cursor.setPosition(doc_start)
-            cursor.setPosition(doc_end, QTextCursor.MoveMode.KeepAnchor)
-            cursor.mergeCharFormat(self._highlight_format)
+            # Find that occurrence in the rendered document
+            rendered = self.document().toPlainText()
+            doc_pos = self._find_nth_occurrence(rendered, word, occurrence)
 
-    def _build_position_map(self, original: str, rendered: str) -> list[int]:
-        """Build position map from original text to rendered document.
+            if doc_pos >= 0:
+                cursor = self.textCursor()
+                cursor.setPosition(doc_pos)
+                cursor.setPosition(doc_pos + len(word), QTextCursor.MoveMode.KeepAnchor)
+                cursor.mergeCharFormat(self._highlight_format)
+                return doc_pos
 
-        Uses sequence alignment to map each character in original text
-        to its position in the rendered document.
+            return None
 
-        Returns:
-            List where position_map[orig_idx] = rendered_idx
-        """
-        # Simple alignment using longest common subsequence approach
-        # For each character in original, find its position in rendered
+    def _count_word_occurrences_before(self, text: str, word: str, pos: int) -> int:
+        """Count how many times word appears before position pos."""
+        count = 0
+        search_pos = 0
+        while search_pos < pos:
+            idx = text.find(word, search_pos)
+            if idx == -1 or idx >= pos:
+                break
+            count += 1
+            search_pos = idx + 1
+        return count
 
-        position_map = []
-        rendered_idx = 0
+    def _find_nth_occurrence(self, text: str, word: str, n: int) -> int:
+        """Find the nth (0-indexed) occurrence of word in text."""
+        pos = 0
+        for i in range(n + 1):
+            idx = text.find(word, pos)
+            if idx == -1:
+                return -1
+            if i == n:
+                return idx
+            pos = idx + 1
+        return -1
 
-        for orig_idx, orig_char in enumerate(original):
-            # Skip whitespace differences (Markdown may normalize whitespace)
-            while (rendered_idx < len(rendered) and
-                   rendered[rendered_idx] != orig_char and
-                   rendered[rendered_idx].isspace() and
-                   orig_char.isspace()):
-                rendered_idx += 1
-
-            # Find matching character in rendered
-            if rendered_idx < len(rendered) and rendered[rendered_idx] == orig_char:
-                position_map.append(rendered_idx)
-                rendered_idx += 1
-            elif orig_char.isspace():
-                # Whitespace might be normalized, map to current position
-                position_map.append(max(0, rendered_idx - 1))
-            else:
-                # Character might be removed by Markdown (e.g., ** for bold)
-                # Map to the last valid position
-                position_map.append(max(0, rendered_idx - 1) if rendered_idx > 0 else 0)
-
-        return position_map
 
     def _clear_highlight(self) -> None:
         """Clear any existing highlight."""
@@ -251,14 +236,8 @@ class TextViewerWidget(QTextBrowser):
         self._render_text()
         self._last_highlighted_pos = None
 
-    def _ensure_visible(self, char_pos: int) -> None:
-        """Scroll to make character position visible without setting cursor."""
-        # Map original position to document position
-        if self._position_map is not None and char_pos < len(self._position_map):
-            doc_pos = self._position_map[char_pos]
-        else:
-            doc_pos = char_pos
-
+    def _ensure_visible_at_doc_pos(self, doc_pos: int) -> None:
+        """Scroll to make document position visible without setting cursor."""
         # Create temporary cursor to find position
         cursor = QTextCursor(self.document())
         doc_len = len(self.document().toPlainText())
