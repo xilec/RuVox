@@ -15,6 +15,7 @@ from fast_tts_rus.ui.models.config import UIConfig
 from fast_tts_rus.ui.services.storage import StorageService
 from fast_tts_rus.ui.services.cleanup import CleanupWorker
 from fast_tts_rus.ui.services.tts_worker import TTSWorker
+from fast_tts_rus.ui.services.hotkeys import HotkeyService
 
 
 class TTSApplication(QObject):
@@ -40,6 +41,7 @@ class TTSApplication(QObject):
         self.storage: StorageService | None = None
         self.cleanup_worker: CleanupWorker | None = None
         self.tts_worker: TTSWorker | None = None
+        self.hotkey_service: HotkeyService | None = None
         self.tray_icon: QSystemTrayIcon | None = None
         self._main_window = None  # Lazy loaded
 
@@ -49,6 +51,7 @@ class TTSApplication(QObject):
         self._init_services()
         self._init_tray()
         self._connect_signals()
+        self._register_hotkeys()
 
     def _load_config(self) -> None:
         """Load configuration from file."""
@@ -62,6 +65,7 @@ class TTSApplication(QObject):
         self.storage = StorageService(self.config)
         self.cleanup_worker = CleanupWorker(self.config, self.storage, self)
         self.tts_worker = TTSWorker(self.config, self.storage, self)
+        self.hotkey_service = HotkeyService(self.config, self)
         # Run initial cleanup
         self.cleanup_worker.run_cleanup()
 
@@ -132,6 +136,11 @@ class TTSApplication(QObject):
         """Connect internal signals."""
         self.read_now_triggered.connect(self._on_read_now)
         self.read_later_triggered.connect(self._on_read_later)
+
+        # Hotkey service signals
+        self.hotkey_service.read_now_triggered.connect(self.read_now)
+        self.hotkey_service.read_later_triggered.connect(self.read_later)
+        self.hotkey_service.registration_failed.connect(self._on_hotkey_registration_failed)
 
         # TTS worker signals
         self.tts_worker.completed.connect(self._on_tts_completed)
@@ -290,6 +299,25 @@ class TTSApplication(QObject):
             f"Ошибка загрузки модели: {error_msg[:50]}",
             QSystemTrayIcon.MessageIcon.Critical,
             5000,
+        )
+
+    def _register_hotkeys(self) -> None:
+        """Try to register global hotkeys."""
+        # This will emit registration_failed if unsuccessful
+        self.hotkey_service.register()
+
+    def _on_hotkey_registration_failed(self, message: str) -> None:
+        """Handle hotkey registration failure.
+
+        Shows a brief notification - user can see full instructions
+        in the settings dialog.
+        """
+        # Only show brief message, full instructions available in settings
+        self.tray_icon.showMessage(
+            "Fast TTS RUS",
+            "Глобальные хоткеи недоступны. См. настройки для ручной настройки.",
+            QSystemTrayIcon.MessageIcon.Information,
+            3000,
         )
 
     def _show_settings(self) -> None:
