@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
 
 from fast_tts_rus.ui.widgets.queue_list import QueueListWidget
 from fast_tts_rus.ui.widgets.player import PlayerWidget
+from fast_tts_rus.ui.widgets.text_viewer import TextViewerWidget
 from fast_tts_rus.ui.models.entry import TextEntry, EntryStatus
 
 
@@ -66,13 +67,9 @@ class MainWindow(QMainWindow):
         # Connect queue signals
         self._connect_queue_signals()
 
-        # Text viewer placeholder (right)
-        text_placeholder = QLabel("[ Текст ]")
-        text_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        text_placeholder.setStyleSheet(
-            "background-color: #ffffff; border: 1px solid #ccc;"
-        )
-        splitter.addWidget(text_placeholder)
+        # Text viewer (right)
+        self.text_viewer = TextViewerWidget()
+        splitter.addWidget(self.text_viewer)
 
         # Set initial splitter sizes (1:2 ratio)
         splitter.setSizes([300, 600])
@@ -90,6 +87,7 @@ class MainWindow(QMainWindow):
         self.player.prev_requested.connect(self._play_prev)
         self.player.playback_started.connect(self._on_playback_started)
         self.player.playback_stopped.connect(self._on_playback_stopped)
+        self.player.position_changed.connect(self._on_playback_position_changed)
 
     def _connect_queue_signals(self) -> None:
         """Connect queue list signals."""
@@ -98,10 +96,13 @@ class MainWindow(QMainWindow):
         self.queue_list.entry_regenerate_requested.connect(self._on_entry_regenerate_requested)
         self.queue_list.entry_delete_requested.connect(self._on_entry_delete_requested)
 
-    def _on_entry_selected(self, entry) -> None:
+    def _on_entry_selected(self, entry: TextEntry) -> None:
         """Handle entry selection - show text in viewer."""
-        # TODO: Update text viewer
-        pass
+        # Load timestamps if available
+        timestamps = None
+        if self.app.storage and entry.timestamps_path:
+            timestamps = self.app.storage.load_timestamps(entry.id)
+        self.text_viewer.set_entry(entry, timestamps)
 
     def _on_entry_play_requested(self, entry: TextEntry) -> None:
         """Handle play request."""
@@ -111,6 +112,10 @@ class MainWindow(QMainWindow):
         if self.app.storage:
             audio_dir = self.app.storage.audio_dir
             if self.player.load_entry(entry, audio_dir):
+                # Load text and timestamps into viewer
+                timestamps = self.app.storage.load_timestamps(entry.id)
+                self.text_viewer.set_entry(entry, timestamps)
+                # Start playback
                 self.player.play()
                 self.queue_list.set_current_playing(entry.id)
 
@@ -142,6 +147,10 @@ class MainWindow(QMainWindow):
     def _on_playback_stopped(self) -> None:
         """Handle playback stopped."""
         self.queue_list.set_current_playing(None)
+
+    def _on_playback_position_changed(self, position_sec: float) -> None:
+        """Handle playback position change - update text highlighting."""
+        self.text_viewer.highlight_at_position(position_sec)
 
     def _play_next(self) -> None:
         """Play next entry in queue."""
