@@ -155,6 +155,8 @@ class UIConfig:
 
     # Поведение
     notify_on_ready: bool = True  # Уведомление при готовности (отложенный режим)
+    notify_on_error: bool = True  # Уведомление при ошибке TTS
+    text_format: str = "markdown" # Формат текста по умолчанию: "markdown" или "plain"
 
     # Плеер хоткеи (локальные, в окне)
     player_hotkeys: dict = field(default_factory=lambda: {
@@ -183,6 +185,28 @@ class UIConfig:
 └── logs/
     └── app.log              # Логи (опционально)
 ```
+
+### config.json формат
+
+```json
+{
+  "version": 1,
+  "cache_dir": "~/.cache/fast_tts_rus",
+  "hotkey_read_now": "Control+t",
+  "hotkey_read_later": "Control+Shift+t",
+  "speaker": "xenia",
+  "speech_rate": 1.0,
+  "sample_rate": 48000,
+  "history_days": 14,
+  "audio_max_files": 5,
+  "audio_regenerated_hours": 24,
+  "notify_on_ready": true,
+  "notify_on_error": true,
+  "text_format": "markdown"
+}
+```
+
+**Версионирование:** При изменении формата конфига увеличиваем `version` и добавляем миграцию в коде.
 
 ### history.json формат
 
@@ -249,19 +273,56 @@ def process_with_positions(self, text: str) -> tuple[str, list[PositionMapping]]
 ### 1. Entry Point (ui/main.py)
 
 ```python
+from PyQt6.QtNetwork import QLocalServer, QLocalSocket
+
 def main():
     """Entry point для UI приложения."""
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)  # Не закрывать при скрытии окна
 
-    # Системный стиль
-    app.setStyle("Fusion")  # или оставить системный
+    # Single instance check
+    socket = QLocalSocket()
+    socket.connectToServer("fast-tts-rus")
+    if socket.waitForConnected(500):
+        # Приложение уже запущено — отправить команду и выйти
+        if "--read-now" in sys.argv:
+            socket.write(b"read-now")
+        elif "--read-later" in sys.argv:
+            socket.write(b"read-later")
+        else:
+            socket.write(b"show")
+        socket.waitForBytesWritten()
+        socket.disconnectFromServer()
+        sys.exit(0)
+
+    # Создаём сервер для приёма команд от других экземпляров
+    server = QLocalServer()
+    server.removeServer("fast-tts-rus")  # Удалить старый сокет если остался
+    server.listen("fast-tts-rus")
 
     # Создание и запуск приложения
     tts_app = TTSApplication()
     tts_app.start()
 
+    # Обработка команд от других экземпляров
+    server.newConnection.connect(lambda: _handle_remote_command(server, tts_app))
+
     sys.exit(app.exec())
+
+def _handle_remote_command(server: QLocalServer, app: TTSApplication):
+    """Обработка команды от другого экземпляра."""
+    conn = server.nextPendingConnection()
+    if conn.waitForReadyRead(1000):
+        cmd = conn.readAll().data().decode()
+        if cmd == "read-now":
+            app.read_now()
+        elif cmd == "read-later":
+            app.read_later()
+        elif cmd == "show":
+            app.main_window.show()
+            app.main_window.raise_()
+            app.main_window.activateWindow()
+    conn.disconnectFromServer()
 ```
 
 CLI:
@@ -306,16 +367,30 @@ class TTSApplication(QObject):
     def read_now(self):
         """Читать текст из буфера сразу."""
         text = QApplication.clipboard().text()
-        if text.strip():
-            entry = self.storage.add_entry(text)
-            self.tts_worker.process(entry, play_when_ready=True)
+        if not text or not text.strip():
+            self.tray_icon.showMessage(
+                "Fast TTS RUS",
+                "Буфер обмена пуст",
+                QSystemTrayIcon.MessageIcon.Warning,
+                2000
+            )
+            return
+        entry = self.storage.add_entry(text.strip())
+        self.tts_worker.process(entry, play_when_ready=True)
 
     def read_later(self):
         """Добавить текст в очередь."""
         text = QApplication.clipboard().text()
-        if text.strip():
-            entry = self.storage.add_entry(text)
-            self.tts_worker.process(entry, play_when_ready=False)
+        if not text or not text.strip():
+            self.tray_icon.showMessage(
+                "Fast TTS RUS",
+                "Буфер обмена пуст",
+                QSystemTrayIcon.MessageIcon.Warning,
+                2000
+            )
+            return
+        entry = self.storage.add_entry(text.strip())
+        self.tts_worker.process(entry, play_when_ready=False)
 ```
 
 **Tray меню:**
@@ -368,11 +443,21 @@ class TTSApplication(QObject):
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
+**Размеры окна:**
+- Начальный: 900×600
+- Минимальный: 600×400
+- Запоминать размер и позицию между сессиями
+
 **Структура:**
 ```python
 class MainWindow(QMainWindow):
     def __init__(self, app: TTSApplication):
         self.app = app
+
+        # Размеры
+        self.setMinimumSize(600, 400)
+        self.resize(900, 600)
+        self._restore_geometry()  # Из config
 
         # Виджеты
         self.queue_list = QueueListWidget()
@@ -385,6 +470,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         """Скрыть в tray вместо закрытия."""
+        self._save_geometry()  # Сохранить размер/позицию
         event.ignore()
         self.hide()
 ```
@@ -397,9 +483,15 @@ class MainWindow(QMainWindow):
 - Отображение списка TextEntry
 - Статус: pending (⏳), processing (🔄), ready (✓), error (❌)
 - Индикатор текущего воспроизводимого
-- Контекстное меню: перегенерировать, удалить, копировать текст
+- Контекстное меню:
+  - Воспроизвести
+  - Перегенерировать
+  - Копировать текст
+  - Копировать нормализованный текст (для отладки)
+  - Удалить
 - Двойной клик — воспроизвести
 - Сортировка: новые сверху
+- При ошибке: tooltip с текстом ошибки при наведении
 
 ```python
 class QueueListWidget(QListWidget):
@@ -563,6 +655,11 @@ class PlayerWidget(QWidget):
 | Предыдущий | P | `play_prev()` |
 | Повтор фразы | R | `seek_to_sentence_start()` |
 
+**Определение границ предложений для `seek_to_sentence_start()`:**
+- Используем timestamps для поиска текущего слова
+- Ищем назад до знака препинания (. ! ?) или начала текста
+- Перематываем на timestamp первого слова после найденной границы
+
 ---
 
 ### 7. SettingsDialog (dialogs/settings.py)
@@ -613,28 +710,43 @@ class PlayerWidget(QWidget):
 **xdg-desktop-portal GlobalShortcuts интеграция:**
 
 ```python
-import dbus
-from dbus.mainloop.glib import DBusGMainLoop
+from PyQt6.QtDBus import QDBusConnection, QDBusInterface, QDBusMessage
 
 class HotkeyService(QObject):
+    """Глобальные хоткеи через xdg-desktop-portal.
+
+    Использует QDBusConnection для совместимости с PyQt6 event loop.
+    """
     read_now_triggered = Signal()
     read_later_triggered = Signal()
 
-    PORTAL_BUS = "org.freedesktop.portal.Desktop"
+    PORTAL_SERVICE = "org.freedesktop.portal.Desktop"
     PORTAL_PATH = "/org/freedesktop/portal/desktop"
     PORTAL_IFACE = "org.freedesktop.portal.GlobalShortcuts"
 
     def __init__(self, config: UIConfig):
+        super().__init__()
         self.config = config
         self.session_handle = None
+        self.bus = QDBusConnection.sessionBus()
 
     def register(self):
         """Регистрация хоткеев через портал."""
-        bus = dbus.SessionBus()
-        portal = bus.get_object(self.PORTAL_BUS, self.PORTAL_PATH)
+        if not self.bus.isConnected():
+            self._emit_fallback_needed()
+            return
 
-        # CreateSession
-        shortcuts_iface = dbus.Interface(portal, self.PORTAL_IFACE)
+        # Создаём интерфейс портала
+        portal = QDBusInterface(
+            self.PORTAL_SERVICE,
+            self.PORTAL_PATH,
+            self.PORTAL_IFACE,
+            self.bus
+        )
+
+        if not portal.isValid():
+            self._emit_fallback_needed()
+            return
 
         # Описание хоткеев
         shortcuts = [
@@ -650,15 +762,32 @@ class HotkeyService(QObject):
             },
         ]
 
-        # BindShortcuts и подписка на сигнал Activated
+        # CreateSession → BindShortcuts → подписка на Activated signal
         # ...
 
-    def _on_shortcut_activated(self, session_handle, shortcut_id, timestamp, options):
+        # Подписка на сигнал активации
+        self.bus.connect(
+            self.PORTAL_SERVICE,
+            "",  # path будет из session_handle
+            self.PORTAL_IFACE,
+            "Activated",
+            self._on_shortcut_activated
+        )
+
+    def _on_shortcut_activated(self, message: QDBusMessage):
         """Обработчик активации хоткея."""
+        args = message.arguments()
+        shortcut_id = args[1] if len(args) > 1 else None
+
         if shortcut_id == "read-now":
             self.read_now_triggered.emit()
         elif shortcut_id == "read-later":
             self.read_later_triggered.emit()
+
+    def _emit_fallback_needed(self):
+        """Portal недоступен, нужен CLI fallback."""
+        # Показать инструкцию пользователю
+        pass
 ```
 
 **Fallback:** Если портал недоступен — показать инструкцию пользователю настроить хоткеи в композиторе с вызовом CLI.
@@ -677,13 +806,49 @@ class TTSWorker(QObject):
     completed = Signal(str)         # entry_id
     error = Signal(str, str)        # entry_id, error_message
 
+    # Сигналы загрузки модели
+    model_loading = Signal()        # Начало загрузки модели
+    model_loaded = Signal()         # Модель загружена
+    model_error = Signal(str)       # Ошибка загрузки
+
     def __init__(self, config: UIConfig, storage: StorageService):
         self.config = config
         self.storage = storage
         self.pipeline = TTSPipeline()  # Существующий пайплайн
         self.silero_model = None       # Lazy load
+        self.model_loading_in_progress = False
         self.thread_pool = QThreadPool()
         self.play_queue: list[str] = []  # entry_ids to play after ready
+
+    def ensure_model_loaded(self):
+        """Загрузить модель если ещё не загружена.
+
+        Первая загрузка скачивает ~100MB, показываем прогресс.
+        """
+        if self.silero_model is not None:
+            return True
+
+        if self.model_loading_in_progress:
+            return False
+
+        self.model_loading_in_progress = True
+        self.model_loading.emit()
+
+        # Загрузка в фоновом потоке
+        runnable = ModelLoadRunnable(self.config)
+        runnable.signals.loaded.connect(self._on_model_loaded)
+        runnable.signals.error.connect(self._on_model_error)
+        self.thread_pool.start(runnable)
+        return False
+
+    def _on_model_loaded(self, model):
+        self.silero_model = model
+        self.model_loading_in_progress = False
+        self.model_loaded.emit()
+
+    def _on_model_error(self, error_msg: str):
+        self.model_loading_in_progress = False
+        self.model_error.emit(error_msg)
 
     def process(self, entry: TextEntry, play_when_ready: bool = False):
         """Запустить TTS для entry в фоне."""
@@ -741,6 +906,13 @@ class TTSRunnable(QRunnable):
             self.storage.update_entry(self.entry)
             self.signals.error.emit(self.entry.id, str(e))
 ```
+
+**Обработка ошибок TTS:**
+- Статус entry меняется на `ERROR`
+- В `error_message` сохраняется текст ошибки
+- Если `config.notify_on_error=True` — показываем уведомление в tray
+- В QueueListWidget: иконка ❌, tooltip с текстом ошибки при наведении
+- Можно перегенерировать через контекстное меню
 
 ---
 
