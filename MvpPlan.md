@@ -38,7 +38,8 @@ ui = [
 python3Packages.pyqt6
 python3Packages.dbus-python
 qt6.qtmultimedia
-xdg-desktop-portal  # runtime
+qt6.qtsvg            # SVG icons support
+xdg-desktop-portal   # runtime
 ```
 
 ---
@@ -88,9 +89,9 @@ fast_tts_rus/
 │       │
 │       └── resources/
 │           └── icons/
-│               ├── tray.png
-│               ├── play.png
-│               ├── pause.png
+│               ├── tray.svg
+│               ├── play.svg
+│               ├── pause.svg
 │               └── ...
 ```
 
