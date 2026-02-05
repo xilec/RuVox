@@ -35,6 +35,10 @@ class TextViewerWidget(QTextBrowser):
         self.text_format: TextFormat = TextFormat.MARKDOWN
         self._last_highlighted_pos: tuple[int, int] | None = None
 
+        # Position mapping: original text position -> rendered document position
+        # Built after each render to enable precise cursor positioning
+        self._position_map: list[int] | None = None
+
         # Setup highlighting format
         self._highlight_format = QTextCharFormat()
         self._highlight_format.setBackground(QColor("#FFFF99"))  # Yellow background
@@ -79,6 +83,7 @@ class TextViewerWidget(QTextBrowser):
         """Render text in current format."""
         if not self.current_entry:
             self.clear()
+            self._position_map = None
             return
 
         text = self.current_entry.original_text
@@ -98,8 +103,15 @@ class TextViewerWidget(QTextBrowser):
             {html}
             """
             self.setHtml(styled_html)
+
+            # Build position map: original -> rendered
+            self._position_map = self._build_position_map(
+                text, self.document().toPlainText()
+            )
         else:
             self.setPlainText(text)
+            # In plain text mode, positions are 1:1
+            self._position_map = None
 
     def highlight_at_position(self, position_sec: float) -> None:
         """Highlight word at the given audio position.
@@ -150,30 +162,79 @@ class TextViewerWidget(QTextBrowser):
         return None
 
     def _highlight_range(self, start: int, end: int) -> None:
-        """Highlight text range.
+        """Highlight text range using position mapping.
 
-        Note: In Markdown mode, positions may not match exactly due to HTML
-        conversion. This is a best-effort implementation.
+        Uses pre-built position map to convert original text positions
+        to rendered document positions, avoiding unreliable word search.
         """
-        if self.text_format == TextFormat.PLAIN:
+        if self.text_format == TextFormat.PLAIN or self._position_map is None:
+            # Plain text mode: positions are 1:1
             cursor = self.textCursor()
             cursor.setPosition(start)
             cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
             cursor.mergeCharFormat(self._highlight_format)
         else:
-            # In Markdown mode, we need to search for the text
-            # This is approximate since HTML conversion changes positions
-            if not self.current_entry:
-                return
+            # Markdown mode: use position map
+            doc_len = len(self.document().toPlainText())
 
-            # Get the original word
-            original_text = self.current_entry.original_text
-            if start < len(original_text) and end <= len(original_text):
-                word = original_text[start:end]
-                # Find and highlight in the rendered document
-                cursor = self.document().find(word)
-                if not cursor.isNull():
-                    cursor.mergeCharFormat(self._highlight_format)
+            # Map original positions to rendered document positions
+            if start < len(self._position_map):
+                doc_start = self._position_map[start]
+            else:
+                doc_start = doc_len
+
+            # For end position, find the mapped position
+            if end <= len(self._position_map):
+                # Map end-1 and add 1 to get the end of the last character
+                doc_end = self._position_map[min(end - 1, len(self._position_map) - 1)] + 1
+            else:
+                doc_end = doc_len
+
+            # Clamp to document bounds
+            doc_start = max(0, min(doc_start, doc_len))
+            doc_end = max(doc_start, min(doc_end, doc_len))
+
+            cursor = self.textCursor()
+            cursor.setPosition(doc_start)
+            cursor.setPosition(doc_end, QTextCursor.MoveMode.KeepAnchor)
+            cursor.mergeCharFormat(self._highlight_format)
+
+    def _build_position_map(self, original: str, rendered: str) -> list[int]:
+        """Build position map from original text to rendered document.
+
+        Uses sequence alignment to map each character in original text
+        to its position in the rendered document.
+
+        Returns:
+            List where position_map[orig_idx] = rendered_idx
+        """
+        # Simple alignment using longest common subsequence approach
+        # For each character in original, find its position in rendered
+
+        position_map = []
+        rendered_idx = 0
+
+        for orig_idx, orig_char in enumerate(original):
+            # Skip whitespace differences (Markdown may normalize whitespace)
+            while (rendered_idx < len(rendered) and
+                   rendered[rendered_idx] != orig_char and
+                   rendered[rendered_idx].isspace() and
+                   orig_char.isspace()):
+                rendered_idx += 1
+
+            # Find matching character in rendered
+            if rendered_idx < len(rendered) and rendered[rendered_idx] == orig_char:
+                position_map.append(rendered_idx)
+                rendered_idx += 1
+            elif orig_char.isspace():
+                # Whitespace might be normalized, map to current position
+                position_map.append(max(0, rendered_idx - 1))
+            else:
+                # Character might be removed by Markdown (e.g., ** for bold)
+                # Map to the last valid position
+                position_map.append(max(0, rendered_idx - 1) if rendered_idx > 0 else 0)
+
+        return position_map
 
     def _clear_highlight(self) -> None:
         """Clear any existing highlight."""
@@ -192,24 +253,19 @@ class TextViewerWidget(QTextBrowser):
 
     def _ensure_visible(self, char_pos: int) -> None:
         """Scroll to make character position visible without setting cursor."""
-        if self.text_format == TextFormat.PLAIN:
-            # Create temporary cursor to find position, don't set it as widget cursor
-            cursor = QTextCursor(self.document())
-            cursor.setPosition(char_pos)
-            # Get the rectangle for this position and scroll to it
-            rect = self.cursorRect(cursor)
-            self.verticalScrollBar().setValue(
-                self.verticalScrollBar().value() + rect.top() - self.height() // 3
-            )
+        # Map original position to document position
+        if self._position_map is not None and char_pos < len(self._position_map):
+            doc_pos = self._position_map[char_pos]
         else:
-            # In Markdown mode, find approximate position
-            if self.current_entry:
-                word = self.current_entry.original_text[char_pos:char_pos + 10]
-                first_word = word.split()[0] if word.split() else ""
-                if first_word:
-                    cursor = self.document().find(first_word)
-                    if not cursor.isNull():
-                        rect = self.cursorRect(cursor)
-                        self.verticalScrollBar().setValue(
-                            self.verticalScrollBar().value() + rect.top() - self.height() // 3
-                        )
+            doc_pos = char_pos
+
+        # Create temporary cursor to find position
+        cursor = QTextCursor(self.document())
+        doc_len = len(self.document().toPlainText())
+        cursor.setPosition(min(doc_pos, doc_len))
+
+        # Get the rectangle for this position and scroll to it
+        rect = self.cursorRect(cursor)
+        self.verticalScrollBar().setValue(
+            self.verticalScrollBar().value() + rect.top() - self.height() // 3
+        )

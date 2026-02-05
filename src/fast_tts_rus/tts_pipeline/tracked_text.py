@@ -94,6 +94,15 @@ class CharMapping:
         return (word_start, word_end)
 
 
+@dataclass
+class OffsetEntry:
+    """Tracks a single replacement for offset calculation."""
+    current_pos: int  # Position in current text at time of replacement
+    orig_start: int   # Start position in original text
+    orig_end: int     # End position in original text
+    new_len: int      # Length of replacement text
+
+
 class TrackedText:
     """Text wrapper that tracks all modifications for position mapping.
 
@@ -108,10 +117,8 @@ class TrackedText:
         self.original = text
         self._current = text
         self._replacements: list[Replacement] = []
-        # Offset tracking: list of (position_in_current, offset_delta)
-        # offset_delta = len(new) - len(old)
-        self._offsets: list[tuple[int, int, int]] = []
-        # (current_pos, orig_start, orig_end) for each replacement
+        # Offset tracking: ordered list of replacements with positions
+        self._offset_entries: list[OffsetEntry] = []
 
     @property
     def text(self) -> str:
@@ -144,7 +151,7 @@ class TrackedText:
         if count > 0:
             matches = matches[:count]
 
-        # Process matches in reverse order to maintain positions
+        # Process matches in reverse order to maintain positions in current text
         for match in reversed(matches):
             start, end = match.start(), match.end()
             old_text = match.group()
@@ -155,11 +162,23 @@ class TrackedText:
             else:
                 new_text = match.expand(repl)
 
-            # Calculate original positions
-            orig_start = self._to_original_pos(start)
-            orig_end = self._to_original_pos(end)
+            # Calculate original positions using current offset entries
+            orig_start = self._current_to_original(start)
+            orig_end = self._current_to_original(end)
 
-            # Record replacement
+            # Check if this original range overlaps with an existing replacement
+            # We check in ORIGINAL coordinates because current positions shift
+            # as we make more replacements
+            containing_entry = self._find_containing_replacement(orig_start, orig_end)
+
+            if containing_entry is not None:
+                # This change is inside an existing replacement
+                # Skip entirely - the original replacement already covers this region
+                # Note: this means words inside replaced text won't be further normalized,
+                # but it keeps the mapping consistent
+                continue
+
+            # No overlap - record as new replacement
             self._replacements.append(
                 Replacement(
                     orig_start=orig_start,
@@ -169,13 +188,42 @@ class TrackedText:
                 )
             )
 
+            # Record offset entry (insert at beginning since we process in reverse)
+            self._offset_entries.insert(0, OffsetEntry(
+                current_pos=start,
+                orig_start=orig_start,
+                orig_end=orig_end,
+                new_len=len(new_text),
+            ))
+
             # Update text
             self._current = self._current[:start] + new_text + self._current[end:]
 
-            # Record offset change
-            self._offsets.append((start, orig_start, orig_end))
-
         return self
+
+    def _find_containing_replacement(
+        self, orig_start: int, orig_end: int
+    ) -> OffsetEntry | None:
+        """Find an existing replacement that contains or overlaps the given range.
+
+        This is checked in ORIGINAL text coordinates, not current text coordinates,
+        because current positions shift as more replacements are made.
+
+        Returns:
+            The OffsetEntry that contains this range, or None if no overlap.
+        """
+        for entry in self._offset_entries:
+            if orig_start == orig_end:
+                # Point range - check if it's inside an existing replacement
+                # A point at position P is inside [A, B) if A <= P < B
+                if entry.orig_start <= orig_start < entry.orig_end:
+                    return entry
+            else:
+                # Normal range - check if ranges overlap
+                # Two ranges [a, b) and [c, d) overlap if a < d and c < b
+                if orig_start < entry.orig_end and entry.orig_start < orig_end:
+                    return entry
+        return None
 
     def replace(self, old: str, new: str, count: int = -1) -> "TrackedText":
         """Perform string replacement with tracking.
@@ -193,20 +241,39 @@ class TrackedText:
         max_count = 0 if count < 0 else count
         return self.sub(pattern, new, count=max_count)
 
-    def _to_original_pos(self, current_pos: int) -> int:
-        """Convert position in current text to position in original text."""
-        # Start from original position = current position
+    def _current_to_original(self, current_pos: int) -> int:
+        """Convert position in current text to position in original text.
+
+        Uses cumulative offset tracking for correct conversion.
+        If position is inside a replacement's new text, returns the start
+        of the original replaced range.
+        """
         orig_pos = current_pos
+        cumulative_offset = 0
 
-        # Apply all offset adjustments
-        for repl in self._replacements:
-            # If this replacement was before our position, adjust
-            if repl.orig_start < orig_pos:
-                # How much did this replacement shift things?
-                shift = len(repl.new_text) - (repl.orig_end - repl.orig_start)
-                orig_pos -= shift
+        # Process offset entries in order (earliest first)
+        for entry in self._offset_entries:
+            old_len = entry.orig_end - entry.orig_start
+            new_len = entry.new_len
 
-        return orig_pos
+            # Calculate where this replacement starts/ends in current coordinate
+            # (accounting for all previous offsets)
+            repl_current_start = entry.current_pos
+            repl_current_end = entry.current_pos + new_len
+
+            if current_pos < repl_current_start:
+                # Position is before this replacement - not affected
+                continue
+            elif current_pos < repl_current_end:
+                # Position is INSIDE this replacement's new text
+                # Map to the start of the original range
+                return entry.orig_start
+            else:
+                # Position is after this replacement - adjust by delta
+                delta = new_len - old_len
+                orig_pos -= delta
+
+        return max(0, orig_pos)
 
     def build_mapping(self) -> CharMapping:
         """Build character-level mapping from tracked replacements.
@@ -223,16 +290,10 @@ class TrackedText:
                 char_map=char_map,
             )
 
-        # Build character map by replaying replacements
-        # Start with identity mapping
-        char_map: list[tuple[int, int]] = [(i, i + 1) for i in range(len(self.original))]
-
         # Sort replacements by original position
         sorted_repls = sorted(self._replacements, key=lambda r: r.orig_start)
 
-        # Apply each replacement to build the mapping
-        offset = 0  # Cumulative offset in transformed text
-
+        # Build character map
         new_char_map: list[tuple[int, int]] = []
         orig_idx = 0
 

@@ -1,6 +1,7 @@
 """Background TTS processing worker."""
 
 import logging
+import re
 from datetime import datetime
 from typing import Any
 
@@ -8,6 +9,7 @@ from typing import Any
 # If torch is imported in a worker thread after Qt multimedia components exist,
 # it causes "double free or corruption" crashes due to memory initialization conflicts.
 import torch
+import numpy as np
 
 from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal
 
@@ -15,6 +17,9 @@ from fast_tts_rus.ui.models.entry import TextEntry, EntryStatus
 from fast_tts_rus.ui.models.config import UIConfig
 
 logger = logging.getLogger(__name__)
+
+# Maximum characters per TTS chunk (Silero limit is ~1000-1500)
+MAX_CHUNK_SIZE = 900
 
 
 class TTSSignals(QObject):
@@ -100,30 +105,48 @@ class TTSRunnable(QRunnable):
 
             self.signals.progress.emit(self.entry.id, 0.3)
 
-            # Step 2: Synthesize audio
-            logger.debug(f"Синтез аудио... Текст ({len(normalized)} символов): {normalized[:100]}...")
+            # Step 2: Split into chunks and synthesize audio
+            chunks = self._split_into_chunks(normalized)
+            logger.debug(f"Синтез аудио... Текст ({len(normalized)} символов), {len(chunks)} частей")
             logger.debug(f"Model type: {type(self.silero_model)}, speaker={self.config.speaker}, rate={self.config.sample_rate}")
 
-            with torch.no_grad():
-                audio = self.silero_model.apply_tts(
-                    text=normalized,
-                    speaker=self.config.speaker,
-                    sample_rate=self.config.sample_rate,
-                )
+            audio_parts: list[np.ndarray] = []
+            chunk_durations: list[tuple[int, int, float]] = []  # (norm_start, norm_end, duration)
 
-            # Convert to numpy array
-            if isinstance(audio, torch.Tensor):
-                audio_np = audio.numpy()
-            else:
-                audio_np = audio
+            for i, (chunk_text, chunk_start) in enumerate(chunks):
+                logger.debug(f"Синтез части {i+1}/{len(chunks)}: {len(chunk_text)} символов")
 
-            self.signals.progress.emit(self.entry.id, 0.7)
+                with torch.no_grad():
+                    audio = self.silero_model.apply_tts(
+                        text=chunk_text,
+                        speaker=self.config.speaker,
+                        sample_rate=self.config.sample_rate,
+                    )
 
-            # Calculate duration
+                # Convert to numpy array
+                if isinstance(audio, torch.Tensor):
+                    audio_np = audio.numpy()
+                else:
+                    audio_np = audio
+
+                audio_parts.append(audio_np)
+                chunk_duration = len(audio_np) / self.config.sample_rate
+                chunk_durations.append((chunk_start, chunk_start + len(chunk_text), chunk_duration))
+
+                # Update progress
+                progress = 0.3 + 0.4 * (i + 1) / len(chunks)
+                self.signals.progress.emit(self.entry.id, progress)
+
+            # Concatenate audio parts
+            audio_np = np.concatenate(audio_parts) if len(audio_parts) > 1 else audio_parts[0]
+
+            # Calculate total duration
             duration_sec = len(audio_np) / self.config.sample_rate
 
             # Step 3: Estimate timestamps with precise mapping to original text
-            timestamps = self._estimate_timestamps(normalized, duration_sec, char_mapping)
+            timestamps = self._estimate_timestamps_chunked(
+                normalized, chunk_durations, char_mapping
+            )
 
             self.signals.progress.emit(self.entry.id, 0.9)
 
@@ -158,6 +181,153 @@ class TTSRunnable(QRunnable):
             self.entry.error_message = str(e)
             self.storage.update_entry(self.entry)
             self.signals.error.emit(self.entry.id, str(e))
+
+    def _split_into_chunks(self, text: str) -> list[tuple[str, int]]:
+        """Split text into chunks for TTS processing.
+
+        Splits on sentence boundaries to maintain natural speech flow.
+        Returns list of (chunk_text, start_position) tuples.
+
+        Args:
+            text: Normalized text to split
+
+        Returns:
+            List of (chunk, start_pos) tuples
+        """
+        if len(text) <= MAX_CHUNK_SIZE:
+            return [(text, 0)]
+
+        chunks: list[tuple[str, int]] = []
+        current_pos = 0
+
+        while current_pos < len(text):
+            # Calculate end of potential chunk
+            chunk_end = min(current_pos + MAX_CHUNK_SIZE, len(text))
+
+            if chunk_end >= len(text):
+                # Last chunk
+                chunks.append((text[current_pos:], current_pos))
+                break
+
+            # Find best split point (sentence boundary)
+            chunk_text = text[current_pos:chunk_end]
+
+            # Try to find sentence end (. ! ?)
+            best_split = -1
+            for match in re.finditer(r'[.!?]\s+', chunk_text):
+                best_split = match.end()
+
+            if best_split == -1:
+                # No sentence boundary, try comma or semicolon
+                for match in re.finditer(r'[,;:]\s+', chunk_text):
+                    best_split = match.end()
+
+            if best_split == -1:
+                # No punctuation, split on word boundary
+                for match in re.finditer(r'\s+', chunk_text):
+                    best_split = match.end()
+
+            if best_split == -1 or best_split < len(chunk_text) // 2:
+                # Fallback: hard split at max size
+                best_split = MAX_CHUNK_SIZE
+
+            # Add chunk
+            actual_chunk = text[current_pos:current_pos + best_split].strip()
+            if actual_chunk:
+                chunks.append((actual_chunk, current_pos))
+
+            current_pos += best_split
+
+        logger.debug(f"Текст разбит на {len(chunks)} частей")
+        return chunks
+
+    def _estimate_timestamps_chunked(
+        self,
+        text: str,
+        chunk_durations: list[tuple[int, int, float]],
+        char_mapping=None,
+    ) -> list[dict[str, Any]]:
+        """Estimate word timestamps for chunked audio.
+
+        Uses CharMapping for precise position mapping from normalized to original text.
+
+        Args:
+            text: Full normalized text
+            chunk_durations: List of (norm_start, norm_end, duration) for each chunk
+            char_mapping: CharMapping for position conversion
+
+        Returns:
+            List of timestamp dictionaries with word, start, end, original_pos
+        """
+        timestamps: list[dict[str, Any]] = []
+        audio_offset = 0.0
+
+        for chunk_start, chunk_end, chunk_duration in chunk_durations:
+            chunk_text = text[chunk_start:chunk_end]
+
+            # Extract words with their positions in the chunk
+            chunk_words = self._extract_words_with_positions(chunk_text)
+            if not chunk_words:
+                audio_offset += chunk_duration
+                continue
+
+            total_chars = sum(len(w) for w, _, _ in chunk_words)
+            if total_chars == 0:
+                audio_offset += chunk_duration
+                continue
+
+            current_time = 0.0
+
+            for word, word_start_in_chunk, word_end_in_chunk in chunk_words:
+                word_duration = (len(word) / total_chars) * chunk_duration
+
+                # Calculate position in full normalized text
+                norm_start = chunk_start + word_start_in_chunk
+                norm_end = chunk_start + word_end_in_chunk
+
+                # Map to original text position using CharMapping
+                if char_mapping is not None:
+                    orig_start, orig_end = char_mapping.get_original_range(
+                        norm_start, norm_end
+                    )
+                else:
+                    orig_start, orig_end = norm_start, norm_end
+
+                timestamps.append({
+                    "word": word,
+                    "start": round(audio_offset + current_time, 3),
+                    "end": round(audio_offset + current_time + word_duration, 3),
+                    "original_pos": [orig_start, orig_end]
+                })
+
+                current_time += word_duration
+
+            audio_offset += chunk_duration
+
+        return timestamps
+
+    def _extract_words_with_positions(self, text: str) -> list[tuple[str, int, int]]:
+        """Extract words from text with their positions.
+
+        Returns:
+            List of (word, start, end) tuples
+        """
+        words = []
+        i = 0
+        while i < len(text):
+            # Skip whitespace
+            while i < len(text) and text[i].isspace():
+                i += 1
+            if i >= len(text):
+                break
+            # Find word
+            start = i
+            while i < len(text) and not text[i].isspace():
+                i += 1
+            end = i
+            word = text[start:end]
+            words.append((word, start, end))
+        return words
 
     def _estimate_timestamps(
         self,

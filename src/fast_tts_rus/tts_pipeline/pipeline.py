@@ -208,23 +208,31 @@ class TTSPipeline:
         # Process numbers
         self._process_numbers_tracked(tracked)
 
-        # Build mapping before postprocessing
+        # Postprocess using tracked text to maintain mapping
+        tracked.sub(r' +', ' ')  # Multiple spaces -> single space
+        tracked.sub(r' +([.,!?;:])', r'\1')  # Space before punctuation
+        tracked.sub(r'\n +', '\n')  # Space after newline
+        tracked.sub(r' +\n', '\n')  # Space before newline
+
+        # Build mapping after all transformations
         mapping = tracked.build_mapping()
 
-        # Postprocess the final text
-        result = mapping.transformed
-        result = re.sub(r' +', ' ', result)
-        result = re.sub(r' +([.,!?;:])', r'\1', result)
-        result = re.sub(r'\n +', '\n', result)
-        result = re.sub(r' +\n', '\n', result)
-        result = result.strip()
+        # Strip leading/trailing whitespace (adjust mapping manually)
+        result = mapping.transformed.strip()
+        if result != mapping.transformed:
+            # Rebuild char_map accounting for strip
+            leading_spaces = len(mapping.transformed) - len(mapping.transformed.lstrip())
+            trailing_spaces = len(mapping.transformed) - len(mapping.transformed.rstrip())
+            if leading_spaces > 0 or trailing_spaces > 0:
+                end_idx = len(mapping.char_map) - trailing_spaces if trailing_spaces > 0 else len(mapping.char_map)
+                new_char_map = mapping.char_map[leading_spaces:end_idx]
+                mapping = CharMapping(
+                    original=mapping.original,
+                    transformed=result,
+                    char_map=new_char_map,
+                )
 
-        # Return with original mapping (postprocessing doesn't change semantics)
-        return result, CharMapping(
-            original=mapping.original,
-            transformed=result,
-            char_map=mapping.char_map,
-        )
+        return result, mapping
 
     def set_code_mode(self, mode: str) -> None:
         """Switch code block handling mode."""
