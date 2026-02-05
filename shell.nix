@@ -25,7 +25,16 @@ pkgs.mkShell {
     xorg.libXcursor
     xorg.libXrandr
     xorg.libXi
+    xorg.libxcb
+    xorg.xcbutilwm
+    xorg.xcbutilimage
+    xorg.xcbutilkeysyms
+    xorg.xcbutilrenderutil
+    xorg.xcbutil
+    xcb-util-cursor
     wayland
+    wayland-protocols
+    libdecor
     # Additional libs
     zstd
     krb5
@@ -47,16 +56,27 @@ pkgs.mkShell {
     pkgs.xorg.libXcursor
     pkgs.xorg.libXrandr
     pkgs.xorg.libXi
+    pkgs.xorg.libxcb
+    pkgs.xorg.xcbutilwm
+    pkgs.xorg.xcbutilimage
+    pkgs.xorg.xcbutilkeysyms
+    pkgs.xorg.xcbutilrenderutil
+    pkgs.xorg.xcbutil
+    pkgs.xcb-util-cursor
     pkgs.wayland
+    pkgs.libdecor
     pkgs.zstd
     pkgs.krb5
   ];
 
-  # Required for Qt on Wayland
-  QT_QPA_PLATFORM = "wayland";
+  # Let Qt auto-detect platform (wayland or xcb)
+  # User can override with QT_QPA_PLATFORM=xcb if needed
 
   shellHook = ''
     export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:$LD_LIBRARY_PATH"
+
+    # Unset QT_PLUGIN_PATH to let PyQt6 use its bundled plugins
+    unset QT_PLUGIN_PATH
 
     echo "Fast TTS development environment"
     echo "Python: $(python3 --version)"
