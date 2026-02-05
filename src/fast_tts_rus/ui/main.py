@@ -1,19 +1,30 @@
 """Entry point for the UI application."""
 
+import logging
 import sys
 from pathlib import Path
+
+# Инициализация логирования ДО импорта PyQt6
+from fast_tts_rus.ui.services.logging_service import setup_logging, setup_qt_logging
+setup_logging()
 
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 
+# Настройка перехвата Qt сообщений после импорта PyQt6
+setup_qt_logging()
+
 from fast_tts_rus.ui.app import TTSApplication
 
+logger = logging.getLogger(__name__)
 
 APP_ID = "fast-tts-rus"
 
 
 def main() -> int:
     """Entry point for UI application."""
+    logger.info("Запуск Fast TTS RUS")
+
     app = QApplication(sys.argv)
     app.setApplicationName("Fast TTS RUS")
     app.setQuitOnLastWindowClosed(False)  # Don't close when window is hidden
@@ -33,6 +44,7 @@ def main() -> int:
     socket.connectToServer(APP_ID)
     if socket.waitForConnected(500):
         # Application already running - send command and exit
+        logger.info(f"Приложение уже запущено, отправка команды: {command or 'show'}")
         if command:
             socket.write(command.encode())
         else:
@@ -45,7 +57,7 @@ def main() -> int:
     server = QLocalServer()
     server.removeServer(APP_ID)  # Remove stale socket if exists
     if not server.listen(APP_ID):
-        print(f"Failed to create local server: {server.errorString()}", file=sys.stderr)
+        logger.error(f"Не удалось создать локальный сервер: {server.errorString()}")
 
     # Create and start application
     tts_app = TTSApplication()
@@ -56,6 +68,7 @@ def main() -> int:
         conn = server.nextPendingConnection()
         if conn and conn.waitForReadyRead(1000):
             cmd = conn.readAll().data().decode()
+            logger.debug(f"Получена команда: {cmd}")
             if cmd == "read-now":
                 tts_app.read_now()
             elif cmd == "read-later":
@@ -73,7 +86,10 @@ def main() -> int:
     elif command == "read-later":
         tts_app.read_later()
 
-    return app.exec()
+    logger.info("Приложение запущено")
+    result = app.exec()
+    logger.info("Приложение завершено")
+    return result
 
 
 if __name__ == "__main__":
