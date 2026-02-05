@@ -535,7 +535,6 @@ class TextViewerWidget(QTextBrowser):
         self.current_entry: TextEntry | None = None
         self.timestamps: list[WordTimestamp] | None = None
         self.text_format: TextFormat = TextFormat.MARKDOWN
-        self.timestamps_precise: bool = False  # True если от Silero, False если fallback
 
         self._highlight_format = QTextCharFormat()
         self._highlight_format.setUnderlineStyle(
@@ -543,8 +542,9 @@ class TextViewerWidget(QTextBrowser):
         )
         self._highlight_format.setBackground(QColor("#FFFF99"))
 
-        self._context_highlight_format = QTextCharFormat()
-        self._context_highlight_format.setBackground(QColor("#FFFDE7"))  # светло-жёлтый
+        # Для fallback-режима (±2 слова) — раскомментировать если Silero не даёт timestamps
+        # self._context_highlight_format = QTextCharFormat()
+        # self._context_highlight_format.setBackground(QColor("#FFFDE7"))
 
     def set_format(self, fmt: TextFormat):
         """Переключить формат отображения."""
@@ -573,22 +573,25 @@ class TextViewerWidget(QTextBrowser):
 
         word_info = self._find_word_at(position_sec)
         if word_info:
-            if self.timestamps_precise:
-                # Точные timestamps от Silero — подсвечиваем только текущее слово
-                self._highlight_range(
-                    word_info.original_pos[0],
-                    word_info.original_pos[1]
-                )
-            else:
-                # Fallback (приблизительный расчёт) — подсвечиваем ±2 слова
-                self._highlight_with_context(word_info, context_words=2)
+            # Вариант 1: Точные timestamps от Silero
+            self._highlight_range(
+                word_info.original_pos[0],
+                word_info.original_pos[1]
+            )
+
+            # Вариант 2: Fallback — раскомментировать если Silero не даёт timestamps
+            # self._highlight_with_context(word_info, context_words=2)
 
             self._ensure_visible(word_info.original_pos[0])
 ```
 
-**Подсветка (зависит от источника timestamps):**
-- **Точные timestamps (от Silero):** только текущее слово — жёлтый фон + подчёркивание
-- **Приблизительные timestamps (fallback):** текущее слово + ±2 слова контекста — светло-жёлтый фон для контекста, яркий для предполагаемого текущего
+**Подсветка (определяется в Фазе 3):**
+
+Логика подсветки зависит от результатов исследования Silero API:
+- **Если Silero поддерживает word-level timestamps:** подсвечиваем только текущее слово — жёлтый фон + подчёркивание
+- **Если не поддерживает (fallback по длине слов):** подсвечиваем ±2 слова контекста — светло-жёлтый фон для контекста, яркий для предполагаемого текущего
+
+**Важно:** Это определяется один раз при разработке. Код будет написан под конкретный вариант, без runtime переключения.
 
 ---
 
