@@ -1,3 +1,5 @@
 """UI dialogs."""
 
-__all__ = []
+from fast_tts_rus.ui.dialogs.settings import SettingsDialog
+
+__all__ = ["SettingsDialog"]

@@ -322,12 +322,9 @@ class TTSApplication(QObject):
 
     def _show_settings(self) -> None:
         """Show settings dialog."""
-        # TODO: Implement settings dialog
-        QMessageBox.information(
-            None,
-            "Настройки",
-            "Диалог настроек будет реализован позже.",
-        )
+        from fast_tts_rus.ui.dialogs.settings import SettingsDialog
+        dialog = SettingsDialog(self.config, self.hotkey_service)
+        dialog.exec()
 
     def _quit(self) -> None:
         """Quit the application."""
