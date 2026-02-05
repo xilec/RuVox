@@ -35,8 +35,8 @@ class UIConfig:
     )
 
     # Global hotkeys
-    hotkey_read_now: str = "Control+t"
-    hotkey_read_later: str = "Control+Shift+t"
+    hotkey_read_now: str = "Control+grave"
+    hotkey_read_later: str = "Control+Shift+grave"
 
     # TTS settings
     speaker: str = "xenia"
@@ -102,8 +102,8 @@ class UIConfig:
 
         return cls(
             cache_dir=Path(data.get("cache_dir", Path.home() / ".cache" / "fast_tts_rus")),
-            hotkey_read_now=data.get("hotkey_read_now", "Control+t"),
-            hotkey_read_later=data.get("hotkey_read_later", "Control+Shift+t"),
+            hotkey_read_now=data.get("hotkey_read_now", "Control+grave"),
+            hotkey_read_later=data.get("hotkey_read_later", "Control+Shift+grave"),
             speaker=data.get("speaker", "xenia"),
             speech_rate=data.get("speech_rate", 1.0),
             sample_rate=data.get("sample_rate", 48000),
