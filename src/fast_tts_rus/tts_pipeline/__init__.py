@@ -11,6 +11,12 @@ from fast_tts_rus.tts_pipeline.normalizers import (
     CodeIdentifierNormalizer,
     CodeBlockHandler,
 )
+from fast_tts_rus.tts_pipeline.word_mapping import (
+    WordMapping,
+    WordSpan,
+    build_word_mapping,
+    tokenize_words,
+)
 
 __all__ = [
     "TTSPipeline",
@@ -22,4 +28,8 @@ __all__ = [
     "SymbolNormalizer",
     "CodeIdentifierNormalizer",
     "CodeBlockHandler",
+    "WordMapping",
+    "WordSpan",
+    "build_word_mapping",
+    "tokenize_words",
 ]

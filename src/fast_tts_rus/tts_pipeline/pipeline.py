@@ -11,6 +11,7 @@ from fast_tts_rus.tts_pipeline.normalizers import (
     CodeIdentifierNormalizer,
     CodeBlockHandler,
 )
+from fast_tts_rus.tts_pipeline.word_mapping import WordMapping, build_word_mapping
 
 
 class TTSPipeline:
@@ -99,6 +100,24 @@ class TTSPipeline:
         text = self._postprocess(text)
 
         return text
+
+    def process_with_mapping(self, text: str) -> tuple[str, WordMapping]:
+        """Process text for TTS and return mapping to original.
+
+        This method processes the text and builds a word-level mapping
+        that allows mapping positions in the transformed text back to
+        positions in the original text.
+
+        Args:
+            text: Original text to process
+
+        Returns:
+            Tuple of (transformed_text, WordMapping)
+        """
+        original = text
+        transformed = self.process(text)
+        mapping = build_word_mapping(original, transformed, self)
+        return transformed, mapping
 
     def set_code_mode(self, mode: str) -> None:
         """Switch code block handling mode."""
