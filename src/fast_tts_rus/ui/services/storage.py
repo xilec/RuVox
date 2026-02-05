@@ -52,9 +52,17 @@ class StorageService:
             if version < HISTORY_VERSION:
                 data = self._migrate_history(data, version)
 
+            needs_save = False
             for entry_data in data.get("entries", []):
                 entry = TextEntry.from_dict(entry_data)
+                # Validate entry status against actual audio file existence
+                if self._validate_entry_status(entry):
+                    needs_save = True
                 self._entries[entry.id] = entry
+
+            # Save if any entries were fixed
+            if needs_save:
+                self._save_history()
 
         except (json.JSONDecodeError, KeyError, ValueError) as e:
             # Corrupted history file - start fresh but backup old file
@@ -62,6 +70,37 @@ class StorageService:
             if self.history_file.exists():
                 self.history_file.rename(backup_path)
             self._entries = {}
+
+    def _validate_entry_status(self, entry: TextEntry) -> bool:
+        """Validate and fix entry status based on audio file existence.
+
+        Returns:
+            True if entry was modified
+        """
+        modified = False
+
+        if entry.audio_path:
+            audio_path = self.audio_dir / entry.audio_path
+            if audio_path.exists():
+                # Audio file exists - ensure status is READY
+                if entry.status != EntryStatus.READY:
+                    entry.status = EntryStatus.READY
+                    modified = True
+            else:
+                # Audio file doesn't exist - reset to PENDING
+                entry.audio_path = None
+                entry.timestamps_path = None
+                entry.duration_sec = None
+                entry.audio_generated_at = None
+                if entry.status == EntryStatus.READY:
+                    entry.status = EntryStatus.PENDING
+                    modified = True
+        elif entry.status == EntryStatus.PROCESSING:
+            # Was processing but no audio - reset to PENDING
+            entry.status = EntryStatus.PENDING
+            modified = True
+
+        return modified
 
     def _save_history(self) -> None:
         """Save history to JSON file."""
