@@ -31,6 +31,13 @@ tts = [
     "numpy>=1.24",
     "omegaconf>=2.3",
 ]
+ui = [
+    "PyQt6>=6.6.0",
+    "markdown>=3.5",
+]
+
+[project.scripts]
+fast-tts-ui = "fast_tts_rus.ui.main:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/fast_tts_rus"]
