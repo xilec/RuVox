@@ -219,7 +219,28 @@ class UIConfig:
 }
 ```
 
-`original_pos` — позиция в исходном тексте [start_char, end_char] для подсветки.
+**Поля:**
+- `word` — слово из нормализованного текста (то, что произносится)
+- `start`, `end` — временные метки в секундах
+- `original_pos` — позиция в **исходном** тексте `[start_char, end_char]` для подсветки
+
+**Сложность маппинга:**
+При нормализации одно слово может превратиться в несколько:
+- `"Docker"` → `"докер"` (1:1, позиция сохраняется)
+- `">="` → `"больше или равно"` (1:3, все 3 слова ссылаются на позицию `>=`)
+- `"20.10"` → `"двадцать точка десять"` (1:3)
+
+Для реализации потребуется доработка `tts_pipeline`:
+```python
+# Новый метод в TTSPipeline
+def process_with_positions(self, text: str) -> tuple[str, list[PositionMapping]]:
+    """Нормализация с сохранением позиций.
+
+    Returns:
+        normalized_text: нормализованный текст
+        mappings: список маппингов normalized_word → original_pos
+    """
+```
 
 ---
 
@@ -821,14 +842,35 @@ class CleanupRunnable(QRunnable):
 
 **Результат:** Можно добавлять тексты, они сохраняются и отображаются.
 
-### Фаза 3: TTS интеграция (2-3 дня)
+### Фаза 3: TTS интеграция (3-4 дня)
 
 1. **services/tts_worker.py** — фоновая генерация
 2. **Интеграция с существующим пайплайном**
-3. **Timestamps extraction** из Silero
-4. **Обновление статусов в UI**
+3. **Исследование Silero Timestamps API:**
+   - Проверить `model.apply_tts()` на наличие параметра для word-level timestamps
+   - Изучить возвращаемые данные (есть ли `word_timestamps` или аналог)
+   - Проверить альтернативы: `model.synthesize()`, SSML-разметка
+4. **Реализация получения timestamps:**
+   - **Если Silero поддерживает:** извлечь timestamps из результата синтеза
+   - **Если не поддерживает:** реализовать fallback — расчёт по длительности слов:
+     ```python
+     # Приблизительный расчёт: длина_слова / общая_длина * duration
+     def estimate_timestamps(words: list[str], total_duration: float) -> list[WordTimestamp]:
+         total_chars = sum(len(w) for w in words)
+         current_time = 0.0
+         timestamps = []
+         for word in words:
+             word_duration = (len(word) / total_chars) * total_duration
+             timestamps.append(WordTimestamp(word, current_time, current_time + word_duration))
+             current_time += word_duration
+         return timestamps
+     ```
+5. **Маппинг normalized → original позиции:**
+   - Сохранять соответствие позиций при нормализации в `tts_pipeline`
+   - Добавить метод `pipeline.process_with_mapping()` или аналог
+6. **Обновление статусов в UI**
 
-**Результат:** Тексты нормализуются и синтезируются, аудио сохраняется.
+**Результат:** Тексты нормализуются и синтезируются, аудио + timestamps сохраняются.
 
 ### Фаза 4: Плеер (2-3 дня)
 
@@ -880,7 +922,7 @@ class CleanupRunnable(QRunnable):
 | Риск | Вероятность | Митигация |
 |------|-------------|-----------|
 | xdg-portal не работает в DE | Средняя | CLI fallback + инструкция |
-| Silero не даёт timestamps | Низкая | Приблизительный расчёт по длине слов |
+| Silero не даёт timestamps | Средняя | Fallback: расчёт по длине слов (см. Фазу 3) |
 | Qt Multimedia проблемы на Wayland | Низкая | Использовать PipeWire backend |
 | Высокое потребление памяти | Средняя | Ленивая загрузка модели, очистка |
 
