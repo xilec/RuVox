@@ -35,6 +35,9 @@ pkgs.mkShell {
     wayland
     wayland-protocols
     libdecor
+    # Audio libs
+    libpulseaudio
+    pipewire
     # Additional libs
     zstd
     krb5
@@ -65,6 +68,8 @@ pkgs.mkShell {
     pkgs.xcb-util-cursor
     pkgs.wayland
     pkgs.libdecor
+    pkgs.libpulseaudio
+    pkgs.pipewire
     pkgs.zstd
     pkgs.krb5
   ];
