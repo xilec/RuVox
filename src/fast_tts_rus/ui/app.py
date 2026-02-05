@@ -44,6 +44,7 @@ class TTSApplication(QObject):
         self.hotkey_service: HotkeyService | None = None
         self.tray_icon: QSystemTrayIcon | None = None
         self._main_window = None  # Lazy loaded
+        self._hotkey_warning_shown = False  # Show hotkey warning only once
 
     def start(self) -> None:
         """Initialize and start the application."""
@@ -73,11 +74,14 @@ class TTSApplication(QObject):
         """Initialize system tray icon and menu."""
         self.tray_icon = QSystemTrayIcon(self)
 
-        # Set icon (use a placeholder for now)
-        # TODO: Use proper SVG icon
-        icon = QIcon.fromTheme("audio-speakers", QIcon.fromTheme("multimedia-audio-player"))
+        # Set custom icon
+        icon_path = Path(__file__).parent / "resources" / "tray_icon.svg"
+        if icon_path.exists():
+            icon = QIcon(str(icon_path))
+        else:
+            # Fallback to theme icon
+            icon = QIcon.fromTheme("audio-speakers", QIcon.fromTheme("multimedia-audio-player"))
         if icon.isNull():
-            # Fallback to application icon
             icon = QApplication.instance().windowIcon()
         self.tray_icon.setIcon(icon)
         self.tray_icon.setToolTip("Fast TTS RUS")
@@ -312,6 +316,11 @@ class TTSApplication(QObject):
         Shows a brief notification - user can see full instructions
         in the settings dialog.
         """
+        # Only show once
+        if self._hotkey_warning_shown:
+            return
+        self._hotkey_warning_shown = True
+
         # Only show brief message, full instructions available in settings
         self.tray_icon.showMessage(
             "Fast TTS RUS",
