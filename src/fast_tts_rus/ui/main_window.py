@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
 )
 
 from fast_tts_rus.ui.widgets.queue_list import QueueListWidget
+from fast_tts_rus.ui.models.entry import EntryStatus
 
 
 class MainWindow(QMainWindow):
@@ -36,6 +37,7 @@ class MainWindow(QMainWindow):
 
         self._setup_ui()
         self._setup_shortcuts()
+        self._connect_tts_signals()
 
     def _setup_ui(self) -> None:
         """Setup the user interface."""
@@ -103,8 +105,14 @@ class MainWindow(QMainWindow):
 
     def _on_entry_regenerate_requested(self, entry) -> None:
         """Handle regenerate request."""
-        # TODO: Queue for TTS regeneration
-        pass
+        if self.app.tts_worker:
+            # Mark as regenerated for cleanup rules
+            entry.was_regenerated = True
+            entry.status = EntryStatus.PENDING
+            self.app.storage.update_entry(entry)
+            self.queue_list.update_entry(entry)
+            # Start TTS processing
+            self.app.tts_worker.process(entry, play_when_ready=False)
 
     def _on_entry_delete_requested(self, entry) -> None:
         """Handle delete request."""
@@ -132,6 +140,22 @@ class MainWindow(QMainWindow):
         """Add a new entry to the queue list."""
         self.queue_list.add_entry(entry)
         self._update_status_bar()
+
+    def _connect_tts_signals(self) -> None:
+        """Connect TTS worker signals for status updates."""
+        if self.app.tts_worker:
+            self.app.tts_worker.started.connect(self._on_tts_started)
+            self.app.tts_worker.progress.connect(self._on_tts_progress)
+
+    def _on_tts_started(self, entry_id: str) -> None:
+        """Handle TTS processing started."""
+        self.queue_list.update_entry_status(entry_id, EntryStatus.PROCESSING)
+        self._update_status_bar()
+
+    def _on_tts_progress(self, entry_id: str, progress: float) -> None:
+        """Handle TTS progress update."""
+        # Could update a progress indicator in the queue item
+        pass
 
     def _setup_shortcuts(self) -> None:
         """Setup keyboard shortcuts."""

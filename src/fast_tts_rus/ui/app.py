@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
 from fast_tts_rus.ui.models.config import UIConfig
 from fast_tts_rus.ui.services.storage import StorageService
 from fast_tts_rus.ui.services.cleanup import CleanupWorker
+from fast_tts_rus.ui.services.tts_worker import TTSWorker
 
 
 class TTSApplication(QObject):
@@ -38,6 +39,7 @@ class TTSApplication(QObject):
         self.config: UIConfig | None = None
         self.storage: StorageService | None = None
         self.cleanup_worker: CleanupWorker | None = None
+        self.tts_worker: TTSWorker | None = None
         self.tray_icon: QSystemTrayIcon | None = None
         self._main_window = None  # Lazy loaded
 
@@ -59,6 +61,7 @@ class TTSApplication(QObject):
         """Initialize services."""
         self.storage = StorageService(self.config)
         self.cleanup_worker = CleanupWorker(self.config, self.storage, self)
+        self.tts_worker = TTSWorker(self.config, self.storage, self)
         # Run initial cleanup
         self.cleanup_worker.run_cleanup()
 
@@ -130,6 +133,14 @@ class TTSApplication(QObject):
         self.read_now_triggered.connect(self._on_read_now)
         self.read_later_triggered.connect(self._on_read_later)
 
+        # TTS worker signals
+        self.tts_worker.completed.connect(self._on_tts_completed)
+        self.tts_worker.error.connect(self._on_tts_error)
+        self.tts_worker.play_requested.connect(self._on_play_requested)
+        self.tts_worker.model_loading.connect(self._on_model_loading)
+        self.tts_worker.model_loaded.connect(self._on_model_loaded)
+        self.tts_worker.model_error.connect(self._on_model_error)
+
     def _on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         """Handle tray icon activation."""
         if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
@@ -155,10 +166,11 @@ class TTSApplication(QObject):
         # Update window if open
         if self._main_window is not None:
             self._main_window.add_entry(entry)
-        # TODO: Start TTS processing with play_when_ready=True
+        # Start TTS processing with play_when_ready=True
+        self.tts_worker.process(entry, play_when_ready=True)
         self.tray_icon.showMessage(
             "Fast TTS RUS",
-            f"Добавлено: {text[:50]}..." if len(text) > 50 else f"Добавлено: {text}",
+            f"Обработка: {text[:50]}..." if len(text) > 50 else f"Обработка: {text}",
             QSystemTrayIcon.MessageIcon.Information,
             2000,
         )
@@ -181,7 +193,8 @@ class TTSApplication(QObject):
         # Update window if open
         if self._main_window is not None:
             self._main_window.add_entry(entry)
-        # TODO: Start TTS processing with play_when_ready=False
+        # Start TTS processing with play_when_ready=False
+        self.tts_worker.process(entry, play_when_ready=False)
         self.tray_icon.showMessage(
             "Fast TTS RUS",
             f"В очередь: {text[:50]}..." if len(text) > 50 else f"В очередь: {text}",
@@ -211,6 +224,71 @@ class TTSApplication(QObject):
     def _on_read_later(self) -> None:
         """Handle read_later signal."""
         self.read_later()
+
+    def _on_tts_completed(self, entry_id: str) -> None:
+        """Handle TTS completion."""
+        entry = self.storage.get_entry(entry_id)
+        if entry and self._main_window is not None:
+            self._main_window.queue_list.update_entry(entry)
+
+        # Enable play button if this is the first ready entry
+        self.action_play.setEnabled(True)
+
+        # Show notification if configured
+        if self.config.notify_on_ready:
+            self.tray_icon.showMessage(
+                "Fast TTS RUS",
+                "Аудио готово к воспроизведению",
+                QSystemTrayIcon.MessageIcon.Information,
+                2000,
+            )
+
+    def _on_tts_error(self, entry_id: str, error_msg: str) -> None:
+        """Handle TTS error."""
+        entry = self.storage.get_entry(entry_id)
+        if entry and self._main_window is not None:
+            self._main_window.queue_list.update_entry(entry)
+
+        # Show notification if configured
+        if self.config.notify_on_error:
+            self.tray_icon.showMessage(
+                "Fast TTS RUS",
+                f"Ошибка: {error_msg[:50]}",
+                QSystemTrayIcon.MessageIcon.Critical,
+                3000,
+            )
+
+    def _on_play_requested(self, entry_id: str) -> None:
+        """Handle play request from TTS worker."""
+        # TODO: Implement playback in Phase 4
+        pass
+
+    def _on_model_loading(self) -> None:
+        """Handle model loading started."""
+        self.tray_icon.showMessage(
+            "Fast TTS RUS",
+            "Загрузка модели TTS...",
+            QSystemTrayIcon.MessageIcon.Information,
+            3000,
+        )
+
+    def _on_model_loaded(self) -> None:
+        """Handle model loaded."""
+        self.tray_icon.showMessage(
+            "Fast TTS RUS",
+            "Модель TTS загружена",
+            QSystemTrayIcon.MessageIcon.Information,
+            2000,
+        )
+
+    def _on_model_error(self, error_msg: str) -> None:
+        """Handle model loading error."""
+        self.tray_icon.showMessage(
+            "Fast TTS RUS",
+            f"Ошибка загрузки модели: {error_msg[:50]}",
+            QSystemTrayIcon.MessageIcon.Critical,
+            5000,
+        )
 
     def _show_settings(self) -> None:
         """Show settings dialog."""
