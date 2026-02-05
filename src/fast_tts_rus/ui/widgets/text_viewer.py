@@ -6,7 +6,7 @@ from typing import Any
 import markdown
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QTextCursor, QTextCharFormat, QColor
-from PyQt6.QtWidgets import QTextBrowser
+from PyQt6.QtWidgets import QTextBrowser, QScrollBar
 
 from fast_tts_rus.ui.models.entry import TextEntry
 
@@ -191,17 +191,25 @@ class TextViewerWidget(QTextBrowser):
         self._last_highlighted_pos = None
 
     def _ensure_visible(self, char_pos: int) -> None:
-        """Scroll to make character position visible."""
+        """Scroll to make character position visible without setting cursor."""
         if self.text_format == TextFormat.PLAIN:
-            cursor = self.textCursor()
+            # Create temporary cursor to find position, don't set it as widget cursor
+            cursor = QTextCursor(self.document())
             cursor.setPosition(char_pos)
-            self.setTextCursor(cursor)
-            self.ensureCursorVisible()
+            # Get the rectangle for this position and scroll to it
+            rect = self.cursorRect(cursor)
+            self.verticalScrollBar().setValue(
+                self.verticalScrollBar().value() + rect.top() - self.height() // 3
+            )
         else:
             # In Markdown mode, find approximate position
             if self.current_entry:
                 word = self.current_entry.original_text[char_pos:char_pos + 10]
-                cursor = self.document().find(word.split()[0] if word.split() else "")
-                if not cursor.isNull():
-                    self.setTextCursor(cursor)
-                    self.ensureCursorVisible()
+                first_word = word.split()[0] if word.split() else ""
+                if first_word:
+                    cursor = self.document().find(first_word)
+                    if not cursor.isNull():
+                        rect = self.cursorRect(cursor)
+                        self.verticalScrollBar().setValue(
+                            self.verticalScrollBar().value() + rect.top() - self.height() // 3
+                        )
