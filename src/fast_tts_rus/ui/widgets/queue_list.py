@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
 )
-from PyQt6.QtGui import QAction
+from PyQt6.QtGui import QAction, QColor, QBrush
 
 from fast_tts_rus.ui.models.entry import TextEntry, EntryStatus
 
@@ -21,6 +21,8 @@ class QueueItemWidget(QWidget):
     def __init__(self, entry: TextEntry, parent=None):
         super().__init__(parent)
         self.entry = entry
+        # Transparent background so item's background shows through
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self._setup_ui()
         self._update_display()
 
@@ -202,16 +204,38 @@ class QueueListWidget(QListWidget):
                 self._item_widgets[entry.id].update_entry(entry)
 
     def set_current_playing(self, entry_id: str | None) -> None:
-        """Set which entry is currently playing."""
-        # Clear previous
-        if self._current_playing_id and self._current_playing_id in self._item_widgets:
-            self._item_widgets[self._current_playing_id].set_playing(False)
+        """Set which entry is currently playing (changes active item highlight)."""
+        if entry_id is None:
+            # Just stop the play indicator, keep the highlight
+            if self._current_playing_id and self._current_playing_id in self._item_widgets:
+                self._item_widgets[self._current_playing_id].set_playing(False)
+            return
+
+        # Clear previous highlight
+        if self._current_playing_id:
+            if self._current_playing_id in self._item_widgets:
+                self._item_widgets[self._current_playing_id].set_playing(False)
+            prev_item = self._find_item_by_entry_id(self._current_playing_id)
+            if prev_item:
+                prev_item.setBackground(QBrush())  # Reset to default
 
         self._current_playing_id = entry_id
 
-        # Set new
-        if entry_id and entry_id in self._item_widgets:
+        # Set new highlight and play indicator
+        if entry_id in self._item_widgets:
             self._item_widgets[entry_id].set_playing(True)
+        curr_item = self._find_item_by_entry_id(entry_id)
+        if curr_item:
+            curr_item.setBackground(QBrush(QColor("#d4edda")))  # Light green
+
+    def _find_item_by_entry_id(self, entry_id: str) -> QListWidgetItem | None:
+        """Find QListWidgetItem by entry ID."""
+        for i in range(self.count()):
+            item = self.item(i)
+            widget = self.itemWidget(item)
+            if isinstance(widget, QueueItemWidget) and widget.entry.id == entry_id:
+                return item
+        return None
 
     def remove_entry(self, entry_id: str) -> None:
         """Remove an entry from the list."""
