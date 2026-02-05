@@ -6,6 +6,9 @@ pkgs.mkShell {
   buildInputs = with pkgs; [
     python311
     uv
+    # PyGObject for D-Bus (used by dasbus for global hotkeys)
+    gobject-introspection
+    (python311Packages.pygobject3)
     # Required for torch
     stdenv.cc.cc.lib
     zlib

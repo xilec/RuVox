@@ -34,6 +34,7 @@ tts = [
 ui = [
     "PyQt6>=6.6.0",
     "markdown>=3.5",
+    "dasbus>=1.7",  # D-Bus library for global hotkeys (requires PyGObject)
 ]
 
 [project.scripts]

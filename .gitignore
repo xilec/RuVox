@@ -54,3 +54,4 @@ Thumbs.db
 # Local
 *.local
 .env
+tmp/
