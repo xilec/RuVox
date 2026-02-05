@@ -16,6 +16,7 @@ from fast_tts_rus.ui.services.storage import StorageService
 from fast_tts_rus.ui.services.cleanup import CleanupWorker
 from fast_tts_rus.ui.services.tts_worker import TTSWorker
 from fast_tts_rus.ui.services.hotkeys import HotkeyService
+from fast_tts_rus.ui.services.clipboard import get_clipboard_text
 
 
 class TTSApplication(QObject):
@@ -163,10 +164,9 @@ class TTSApplication(QObject):
 
     def read_now(self) -> None:
         """Read text from clipboard immediately."""
-        clipboard = QApplication.clipboard()
-        text = clipboard.text()
+        text = get_clipboard_text()
 
-        if not text or not text.strip():
+        if not text:
             self.tray_icon.showMessage(
                 "Fast TTS RUS",
                 "Буфер обмена пуст",
@@ -175,7 +175,7 @@ class TTSApplication(QObject):
             )
             return
 
-        entry = self.storage.add_entry(text.strip())
+        entry = self.storage.add_entry(text)
         # Update window if open
         if self._main_window is not None:
             self._main_window.add_entry(entry)
@@ -190,10 +190,9 @@ class TTSApplication(QObject):
 
     def read_later(self) -> None:
         """Add text from clipboard to queue."""
-        clipboard = QApplication.clipboard()
-        text = clipboard.text()
+        text = get_clipboard_text()
 
-        if not text or not text.strip():
+        if not text:
             self.tray_icon.showMessage(
                 "Fast TTS RUS",
                 "Буфер обмена пуст",
@@ -202,7 +201,7 @@ class TTSApplication(QObject):
             )
             return
 
-        entry = self.storage.add_entry(text.strip())
+        entry = self.storage.add_entry(text)
         # Update window if open
         if self._main_window is not None:
             self._main_window.add_entry(entry)

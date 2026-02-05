@@ -51,6 +51,8 @@ pkgs.mkShell {
     krb5
     # For xdg-desktop-portal integration
     xdg-desktop-portal
+    # For clipboard access on Wayland
+    wl-clipboard
   ];
 
   # Only include system libs, NOT Qt - let PyQt6 use its bundled Qt
