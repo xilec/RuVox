@@ -182,7 +182,11 @@ class MainWindow(QMainWindow):
     @safe_slot
     def _on_playback_position_changed(self, position_sec: float) -> None:
         """Handle playback position change - update text highlighting."""
-        self.text_viewer.highlight_at_position(position_sec)
+        # Only highlight if the viewer is showing the currently playing entry
+        if (self.player.current_entry and
+            self.text_viewer.current_entry and
+            self.player.current_entry.id == self.text_viewer.current_entry.id):
+            self.text_viewer.highlight_at_position(position_sec)
 
     @safe_slot
     def _play_next(self) -> None:
