@@ -197,7 +197,9 @@ class NumberNormalizer:
             # Convert ordinal to genitive
             ordinal = ordinal.replace('ый', 'ого').replace('ий', 'ого')
             return ordinal
-        except:
+        except (NotImplementedError, OverflowError):
+            # num2words may not support ordinal form for some numbers in Russian;
+            # fall back to cardinal form ("двадцать четыре" instead of "двадцать четвёртого")
             return num2words(year, lang='ru')
 
     def normalize_size(self, size_str: str) -> str:
@@ -383,7 +385,9 @@ class NumberNormalizer:
             ordinal = ordinal.replace('ий', 'ого')
             ordinal = ordinal.replace('ой', 'ого')
             return ordinal
-        except:
+        except (NotImplementedError, OverflowError):
+            # num2words may not support ordinal form for some numbers in Russian;
+            # fall back to cardinal form
             return num2words(year, lang='ru')
 
     def normalize_time(self, time_str: str) -> str:
