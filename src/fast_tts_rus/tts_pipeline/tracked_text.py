@@ -119,6 +119,12 @@ class TrackedText:
         self._replacements: list[Replacement] = []
         # Offset tracking: ordered list of replacements with positions
         self._offset_entries: list[OffsetEntry] = []
+        self._sorted_entries_cache: list[OffsetEntry] | None = None
+
+    def _get_sorted_entries(self) -> list[OffsetEntry]:
+        if self._sorted_entries_cache is None:
+            self._sorted_entries_cache = sorted(self._offset_entries, key=lambda e: e.orig_start)
+        return self._sorted_entries_cache
 
     @property
     def text(self) -> str:
@@ -209,6 +215,8 @@ class TrackedText:
                 new_len=len(new_text),
             ))
 
+            self._sorted_entries_cache = None
+
             # Update text
             self._current = self._current[:start] + new_text + self._current[end:]
 
@@ -223,7 +231,7 @@ class TrackedText:
         Returns:
             True if the position falls inside any replacement's new text.
         """
-        sorted_entries = sorted(self._offset_entries, key=lambda e: e.orig_start)
+        sorted_entries = self._get_sorted_entries()
         cumulative_delta = 0
 
         for entry in sorted_entries:
@@ -294,7 +302,7 @@ class TrackedText:
         current positions back to original positions.
         """
         # Sort entries by original start position (stable reference)
-        sorted_entries = sorted(self._offset_entries, key=lambda e: e.orig_start)
+        sorted_entries = self._get_sorted_entries()
 
         # Compute where each replacement is in current text
         # by accumulating deltas from all previous replacements
