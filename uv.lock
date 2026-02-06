@@ -177,10 +177,28 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/62/3d/8656290e2d537ef66e984a04e903d1a0028ea01524e9dd89e45bb165bc7b/eng_to_ipa-0.0.2.tar.gz", hash = "sha256:0e4fac8370b0ffeaf696193e971b3ff9bd3762e4d153c6d0d280147887e008b1", size = 2808070, upload-time = "2020-04-17T05:02:07.852Z" }
 
 [[package]]
+name = "evdev-binary"
+version = "1.9.3"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/72/88/65adf424f8f99401677a94ec07903f4880e03d0ac63cd63153780c8e6415/evdev_binary-1.9.3-cp311-cp311-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:2d90c4126398fa6a5f760fec7cee8a42f87fd266e4a37aa9c36b7958c4a1ae7b", size = 110997, upload-time = "2026-02-05T21:59:22.38Z" },
+    { url = "https://files.pythonhosted.org/packages/5f/3e/1e7fa235b4766dd1198c4d832c1560d8abcea14d32759914e6e74bf20006/evdev_binary-1.9.3-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:ed6419bca316890c80deb6bd31b1d04e441b013e826aa3122ffe4528a094c7e3", size = 112295, upload-time = "2026-02-05T21:59:23.636Z" },
+    { url = "https://files.pythonhosted.org/packages/1e/30/645606224343ecc02599b731a9090180519b84276c7331bb7805aeb907a5/evdev_binary-1.9.3-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:53bda21275627cc28008bd94dc1ba324c3c24debd0a4b779a64242f19697d681", size = 111362, upload-time = "2026-02-05T21:59:25.167Z" },
+    { url = "https://files.pythonhosted.org/packages/cf/63/b9bb5d2fdf836581821f2ebce82b8b35ec8718482e8f78ec1733ed97fd9b/evdev_binary-1.9.3-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:4404fc4222c9c6670b91ab07784b9d0ed06b6138079f91216d0e9238fcd89df3", size = 112497, upload-time = "2026-02-05T21:59:26.424Z" },
+    { url = "https://files.pythonhosted.org/packages/9d/36/c109d26825e66847721e004708ee4c4b46b2b2c4a22a5b84e40fed051336/evdev_binary-1.9.3-cp313-cp313-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:ef92f0259d3bd1d9b449a4ea1ff7b747064a98c4c55844e3f1cbe880c2efe25c", size = 111512, upload-time = "2026-02-05T21:59:27.538Z" },
+    { url = "https://files.pythonhosted.org/packages/08/c3/3c4a5e2ca1a07c15db1afa48acf090ec906464bb428fb6b930a4028ca7bf/evdev_binary-1.9.3-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:1eb0166c89d96dfe56187b18155323f655bdfdf2695777df29b33c44e48ffc74", size = 112661, upload-time = "2026-02-05T21:59:28.727Z" },
+    { url = "https://files.pythonhosted.org/packages/65/8a/007452c2ffef67d63d02227aba6628704ebd50733ddbdb5af749626a0f1b/evdev_binary-1.9.3-cp314-cp314-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:6c2d609562c8ceb51b10ed08f2d0a2bc910fa77343c6df0a197fe6360202e039", size = 111613, upload-time = "2026-02-05T21:59:30.367Z" },
+    { url = "https://files.pythonhosted.org/packages/8a/0b/05d33bc292583404dbe5af594602678f6091073ad6050d00b27acfae4f5a/evdev_binary-1.9.3-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:25dc29c2b1a771c11b2f12a45ae6f2f6895a6e12f75b1ef37dc0c24355d25293", size = 112749, upload-time = "2026-02-05T21:59:32.038Z" },
+    { url = "https://files.pythonhosted.org/packages/6e/d5/1602e0f0aebd2668abb9605f42d64258bfdc3cdb9aeed0fe428abba5cc1a/evdev_binary-1.9.3-cp314-cp314t-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:910b24cc6f921b7e134b2d7ab30cf0d1123e2cc2fbef0a94c0f7fbcd911c818c", size = 114349, upload-time = "2026-02-05T21:59:33.146Z" },
+    { url = "https://files.pythonhosted.org/packages/2f/78/f423d6444ab9b23703f053b022689e011bc2b4dafd9d3bb8d93a23db927b/evdev_binary-1.9.3-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:f0487ab54cfcb1972d891249b3874fe1dbbef93bbb9c14def823b89533fbf976", size = 115287, upload-time = "2026-02-05T21:59:34.801Z" },
+]
+
+[[package]]
 name = "fast-tts-rus"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "evdev-binary" },
     { name = "num2words" },
 ]
 
@@ -215,6 +233,7 @@ dev = [
 requires-dist = [
     { name = "dasbus", marker = "extra == 'ui'", specifier = ">=1.7" },
     { name = "eng-to-ipa", marker = "extra == 'g2p'", specifier = ">=0.0.2" },
+    { name = "evdev-binary", specifier = ">=1.9.3" },
     { name = "g2p-en", marker = "extra == 'g2p'", specifier = ">=2.1.0" },
     { name = "markdown", marker = "extra == 'ui'", specifier = ">=3.5" },
     { name = "num2words", specifier = ">=0.5.12" },

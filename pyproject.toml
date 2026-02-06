@@ -13,6 +13,7 @@ authors = [
     { name = "evgen" }
 ]
 dependencies = [
+    "evdev-binary>=1.9.3",
     "num2words>=0.5.12",
 ]
 

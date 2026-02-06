@@ -1,40 +1,39 @@
-"""Global hotkey service via xdg-desktop-portal GlobalShortcuts.
+"""Global hotkey service using evdev for direct keyboard input.
 
-This service registers global hotkeys through the xdg-desktop-portal
-GlobalShortcuts interface, which works on Wayland compositors.
+This service reads keyboard events directly from /dev/input devices,
+bypassing Wayland compositor restrictions. Works on both X11 and Wayland.
 
 Requirements:
-- xdg-desktop-portal >= 1.14
-- Desktop environment with GlobalShortcuts support:
-  - GNOME 44+
-  - KDE Plasma 5.27+
-  - Other portal-compatible desktops
-- dasbus library (for D-Bus communication)
-- PyGObject (gi) - required by dasbus
+- evdev library (pip install evdev or evdev-binary)
+- User must be in 'input' group: sudo usermod -aG input $USER
+- Logout/login required after adding to input group
 """
 
 import logging
-import uuid
+import threading
+from pathlib import Path
 
-from PyQt6.QtCore import QObject, QTimer, pyqtSignal
+from PyQt6.QtCore import QObject, pyqtSignal
 
 from fast_tts_rus.ui.models.config import UIConfig
 
 logger = logging.getLogger(__name__)
 
-# Check if dasbus is available
+# Check if evdev is available
 try:
-    from dasbus.connection import SessionMessageBus
-    from dasbus.typing import get_variant, Str
+    import evdev
+    from evdev import ecodes
 
-    DASBUS_AVAILABLE = True
+    EVDEV_AVAILABLE = True
 except ImportError:
-    DASBUS_AVAILABLE = False
-    logger.warning("dasbus not available, global hotkeys will use fallback")
+    EVDEV_AVAILABLE = False
+    evdev = None
+    ecodes = None
+    logger.warning("evdev not available, global hotkeys disabled")
 
 
 class HotkeyService(QObject):
-    """Global hotkey service using xdg-desktop-portal GlobalShortcuts.
+    """Global hotkey service using evdev for direct keyboard input.
 
     Signals:
         read_now_triggered: Emitted when read_now hotkey is activated
@@ -46,233 +45,272 @@ class HotkeyService(QObject):
     read_later_triggered = pyqtSignal()
     registration_failed = pyqtSignal(str)  # error message
 
-    PORTAL_SERVICE = "org.freedesktop.portal.Desktop"
-    PORTAL_PATH = "/org/freedesktop/portal/desktop"
-    SHORTCUTS_IFACE = "org.freedesktop.portal.GlobalShortcuts"
-    SESSION_IFACE = "org.freedesktop.portal.Session"
-
-    # Shortcut IDs
-    SHORTCUT_READ_NOW = "read-now"
-    SHORTCUT_READ_LATER = "read-later"
+    # Modifier key codes
+    CTRL_KEYS = set()
+    ALT_KEYS = set()
+    SHIFT_KEYS = set()
 
     def __init__(self, config: UIConfig, parent=None):
         super().__init__(parent)
         self.config = config
-        self._session_handle: str | None = None
-        self._session_token: str | None = None
         self._registered = False
         self._fallback_emitted = False
-        self._bus = None
-        self._portal = None
-        self._poll_timer: QTimer | None = None
+        self._stop_event = threading.Event()
+        self._threads: list[threading.Thread] = []
+        self._devices: list = []
 
-    def register(self) -> bool:
-        """Register global hotkeys via portal.
+        # Modifier state tracking (shared across all devices)
+        self._ctrl_pressed = False
+        self._alt_pressed = False
+        self._shift_pressed = False
+        self._lock = threading.Lock()
+
+        # Parse hotkey configurations
+        self._read_now_key = None
+        self._read_now_mods = set()
+        self._read_later_key = None
+        self._read_later_mods = set()
+
+        # Initialize key code sets if evdev is available
+        if EVDEV_AVAILABLE:
+            self.CTRL_KEYS = {ecodes.KEY_LEFTCTRL, ecodes.KEY_RIGHTCTRL}
+            self.ALT_KEYS = {ecodes.KEY_LEFTALT, ecodes.KEY_RIGHTALT}
+            self.SHIFT_KEYS = {ecodes.KEY_LEFTSHIFT, ecodes.KEY_RIGHTSHIFT}
+
+    def _parse_hotkey(self, hotkey_str: str) -> tuple[int | None, set[str]]:
+        """Parse hotkey string like 'CTRL+ALT+R' into key code and modifiers.
 
         Returns:
-            True if registration was initiated successfully
+            Tuple of (key_code, set of modifier names)
         """
-        if not DASBUS_AVAILABLE:
-            self._emit_fallback("dasbus library not available")
-            return False
+        if not EVDEV_AVAILABLE:
+            return None, set()
+
+        parts = [p.strip().upper() for p in hotkey_str.split("+")]
+        modifiers = set()
+        key_code = None
+
+        for part in parts:
+            if part in ("CTRL", "CONTROL"):
+                modifiers.add("CTRL")
+            elif part in ("ALT",):
+                modifiers.add("ALT")
+            elif part in ("SHIFT",):
+                modifiers.add("SHIFT")
+            else:
+                # Try to find key code
+                key_name = f"KEY_{part}"
+                key_code = getattr(ecodes, key_name, None)
+                if key_code is None:
+                    logger.warning("Unknown key: %s", part)
+
+        return key_code, modifiers
+
+    def _find_keyboards(self) -> list:
+        """Find all keyboard devices."""
+        if not EVDEV_AVAILABLE:
+            return []
+
+        keyboards = []
+        input_dir = Path("/dev/input")
+
+        if not input_dir.exists():
+            logger.warning("/dev/input does not exist")
+            return []
+
+        for path in input_dir.glob("event*"):
+            try:
+                device = evdev.InputDevice(str(path))
+                capabilities = device.capabilities()
+
+                # Check if device has key events (EV_KEY)
+                if ecodes.EV_KEY in capabilities:
+                    keys = capabilities[ecodes.EV_KEY]
+                    # Check if it has common keyboard keys (letters)
+                    if ecodes.KEY_A in keys and ecodes.KEY_Z in keys:
+                        logger.debug("Found keyboard: %s (%s)", device.name, device.path)
+                        keyboards.append(device)
+                    else:
+                        device.close()
+                else:
+                    device.close()
+            except PermissionError:
+                logger.debug("Permission denied for %s", path)
+            except OSError as e:
+                logger.debug("Cannot open %s: %s", path, e)
+
+        return keyboards
+
+    def _check_hotkey(self, key_code: int) -> str | None:
+        """Check if current key + modifiers match any hotkey.
+
+        Returns:
+            'read_now', 'read_later', or None
+        """
+        with self._lock:
+            current_mods = set()
+            if self._ctrl_pressed:
+                current_mods.add("CTRL")
+            if self._alt_pressed:
+                current_mods.add("ALT")
+            if self._shift_pressed:
+                current_mods.add("SHIFT")
+
+        # Check read_now hotkey
+        if (
+            self._read_now_key is not None
+            and key_code == self._read_now_key
+            and current_mods == self._read_now_mods
+        ):
+            return "read_now"
+
+        # Check read_later hotkey
+        if (
+            self._read_later_key is not None
+            and key_code == self._read_later_key
+            and current_mods == self._read_later_mods
+        ):
+            return "read_later"
+
+        return None
+
+    def _update_modifiers(self, key_code: int, pressed: bool) -> None:
+        """Update modifier state."""
+        with self._lock:
+            if key_code in self.CTRL_KEYS:
+                self._ctrl_pressed = pressed
+            elif key_code in self.ALT_KEYS:
+                self._alt_pressed = pressed
+            elif key_code in self.SHIFT_KEYS:
+                self._shift_pressed = pressed
+
+    def _listen_device(self, device) -> None:
+        """Listen for events on a single device (runs in thread)."""
+        logger.debug("Starting listener for %s", device.name)
 
         try:
-            self._bus = SessionMessageBus()
+            for event in device.read_loop():
+                if self._stop_event.is_set():
+                    break
+
+                # Only process key events
+                if event.type != ecodes.EV_KEY:
+                    continue
+
+                key_code = event.code
+
+                # Key pressed
+                if event.value == 1:
+                    # Update modifier state
+                    self._update_modifiers(key_code, True)
+
+                    # Check if this triggers a hotkey
+                    hotkey = self._check_hotkey(key_code)
+                    if hotkey == "read_now":
+                        logger.debug("Read now hotkey triggered")
+                        # Emit signal (thread-safe in PyQt)
+                        self.read_now_triggered.emit()
+                    elif hotkey == "read_later":
+                        logger.debug("Read later hotkey triggered")
+                        self.read_later_triggered.emit()
+
+                # Key released
+                elif event.value == 0:
+                    self._update_modifiers(key_code, False)
+
+        except OSError as e:
+            if not self._stop_event.is_set():
+                logger.warning("Device %s disconnected: %s", device.name, e)
         except Exception as e:
-            logger.warning("Failed to connect to D-Bus: %s", e)
-            self._emit_fallback(f"D-Bus connection failed: {e}")
+            if not self._stop_event.is_set():
+                logger.error("Error reading %s: %s", device.name, e)
+        finally:
+            try:
+                device.close()
+            except Exception:
+                pass
+
+        logger.debug("Listener stopped for %s", device.name)
+
+    def register(self) -> bool:
+        """Register global hotkeys via evdev.
+
+        Returns:
+            True if registration was successful
+        """
+        if not EVDEV_AVAILABLE:
+            self._emit_fallback("evdev library not available")
             return False
 
-        # Get the GlobalShortcuts portal interface
-        try:
-            self._portal = self._bus.get_proxy(
-                self.PORTAL_SERVICE,
-                self.PORTAL_PATH,
-                interface_name=self.SHORTCUTS_IFACE,
+        # Parse hotkey configurations
+        self._read_now_key, self._read_now_mods = self._parse_hotkey(
+            self.config.hotkey_read_now
+        )
+        self._read_later_key, self._read_later_mods = self._parse_hotkey(
+            self.config.hotkey_read_later
+        )
+
+        if self._read_now_key is None and self._read_later_key is None:
+            self._emit_fallback("Failed to parse hotkey configurations")
+            return False
+
+        # Find keyboard devices
+        self._devices = self._find_keyboards()
+
+        if not self._devices:
+            self._emit_fallback(
+                "No keyboard devices found. Make sure you are in the 'input' group:\n"
+                "  sudo usermod -aG input $USER\n"
+                "Then logout and login again."
             )
-        except Exception as e:
-            logger.warning("Failed to get GlobalShortcuts proxy: %s", e)
-            self._emit_fallback(f"GlobalShortcuts portal not available: {e}")
             return False
 
-        # Create session and bind shortcuts
-        try:
-            self._create_session_and_bind()
-            return True
-        except Exception as e:
-            logger.warning("Failed to register hotkeys: %s", e)
-            self._emit_fallback(f"Failed to register hotkeys: {e}")
-            return False
+        # Start listener threads
+        self._stop_event.clear()
+        for device in self._devices:
+            thread = threading.Thread(
+                target=self._listen_device,
+                args=(device,),
+                daemon=True,
+                name=f"hotkey-{device.name}",
+            )
+            thread.start()
+            self._threads.append(thread)
 
-    def _get_sender_name(self) -> str:
-        """Get the sender name for D-Bus (connection name without leading colon)."""
-        name = self._bus.connection.get_unique_name()
-        if name.startswith(":"):
-            name = name[1:]
-        return name.replace(".", "_")
-
-    def _create_session_and_bind(self) -> None:
-        """Create a GlobalShortcuts session and bind shortcuts."""
-        import time
-
-        self._session_token = f"fast_tts_session_{uuid.uuid4().hex[:8]}"
-        handle_token = f"fast_tts_req_{uuid.uuid4().hex[:8]}"
-
-        options = {
-            "handle_token": get_variant(Str, handle_token),
-            "session_handle_token": get_variant(Str, self._session_token),
-        }
-
-        logger.debug("Creating GlobalShortcuts session...")
-        request_path = self._portal.CreateSession(options)
-        logger.debug("CreateSession request: %s", request_path)
-
-        # Construct session handle from our tokens
-        # The portal constructs the handle as: /org/freedesktop/portal/desktop/session/{sender}/{session_token}
-        sender = self._get_sender_name()
-        self._session_handle = (
-            f"/org/freedesktop/portal/desktop/session/{sender}/{self._session_token}"
-        )
-        logger.debug("Session handle: %s", self._session_handle)
-
-        # Give the portal a moment to process the session creation
-        # This is a workaround for not properly handling the Response signal
-        time.sleep(0.2)
-
-        # Bind shortcuts
-        self._bind_shortcuts()
-
-        # Start listening for activations
-        self._start_activation_polling()
-
-    def _bind_shortcuts(self) -> None:
-        """Bind shortcuts to the session."""
-        if not self._session_handle or not self._portal:
-            return
-
-        shortcuts = [
-            (
-                self.SHORTCUT_READ_NOW,
-                {
-                    "description": get_variant(Str, "Read clipboard now"),
-                    "preferred_trigger": get_variant(Str, self.config.hotkey_read_now),
-                },
-            ),
-            (
-                self.SHORTCUT_READ_LATER,
-                {
-                    "description": get_variant(Str, "Read clipboard later"),
-                    "preferred_trigger": get_variant(
-                        Str, self.config.hotkey_read_later
-                    ),
-                },
-            ),
-        ]
-
-        bind_token = f"fast_tts_bind_{uuid.uuid4().hex[:8]}"
-        options = {
-            "handle_token": get_variant(Str, bind_token),
-        }
-
-        logger.debug("Binding shortcuts: %s", [s[0] for s in shortcuts])
-        request_path = self._portal.BindShortcuts(
-            self._session_handle,
-            shortcuts,
-            "",  # parent_window
-            options,
-        )
-        logger.debug("BindShortcuts request: %s", request_path)
         self._registered = True
-
-    def _start_activation_polling(self) -> None:
-        """Start polling for shortcut activations.
-
-        Note: This is a workaround because integrating GLib signals with Qt
-        event loop requires more complex setup. For proper integration,
-        we would need to use QSocketNotifier or GLib-Qt integration.
-        """
-        from gi.repository import Gio, GLib
-
-        try:
-            # Subscribe to the Activated signal on the session path
-            # using low-level D-Bus signal subscription
-            connection = self._bus.connection
-            connection.signal_subscribe(
-                self.PORTAL_SERVICE,  # sender
-                self.SHORTCUTS_IFACE,  # interface
-                "Activated",  # signal name
-                self._session_handle,  # object path
-                None,  # arg0
-                Gio.DBusSignalFlags.NONE,
-                self._on_activated_signal,
-                None,  # user_data
-            )
-            logger.debug("Subscribed to Activated signal on %s", self._session_handle)
-
-            # Start polling GLib events to receive signals
-            self._poll_timer = QTimer(self)
-            self._poll_timer.timeout.connect(self._poll_glib_events)
-            self._poll_timer.start(50)  # Poll every 50ms
-        except Exception as e:
-            logger.warning("Failed to subscribe to Activated signal: %s", e)
-
-    def _on_activated_signal(
-        self,
-        connection,
-        sender_name: str,
-        object_path: str,
-        interface_name: str,
-        signal_name: str,
-        parameters,
-        user_data,
-    ) -> None:
-        """Handle raw D-Bus Activated signal."""
-        try:
-            # Parameters: (session_handle, shortcut_id, timestamp, options)
-            session_handle = parameters[0]
-            shortcut_id = parameters[1]
-            logger.debug("Shortcut activated: %s", shortcut_id)
-
-            if shortcut_id == self.SHORTCUT_READ_NOW:
-                self.read_now_triggered.emit()
-            elif shortcut_id == self.SHORTCUT_READ_LATER:
-                self.read_later_triggered.emit()
-        except Exception as e:
-            logger.warning("Error handling Activated signal: %s", e)
-
-    def _poll_glib_events(self) -> None:
-        """Poll GLib main context for pending events."""
-        try:
-            from gi.repository import GLib
-
-            context = GLib.MainContext.default()
-            while context.pending():
-                context.iteration(False)
-        except Exception:
-            pass
+        logger.info(
+            "Registered hotkeys on %d keyboard(s): %s",
+            len(self._devices),
+            ", ".join(d.name for d in self._devices),
+        )
+        return True
 
     def unregister(self) -> None:
-        """Unregister global hotkeys and close session."""
-        if self._poll_timer:
-            self._poll_timer.stop()
-            self._poll_timer = None
+        """Unregister global hotkeys and stop listeners."""
+        self._stop_event.set()
 
-        if self._session_handle and self._bus:
+        # Close all devices to unblock read_loop
+        for device in self._devices:
             try:
-                session_proxy = self._bus.get_proxy(
-                    self.PORTAL_SERVICE,
-                    self._session_handle,
-                    interface_name=self.SESSION_IFACE,
-                )
-                session_proxy.Close()
-                logger.debug("Session closed")
-            except Exception as e:
-                logger.debug("Failed to close session: %s", e)
+                device.close()
+            except Exception:
+                pass
 
-        self._session_handle = None
+        # Wait for threads to finish
+        for thread in self._threads:
+            thread.join(timeout=1.0)
+
+        self._threads.clear()
+        self._devices.clear()
         self._registered = False
-        self._portal = None
-        self._bus = None
+
+        # Reset modifier state
+        with self._lock:
+            self._ctrl_pressed = False
+            self._alt_pressed = False
+            self._shift_pressed = False
+
+        logger.debug("Hotkey service unregistered")
 
     def is_registered(self) -> bool:
         """Check if hotkeys are registered."""
@@ -289,22 +327,26 @@ class HotkeyService(QObject):
 
         message = f"""{reason}
 
-To use global hotkeys, configure them manually in your desktop environment:
+To use global hotkeys with evdev:
 
-For GNOME:
-  Settings → Keyboard → View and Customize Shortcuts → Custom Shortcuts
-  Add: "Read Now" → fast-tts-ui --read-now
-  Add: "Read Later" → fast-tts-ui --read-later
+1. Add yourself to the 'input' group:
+   sudo usermod -aG input $USER
+
+2. Logout and login again (or reboot)
+
+3. Restart Fast TTS RUS
+
+Alternatively, configure hotkeys manually in your desktop environment:
 
 For KDE Plasma:
   System Settings → Shortcuts → Custom Shortcuts
   Add: "Read Now" → fast-tts-ui --read-now
   Add: "Read Later" → fast-tts-ui --read-later
 
-For Sway/Hyprland:
-  Add to config:
-  bindsym $mod+t exec fast-tts-ui --read-now
-  bindsym $mod+Shift+t exec fast-tts-ui --read-later
+For GNOME:
+  Settings → Keyboard → View and Customize Shortcuts → Custom Shortcuts
+  Add: "Read Now" → fast-tts-ui --read-now
+  Add: "Read Later" → fast-tts-ui --read-later
 
 Suggested shortcuts:
   Read Now: {self.config.hotkey_read_now}
