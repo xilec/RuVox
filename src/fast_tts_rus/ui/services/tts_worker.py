@@ -579,3 +579,12 @@ class TTSWorker(QObject):
     def is_loading(self) -> bool:
         """Check if the model is currently loading."""
         return self.model_loading_in_progress
+
+    def shutdown(self) -> None:
+        """Shutdown TTS worker and wait for pending tasks to complete."""
+        self.thread_pool.waitForDone(5000)
+        with self._queue_lock:
+            self._active_runnables.clear()
+            self.play_queue.clear()
+            self._pending_jobs.clear()
+        self.silero_model = None

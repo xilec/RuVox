@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 # Инициализация логирования ДО импорта PyQt6
-from fast_tts_rus.ui.services.logging_service import setup_logging, setup_qt_logging
+from fast_tts_rus.ui.services.logging_service import setup_logging, setup_qt_logging, shutdown_logging
 setup_logging()
 
 from PyQt6.QtWidgets import QApplication
@@ -88,7 +88,7 @@ def main() -> int:
 
     logger.info("Приложение запущено")
     result = app.exec()
-    logger.info("Приложение завершено")
+    shutdown_logging()
     return result
 
 

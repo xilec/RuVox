@@ -355,8 +355,16 @@ class TTSApplication(QObject):
 
     def _quit(self) -> None:
         """Quit the application."""
-        # Save config before exit
+        if self.hotkey_service:
+            self.hotkey_service.unregister()
+
+        if self.tts_worker:
+            self.tts_worker.shutdown()
+
         if self.config:
             self.config.save()
+
+        from fast_tts_rus.ui.services.logging_service import shutdown_logging
+        shutdown_logging()
 
         QApplication.quit()
