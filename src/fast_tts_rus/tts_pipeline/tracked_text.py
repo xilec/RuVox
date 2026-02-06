@@ -244,36 +244,38 @@ class TrackedText:
     def _current_to_original(self, current_pos: int) -> int:
         """Convert position in current text to position in original text.
 
-        Uses cumulative offset tracking for correct conversion.
-        If position is inside a replacement's new text, returns the start
-        of the original replaced range.
+        Uses offset entries sorted by original position to correctly map
+        current positions back to original positions.
         """
-        orig_pos = current_pos
-        cumulative_offset = 0
+        # Sort entries by original start position (stable reference)
+        sorted_entries = sorted(self._offset_entries, key=lambda e: e.orig_start)
 
-        # Process offset entries in order (earliest first)
-        for entry in self._offset_entries:
+        # Compute where each replacement is in current text
+        # by accumulating deltas from all previous replacements
+        cumulative_delta = 0
+        for entry in sorted_entries:
             old_len = entry.orig_end - entry.orig_start
             new_len = entry.new_len
+            delta = new_len - old_len
 
-            # Calculate where this replacement starts/ends in current coordinate
-            # (accounting for all previous offsets)
-            repl_current_start = entry.current_pos
-            repl_current_end = entry.current_pos + new_len
+            # Where this replacement is in current text
+            current_start = entry.orig_start + cumulative_delta
+            current_end = current_start + new_len
 
-            if current_pos < repl_current_start:
-                # Position is before this replacement - not affected
-                continue
-            elif current_pos < repl_current_end:
-                # Position is INSIDE this replacement's new text
+            if current_pos < current_start:
+                # Position is before this replacement
+                # Subtract cumulative delta to get original position
+                return current_pos - cumulative_delta
+            elif current_pos < current_end:
+                # Position is INSIDE this replacement
                 # Map to the start of the original range
                 return entry.orig_start
             else:
-                # Position is after this replacement - adjust by delta
-                delta = new_len - old_len
-                orig_pos -= delta
+                # Position is after this replacement
+                cumulative_delta += delta
 
-        return max(0, orig_pos)
+        # Position is after all replacements
+        return current_pos - cumulative_delta
 
     def build_mapping(self) -> CharMapping:
         """Build character-level mapping from tracked replacements.
