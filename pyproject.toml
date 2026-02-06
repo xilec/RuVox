@@ -13,29 +13,29 @@ authors = [
     { name = "evgen" }
 ]
 dependencies = [
-    "evdev-binary>=1.9.3",
-    "num2words>=0.5.12",
+    "evdev-binary>=1.9.3,<2",
+    "num2words>=0.5.12,<1",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.0",
-    "pytest-cov>=4.0",
+    "pytest>=8.0,<9",
+    "pytest-cov>=4.0,<6",
 ]
 g2p = [
-    "g2p-en>=2.1.0",
-    "eng-to-ipa>=0.0.2",
+    "g2p-en>=2.1.0,<3",
+    "eng-to-ipa>=0.0.2,<1",
 ]
 tts = [
-    "torch>=2.0",
-    "scipy>=1.10",
-    "numpy>=1.24",
-    "omegaconf>=2.3",
+    "torch>=2.0,<3",
+    "scipy>=1.10,<2",
+    "numpy>=1.24,<3",
+    "omegaconf>=2.3,<3",
 ]
 ui = [
-    "PyQt6>=6.6.0",
-    "markdown>=3.5",
-    "dasbus>=1.7",  # D-Bus library for global hotkeys (requires PyGObject)
+    "PyQt6>=6.6.0,<7",
+    "markdown>=3.5,<4",
+    "dasbus>=1.7,<2",  # D-Bus library for global hotkeys (requires PyGObject)
 ]
 
 [project.scripts]
@@ -59,6 +59,6 @@ skip_covered = false
 
 [dependency-groups]
 dev = [
-    "pytest>=8.0",
-    "pytest-cov>=4.0",
+    "pytest>=8.0,<9",
+    "pytest-cov>=4.0,<6",
 ]
