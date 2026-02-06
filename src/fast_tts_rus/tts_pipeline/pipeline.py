@@ -501,23 +501,13 @@ class TTSPipeline:
 
         tracked.sub(pct_pattern, replace_pct)
 
+    _TRACKED_OPERATORS = ['===', '!==', '->', '=>', '>=', '<=', '!=', '==', '&&', '||']
+
     def _process_operators_tracked(self, tracked: TrackedText) -> None:
         """Process operators with tracking."""
-        operators = [
-            ('===', 'строго равно'),
-            ('!==', 'строго не равно'),
-            ('->', 'стрелка'),
-            ('=>', 'толстая стрелка'),
-            ('>=', 'больше или равно'),
-            ('<=', 'меньше или равно'),
-            ('!=', 'не равно'),
-            ('==', 'равно равно'),
-            ('&&', 'и'),
-            ('||', 'или'),
-        ]
-
-        for op, replacement in operators:
-            tracked.replace(op, f' {replacement} ')
+        symbols = SymbolNormalizer.SYMBOLS
+        for op in self._TRACKED_OPERATORS:
+            tracked.replace(op, f' {symbols[op]} ')
 
     def _process_symbols_tracked(self, tracked: TrackedText) -> None:
         """Process special symbols with tracking."""
