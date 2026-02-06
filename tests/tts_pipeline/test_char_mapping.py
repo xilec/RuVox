@@ -182,6 +182,133 @@ if containing_entry is not None:
         assert normalized == ""
 
 
+class TestPreprocessingTracking:
+    """Tests that preprocessing changes are tracked correctly."""
+
+    @pytest.fixture
+    def pipeline(self):
+        return TTSPipeline()
+
+    def test_multiple_spaces_tracked(self, pipeline):
+        """Multiple spaces should be collapsed but positions tracked."""
+        text = "Привет   мир"  # 3 spaces
+        normalized, mapping = pipeline.process_with_char_mapping(text)
+
+        # mapping.original should be the TRUE original
+        assert mapping.original == text
+        assert len(mapping.original) == 12
+
+        # "мир" is at position 9 in original (after 3 spaces)
+        assert text[9:12] == "мир"
+
+        # In normalized, "мир" is at position 7 (after 1 space)
+        mir_pos = normalized.find("мир")
+        assert mir_pos == 7
+
+        # Mapping should correctly point back to original
+        orig_start, orig_end = mapping.get_original_range(mir_pos, mir_pos + 3)
+        assert text[orig_start:orig_end] == "мир"
+        assert orig_start == 9
+
+    def test_tabs_converted_to_space(self, pipeline):
+        """Tab characters should be converted but tracked."""
+        text = "Привет\tмир"
+        normalized, mapping = pipeline.process_with_char_mapping(text)
+
+        assert mapping.original == text
+        # "мир" at position 7 in original (after tab)
+        assert text[7:10] == "мир"
+
+        # In normalized, tab becomes space
+        mir_pos = normalized.find("мир")
+        orig_start, orig_end = mapping.get_original_range(mir_pos, mir_pos + 3)
+        assert text[orig_start:orig_end] == "мир"
+
+    def test_special_quotes_tracked(self, pipeline):
+        """Special quote characters should be normalized but tracked."""
+        text = "«Привет» мир"
+        normalized, mapping = pipeline.process_with_char_mapping(text)
+
+        assert mapping.original == text
+        # "мир" at position 10 in original
+        mir_pos_orig = text.find("мир")
+
+        mir_pos_norm = normalized.find("мир")
+        orig_start, orig_end = mapping.get_original_range(mir_pos_norm, mir_pos_norm + 3)
+        assert text[orig_start:orig_end] == "мир"
+        assert orig_start == mir_pos_orig
+
+    def test_em_dash_tracked(self, pipeline):
+        """Em-dash should be normalized but tracked."""
+        text = "Привет — мир"  # em-dash
+        normalized, mapping = pipeline.process_with_char_mapping(text)
+
+        assert mapping.original == text
+        mir_pos_orig = text.find("мир")
+
+        mir_pos_norm = normalized.find("мир")
+        orig_start, orig_end = mapping.get_original_range(mir_pos_norm, mir_pos_norm + 3)
+        assert text[orig_start:orig_end] == "мир"
+
+    def test_multiple_newlines_collapsed(self, pipeline):
+        """Multiple newlines should be collapsed but tracked."""
+        text = "Привет\n\n\n\nмир"  # 4 newlines
+        normalized, mapping = pipeline.process_with_char_mapping(text)
+
+        assert mapping.original == text
+        mir_pos_orig = text.find("мир")
+        assert mir_pos_orig == 10  # after 4 newlines
+
+        mir_pos_norm = normalized.find("мир")
+        orig_start, orig_end = mapping.get_original_range(mir_pos_norm, mir_pos_norm + 3)
+        assert text[orig_start:orig_end] == "мир"
+        assert orig_start == mir_pos_orig
+
+    def test_bom_removed_tracked(self, pipeline):
+        """BOM character should be removed but tracked."""
+        text = "\ufeffПривет мир"  # BOM at start
+        normalized, mapping = pipeline.process_with_char_mapping(text)
+
+        assert mapping.original == text
+        # "Привет" at position 1 in original (after BOM)
+        assert text[1:7] == "Привет"
+
+        # In normalized, no BOM
+        assert not normalized.startswith("\ufeff")
+        privet_pos = normalized.find("Привет")
+        assert privet_pos == 0
+
+        # Mapping should point back correctly
+        orig_start, orig_end = mapping.get_original_range(0, 6)
+        assert text[orig_start:orig_end] == "Привет"
+        assert orig_start == 1  # After BOM
+
+    def test_all_preprocessing_combined(self, pipeline):
+        """Combined preprocessing should maintain correct mapping."""
+        # BOM + special quotes + multiple spaces + em-dash
+        text = "\ufeff«Привет»   мир — всё"
+        normalized, mapping = pipeline.process_with_char_mapping(text)
+
+        assert mapping.original == text
+
+        # Check each word maps correctly
+        for word in ["Привет", "мир", "всё"]:
+            # Find in normalized
+            norm_pos = normalized.find(word)
+            if norm_pos < 0:
+                # Word might be changed (e.g., всё -> все)
+                continue
+
+            # Map back to original
+            orig_start, orig_end = mapping.get_original_range(
+                norm_pos, norm_pos + len(word)
+            )
+            assert text[orig_start:orig_end] == word, (
+                f"Word '{word}' at norm_pos {norm_pos} "
+                f"mapped to [{orig_start}:{orig_end}] = '{text[orig_start:orig_end]}'"
+            )
+
+
 class TestCharMappingRanges:
     """Tests for get_original_range functionality."""
 
@@ -229,3 +356,179 @@ class TestCharMappingRanges:
                 docker_pos, docker_pos + 5
             )
             assert text[orig_start:orig_end] == "Docker"
+
+
+class TestQtPositionCorrespondence:
+    """Tests that Python string positions match Qt QTextDocument positions.
+
+    When we use setPlainText() in Qt, we expect character positions to be 1:1
+    with Python string indices. These tests verify this assumption.
+    """
+
+    @pytest.fixture
+    def qt_app(self):
+        """Create QApplication for Qt tests."""
+        from PyQt6.QtWidgets import QApplication
+        import sys
+
+        # Check if app already exists
+        app = QApplication.instance()
+        if app is None:
+            app = QApplication(sys.argv)
+        return app
+
+    @pytest.fixture
+    def text_document(self, qt_app):
+        """Create a QTextDocument for testing."""
+        from PyQt6.QtGui import QTextDocument
+        return QTextDocument()
+
+    def test_simple_text_positions(self, text_document):
+        """Simple text should have matching positions."""
+        text = "Привет мир"
+        text_document.setPlainText(text)
+
+        qt_text = text_document.toPlainText()
+        assert qt_text == text
+        assert len(qt_text) == len(text)
+
+        # Check each character position
+        for i, char in enumerate(text):
+            assert qt_text[i] == char
+
+    def test_text_with_multiple_spaces(self, text_document):
+        """Multiple spaces should be preserved in plain text mode."""
+        text = "Привет   мир"  # 3 spaces
+        text_document.setPlainText(text)
+
+        qt_text = text_document.toPlainText()
+        assert qt_text == text
+        assert len(qt_text) == len(text)
+
+        # Verify "мир" position
+        assert qt_text[9:12] == "мир"
+        assert text[9:12] == "мир"
+
+    def test_text_with_newlines(self, text_document):
+        """Newlines should be preserved."""
+        text = "Привет\nмир\nвсё"
+        text_document.setPlainText(text)
+
+        qt_text = text_document.toPlainText()
+        assert qt_text == text
+        assert len(qt_text) == len(text)
+
+    def test_text_with_tabs(self, text_document):
+        """Tab characters should be preserved."""
+        text = "Привет\tмир"
+        text_document.setPlainText(text)
+
+        qt_text = text_document.toPlainText()
+        assert qt_text == text
+        assert len(qt_text) == len(text)
+
+    def test_unicode_characters(self, text_document):
+        """Unicode characters should have correct positions."""
+        text = "Привет → мир"  # Arrow is single character
+        text_document.setPlainText(text)
+
+        qt_text = text_document.toPlainText()
+        assert qt_text == text
+        assert len(qt_text) == len(text)
+
+        # Arrow is at position 7
+        assert qt_text[7] == "→"
+        assert text[7] == "→"
+
+    def test_special_quotes(self, text_document):
+        """Special quote characters should be preserved."""
+        text = "«Привет» мир"
+        text_document.setPlainText(text)
+
+        qt_text = text_document.toPlainText()
+        assert qt_text == text
+        assert len(qt_text) == len(text)
+
+    def test_em_dash(self, text_document):
+        """Em-dash should be preserved."""
+        text = "Привет — мир"  # em-dash
+        text_document.setPlainText(text)
+
+        qt_text = text_document.toPlainText()
+        assert qt_text == text
+        assert len(qt_text) == len(text)
+
+    def test_bom_character_stripped_by_qt(self, text_document):
+        """Qt strips BOM character - this is expected behavior.
+
+        IMPORTANT: Qt's QTextDocument.setPlainText() automatically removes
+        the BOM character. This means we must strip BOM from text before
+        storing it, otherwise positions will be off by 1.
+        """
+        text_with_bom = "\ufeffПривет мир"
+        text_without_bom = "Привет мир"
+
+        text_document.setPlainText(text_with_bom)
+        qt_text = text_document.toPlainText()
+
+        # Qt removes BOM!
+        assert qt_text == text_without_bom
+        assert len(qt_text) == len(text_with_bom) - 1
+
+        # This is why we strip BOM in storage.add_entry()
+
+    def test_cursor_position_matches_string_index(self, text_document):
+        """QTextCursor positions should match Python string indices."""
+        from PyQt6.QtGui import QTextCursor
+
+        text = "Привет мир и всё"
+        text_document.setPlainText(text)
+
+        cursor = QTextCursor(text_document)
+
+        # Move to position 7 (should be "м" from "мир")
+        cursor.setPosition(7)
+        cursor.setPosition(10, QTextCursor.MoveMode.KeepAnchor)
+
+        selected = cursor.selectedText()
+        assert selected == text[7:10]
+        assert selected == "мир"
+
+    def test_highlighting_position_accuracy(self, text_document):
+        """Simulates highlighting and verifies position accuracy."""
+        from PyQt6.QtGui import QTextCursor, QTextCharFormat, QColor
+
+        text = "Привет   мир  и  всё"  # Multiple spaces
+        text_document.setPlainText(text)
+
+        # Create highlight format
+        highlight_format = QTextCharFormat()
+        highlight_format.setBackground(QColor("#FFFF00"))
+
+        # Highlight "мир" at its actual position (9-12)
+        mir_start = text.find("мир")
+        mir_end = mir_start + len("мир")
+        assert mir_start == 9
+
+        cursor = QTextCursor(text_document)
+        cursor.setPosition(mir_start)
+        cursor.setPosition(mir_end, QTextCursor.MoveMode.KeepAnchor)
+
+        # Verify selection
+        assert cursor.selectedText() == "мир"
+
+    def test_complex_text_positions(self, text_document):
+        """Complex text with various unicode should maintain positions."""
+        # Note: No BOM here since Qt strips it
+        text = "«Привет»   мир — всё → конец"
+        text_document.setPlainText(text)
+
+        qt_text = text_document.toPlainText()
+        assert qt_text == text
+        assert len(qt_text) == len(text)
+
+        # Verify each word can be found at correct position
+        for word in ["Привет", "мир", "всё", "конец"]:
+            py_pos = text.find(word)
+            qt_pos = qt_text.find(word)
+            assert py_pos == qt_pos, f"Word '{word}' position mismatch: Python={py_pos}, Qt={qt_pos}"

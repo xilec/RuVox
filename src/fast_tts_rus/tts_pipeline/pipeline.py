@@ -139,25 +139,34 @@ class TTSPipeline:
         # Clear unknown words tracking for new processing
         self.english_normalizer.clear_unknown_words()
 
-        # Create tracked text
+        # Create tracked text with ORIGINAL text - all changes will be tracked
         tracked = TrackedText(text)
 
-        # Preprocessing (inline, not tracked as these are normalization)
-        current = tracked.text
-        current = current.lstrip('\ufeff')
-        current = current.replace('«', '"').replace('»', '"')
-        current = current.replace('"', '"').replace('"', '"')
-        current = current.replace(''', "'").replace(''', "'")
-        current = current.replace('—', '-').replace('–', '-')
-        current = re.sub(r'\n{3,}', '\n\n', current)
-        current = re.sub(r'[ \t]+', ' ', current)
+        # Preprocessing - now tracked!
+        # Remove BOM at start
+        if tracked.text.startswith('\ufeff'):
+            tracked.sub(r'^\ufeff', '')
 
-        if not current.strip():
+        # Normalize quotes (tracked)
+        tracked.replace('«', '"')
+        tracked.replace('»', '"')
+        tracked.replace('"', '"')
+        tracked.replace('"', '"')
+        tracked.replace(''', "'")
+        tracked.replace(''', "'")
+
+        # Normalize dashes (tracked)
+        tracked.replace('—', '-')
+        tracked.replace('–', '-')
+
+        # Collapse multiple newlines (tracked)
+        tracked.sub(r'\n{3,}', '\n\n')
+
+        # Collapse multiple spaces/tabs (tracked)
+        tracked.sub(r'[ \t]+', ' ')
+
+        if not tracked.text.strip():
             return "", CharMapping(original=text, transformed="", char_map=[])
-
-        # Create new tracked text after preprocessing
-        # Note: preprocessing changes are not tracked as they're normalization
-        tracked = TrackedText(current)
 
         # Process code blocks (brief mode)
         self._process_code_blocks_tracked(tracked)

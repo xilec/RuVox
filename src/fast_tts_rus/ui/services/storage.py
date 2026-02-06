@@ -120,8 +120,15 @@ class StorageService:
     # CRUD operations
 
     def add_entry(self, text: str) -> TextEntry:
-        """Add a new text entry."""
-        entry = TextEntry(original_text=text)
+        """Add a new text entry.
+
+        Note: BOM character is stripped from the beginning because Qt's
+        QTextDocument removes it automatically in setPlainText(), which
+        would cause position mismatch between Python string and Qt widget.
+        """
+        # Strip BOM to match Qt's behavior
+        clean_text = text.lstrip('\ufeff')
+        entry = TextEntry(original_text=clean_text)
         self._entries[entry.id] = entry
         self._save_history()
         return entry
