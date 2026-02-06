@@ -2,6 +2,7 @@
 
 import logging
 import re
+import threading
 from datetime import datetime
 from typing import Any
 
@@ -47,18 +48,26 @@ class ModelLoadRunnable(QRunnable):
     def run(self) -> None:
         """Load the Silero TTS model."""
         try:
+            import socket
             import torch
 
-            # Load Silero model V5
-            # Model will be downloaded on first run
-            model, _ = torch.hub.load(
-                repo_or_dir='snakers4/silero-models',
-                model='silero_tts',
-                language='ru',
-                speaker='v5_ru'
-            )
+            # Set timeout for network operations to prevent hanging forever
+            old_timeout = socket.getdefaulttimeout()
+            socket.setdefaulttimeout(60.0)  # 60 seconds
 
-            self.signals.loaded.emit(model)
+            try:
+                # Load Silero model V5
+                # Model will be downloaded on first run
+                model, _ = torch.hub.load(
+                    repo_or_dir='snakers4/silero-models',
+                    model='silero_tts',
+                    language='ru',
+                    speaker='v5_ru'
+                )
+
+                self.signals.loaded.emit(model)
+            finally:
+                socket.setdefaulttimeout(old_timeout)
 
         except Exception as e:
             self.signals.error.emit(str(e))
@@ -418,6 +427,7 @@ class TTSWorker(QObject):
         self.thread_pool = QThreadPool()
         self.play_queue: list[str] = []  # entry_ids to play after ready
         self._pending_jobs: list[tuple[TextEntry, bool]] = []
+        self._queue_lock = threading.Lock()  # Protects play_queue and _pending_jobs
 
     def ensure_model_loaded(self) -> bool:
         """Ensure the Silero model is loaded.
@@ -448,9 +458,11 @@ class TTSWorker(QObject):
         self.model_loaded.emit()
 
         # Process pending jobs
-        for entry, play_when_ready in self._pending_jobs:
+        with self._queue_lock:
+            pending = list(self._pending_jobs)
+            self._pending_jobs.clear()
+        for entry, play_when_ready in pending:
             self._start_processing(entry, play_when_ready)
-        self._pending_jobs.clear()
 
     def _on_model_error(self, error_msg: str) -> None:
         """Handle model loading error."""
@@ -458,12 +470,14 @@ class TTSWorker(QObject):
         self.model_error.emit(error_msg)
 
         # Mark pending jobs as error
-        for entry, _ in self._pending_jobs:
+        with self._queue_lock:
+            pending = list(self._pending_jobs)
+            self._pending_jobs.clear()
+        for entry, _ in pending:
             entry.status = EntryStatus.ERROR
             entry.error_message = f"Model load failed: {error_msg}"
             self.storage.update_entry(entry)
             self.error.emit(entry.id, entry.error_message)
-        self._pending_jobs.clear()
 
     def process(self, entry: TextEntry, play_when_ready: bool = False) -> None:
         """Queue an entry for TTS processing.
@@ -476,14 +490,15 @@ class TTSWorker(QObject):
         entry.status = EntryStatus.PROCESSING
         self.storage.update_entry(entry)
 
-        if play_when_ready:
-            self.play_queue.append(entry.id)
+        with self._queue_lock:
+            if play_when_ready:
+                self.play_queue.append(entry.id)
 
-        # Ensure model is loaded
-        if not self.ensure_model_loaded():
-            # Model loading - queue the job
-            self._pending_jobs.append((entry, play_when_ready))
-            return
+            # Ensure model is loaded
+            if not self.ensure_model_loaded():
+                # Model loading - queue the job
+                self._pending_jobs.append((entry, play_when_ready))
+                return
 
         self._start_processing(entry, play_when_ready)
 
@@ -507,8 +522,11 @@ class TTSWorker(QObject):
         self.completed.emit(entry_id)
 
         # Check if auto-play was requested
-        if entry_id in self.play_queue:
-            self.play_queue.remove(entry_id)
+        with self._queue_lock:
+            should_play = entry_id in self.play_queue
+            if should_play:
+                self.play_queue.remove(entry_id)
+        if should_play:
             self.play_requested.emit(entry_id)
 
     def _on_error(self, entry_id: str, error_msg: str) -> None:
@@ -516,20 +534,22 @@ class TTSWorker(QObject):
         self.error.emit(entry_id, error_msg)
 
         # Remove from play queue if present
-        if entry_id in self.play_queue:
-            self.play_queue.remove(entry_id)
+        with self._queue_lock:
+            if entry_id in self.play_queue:
+                self.play_queue.remove(entry_id)
 
     def cancel_pending(self, entry_id: str) -> None:
         """Cancel a pending job (before processing starts)."""
-        # Remove from play queue
-        if entry_id in self.play_queue:
-            self.play_queue.remove(entry_id)
+        with self._queue_lock:
+            # Remove from play queue
+            if entry_id in self.play_queue:
+                self.play_queue.remove(entry_id)
 
-        # Remove from pending jobs
-        self._pending_jobs = [
-            (e, p) for e, p in self._pending_jobs
-            if e.id != entry_id
-        ]
+            # Remove from pending jobs
+            self._pending_jobs = [
+                (e, p) for e, p in self._pending_jobs
+                if e.id != entry_id
+            ]
 
     def is_model_loaded(self) -> bool:
         """Check if the TTS model is loaded."""

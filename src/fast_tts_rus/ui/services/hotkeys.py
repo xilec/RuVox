@@ -54,6 +54,7 @@ class HotkeyService(QObject):
         super().__init__(parent)
         self.config = config
         self._registered = False
+        self._running = False
         self._fallback_emitted = False
         self._stop_event = threading.Event()
         self._threads: list[threading.Thread] = []
@@ -119,6 +120,7 @@ class HotkeyService(QObject):
             return []
 
         for path in input_dir.glob("event*"):
+            device = None
             try:
                 device = evdev.InputDevice(str(path))
                 capabilities = device.capabilities()
@@ -130,14 +132,18 @@ class HotkeyService(QObject):
                     if ecodes.KEY_A in keys and ecodes.KEY_Z in keys:
                         logger.debug("Found keyboard: %s (%s)", device.name, device.path)
                         keyboards.append(device)
-                    else:
-                        device.close()
-                else:
-                    device.close()
+                        device = None  # Ownership transferred to keyboards list
             except PermissionError:
                 logger.debug("Permission denied for %s", path)
             except OSError as e:
                 logger.debug("Cannot open %s: %s", path, e)
+            finally:
+                # Close device if not added to keyboards list
+                if device is not None:
+                    try:
+                        device.close()
+                    except Exception:
+                        pass
 
         return keyboards
 
@@ -224,11 +230,7 @@ class HotkeyService(QObject):
         except Exception as e:
             if not self._stop_event.is_set():
                 logger.error("Error reading %s: %s", device.name, e)
-        finally:
-            try:
-                device.close()
-            except Exception:
-                pass
+        # Note: device is closed in unregister(), not here
 
         logger.debug("Listener stopped for %s", device.name)
 
@@ -267,6 +269,7 @@ class HotkeyService(QObject):
 
         # Start listener threads
         self._stop_event.clear()
+        self._running = True
         for device in self._devices:
             thread = threading.Thread(
                 target=self._listen_device,
@@ -287,19 +290,24 @@ class HotkeyService(QObject):
 
     def unregister(self) -> None:
         """Unregister global hotkeys and stop listeners."""
+        if not self._registered:
+            return
+
+        self._running = False
         self._stop_event.set()
 
-        # Close all devices to unblock read_loop
+        # 1. Close devices first to unblock read_loop()
         for device in self._devices:
             try:
                 device.close()
             except Exception:
                 pass
 
-        # Wait for threads to finish
+        # 2. Wait for threads to finish (increased timeout)
         for thread in self._threads:
-            thread.join(timeout=1.0)
+            thread.join(timeout=2.0)
 
+        # 3. Clear lists
         self._threads.clear()
         self._devices.clear()
         self._registered = False
@@ -310,7 +318,7 @@ class HotkeyService(QObject):
             self._alt_pressed = False
             self._shift_pressed = False
 
-        logger.debug("Hotkey service unregistered")
+        logger.info("Hotkey service unregistered")
 
     def is_registered(self) -> bool:
         """Check if hotkeys are registered."""
