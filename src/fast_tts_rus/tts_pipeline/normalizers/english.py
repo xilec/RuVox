@@ -310,6 +310,8 @@ class EnglishNormalizer:
         )
         # Track unknown words that were transliterated via fallback
         self._unknown_words: dict[str, str] = {}
+        # Cache for transliteration results
+        self._transliterate_cache: dict[str, str] = {}
 
         # Lazy-load G2P
         self._g2p = None
@@ -417,10 +419,15 @@ class EnglishNormalizer:
 
     def _transliterate(self, word: str) -> str:
         """Transliterate unknown English word. Uses G2P if available."""
+        key = word.lower()
+        if key in self._transliterate_cache:
+            return self._transliterate_cache[key]
+
         # Try G2P first
         result = self._transliterate_g2p(word)
-        if result:
-            return result
+        if not result:
+            # Fallback to simple transliteration
+            result = self._transliterate_simple(word)
 
-        # Fallback to simple transliteration
-        return self._transliterate_simple(word)
+        self._transliterate_cache[key] = result
+        return result
