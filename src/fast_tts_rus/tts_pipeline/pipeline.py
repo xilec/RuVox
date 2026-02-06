@@ -425,83 +425,76 @@ class TTSPipeline:
 
     def _process_urls_tracked(self, tracked: TrackedText) -> None:
         """Process URLs with tracking."""
-        url_pattern = r'https?://[^\s<>"\'\)]+|ftp://[^\s<>"\'\)]+|ssh://[^\s<>"\'\)]+|git://[^\s<>"\'\)]+'
-
         def replace_url(match):
             return self.url_normalizer.normalize_url(match.group(0))
 
-        tracked.sub(url_pattern, replace_url)
+        tracked.sub(self._RE_URL, replace_url)
 
     def _process_emails_tracked(self, tracked: TrackedText) -> None:
         """Process emails with tracking."""
-        email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
-
         def replace_email(match):
             return self.url_normalizer.normalize_email(match.group(0))
 
-        tracked.sub(email_pattern, replace_email)
+        tracked.sub(self._RE_EMAIL, replace_email)
 
     def _process_ips_tracked(self, tracked: TrackedText) -> None:
         """Process IP addresses with tracking."""
-        ip_pattern = r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b'
-
         def replace_ip(match):
             return self.url_normalizer.normalize_ip(match.group(0))
 
-        tracked.sub(ip_pattern, replace_ip)
+        tracked.sub(self._RE_IP, replace_ip)
 
     def _process_paths_tracked(self, tracked: TrackedText) -> None:
         """Process file paths with tracking."""
-        unix_path_pattern = r'(?<![a-zA-Z0-9])([~/][a-zA-Z0-9_./\-]+\.[a-zA-Z0-9]+|[~/][a-zA-Z0-9_./\-]+)'
-
         def replace_path(match):
             path = match.group(1)
             if '/' in path and (path.startswith('/') or path.startswith('~')):
                 return self.url_normalizer.normalize_filepath(path)
             return path
 
-        tracked.sub(unix_path_pattern, replace_path)
+        tracked.sub(self._RE_PATH, replace_path)
 
     def _process_sizes_tracked(self, tracked: TrackedText) -> None:
         """Process size units with tracking."""
-        size_pattern = r'\b(\d+(?:\.\d+)?)\s*(KB|MB|GB|TB|ms|sec|min|hr|px|em|rem|vh|vw|кб|мб|гб|тб)\b'
-
         def replace_size(match):
             return self.number_normalizer.normalize_size(match.group(0))
 
-        tracked.sub(size_pattern, replace_size, flags=re.IGNORECASE)
+        tracked.sub(self._RE_SIZE, replace_size)
 
     def _process_versions_tracked(self, tracked: TrackedText) -> None:
         """Process version numbers with tracking."""
-        version_pattern = r'\bv?(\d+\.\d+(?:\.\d+)?(?:-[a-zA-Z]+\d*)?)\b'
-
         def replace_version(match):
             version = match.group(0)
             if '.' in version:
                 return self.number_normalizer.normalize_version(version)
             return version
 
-        tracked.sub(version_pattern, replace_version)
+        tracked.sub(self._RE_VERSION, replace_version)
 
     def _process_ranges_tracked(self, tracked: TrackedText) -> None:
         """Process number ranges with tracking."""
-        range_pattern = r'\b(\d+)\s*-\s*(\d+)\b'
-
         def replace_range(match):
             return self.number_normalizer.normalize_range(match.group(0))
 
-        tracked.sub(range_pattern, replace_range)
+        tracked.sub(self._RE_RANGE, replace_range)
 
     def _process_percentages_tracked(self, tracked: TrackedText) -> None:
         """Process percentages with tracking."""
-        pct_pattern = r'\b(\d+(?:\.\d+)?)\s*%'
-
         def replace_pct(match):
             return self.number_normalizer.normalize_percentage(match.group(0))
 
-        tracked.sub(pct_pattern, replace_pct)
+        tracked.sub(self._RE_PERCENTAGE, replace_pct)
 
     _TRACKED_OPERATORS = ['===', '!==', '->', '=>', '>=', '<=', '!=', '==', '&&', '||']
+
+    _RE_URL = re.compile(r'https?://[^\s<>"\'\)]+|ftp://[^\s<>"\'\)]+|ssh://[^\s<>"\'\)]+|git://[^\s<>"\'\)]+')
+    _RE_EMAIL = re.compile(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}')
+    _RE_IP = re.compile(r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b')
+    _RE_PATH = re.compile(r'(?<![a-zA-Z0-9])([~/][a-zA-Z0-9_./\-]+\.[a-zA-Z0-9]+|[~/][a-zA-Z0-9_./\-]+)')
+    _RE_SIZE = re.compile(r'\b(\d+(?:\.\d+)?)\s*(KB|MB|GB|TB|ms|sec|min|hr|px|em|rem|vh|vw|кб|мб|гб|тб)\b', re.IGNORECASE)
+    _RE_VERSION = re.compile(r'\bv?(\d+\.\d+(?:\.\d+)?(?:-[a-zA-Z]+\d*)?)\b')
+    _RE_RANGE = re.compile(r'\b(\d+)\s*-\s*(\d+)\b')
+    _RE_PERCENTAGE = re.compile(r'\b(\d+(?:\.\d+)?)\s*%')
 
     def _process_operators_tracked(self, tracked: TrackedText) -> None:
         """Process operators with tracking."""
