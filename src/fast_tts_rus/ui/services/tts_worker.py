@@ -429,7 +429,7 @@ class TTSWorker(QObject):
         self.play_queue: list[str] = []  # entry_ids to play after ready
         self._pending_jobs: list[tuple[TextEntry, bool]] = []
         self._active_runnables: dict[str, TTSRunnable] = {}  # entry_id -> runnable
-        self._queue_lock = threading.Lock()  # Protects play_queue, _pending_jobs, _active_runnables
+        self._queue_lock = threading.RLock()  # Protects play_queue, _pending_jobs, _active_runnables
 
     def ensure_model_loaded(self) -> bool:
         """Ensure the Silero model is loaded.
@@ -502,7 +502,7 @@ class TTSWorker(QObject):
                 self._pending_jobs.append((entry, play_when_ready))
                 return
 
-        self._start_processing(entry, play_when_ready)
+            self._start_processing(entry, play_when_ready)
 
     def _start_processing(self, entry: TextEntry, play_when_ready: bool) -> None:
         """Start processing an entry."""
