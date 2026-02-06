@@ -8,8 +8,10 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Callable
 
-# Глобальная переменная для хранения оригинального Qt handler
+# Глобальные переменные для хранения handlers
 _original_qt_handler = None
+_file_handler: RotatingFileHandler | None = None
+_faulthandler_file = None
 
 
 def setup_logging(log_dir: Path | None = None) -> None:
@@ -49,16 +51,18 @@ def setup_logging(log_dir: Path | None = None) -> None:
         datefmt="%Y-%m-%d %H:%M:%S"
     )
 
+    global _file_handler
+
     # Handler для файла с ротацией
-    file_handler = RotatingFileHandler(
+    _file_handler = RotatingFileHandler(
         log_file,
         maxBytes=1024 * 1024,  # 1MB
         backupCount=5,
         encoding="utf-8"
     )
-    file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(short_formatter)
-    root_logger.addHandler(file_handler)
+    _file_handler.setLevel(logging.DEBUG)
+    _file_handler.setFormatter(short_formatter)
+    root_logger.addHandler(_file_handler)
 
     # Handler для stderr
     stderr_handler = logging.StreamHandler(sys.stderr)
@@ -66,8 +70,11 @@ def setup_logging(log_dir: Path | None = None) -> None:
     stderr_handler.setFormatter(short_formatter)
     root_logger.addHandler(stderr_handler)
 
+    global _faulthandler_file
+
     # Включаем faulthandler для segfaults
-    faulthandler.enable(file=open(log_file, "a"))
+    _faulthandler_file = open(log_file, "a")
+    faulthandler.enable(file=_faulthandler_file)
 
     # Устанавливаем перехватчик необработанных исключений
     sys.excepthook = _exception_hook
@@ -157,3 +164,34 @@ def safe_slot(func: Callable) -> Callable:
 def get_log_file_path() -> Path:
     """Возвращает путь к текущему файлу логов."""
     return Path.home() / ".cache" / "fast-tts-rus" / "logs" / "app.log"
+
+
+def shutdown_logging() -> None:
+    """Корректное завершение системы логирования.
+
+    Закрывает все handlers и освобождает ресурсы.
+    Вызывать при завершении приложения.
+    """
+    global _file_handler, _faulthandler_file
+
+    logger = logging.getLogger(__name__)
+    logger.info("Завершение системы логирования")
+
+    # Отключаем faulthandler и закрываем его файл
+    faulthandler.disable()
+    if _faulthandler_file is not None:
+        try:
+            _faulthandler_file.close()
+        except Exception:
+            pass
+        _faulthandler_file = None
+
+    # Закрываем file handler
+    if _file_handler is not None:
+        try:
+            root_logger = logging.getLogger("fast_tts_rus")
+            root_logger.removeHandler(_file_handler)
+            _file_handler.close()
+        except Exception:
+            pass
+        _file_handler = None

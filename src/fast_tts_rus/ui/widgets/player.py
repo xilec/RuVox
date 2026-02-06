@@ -1,6 +1,9 @@
 """Audio player widget with playback controls."""
 
+import logging
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from PyQt6.QtCore import Qt, QUrl, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -295,8 +298,7 @@ class PlayerWidget(QWidget):
 
     def _on_error(self, error: QMediaPlayer.Error, error_string: str) -> None:
         """Handle player error."""
-        # Log error but don't crash
-        print(f"Player error: {error_string}")
+        logger.error("Player error: %s (code=%s)", error_string, error)
 
     def _on_slider_moved(self, position_ms: int) -> None:
         """Handle slider being dragged."""

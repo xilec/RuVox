@@ -425,9 +425,11 @@ class TTSWorker(QObject):
         self.silero_model = None
         self.model_loading_in_progress = False
         self.thread_pool = QThreadPool()
+        self.thread_pool.setMaxThreadCount(2)  # Limit: one for current, one for prefetch
         self.play_queue: list[str] = []  # entry_ids to play after ready
         self._pending_jobs: list[tuple[TextEntry, bool]] = []
-        self._queue_lock = threading.Lock()  # Protects play_queue and _pending_jobs
+        self._active_runnables: dict[str, TTSRunnable] = {}  # entry_id -> runnable
+        self._queue_lock = threading.Lock()  # Protects play_queue, _pending_jobs, _active_runnables
 
     def ensure_model_loaded(self) -> bool:
         """Ensure the Silero model is loaded.
@@ -515,10 +517,28 @@ class TTSWorker(QObject):
         runnable.signals.completed.connect(self._on_completed)
         runnable.signals.error.connect(self._on_error)
 
+        with self._queue_lock:
+            self._active_runnables[entry.id] = runnable
+
         self.thread_pool.start(runnable)
+
+    def _cleanup_runnable(self, entry_id: str) -> None:
+        """Remove runnable reference and disconnect signals to prevent memory leaks."""
+        with self._queue_lock:
+            runnable = self._active_runnables.pop(entry_id, None)
+        if runnable is not None:
+            try:
+                runnable.signals.started.disconnect()
+                runnable.signals.progress.disconnect()
+                runnable.signals.completed.disconnect()
+                runnable.signals.error.disconnect()
+            except (TypeError, RuntimeError):
+                # Signals may already be disconnected
+                pass
 
     def _on_completed(self, entry_id: str) -> None:
         """Handle TTS completion."""
+        self._cleanup_runnable(entry_id)
         self.completed.emit(entry_id)
 
         # Check if auto-play was requested
@@ -531,6 +551,7 @@ class TTSWorker(QObject):
 
     def _on_error(self, entry_id: str, error_msg: str) -> None:
         """Handle TTS error."""
+        self._cleanup_runnable(entry_id)
         self.error.emit(entry_id, error_msg)
 
         # Remove from play queue if present
