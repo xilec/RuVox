@@ -1,12 +1,23 @@
-"""Tests for error handling in StorageService and TTSPipeline.
+"""Tests for error handling in UI services and TTSPipeline.
 
 This module tests how the application handles various error conditions:
 - Corrupted data files
 - Missing files
 - Invalid input
 - Edge cases in processing
+- Network errors
+- Device access errors
+- Clipboard access errors
 
-Coverage: StorageService (10 tests), TTSPipeline (8 tests)
+Coverage:
+- StorageService (10 tests)
+- TTSPipeline (8 tests)
+- Edge cases (5 tests)
+- TTSWorker (8 tests)
+- HotkeyService (8 tests)
+- ClipboardService (7 tests)
+
+Total: 46 tests
 """
 
 import json
@@ -611,3 +622,783 @@ def nested():
         # Should not raise exception
         result = pipeline.process(malformed_markdown)
         assert isinstance(result, str)
+
+
+# =============================================================================
+# TTSWorker Error Handling
+# =============================================================================
+
+
+class TestTTSWorkerErrorHandling:
+    """Tests for TTSWorker error handling."""
+
+    def test_model_load_timeout(self, monkeypatch):
+        """Test that model loading timeout is handled.
+
+        Verifies that socket.setdefaulttimeout is called with appropriate value
+        during model loading.
+        """
+        from fast_tts_rus.ui.services.tts_worker import ModelLoadRunnable
+        from fast_tts_rus.ui.models.config import UIConfig
+
+        config = UIConfig()
+
+        # Track timeout calls
+        timeout_calls = []
+
+        def mock_setdefaulttimeout(timeout):
+            timeout_calls.append(timeout)
+
+        def mock_getdefaulttimeout():
+            return None
+
+        # Mock torch.hub.load to raise timeout-like error
+        def mock_hub_load(*args, **kwargs):
+            raise TimeoutError("Connection timed out")
+
+        mock_socket = MagicMock()
+        mock_socket.setdefaulttimeout = mock_setdefaulttimeout
+        mock_socket.getdefaulttimeout = mock_getdefaulttimeout
+
+        mock_torch = MagicMock()
+        mock_torch.hub.load = mock_hub_load
+
+        # Track error signal
+        error_message = []
+        runnable = ModelLoadRunnable(config)
+        runnable.signals.error.connect(lambda msg: error_message.append(msg))
+
+        # Patch imports inside run()
+        with patch.dict('sys.modules', {'socket': mock_socket, 'torch': mock_torch}):
+            # Import socket inside run() - need to patch at module level
+            import socket
+            original_setdefaulttimeout = socket.setdefaulttimeout
+            original_getdefaulttimeout = socket.getdefaulttimeout
+            socket.setdefaulttimeout = mock_setdefaulttimeout
+            socket.getdefaulttimeout = mock_getdefaulttimeout
+
+            import torch
+            original_hub_load = torch.hub.load
+            torch.hub.load = mock_hub_load
+
+            try:
+                runnable.run()
+            finally:
+                socket.setdefaulttimeout = original_setdefaulttimeout
+                socket.getdefaulttimeout = original_getdefaulttimeout
+                torch.hub.load = original_hub_load
+
+        # Verify timeout was set to 60 seconds
+        assert 60.0 in timeout_calls, "Timeout should be set to 60 seconds"
+        # Verify error was emitted
+        assert len(error_message) == 1
+        assert "timed out" in error_message[0].lower()
+
+    def test_model_load_network_error(self, caplog):
+        """Test handling of network errors during model loading.
+
+        When torch.hub.load raises ConnectionError, the error should be
+        logged and error signal emitted.
+        """
+        from fast_tts_rus.ui.services.tts_worker import ModelLoadRunnable
+        from fast_tts_rus.ui.models.config import UIConfig
+
+        config = UIConfig()
+        runnable = ModelLoadRunnable(config)
+
+        error_messages = []
+        runnable.signals.error.connect(lambda msg: error_messages.append(msg))
+
+        # Mock torch.hub.load to raise ConnectionError
+        def mock_hub_load(*args, **kwargs):
+            raise ConnectionError("Network unreachable")
+
+        import torch
+        original_hub_load = torch.hub.load
+        torch.hub.load = mock_hub_load
+
+        try:
+            runnable.run()
+        finally:
+            torch.hub.load = original_hub_load
+
+        # Verify error signal was emitted
+        assert len(error_messages) == 1
+        assert "Network unreachable" in error_messages[0]
+
+    def test_tts_runnable_empty_text(self, tmp_path):
+        """Test TTSRunnable with empty normalized text.
+
+        When normalized text is empty, ValueError should be raised and caught,
+        entry status should be set to ERROR.
+        """
+        from fast_tts_rus.ui.services.tts_worker import TTSRunnable
+        from fast_tts_rus.ui.models.config import UIConfig
+        from fast_tts_rus.ui.models.entry import TextEntry, EntryStatus
+        from fast_tts_rus.ui.services.storage import StorageService
+
+        # Setup
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir(parents=True)
+        (cache_dir / "audio").mkdir()
+
+        config = UIConfig(cache_dir=cache_dir)
+        storage = StorageService(config)
+        entry = storage.add_entry("   ")  # Whitespace only - will normalize to empty
+
+        mock_model = MagicMock()
+
+        runnable = TTSRunnable(
+            entry=entry,
+            config=config,
+            storage=storage,
+            silero_model=mock_model,
+        )
+
+        error_messages = []
+        runnable.signals.error.connect(lambda id, msg: error_messages.append((id, msg)))
+
+        runnable.run()
+
+        # Entry status should be ERROR
+        updated_entry = storage.get_entry(entry.id)
+        assert updated_entry.status == EntryStatus.ERROR
+        assert "empty" in updated_entry.error_message.lower()
+
+        # Error signal should be emitted
+        assert len(error_messages) == 1
+        assert entry.id == error_messages[0][0]
+
+    def test_tts_runnable_model_apply_error(self, tmp_path):
+        """Test handling of model.apply_tts() errors.
+
+        When model.apply_tts() raises RuntimeError, entry status should be ERROR.
+        """
+        from fast_tts_rus.ui.services.tts_worker import TTSRunnable
+        from fast_tts_rus.ui.models.config import UIConfig
+        from fast_tts_rus.ui.models.entry import TextEntry, EntryStatus
+        from fast_tts_rus.ui.services.storage import StorageService
+
+        # Setup
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir(parents=True)
+        (cache_dir / "audio").mkdir()
+
+        config = UIConfig(cache_dir=cache_dir)
+        storage = StorageService(config)
+        entry = storage.add_entry("Test text for TTS")
+
+        # Mock model that raises error
+        mock_model = MagicMock()
+        mock_model.apply_tts.side_effect = RuntimeError("CUDA out of memory")
+
+        runnable = TTSRunnable(
+            entry=entry,
+            config=config,
+            storage=storage,
+            silero_model=mock_model,
+        )
+
+        error_messages = []
+        runnable.signals.error.connect(lambda id, msg: error_messages.append((id, msg)))
+
+        runnable.run()
+
+        # Entry status should be ERROR
+        updated_entry = storage.get_entry(entry.id)
+        assert updated_entry.status == EntryStatus.ERROR
+        assert "CUDA out of memory" in updated_entry.error_message
+
+        # Error signal should be emitted
+        assert len(error_messages) == 1
+
+    def test_split_into_chunks_empty_text(self, tmp_path):
+        """Test _split_into_chunks with empty text.
+
+        Empty text should return empty list or single empty chunk.
+        """
+        from fast_tts_rus.ui.services.tts_worker import TTSRunnable
+        from fast_tts_rus.ui.models.config import UIConfig
+        from fast_tts_rus.ui.models.entry import TextEntry
+        from fast_tts_rus.ui.services.storage import StorageService
+
+        # Setup
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir(parents=True)
+        (cache_dir / "audio").mkdir()
+
+        config = UIConfig(cache_dir=cache_dir)
+        storage = StorageService(config)
+        entry = storage.add_entry("dummy")
+
+        runnable = TTSRunnable(
+            entry=entry,
+            config=config,
+            storage=storage,
+            silero_model=MagicMock(),
+        )
+
+        # Test with empty text
+        result = runnable._split_into_chunks("")
+        # Should return single empty chunk or empty list
+        assert isinstance(result, list)
+        if result:
+            assert result[0][0] == ""  # chunk text
+            assert result[0][1] == 0   # start position
+
+    def test_split_into_chunks_no_spaces(self, tmp_path):
+        """Test _split_into_chunks with text without spaces.
+
+        Very long word without spaces should still be split correctly.
+        """
+        from fast_tts_rus.ui.services.tts_worker import TTSRunnable, MAX_CHUNK_SIZE
+        from fast_tts_rus.ui.models.config import UIConfig
+        from fast_tts_rus.ui.models.entry import TextEntry
+        from fast_tts_rus.ui.services.storage import StorageService
+
+        # Setup
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir(parents=True)
+        (cache_dir / "audio").mkdir()
+
+        config = UIConfig(cache_dir=cache_dir)
+        storage = StorageService(config)
+        entry = storage.add_entry("dummy")
+
+        runnable = TTSRunnable(
+            entry=entry,
+            config=config,
+            storage=storage,
+            silero_model=MagicMock(),
+        )
+
+        # Create very long text without spaces (longer than MAX_CHUNK_SIZE)
+        long_word = "a" * (MAX_CHUNK_SIZE + 500)
+
+        result = runnable._split_into_chunks(long_word)
+
+        # Should return multiple chunks
+        assert isinstance(result, list)
+        assert len(result) >= 2, "Long text without spaces should be split"
+
+        # Verify all characters are covered
+        total_chars = sum(len(chunk[0]) for chunk in result)
+        assert total_chars == len(long_word)
+
+    def test_estimate_timestamps_empty_chunks(self, tmp_path):
+        """Test _estimate_timestamps_chunked with empty chunk list.
+
+        Empty chunk list should return empty timestamps.
+        """
+        from fast_tts_rus.ui.services.tts_worker import TTSRunnable
+        from fast_tts_rus.ui.models.config import UIConfig
+        from fast_tts_rus.ui.models.entry import TextEntry
+        from fast_tts_rus.ui.services.storage import StorageService
+
+        # Setup
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir(parents=True)
+        (cache_dir / "audio").mkdir()
+
+        config = UIConfig(cache_dir=cache_dir)
+        storage = StorageService(config)
+        entry = storage.add_entry("dummy")
+
+        runnable = TTSRunnable(
+            entry=entry,
+            config=config,
+            storage=storage,
+            silero_model=MagicMock(),
+        )
+
+        # Test with empty chunks
+        result = runnable._estimate_timestamps_chunked(
+            text="",
+            chunk_durations=[],
+            char_mapping=None,
+        )
+
+        assert result == []
+
+    def test_estimate_timestamps_with_empty_text_chunks(self, tmp_path):
+        """Test _estimate_timestamps_chunked when chunks have empty text.
+
+        Chunks with empty or whitespace-only text should be handled gracefully.
+        """
+        from fast_tts_rus.ui.services.tts_worker import TTSRunnable
+        from fast_tts_rus.ui.models.config import UIConfig
+        from fast_tts_rus.ui.services.storage import StorageService
+
+        # Setup
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir(parents=True)
+        (cache_dir / "audio").mkdir()
+
+        config = UIConfig(cache_dir=cache_dir)
+        storage = StorageService(config)
+        entry = storage.add_entry("dummy")
+
+        runnable = TTSRunnable(
+            entry=entry,
+            config=config,
+            storage=storage,
+            silero_model=MagicMock(),
+        )
+
+        # Test with whitespace-only chunk
+        result = runnable._estimate_timestamps_chunked(
+            text="   ",
+            chunk_durations=[(0, 3, 1.0)],  # 3 spaces, 1 second
+            char_mapping=None,
+        )
+
+        # Should return empty timestamps (no words in whitespace)
+        assert result == []
+
+
+# =============================================================================
+# HotkeyService Error Handling
+# =============================================================================
+
+
+class TestHotkeyServiceErrorHandling:
+    """Tests for HotkeyService error handling."""
+
+    def test_register_evdev_not_available(self, tmp_path):
+        """Test registration when evdev is not available.
+
+        When EVDEV_AVAILABLE is False, registration should fail and
+        registration_failed signal should be emitted.
+        """
+        from fast_tts_rus.ui.models.config import UIConfig
+        import fast_tts_rus.ui.services.hotkeys as hotkeys_module
+
+        config = UIConfig(cache_dir=tmp_path)
+
+        # Save original value
+        original_evdev_available = hotkeys_module.EVDEV_AVAILABLE
+
+        # Set EVDEV_AVAILABLE to False
+        hotkeys_module.EVDEV_AVAILABLE = False
+
+        try:
+            service = hotkeys_module.HotkeyService(config)
+
+            # Track registration_failed signal
+            failed_messages = []
+            service.registration_failed.connect(lambda msg: failed_messages.append(msg))
+
+            result = service.register()
+
+            assert result is False
+            assert len(failed_messages) == 1
+            assert "evdev" in failed_messages[0].lower()
+        finally:
+            hotkeys_module.EVDEV_AVAILABLE = original_evdev_available
+
+    def test_register_no_keyboards_found(self, tmp_path, monkeypatch):
+        """Test registration when no keyboards found.
+
+        When _find_keyboards returns empty list, registration should fail.
+        """
+        from fast_tts_rus.ui.models.config import UIConfig
+        import fast_tts_rus.ui.services.hotkeys as hotkeys_module
+
+        # Skip if evdev not available
+        if not hotkeys_module.EVDEV_AVAILABLE:
+            pytest.skip("evdev not available")
+
+        config = UIConfig(cache_dir=tmp_path)
+        service = hotkeys_module.HotkeyService(config)
+
+        # Mock _find_keyboards to return empty list
+        monkeypatch.setattr(service, "_find_keyboards", lambda: [])
+
+        failed_messages = []
+        service.registration_failed.connect(lambda msg: failed_messages.append(msg))
+
+        result = service.register()
+
+        assert result is False
+        assert len(failed_messages) == 1
+        assert "keyboard" in failed_messages[0].lower() or "input" in failed_messages[0].lower()
+
+    def test_parse_hotkey_invalid_key(self, tmp_path):
+        """Test parsing invalid hotkey string.
+
+        Invalid key name should result in key_code being None.
+        """
+        from fast_tts_rus.ui.models.config import UIConfig
+        import fast_tts_rus.ui.services.hotkeys as hotkeys_module
+
+        # Skip if evdev not available
+        if not hotkeys_module.EVDEV_AVAILABLE:
+            pytest.skip("evdev not available")
+
+        config = UIConfig(cache_dir=tmp_path)
+        service = hotkeys_module.HotkeyService(config)
+
+        key_code, modifiers = service._parse_hotkey("CTRL+INVALIDKEY123")
+
+        # Key code should be None for invalid key
+        assert key_code is None
+        # But modifiers should still be parsed
+        assert "CTRL" in modifiers
+
+    def test_parse_hotkey_empty_string(self, tmp_path):
+        """Test parsing empty hotkey string.
+
+        Empty string should return None key and empty modifiers.
+        """
+        from fast_tts_rus.ui.models.config import UIConfig
+        import fast_tts_rus.ui.services.hotkeys as hotkeys_module
+
+        # Skip if evdev not available
+        if not hotkeys_module.EVDEV_AVAILABLE:
+            pytest.skip("evdev not available")
+
+        config = UIConfig(cache_dir=tmp_path)
+        service = hotkeys_module.HotkeyService(config)
+
+        key_code, modifiers = service._parse_hotkey("")
+
+        assert key_code is None
+        assert modifiers == set()
+
+    def test_find_keyboards_permission_error(self, tmp_path, monkeypatch, caplog):
+        """Test handling of PermissionError when accessing devices.
+
+        When device access raises PermissionError, it should be logged
+        and device should be skipped.
+        """
+        from fast_tts_rus.ui.models.config import UIConfig
+        import fast_tts_rus.ui.services.hotkeys as hotkeys_module
+
+        # Skip if evdev not available
+        if not hotkeys_module.EVDEV_AVAILABLE:
+            pytest.skip("evdev not available")
+
+        config = UIConfig(cache_dir=tmp_path)
+        service = hotkeys_module.HotkeyService(config)
+
+        # Mock evdev.InputDevice to raise PermissionError
+        def mock_input_device(path):
+            raise PermissionError("Permission denied")
+
+        original_input_device = hotkeys_module.evdev.InputDevice
+        hotkeys_module.evdev.InputDevice = mock_input_device
+
+        try:
+            # Create fake /dev/input directory with event files
+            import logging
+            with caplog.at_level(logging.DEBUG):
+                keyboards = service._find_keyboards()
+
+            # Should return empty list (all devices failed)
+            assert keyboards == []
+        finally:
+            hotkeys_module.evdev.InputDevice = original_input_device
+
+    def test_find_keyboards_oserror(self, tmp_path, monkeypatch, caplog):
+        """Test handling of OSError when accessing devices.
+
+        When device access raises OSError, it should be logged
+        and device should be skipped.
+        """
+        from fast_tts_rus.ui.models.config import UIConfig
+        import fast_tts_rus.ui.services.hotkeys as hotkeys_module
+
+        # Skip if evdev not available
+        if not hotkeys_module.EVDEV_AVAILABLE:
+            pytest.skip("evdev not available")
+
+        config = UIConfig(cache_dir=tmp_path)
+        service = hotkeys_module.HotkeyService(config)
+
+        # Mock evdev.InputDevice to raise OSError
+        def mock_input_device(path):
+            raise OSError("Device busy")
+
+        original_input_device = hotkeys_module.evdev.InputDevice
+        hotkeys_module.evdev.InputDevice = mock_input_device
+
+        try:
+            import logging
+            with caplog.at_level(logging.DEBUG):
+                keyboards = service._find_keyboards()
+
+            # Should return empty list (all devices failed)
+            assert keyboards == []
+        finally:
+            hotkeys_module.evdev.InputDevice = original_input_device
+
+    def test_listen_device_disconnect(self, tmp_path):
+        """Test handling of device disconnect during listening.
+
+        When read_loop raises OSError (device disconnected), the listener
+        should handle it gracefully without crashing.
+        """
+        from fast_tts_rus.ui.models.config import UIConfig
+        import fast_tts_rus.ui.services.hotkeys as hotkeys_module
+
+        # Skip if evdev not available
+        if not hotkeys_module.EVDEV_AVAILABLE:
+            pytest.skip("evdev not available")
+
+        config = UIConfig(cache_dir=tmp_path)
+        service = hotkeys_module.HotkeyService(config)
+
+        # Create mock device
+        mock_device = MagicMock()
+        mock_device.name = "Test Keyboard"
+
+        # Make read_loop raise OSError after first call
+        def mock_read_loop():
+            raise OSError("Device disconnected")
+
+        mock_device.read_loop = mock_read_loop
+
+        # Should not raise exception
+        service._listen_device(mock_device)
+        # Test passes if no exception was raised
+
+    def test_parse_hotkey_with_modifiers_only(self, tmp_path):
+        """Test parsing hotkey string with only modifiers.
+
+        Hotkey with only modifiers and no key should return None key.
+        """
+        from fast_tts_rus.ui.models.config import UIConfig
+        import fast_tts_rus.ui.services.hotkeys as hotkeys_module
+
+        # Skip if evdev not available
+        if not hotkeys_module.EVDEV_AVAILABLE:
+            pytest.skip("evdev not available")
+
+        config = UIConfig(cache_dir=tmp_path)
+        service = hotkeys_module.HotkeyService(config)
+
+        key_code, modifiers = service._parse_hotkey("CTRL+ALT+SHIFT")
+
+        assert key_code is None
+        assert modifiers == {"CTRL", "ALT", "SHIFT"}
+
+
+# =============================================================================
+# ClipboardService Error Handling
+# =============================================================================
+
+
+class TestClipboardServiceErrorHandling:
+    """Tests for ClipboardService error handling."""
+
+    def test_get_clipboard_wl_paste_not_found(self, monkeypatch):
+        """Test when wl-paste command not found.
+
+        When subprocess.run raises FileNotFoundError, should return None.
+        """
+        from fast_tts_rus.ui.services import clipboard
+
+        # Mock _is_wayland to return True
+        monkeypatch.setattr(clipboard, "_is_wayland", lambda: True)
+
+        # Mock QApplication.clipboard to return empty text
+        mock_clipboard = MagicMock()
+        mock_clipboard.text.return_value = ""
+
+        mock_app = MagicMock()
+        mock_app.clipboard.return_value = mock_clipboard
+
+        monkeypatch.setattr(clipboard, "QApplication", mock_app)
+
+        # Mock subprocess.run to raise FileNotFoundError
+        def mock_run(*args, **kwargs):
+            raise FileNotFoundError("wl-paste not found")
+
+        monkeypatch.setattr(clipboard.subprocess, "run", mock_run)
+
+        result = clipboard.get_clipboard_text()
+
+        assert result is None
+
+    def test_get_clipboard_timeout(self, monkeypatch):
+        """Test clipboard read timeout.
+
+        When subprocess.run raises TimeoutExpired, should return None.
+        """
+        from fast_tts_rus.ui.services import clipboard
+        import subprocess
+
+        # Mock _is_wayland to return True
+        monkeypatch.setattr(clipboard, "_is_wayland", lambda: True)
+
+        # Mock QApplication.clipboard to return empty text
+        mock_clipboard = MagicMock()
+        mock_clipboard.text.return_value = ""
+
+        mock_app = MagicMock()
+        mock_app.clipboard.return_value = mock_clipboard
+
+        monkeypatch.setattr(clipboard, "QApplication", mock_app)
+
+        # Mock subprocess.run to raise TimeoutExpired
+        def mock_run(*args, **kwargs):
+            raise subprocess.TimeoutExpired(cmd="wl-paste", timeout=2)
+
+        monkeypatch.setattr(clipboard.subprocess, "run", mock_run)
+
+        result = clipboard.get_clipboard_text()
+
+        assert result is None
+
+    def test_get_clipboard_generic_error(self, monkeypatch, caplog):
+        """Test handling of generic errors.
+
+        When subprocess.run raises unexpected Exception, should log and return None.
+        """
+        from fast_tts_rus.ui.services import clipboard
+        import logging
+
+        # Mock _is_wayland to return True
+        monkeypatch.setattr(clipboard, "_is_wayland", lambda: True)
+
+        # Mock QApplication.clipboard to return empty text
+        mock_clipboard = MagicMock()
+        mock_clipboard.text.return_value = ""
+
+        mock_app = MagicMock()
+        mock_app.clipboard.return_value = mock_clipboard
+
+        monkeypatch.setattr(clipboard, "QApplication", mock_app)
+
+        # Mock subprocess.run to raise generic Exception
+        def mock_run(*args, **kwargs):
+            raise Exception("Unexpected error")
+
+        monkeypatch.setattr(clipboard.subprocess, "run", mock_run)
+
+        with caplog.at_level(logging.WARNING):
+            result = clipboard.get_clipboard_text()
+
+        assert result is None
+        assert "error" in caplog.text.lower()
+
+    def test_get_clipboard_empty_result(self, monkeypatch):
+        """Test handling of empty clipboard.
+
+        When subprocess.run returns empty stdout, should return None.
+        """
+        from fast_tts_rus.ui.services import clipboard
+
+        # Mock _is_wayland to return True
+        monkeypatch.setattr(clipboard, "_is_wayland", lambda: True)
+
+        # Mock QApplication.clipboard to return empty text
+        mock_clipboard = MagicMock()
+        mock_clipboard.text.return_value = ""
+
+        mock_app = MagicMock()
+        mock_app.clipboard.return_value = mock_clipboard
+
+        monkeypatch.setattr(clipboard, "QApplication", mock_app)
+
+        # Mock subprocess.run to return empty stdout
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+
+        monkeypatch.setattr(clipboard.subprocess, "run", lambda *args, **kwargs: mock_result)
+
+        result = clipboard.get_clipboard_text()
+
+        assert result is None
+
+    def test_get_clipboard_non_zero_exit(self, monkeypatch, caplog):
+        """Test handling of non-zero exit code.
+
+        When wl-paste returns non-zero exit code, should log and return None.
+        """
+        from fast_tts_rus.ui.services import clipboard
+        import logging
+
+        # Mock _is_wayland to return True
+        monkeypatch.setattr(clipboard, "_is_wayland", lambda: True)
+
+        # Mock QApplication.clipboard to return empty text
+        mock_clipboard = MagicMock()
+        mock_clipboard.text.return_value = ""
+
+        mock_app = MagicMock()
+        mock_app.clipboard.return_value = mock_clipboard
+
+        monkeypatch.setattr(clipboard, "QApplication", mock_app)
+
+        # Mock subprocess.run to return non-zero exit code
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stderr = "No selection"
+
+        monkeypatch.setattr(clipboard.subprocess, "run", lambda *args, **kwargs: mock_result)
+
+        with caplog.at_level(logging.DEBUG):
+            result = clipboard.get_clipboard_text()
+
+        assert result is None
+
+    def test_get_clipboard_whitespace_only(self, monkeypatch):
+        """Test handling of clipboard with only whitespace.
+
+        When clipboard contains only whitespace, should return None.
+        """
+        from fast_tts_rus.ui.services import clipboard
+
+        # Mock _is_wayland to return False (to avoid wl-paste fallback)
+        monkeypatch.setattr(clipboard, "_is_wayland", lambda: False)
+
+        # Mock QApplication.clipboard to return whitespace
+        mock_clipboard_obj = MagicMock()
+        mock_clipboard_obj.text.return_value = "   \n\t  "
+
+        # Need to mock QApplication.clipboard() method
+        original_qapp = clipboard.QApplication
+
+        class MockQApplication:
+            @staticmethod
+            def clipboard():
+                return mock_clipboard_obj
+
+        monkeypatch.setattr(clipboard, "QApplication", MockQApplication)
+
+        result = clipboard.get_clipboard_text()
+
+        # Whitespace-only should return None (after strip check fails)
+        assert result is None
+
+    def test_get_clipboard_qt_success(self, monkeypatch):
+        """Test successful clipboard read via Qt.
+
+        When Qt clipboard returns text, should return it without calling wl-paste.
+        """
+        from fast_tts_rus.ui.services import clipboard
+
+        # Mock QApplication.clipboard to return valid text
+        mock_clipboard = MagicMock()
+        mock_clipboard.text.return_value = "Hello from clipboard"
+
+        mock_app = MagicMock()
+        mock_app.clipboard.return_value = mock_clipboard
+
+        monkeypatch.setattr(clipboard, "QApplication", mock_app)
+
+        # Mock subprocess.run to fail (should not be called)
+        call_count = []
+
+        def mock_run(*args, **kwargs):
+            call_count.append(1)
+            raise Exception("Should not be called")
+
+        monkeypatch.setattr(clipboard.subprocess, "run", mock_run)
+
+        result = clipboard.get_clipboard_text()
+
+        assert result == "Hello from clipboard"
+        assert len(call_count) == 0, "subprocess.run should not be called when Qt succeeds"
