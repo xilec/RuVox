@@ -2,6 +2,7 @@
 
 import re
 from fast_tts_rus.tts_pipeline.config import PipelineConfig
+from fast_tts_rus.tts_pipeline.constants import GREEK_LETTERS, MATH_SYMBOLS, ARROW_SYMBOLS
 from fast_tts_rus.tts_pipeline.normalizers import (
     NumberNormalizer,
     EnglishNormalizer,
@@ -520,30 +521,7 @@ class TTSPipeline:
 
     def _process_symbols_tracked(self, tracked: TrackedText) -> None:
         """Process special symbols with tracking."""
-        greek_and_special = {
-            'α': 'альфа', 'β': 'бета', 'γ': 'гамма', 'δ': 'дельта',
-            'ε': 'эпсилон', 'ζ': 'дзета', 'η': 'эта', 'θ': 'тета',
-            'ι': 'йота', 'κ': 'каппа', 'λ': 'лямбда', 'μ': 'мю',
-            'ν': 'ню', 'ξ': 'кси', 'π': 'пи', 'ρ': 'ро',
-            'σ': 'сигма', 'τ': 'тау', 'υ': 'ипсилон', 'φ': 'фи',
-            'χ': 'хи', 'ψ': 'пси', 'ω': 'омега',
-            'Α': 'альфа', 'Β': 'бета', 'Γ': 'гамма', 'Δ': 'дельта',
-            'Ε': 'эпсилон', 'Ζ': 'дзета', 'Η': 'эта', 'Θ': 'тета',
-            'Ι': 'йота', 'Κ': 'каппа', 'Λ': 'лямбда', 'Μ': 'мю',
-            'Ν': 'ню', 'Ξ': 'кси', 'Π': 'пи', 'Ρ': 'ро',
-            'Σ': 'сигма', 'Τ': 'тау', 'Υ': 'ипсилон', 'Φ': 'фи',
-            'Χ': 'хи', 'Ψ': 'пси', 'Ω': 'омега',
-            '∞': 'бесконечность', '∈': 'принадлежит', '∉': 'не принадлежит',
-            '∀': 'для всех', '∃': 'существует', '∅': 'пустое множество',
-            '∩': 'пересечение', '∪': 'объединение', '⊂': 'подмножество',
-            '≠': 'не равно', '≈': 'приблизительно равно', '≤': 'меньше или равно',
-            '≥': 'больше или равно', '×': 'умножить', '÷': 'разделить',
-            '√': 'корень', '∑': 'сумма', '∏': 'произведение',
-            '→': 'стрелка', '←': 'стрелка влево', '↔': 'двунаправленная стрелка',
-            '⇒': 'следует', '⇐': 'следует из', '⇔': 'эквивалентно',
-        }
-
-        for symbol, replacement in greek_and_special.items():
+        for symbol, replacement in (*GREEK_LETTERS.items(), *MATH_SYMBOLS.items(), *ARROW_SYMBOLS.items()):
             tracked.replace(symbol, f' {replacement} ')
 
     def _process_code_identifiers_tracked(self, tracked: TrackedText) -> None:

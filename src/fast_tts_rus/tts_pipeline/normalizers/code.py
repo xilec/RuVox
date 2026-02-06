@@ -1,6 +1,7 @@
 """Code identifiers and code blocks normalizer."""
 
 import re
+from fast_tts_rus.tts_pipeline.constants import GREEK_LETTERS, MATH_SYMBOLS, ARROW_SYMBOLS
 from .numbers import NumberNormalizer
 from .abbreviations import AbbreviationNormalizer
 
@@ -546,30 +547,14 @@ class CodeBlockHandler:
         return ' '.join(result)
 
     # Greek letters mapping (for code blocks)
-    GREEK_LETTERS = {
-        # Lowercase
-        'α': 'альфа', 'β': 'бета', 'γ': 'гамма', 'δ': 'дельта',
-        'ε': 'эпсилон', 'ζ': 'дзета', 'η': 'эта', 'θ': 'тета',
-        'ι': 'йота', 'κ': 'каппа', 'λ': 'лямбда', 'μ': 'мю',
-        'ν': 'ню', 'ξ': 'кси', 'π': 'пи', 'ρ': 'ро',
-        'σ': 'сигма', 'τ': 'тау', 'υ': 'ипсилон', 'φ': 'фи',
-        'χ': 'хи', 'ψ': 'пси', 'ω': 'омега',
-        # Uppercase
-        'Α': 'альфа', 'Β': 'бета', 'Γ': 'гамма', 'Δ': 'дельта',
-        'Ε': 'эпсилон', 'Ζ': 'дзета', 'Η': 'эта', 'Θ': 'тета',
-        'Ι': 'йота', 'Κ': 'каппа', 'Λ': 'лямбда', 'Μ': 'мю',
-        'Ν': 'ню', 'Ξ': 'кси', 'Π': 'пи', 'Ρ': 'ро',
-        'Σ': 'сигма', 'Τ': 'тау', 'Υ': 'ипсилон', 'Φ': 'фи',
-        'Χ': 'хи', 'Ψ': 'пси', 'Ω': 'омега',
-    }
+    GREEK_LETTERS = GREEK_LETTERS
 
-    # Special symbols (arrows, etc.)
+    # Special symbols (arrows + subset of math symbols relevant to code)
     SPECIAL_SYMBOLS = {
-        '→': 'стрелка', '←': 'стрелка влево', '↔': 'двунаправленная стрелка',
-        '⇒': 'следует', '⇐': 'следует из', '⇔': 'эквивалентно',
-        '∞': 'бесконечность', '∈': 'принадлежит', '∉': 'не принадлежит',
-        '∀': 'для всех', '∃': 'существует', '≠': 'не равно',
-        '≤': 'меньше или равно', '≥': 'больше или равно',
+        **ARROW_SYMBOLS,
+        **{k: MATH_SYMBOLS[k] for k in (
+            '∞', '∈', '∉', '∀', '∃', '≠', '≤', '≥',
+        )},
     }
 
     def _tokenize(self, code: str) -> list[str]:
