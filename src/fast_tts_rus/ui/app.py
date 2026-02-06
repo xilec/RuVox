@@ -157,7 +157,12 @@ class TTSApplication(QObject):
 
     def _on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         """Handle tray icon activation."""
-        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+        # DoubleClick - standard on most platforms
+        # Trigger - used on some Linux DEs (e.g., KDE, some GNOME extensions)
+        if reason in (
+            QSystemTrayIcon.ActivationReason.DoubleClick,
+            QSystemTrayIcon.ActivationReason.Trigger,
+        ):
             self.show_window()
 
     # Public methods
