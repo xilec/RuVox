@@ -212,8 +212,132 @@ highlighted = highlight_word("Test 123 API", mapping, 5, 8)
 # → "Test **123** API"
 ```
 
+## Детали алгоритма
+
+### Структуры данных
+
+```python
+@dataclass
+class OffsetEntry:
+    """Отслеживает одну замену для расчёта смещений."""
+    current_pos: int   # Позиция в текущем тексте на момент замены
+    orig_start: int    # Начало в оригинале
+    orig_end: int      # Конец в оригинале
+    new_len: int       # Длина нового текста
+```
+
+### Обработка замен
+
+1. **Замены обрабатываются в обратном порядке** — чтобы позиции в текущем тексте оставались корректными:
+   ```python
+   for match in reversed(matches):
+       # Позиции match.start()/end() валидны,
+       # т.к. мы ещё не изменили текст до этой позиции
+   ```
+
+2. **Конвертация позиций** — `_current_to_original()` преобразует позицию в текущем тексте в позицию в оригинале:
+   ```python
+   def _current_to_original(self, current_pos: int) -> int:
+       # Сортируем замены по позиции в оригинале
+       sorted_entries = sorted(self._offset_entries, key=lambda e: e.orig_start)
+
+       cumulative_delta = 0
+       for entry in sorted_entries:
+           old_len = entry.orig_end - entry.orig_start
+           new_len = entry.new_len
+           delta = new_len - old_len
+
+           # Вычисляем где замена находится в текущем тексте
+           current_start = entry.orig_start + cumulative_delta
+           current_end = current_start + new_len
+
+           if current_pos < current_start:
+               # Позиция до этой замены
+               return current_pos - cumulative_delta
+           elif current_pos < current_end:
+               # Позиция внутри замены — возвращаем начало оригинального диапазона
+               return entry.orig_start
+           else:
+               cumulative_delta += delta
+
+       return current_pos - cumulative_delta
+   ```
+
+### Защита от пересечений
+
+TrackedText блокирует замены, которые пересекают границы существующих замен:
+
+```python
+# Пример: "Hello world" → "Hello мир"
+# Затем попытка заменить "o м" — пересекает границу!
+
+tracked = TrackedText("Hello world")
+tracked.replace("world", "мир")  # OK
+tracked.replace("o м", "X")      # Блокируется!
+```
+
+Это гарантирует корректность маппинга — каждый символ результата однозначно связан с диапазоном в оригинале.
+
+### Построение char_map
+
+```python
+def build_mapping(self) -> CharMapping:
+    # Сортируем замены по позиции в оригинале
+    sorted_repls = sorted(self._replacements, key=lambda r: r.orig_start)
+
+    char_map = []
+    orig_idx = 0
+
+    for repl in sorted_repls:
+        # Копируем неизменённые символы (identity mapping)
+        while orig_idx < repl.orig_start:
+            char_map.append((orig_idx, orig_idx + 1))
+            orig_idx += 1
+
+        # Все символы замены указывают на оригинальный диапазон
+        for _ in range(len(repl.new_text)):
+            char_map.append((repl.orig_start, repl.orig_end))
+
+        orig_idx = repl.orig_end
+
+    # Копируем оставшиеся символы
+    while orig_idx < len(self.original):
+        char_map.append((orig_idx, orig_idx + 1))
+        orig_idx += 1
+
+    return CharMapping(self.original, self._current, char_map)
+```
+
+### Визуализация
+
+```
+Original:    "Test 123 world"
+             0123456789...
+
+Замена 1:    "123" (5-8) → "сто двадцать три"
+Замена 2:    "world" (9-14) → "мир"
+
+Result:      "Test сто двадцать три мир"
+             01234567890123456789012345
+
+char_map:
+[0] 'T' → (0, 1)    # identity
+[1] 'e' → (1, 2)    # identity
+[2] 's' → (2, 3)    # identity
+[3] 't' → (3, 4)    # identity
+[4] ' ' → (4, 5)    # identity
+[5] 'с' → (5, 8)    # замена 1
+[6] 'т' → (5, 8)    # замена 1
+[7] 'о' → (5, 8)    # замена 1
+... (все символы замены указывают на 5-8)
+[21] 'м' → (9, 14)  # замена 2
+[22] 'и' → (9, 14)  # замена 2
+[23] 'р' → (9, 14)  # замена 2
+```
+
 ## Тестирование
 
 ```bash
 uv run pytest tests/tts_pipeline/test_tracked_text.py -v
+uv run pytest tests/tts_pipeline/test_char_mapping.py -v
 ```

@@ -41,7 +41,7 @@ class PlayerWidget(QWidget):
 
     SPEEDS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
 
         self.current_entry: TextEntry | None = None

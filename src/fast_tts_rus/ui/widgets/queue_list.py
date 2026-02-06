@@ -2,7 +2,7 @@
 
 import logging
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QPoint
 from PyQt6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
@@ -125,12 +125,12 @@ def _month_name(month: int) -> str:
 class QueueListWidget(QListWidget):
     """Widget displaying queue/history of text entries."""
 
-    entry_selected = pyqtSignal(object)  # TextEntry
-    entry_play_requested = pyqtSignal(object)  # TextEntry
-    entry_regenerate_requested = pyqtSignal(object)  # TextEntry
-    entry_delete_requested = pyqtSignal(object)  # TextEntry
+    entry_selected = pyqtSignal(TextEntry)
+    entry_play_requested = pyqtSignal(TextEntry)
+    entry_regenerate_requested = pyqtSignal(TextEntry)
+    entry_delete_requested = pyqtSignal(TextEntry)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self._entries: dict[str, TextEntry] = {}
         self._item_widgets: dict[str, QueueItemWidget] = {}
@@ -286,7 +286,7 @@ class QueueListWidget(QListWidget):
                 self.entry_selected.emit(widget.entry)
 
     @safe_slot
-    def _show_context_menu(self, position) -> None:
+    def _show_context_menu(self, position: QPoint) -> None:
         """Show context menu for entry."""
         item = self.itemAt(position)
         if not item:

@@ -129,7 +129,7 @@ class MainWindow(QMainWindow):
                 self.queue_list.set_current_playing(entry.id)
 
     @safe_slot
-    def _on_entry_regenerate_requested(self, entry) -> None:
+    def _on_entry_regenerate_requested(self, entry: TextEntry) -> None:
         """Handle regenerate request."""
         if not self.app.tts_worker or not self.app.storage:
             return
@@ -158,7 +158,7 @@ class MainWindow(QMainWindow):
         self.app.tts_worker.process(updated_entry, play_when_ready=False)
 
     @safe_slot
-    def _on_entry_delete_requested(self, entry) -> None:
+    def _on_entry_delete_requested(self, entry: TextEntry) -> None:
         """Handle delete request."""
         if self.app.storage:
             logger.info(f"Удаление: {entry.id[:8]}...")

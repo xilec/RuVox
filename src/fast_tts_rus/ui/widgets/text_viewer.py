@@ -7,7 +7,7 @@ from typing import Any
 import markdown
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QTextCursor, QTextCharFormat, QColor
-from PyQt6.QtWidgets import QTextBrowser, QScrollBar
+from PyQt6.QtWidgets import QTextBrowser, QScrollBar, QWidget
 
 from fast_tts_rus.ui.models.entry import TextEntry
 
@@ -30,7 +30,7 @@ class TextViewerWidget(QTextBrowser):
     - Auto-scroll to current position
     """
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
 
         self.current_entry: TextEntry | None = None
