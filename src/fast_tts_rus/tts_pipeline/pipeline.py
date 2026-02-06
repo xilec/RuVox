@@ -66,13 +66,15 @@ class TTSPipeline:
 
         # Process IP addresses - using tracked version
         self._process_ips_tracked(tracked)
-        text = tracked.text
 
-        # Process file paths
-        text = self._process_paths(text)
+        # Process file paths - using tracked version
+        self._process_paths_tracked(tracked)
+
+        # Create new TrackedText to allow nested transformations (e.g., transliterate words inside paths)
+        text = tracked.text
+        tracked = TrackedText(text)
 
         # Process size units (e.g., 100MB, 50ms) - using tracked version
-        tracked = TrackedText(text)
         self._process_sizes_tracked(tracked)
 
         # Process versions - using tracked version
@@ -322,21 +324,6 @@ class TTSPipeline:
         text = re.sub(r' +\n', '\n', text)
 
         return text.strip()
-
-    def _process_paths(self, text: str) -> str:
-        """Process file paths in text."""
-        # Unix path pattern (starting with / or ~)
-        unix_path_pattern = r'(?<![a-zA-Z0-9])([~/][a-zA-Z0-9_./\-]+\.[a-zA-Z0-9]+|[~/][a-zA-Z0-9_./\-]+)'
-
-        def replace_path(match):
-            path = match.group(1)
-            # Only process if it looks like a real path
-            if '/' in path and (path.startswith('/') or path.startswith('~')):
-                return self.url_normalizer.normalize_filepath(path)
-            return path
-
-        text = re.sub(unix_path_pattern, replace_path, text)
-        return text
 
     # =========================================================================
     # Tracked versions of processing methods for process_with_char_mapping
