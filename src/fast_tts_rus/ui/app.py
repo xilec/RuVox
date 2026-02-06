@@ -174,32 +174,14 @@ class TTSApplication(QObject):
 
     def read_now(self) -> None:
         """Read text from clipboard immediately."""
-        text = get_clipboard_text()
-
-        if not text:
-            self.tray_icon.showMessage(
-                "Fast TTS RUS",
-                "Буфер обмена пуст",
-                QSystemTrayIcon.MessageIcon.Warning,
-                2000,
-            )
-            return
-
-        entry = self.storage.add_entry(text)
-        # Update window if open
-        if self._main_window is not None:
-            self._main_window.add_entry(entry)
-        # Start TTS processing with play_when_ready=True
-        self.tts_worker.process(entry, play_when_ready=True)
-        self.tray_icon.showMessage(
-            "Fast TTS RUS",
-            f"Обработка: {text[:50]}..." if len(text) > 50 else f"Обработка: {text}",
-            QSystemTrayIcon.MessageIcon.Information,
-            2000,
-        )
+        self._process_clipboard(play_when_ready=True)
 
     def read_later(self) -> None:
         """Add text from clipboard to queue."""
+        self._process_clipboard(play_when_ready=False)
+
+    def _process_clipboard(self, play_when_ready: bool) -> None:
+        """Read clipboard and queue for TTS processing."""
         text = get_clipboard_text()
 
         if not text:
@@ -212,14 +194,15 @@ class TTSApplication(QObject):
             return
 
         entry = self.storage.add_entry(text)
-        # Update window if open
         if self._main_window is not None:
             self._main_window.add_entry(entry)
-        # Start TTS processing with play_when_ready=False
-        self.tts_worker.process(entry, play_when_ready=False)
+        self.tts_worker.process(entry, play_when_ready=play_when_ready)
+
+        prefix = "Обработка" if play_when_ready else "В очередь"
+        preview = f"{text[:50]}..." if len(text) > 50 else text
         self.tray_icon.showMessage(
             "Fast TTS RUS",
-            f"В очередь: {text[:50]}..." if len(text) > 50 else f"В очередь: {text}",
+            f"{prefix}: {preview}",
             QSystemTrayIcon.MessageIcon.Information,
             2000,
         )
