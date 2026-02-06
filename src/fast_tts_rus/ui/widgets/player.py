@@ -3,8 +3,6 @@
 import logging
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
-
 from PyQt6.QtCore import Qt, QUrl, pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget,
@@ -18,6 +16,9 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 
 from fast_tts_rus.ui.models.entry import TextEntry
+from fast_tts_rus.ui.services.logging_service import safe_slot
+
+logger = logging.getLogger(__name__)
 
 
 class PlayerWidget(QWidget):
@@ -264,6 +265,7 @@ class PlayerWidget(QWidget):
 
     # Private slots
 
+    @safe_slot
     def _on_position_changed(self, position_ms: int) -> None:
         """Handle position change from player."""
         if not self._slider_pressed:
@@ -276,12 +278,14 @@ class PlayerWidget(QWidget):
         # Emit for text synchronization
         self.position_changed.emit(position_sec)
 
+    @safe_slot
     def _on_duration_changed(self, duration_ms: int) -> None:
         """Handle duration change."""
         self._duration_ms = duration_ms
         self.progress_slider.setRange(0, duration_ms)
         self.time_total.setText(self._format_time(duration_ms / 1000.0))
 
+    @safe_slot
     def _on_state_changed(self, state: QMediaPlayer.PlaybackState) -> None:
         """Handle playback state change."""
         if state == QMediaPlayer.PlaybackState.PlayingState:
@@ -296,10 +300,12 @@ class PlayerWidget(QWidget):
         if state == QMediaPlayer.PlaybackState.StoppedState:
             self.playback_stopped.emit()
 
+    @safe_slot
     def _on_error(self, error: QMediaPlayer.Error, error_string: str) -> None:
         """Handle player error."""
         logger.error("Player error: %s (code=%s)", error_string, error)
 
+    @safe_slot
     def _on_slider_moved(self, position_ms: int) -> None:
         """Handle slider being dragged."""
         # Update time display while dragging
@@ -307,15 +313,18 @@ class PlayerWidget(QWidget):
 
     _slider_pressed = False
 
+    @safe_slot
     def _on_slider_pressed(self) -> None:
         """Handle slider press - pause updates."""
         self._slider_pressed = True
 
+    @safe_slot
     def _on_slider_released(self) -> None:
         """Handle slider release - seek to position."""
         self._slider_pressed = False
         self.player.setPosition(self.progress_slider.value())
 
+    @safe_slot
     def _on_volume_changed(self, value: int) -> None:
         """Handle volume slider change."""
         self.audio_output.setVolume(value / 100.0)

@@ -1,10 +1,13 @@
 """Background cleanup service for old entries and audio files."""
 
+import logging
 from datetime import datetime
 
 from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal
 
 from fast_tts_rus.ui.models.config import UIConfig
+
+logger = logging.getLogger(__name__)
 
 
 class CleanupSignals(QObject):
@@ -23,36 +26,39 @@ class CleanupRunnable(QRunnable):
 
     def run(self) -> None:
         """Execute cleanup."""
-        deleted_count = 0
-        now = datetime.now()
+        try:
+            deleted_count = 0
+            now = datetime.now()
 
-        entries = self.storage.get_all_entries()
+            entries = self.storage.get_all_entries()
 
-        for entry in entries:
-            should_delete_text = False
-            should_delete_audio = False
+            for entry in entries:
+                should_delete_text = False
+                should_delete_audio = False
 
-            # Rule 1: delete texts older than N days
-            age_days = (now - entry.created_at).days
-            if age_days > self.config.history_days:
-                should_delete_text = True
+                # Rule 1: delete texts older than N days
+                age_days = (now - entry.created_at).days
+                if age_days > self.config.history_days:
+                    should_delete_text = True
 
-            # Rule 3: regenerated audio - keep for N hours only
-            if entry.was_regenerated and entry.audio_generated_at:
-                age_hours = (now - entry.audio_generated_at).total_seconds() / 3600
-                if age_hours > self.config.audio_regenerated_hours:
-                    should_delete_audio = True
+                # Rule 3: regenerated audio - keep for N hours only
+                if entry.was_regenerated and entry.audio_generated_at:
+                    age_hours = (now - entry.audio_generated_at).total_seconds() / 3600
+                    if age_hours > self.config.audio_regenerated_hours:
+                        should_delete_audio = True
 
-            if should_delete_text:
-                self.storage.delete_entry(entry.id)
-                deleted_count += 1
-            elif should_delete_audio:
-                self.storage.delete_audio(entry.id)
+                if should_delete_text:
+                    self.storage.delete_entry(entry.id)
+                    deleted_count += 1
+                elif should_delete_audio:
+                    self.storage.delete_audio(entry.id)
 
-        # Rule 2: keep only N most recent audio files
-        deleted_count += self._cleanup_old_audio_files()
+            # Rule 2: keep only N most recent audio files
+            deleted_count += self._cleanup_old_audio_files()
 
-        self.signals.completed.emit(deleted_count)
+            self.signals.completed.emit(deleted_count)
+        except Exception as e:
+            logger.error("Ошибка при очистке: %s", e, exc_info=True)
 
     def _cleanup_old_audio_files(self) -> int:
         """Delete old audio files, keeping only the most recent N."""

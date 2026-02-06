@@ -1,5 +1,7 @@
 """Settings dialog."""
 
+import logging
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QDialog,
@@ -21,6 +23,9 @@ from PyQt6.QtWidgets import (
 )
 
 from fast_tts_rus.ui.models.config import UIConfig
+from fast_tts_rus.ui.services.logging_service import safe_slot
+
+logger = logging.getLogger(__name__)
 
 
 class SettingsDialog(QDialog):
@@ -255,11 +260,13 @@ class SettingsDialog(QDialog):
         # Save config
         self.config.save()
 
+    @safe_slot
     def _on_ok(self) -> None:
         """Handle OK button."""
         self._apply_settings()
         self.accept()
 
+    @safe_slot
     def _on_rate_changed(self, value: int) -> None:
         """Handle rate slider change."""
         rate = value / 100.0

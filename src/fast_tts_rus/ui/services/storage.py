@@ -1,6 +1,7 @@
 """Storage service for managing history and audio files."""
 
 import json
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,8 @@ import numpy as np
 
 from fast_tts_rus.ui.models.entry import TextEntry, EntryStatus
 from fast_tts_rus.ui.models.config import UIConfig
+
+logger = logging.getLogger(__name__)
 
 
 HISTORY_VERSION = 1
@@ -150,13 +153,19 @@ class StorageService:
             if entry.audio_path:
                 audio_path = self.audio_dir / entry.audio_path
                 if audio_path.exists():
-                    audio_path.unlink()
+                    try:
+                        audio_path.unlink()
+                    except OSError as e:
+                        logger.error("Не удалось удалить аудио файл %s: %s", audio_path, e)
 
             # Delete timestamps file
             if entry.timestamps_path:
                 ts_path = self.audio_dir / entry.timestamps_path
                 if ts_path.exists():
-                    ts_path.unlink()
+                    try:
+                        ts_path.unlink()
+                    except OSError as e:
+                        logger.error("Не удалось удалить файл таймстемпов %s: %s", ts_path, e)
 
             del self._entries[entry_id]
             self._save_history()
@@ -168,13 +177,19 @@ class StorageService:
             if entry.audio_path:
                 audio_path = self.audio_dir / entry.audio_path
                 if audio_path.exists():
-                    audio_path.unlink()
+                    try:
+                        audio_path.unlink()
+                    except OSError as e:
+                        logger.error("Не удалось удалить аудио файл %s: %s", audio_path, e)
                 entry.audio_path = None
 
             if entry.timestamps_path:
                 ts_path = self.audio_dir / entry.timestamps_path
                 if ts_path.exists():
-                    ts_path.unlink()
+                    try:
+                        ts_path.unlink()
+                    except OSError as e:
+                        logger.error("Не удалось удалить файл таймстемпов %s: %s", ts_path, e)
                 entry.timestamps_path = None
 
             entry.status = EntryStatus.PENDING
@@ -217,7 +232,7 @@ class StorageService:
         self,
         entry_id: str,
         timestamps: list[dict[str, Any]],
-    ) -> Path:
+    ) -> Path | None:
         """Save word timestamps to JSON file.
 
         Args:
@@ -225,14 +240,18 @@ class StorageService:
             timestamps: List of {"word": str, "start": float, "end": float, "original_pos": [int, int]}
 
         Returns:
-            Relative path to timestamps file
+            Relative path to timestamps file, or None on error
         """
         filename = f"{entry_id}.timestamps.json"
         filepath = self.audio_dir / filename
         data = {"words": timestamps}
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-        return Path(filename)
+        try:
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            return Path(filename)
+        except (OSError, TypeError, ValueError) as e:
+            logger.error("Не удалось сохранить таймстемпы %s: %s", filepath, e)
+            return None
 
     def load_timestamps(self, entry_id: str) -> list[dict[str, Any]] | None:
         """Load word timestamps from JSON file."""
@@ -244,9 +263,13 @@ class StorageService:
         if not filepath.exists():
             return None
 
-        with open(filepath, encoding="utf-8") as f:
-            data = json.load(f)
-        return data.get("words", [])
+        try:
+            with open(filepath, encoding="utf-8") as f:
+                data = json.load(f)
+            return data.get("words", [])
+        except (OSError, json.JSONDecodeError) as e:
+            logger.error("Не удалось загрузить таймстемпы %s: %s", filepath, e)
+            return None
 
     def get_audio_path(self, entry_id: str) -> Path | None:
         """Get full path to audio file."""

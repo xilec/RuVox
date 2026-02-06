@@ -41,14 +41,37 @@ uv run pytest                  # Тесты
 
 ```
 src/fast_tts_rus/
-├── tts_pipeline/           # Нормализация текста
-│   ├── pipeline.py         # TTSPipeline
-│   ├── tracked_text.py     # Отслеживание позиций
-│   └── normalizers/        # Нормализаторы
-└── ui/                     # Desktop приложение
-    ├── widgets/            # Qt виджеты
-    ├── services/           # TTS, storage, hotkeys
-    └── models/             # Entry, Config
+├── tts_pipeline/              # Нормализация текста
+│   ├── pipeline.py            # TTSPipeline
+│   ├── tracked_text.py        # Отслеживание позиций символов
+│   ├── mapping.py             # CharMapping для позиций
+│   ├── word_mapping.py        # WordMapping для слов
+│   ├── config.py              # PipelineConfig
+│   └── normalizers/           # Нормализаторы
+│       ├── english.py         # Английские слова
+│       ├── abbreviations.py   # Аббревиатуры (API, HTTP)
+│       ├── numbers.py         # Числа, даты, размеры
+│       ├── symbols.py         # Операторы, символы
+│       ├── urls.py            # URL, email, IP
+│       └── code.py            # camelCase, snake_case
+└── ui/                        # Desktop приложение
+    ├── app.py                 # QApplication
+    ├── main.py                # Точка входа
+    ├── main_window.py         # MainWindow
+    ├── widgets/               # Qt виджеты
+    │   ├── player.py          # Аудио плеер
+    │   ├── queue_list.py      # Список очереди
+    │   └── text_viewer.py     # Просмотр текста
+    ├── services/              # Сервисы
+    │   ├── tts_worker.py      # TTS генерация
+    │   ├── storage.py         # Хранение истории
+    │   ├── hotkeys.py         # Глобальные хоткеи
+    │   ├── clipboard.py       # Работа с буфером
+    │   ├── cleanup.py         # Очистка кэша
+    │   └── logging_service.py # Логирование
+    └── models/                # Модели данных
+        ├── entry.py           # TextEntry
+        └── config.py          # UIConfig
 ```
 
 ## Основные команды
@@ -92,13 +115,31 @@ result, mapping = pipeline.process_with_char_mapping(text)
 
 ## Тесты
 
+### TTS Pipeline (`tests/tts_pipeline/`)
+
 | Модуль | Тестов | Файл |
 |--------|--------|------|
 | english | 121 | test_english.py |
-| abbreviations | 108 | test_abbreviations.py |
-| numbers | 108 | test_numbers.py |
-| urls | 62 | test_urls.py |
-| symbols | 74 | test_symbols.py |
-| code | 104 | test_code.py |
+| abbreviations | 111 | test_abbreviations.py |
+| numbers | 119 | test_numbers.py |
+| urls | 63 | test_urls.py |
+| symbols | 90 | test_symbols.py |
+| code | 117 | test_code.py |
 | pipeline | 55 | test_pipeline.py |
 | tracked_text | 31 | test_tracked_text.py |
+| char_mapping | 38 | test_char_mapping.py |
+| word_mapping | 20 | test_word_mapping.py |
+
+### UI (`tests/ui/`)
+
+| Модуль | Тестов | Файл |
+|--------|--------|------|
+| storage_service | 45 | test_storage_service.py |
+| tts_chunking | 17 | test_tts_chunking.py |
+| text_viewer_highlight | 7 | test_text_viewer_highlight.py |
+
+### Error Handling (`tests/error_handling/`)
+
+| Модуль | Тестов | Файл |
+|--------|--------|------|
+| error_handling | 23 | test_error_handling.py |

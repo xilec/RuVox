@@ -1,5 +1,6 @@
 """Text viewer widget with Markdown support and word highlighting."""
 
+import logging
 from enum import Enum
 from typing import Any
 
@@ -9,6 +10,8 @@ from PyQt6.QtGui import QTextCursor, QTextCharFormat, QColor
 from PyQt6.QtWidgets import QTextBrowser, QScrollBar
 
 from fast_tts_rus.ui.models.entry import TextEntry
+
+logger = logging.getLogger(__name__)
 
 
 class TextFormat(Enum):

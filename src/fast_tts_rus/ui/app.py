@@ -1,5 +1,6 @@
 """Main application class coordinating all UI components."""
 
+import logging
 from pathlib import Path
 
 from PyQt6.QtCore import QObject, pyqtSignal
@@ -12,6 +13,9 @@ from PyQt6.QtWidgets import (
 )
 
 from fast_tts_rus.ui.models.config import UIConfig
+from fast_tts_rus.ui.services.logging_service import safe_slot
+
+logger = logging.getLogger(__name__)
 from fast_tts_rus.ui.services.storage import StorageService
 from fast_tts_rus.ui.services.cleanup import CleanupWorker
 from fast_tts_rus.ui.services.tts_worker import TTSWorker
@@ -155,6 +159,7 @@ class TTSApplication(QObject):
         self.tts_worker.model_loaded.connect(self._on_model_loaded)
         self.tts_worker.model_error.connect(self._on_model_error)
 
+    @safe_slot
     def _on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         """Handle tray icon activation."""
         # DoubleClick - standard on most platforms
@@ -234,14 +239,17 @@ class TTSApplication(QObject):
 
     # Private methods
 
+    @safe_slot
     def _on_read_now(self) -> None:
         """Handle read_now signal."""
         self.read_now()
 
+    @safe_slot
     def _on_read_later(self) -> None:
         """Handle read_later signal."""
         self.read_later()
 
+    @safe_slot
     def _on_tts_completed(self, entry_id: str) -> None:
         """Handle TTS completion."""
         entry = self.storage.get_entry(entry_id)
@@ -260,6 +268,7 @@ class TTSApplication(QObject):
                 2000,
             )
 
+    @safe_slot
     def _on_tts_error(self, entry_id: str, error_msg: str) -> None:
         """Handle TTS error."""
         entry = self.storage.get_entry(entry_id)
@@ -275,6 +284,7 @@ class TTSApplication(QObject):
                 3000,
             )
 
+    @safe_slot
     def _on_play_requested(self, entry_id: str) -> None:
         """Handle play request from TTS worker."""
         # Show window and play
@@ -282,6 +292,7 @@ class TTSApplication(QObject):
         if self._main_window:
             self._main_window.play_entry(entry_id)
 
+    @safe_slot
     def _on_model_loading(self) -> None:
         """Handle model loading started."""
         self.tray_icon.showMessage(
@@ -291,6 +302,7 @@ class TTSApplication(QObject):
             3000,
         )
 
+    @safe_slot
     def _on_model_loaded(self) -> None:
         """Handle model loaded."""
         self.tray_icon.showMessage(
@@ -300,6 +312,7 @@ class TTSApplication(QObject):
             2000,
         )
 
+    @safe_slot
     def _on_model_error(self, error_msg: str) -> None:
         """Handle model loading error."""
         self.tray_icon.showMessage(
@@ -314,6 +327,7 @@ class TTSApplication(QObject):
         # This will emit registration_failed if unsuccessful
         self.hotkey_service.register()
 
+    @safe_slot
     def _on_hotkey_registration_failed(self, message: str) -> None:
         """Handle hotkey registration failure.
 

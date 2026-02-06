@@ -1,5 +1,7 @@
 """Queue/history list widget."""
 
+import logging
+
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QListWidget,
@@ -13,6 +15,9 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtGui import QAction, QColor, QBrush
 
 from fast_tts_rus.ui.models.entry import TextEntry, EntryStatus
+from fast_tts_rus.ui.services.logging_service import safe_slot
+
+logger = logging.getLogger(__name__)
 
 
 class QueueItemWidget(QWidget):
@@ -265,12 +270,14 @@ class QueueListWidget(QListWidget):
                 return widget.entry
         return None
 
+    @safe_slot
     def _on_item_double_clicked(self, item: QListWidgetItem) -> None:
         """Handle double-click to play."""
         widget = self.itemWidget(item)
         if isinstance(widget, QueueItemWidget):
             self.entry_play_requested.emit(widget.entry)
 
+    @safe_slot
     def _on_selection_changed(self, current: QListWidgetItem, previous: QListWidgetItem) -> None:
         """Handle selection change."""
         if current:
@@ -278,6 +285,7 @@ class QueueListWidget(QListWidget):
             if isinstance(widget, QueueItemWidget):
                 self.entry_selected.emit(widget.entry)
 
+    @safe_slot
     def _show_context_menu(self, position) -> None:
         """Show context menu for entry."""
         item = self.itemAt(position)
@@ -324,6 +332,7 @@ class QueueListWidget(QListWidget):
 
         menu.exec(self.mapToGlobal(position))
 
+    @safe_slot
     def _copy_text(self, text: str) -> None:
         """Copy text to clipboard."""
         from PyQt6.QtWidgets import QApplication
