@@ -162,6 +162,19 @@ class TrackedText:
             else:
                 new_text = match.expand(repl)
 
+            # First check: does any character in the match fall inside a replacement?
+            # This catches cross-boundary matches (e.g., space from original + space from replacement)
+            match_touches_replacement = False
+            for pos in range(start, end):
+                if self._is_current_pos_inside_replacement(pos):
+                    match_touches_replacement = True
+                    break
+
+            if match_touches_replacement:
+                # This match includes characters from inside a replacement
+                # Skip to avoid creating cross-boundary replacements
+                continue
+
             # Calculate original positions using current offset entries
             orig_start = self._current_to_original(start)
             orig_end = self._current_to_original(end)
@@ -200,6 +213,39 @@ class TrackedText:
             self._current = self._current[:start] + new_text + self._current[end:]
 
         return self
+
+    def _is_current_pos_inside_replacement(self, current_pos: int) -> bool:
+        """Check if a position in current text is inside a replacement's new text.
+
+        This is checked in CURRENT text coordinates, computing where each
+        replacement is located after all previous replacements.
+
+        Returns:
+            True if the position falls inside any replacement's new text.
+        """
+        sorted_entries = sorted(self._offset_entries, key=lambda e: e.orig_start)
+        cumulative_delta = 0
+
+        for entry in sorted_entries:
+            old_len = entry.orig_end - entry.orig_start
+            new_len = entry.new_len
+            delta = new_len - old_len
+
+            # Where this replacement is in current text
+            current_start = entry.orig_start + cumulative_delta
+            current_end = current_start + new_len
+
+            if current_pos < current_start:
+                # Position is before this replacement - not inside any
+                return False
+            elif current_pos < current_end:
+                # Position is inside this replacement
+                return True
+            else:
+                # Position is after this replacement
+                cumulative_delta += delta
+
+        return False
 
     def _find_containing_replacement(
         self, orig_start: int, orig_end: int
