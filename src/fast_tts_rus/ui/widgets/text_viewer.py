@@ -37,6 +37,7 @@ class TextViewerWidget(QTextBrowser):
         self.timestamps: list[dict[str, Any]] | None = None
         self.text_format: TextFormat = TextFormat.PLAIN
         self._last_highlighted_pos: tuple[int, int] | None = None
+        self._last_highlight_doc_range: tuple[int, int] | None = None
 
         # Setup highlighting format
         self._highlight_format = QTextCharFormat()
@@ -69,6 +70,7 @@ class TextViewerWidget(QTextBrowser):
         self.current_entry = entry
         self.timestamps = timestamps
         self._last_highlighted_pos = None
+        self._last_highlight_doc_range = None
         self._render_text()
 
     def clear_entry(self) -> None:
@@ -76,6 +78,7 @@ class TextViewerWidget(QTextBrowser):
         self.current_entry = None
         self.timestamps = None
         self._last_highlighted_pos = None
+        self._last_highlight_doc_range = None
         self.clear()
 
     def _render_text(self) -> None:
@@ -133,8 +136,9 @@ class TextViewerWidget(QTextBrowser):
         self._clear_highlight()
 
         # Apply new highlight and get document position
-        doc_pos = self._highlight_range(start, end)
+        doc_pos, doc_end = self._highlight_range(start, end)
         self._last_highlighted_pos = (start, end)
+        self._last_highlight_doc_range = (doc_pos, doc_end) if doc_pos is not None else None
 
         # Scroll to visible
         if doc_pos is not None:
@@ -153,14 +157,14 @@ class TextViewerWidget(QTextBrowser):
 
         return None
 
-    def _highlight_range(self, start: int, end: int) -> int | None:
+    def _highlight_range(self, start: int, end: int) -> tuple[int | None, int | None]:
         """Highlight text range in the document.
 
         For plain text: positions are 1:1.
         For Markdown: finds the word in rendered document by searching.
 
         Returns:
-            Document position of the highlighted word, or None if not found.
+            Tuple of (doc_start, doc_end) positions, or (None, None) if not found.
         """
         if self.text_format == TextFormat.PLAIN:
             # Plain text mode: positions are 1:1
@@ -168,20 +172,20 @@ class TextViewerWidget(QTextBrowser):
             cursor.setPosition(start)
             cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
             cursor.mergeCharFormat(self._highlight_format)
-            return start
+            return start, end
         else:
             # Markdown mode: find the word in rendered document
             if not self.current_entry:
-                return None
+                return None, None
 
             original_text = self.current_entry.original_text
             if start >= len(original_text) or end > len(original_text):
-                return None
+                return None, None
 
             # Get the word from original text
             word = original_text[start:end].strip()
             if not word:
-                return None
+                return None, None
 
             # Count which occurrence this is in the original text
             occurrence = self._count_word_occurrences_before(original_text, word, start)
@@ -191,13 +195,14 @@ class TextViewerWidget(QTextBrowser):
             doc_pos = self._find_nth_occurrence(rendered, word, occurrence)
 
             if doc_pos >= 0:
+                doc_end = doc_pos + len(word)
                 cursor = self.textCursor()
                 cursor.setPosition(doc_pos)
-                cursor.setPosition(doc_pos + len(word), QTextCursor.MoveMode.KeepAnchor)
+                cursor.setPosition(doc_end, QTextCursor.MoveMode.KeepAnchor)
                 cursor.mergeCharFormat(self._highlight_format)
-                return doc_pos
+                return doc_pos, doc_end
 
-            return None
+            return None, None
 
     def _count_word_occurrences_before(self, text: str, word: str, pos: int) -> int:
         """Count how many times word appears before position pos."""
@@ -226,18 +231,18 @@ class TextViewerWidget(QTextBrowser):
 
     def _clear_highlight(self) -> None:
         """Clear any existing highlight."""
-        if self._last_highlighted_pos is None:
+        if self._last_highlight_doc_range is None:
             return
 
-        # Reset all formatting by re-rendering
-        # This is simpler than tracking and clearing specific ranges
-        cursor = self.textCursor()
-        cursor.select(QTextCursor.SelectionType.Document)
-        cursor.setCharFormat(self._normal_format)
+        doc_start, doc_end = self._last_highlight_doc_range
+        if doc_start is not None and doc_end is not None:
+            cursor = self.textCursor()
+            cursor.setPosition(doc_start)
+            cursor.setPosition(doc_end, QTextCursor.MoveMode.KeepAnchor)
+            cursor.setCharFormat(self._normal_format)
 
-        # Re-render to restore proper formatting
-        self._render_text()
         self._last_highlighted_pos = None
+        self._last_highlight_doc_range = None
 
     def _ensure_visible_at_doc_pos(self, doc_pos: int) -> None:
         """Scroll to make document position visible without setting cursor."""
