@@ -152,16 +152,29 @@ class QueueListWidget(QListWidget):
         self.customContextMenuRequested.connect(self._show_context_menu)
 
     def update_entries(self, entries: list[TextEntry]) -> None:
-        """Update the list with new entries."""
-        # Sort: newest first
+        """Update the list with new entries using delta update."""
         sorted_entries = sorted(entries, key=lambda e: e.created_at, reverse=True)
+        new_ids = {e.id for e in sorted_entries}
+        old_ids = set(self._entries.keys())
 
-        self.clear()
-        self._entries.clear()
-        self._item_widgets.clear()
+        # Remove entries no longer present
+        for entry_id in old_ids - new_ids:
+            self.remove_entry(entry_id)
 
-        for entry in sorted_entries:
-            self._add_entry_item(entry)
+        # Update existing, add new at correct positions
+        for i, entry in enumerate(sorted_entries):
+            if entry.id in old_ids:
+                self.update_entry(entry)
+            else:
+                item = QListWidgetItem()
+                widget = QueueItemWidget(entry)
+                item.setSizeHint(widget.sizeHint())
+                self.insertItem(i, item)
+                self.setItemWidget(item, widget)
+                self._entries[entry.id] = entry
+                self._item_widgets[entry.id] = widget
+                if entry.id == self._current_playing_id:
+                    widget.set_playing(True)
 
     def _add_entry_item(self, entry: TextEntry) -> None:
         """Add a single entry to the list."""
