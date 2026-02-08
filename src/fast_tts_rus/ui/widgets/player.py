@@ -229,6 +229,7 @@ class PlayerWidget(QWidget):
 
         self._player.pause = False
         self._set_playing(True)
+        self._ensure_duration()
 
         if self.current_entry:
             self.playback_started.emit(self.current_entry.id)
@@ -264,6 +265,8 @@ class PlayerWidget(QWidget):
 
         position_sec = max(0.0, min(position_sec, self._duration_ms / 1000.0))
         self._player.seek(position_sec, reference="absolute")
+        # Update UI after mpv processes the seek (works on pause too)
+        QTimer.singleShot(50, self._sync_position)
 
     def seek_relative(self, delta_sec: float) -> None:
         """Seek relative to current position."""
@@ -271,6 +274,8 @@ class PlayerWidget(QWidget):
             return
 
         self._player.seek(delta_sec, reference="relative")
+        # Update UI after mpv processes the seek (works on pause too)
+        QTimer.singleShot(50, self._sync_position)
 
     def set_speed(self, speed: float) -> None:
         """Set playback speed."""
@@ -332,6 +337,13 @@ class PlayerWidget(QWidget):
             )
             self._position_timer.stop()
 
+    def _ensure_duration(self) -> None:
+        """Read duration directly from mpv if not yet set (fallback)."""
+        if self._duration_ms == 0 and self._player is not None:
+            dur = self._player.duration
+            if dur is not None:
+                self._on_duration_changed(int(dur * 1000))
+
     def _on_mpv_duration(self, _name: str, value) -> None:
         """Handle duration property change from mpv (called from mpv thread)."""
         if value is not None:
@@ -360,10 +372,16 @@ class PlayerWidget(QWidget):
             self.playback_stopped.emit()
 
     @safe_slot
-    def _poll_position(self) -> None:
-        """Poll mpv for current position (called by QTimer)."""
+    def _sync_position(self) -> None:
+        """Read current position from mpv and update UI.
+
+        Used after seeks (including on pause) to immediately update
+        the slider, time label, and word highlight.
+        """
         if self._player is None:
             return
+
+        self._ensure_duration()
 
         pos = self._player.time_pos
         if pos is None:
@@ -374,16 +392,20 @@ class PlayerWidget(QWidget):
         if not self._slider_pressed:
             self.progress_slider.setValue(position_ms)
 
-        # Update time label
         self.time_current.setText(self._format_time(pos))
-
-        # Emit for text synchronization
         self.position_changed.emit(pos)
+
+    @safe_slot
+    def _poll_position(self) -> None:
+        """Poll mpv for current position (called by QTimer during playback)."""
+        self._sync_position()
 
     @safe_slot
     def _on_slider_moved(self, position_ms: int) -> None:
         """Handle slider being dragged."""
-        self.time_current.setText(self._format_time(position_ms / 1000.0))
+        position_sec = position_ms / 1000.0
+        self.time_current.setText(self._format_time(position_sec))
+        self.position_changed.emit(position_sec)
 
     _slider_pressed = False
 
