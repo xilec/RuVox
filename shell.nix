@@ -41,6 +41,8 @@ pkgs.mkShell {
     # Audio libs
     libpulseaudio
     pipewire
+    # libmpv for audio playback (python-mpv backend)
+    mpv
     # Required by PyQt6 FFmpeg multimedia plugin
     xorg.libXext
     brotli
@@ -80,6 +82,7 @@ pkgs.mkShell {
     pkgs.libdecor
     pkgs.libpulseaudio
     pkgs.pipewire
+    pkgs.mpv
     pkgs.xorg.libXext
     pkgs.brotli
     pkgs.bzip2

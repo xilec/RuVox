@@ -338,6 +338,9 @@ class TTSApplication(QObject):
 
     def _quit(self) -> None:
         """Quit the application."""
+        if self._main_window:
+            self._main_window.player.cleanup()
+
         if self.hotkey_service:
             self.hotkey_service.unregister()
 

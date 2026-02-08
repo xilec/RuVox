@@ -6,9 +6,9 @@ import threading
 from datetime import datetime
 from typing import Any
 
-# IMPORTANT: torch must be imported before QMediaPlayer/QAudioOutput are created.
-# If torch is imported in a worker thread after Qt multimedia components exist,
-# it causes "double free or corruption" crashes due to memory initialization conflicts.
+# IMPORTANT: torch must be imported early at module level.
+# Importing torch in a worker thread can cause crashes due to memory
+# initialization conflicts with other native libraries.
 import torch
 import numpy as np
 

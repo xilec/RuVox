@@ -55,7 +55,7 @@ class PlayerWidget(QWidget):
     def speed_down(self) -> None
 ```
 
-**Использует:** QMediaPlayer, QAudioOutput
+**Использует:** libmpv (python-mpv) с алгоритмом scaletempo2 для качественного звука при ускоренном воспроизведении audio
 
 ### QueueListWidget (`widgets/queue_list.py`)
 

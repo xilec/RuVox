@@ -1,9 +1,12 @@
-"""Audio player widget with playback controls."""
+"""Audio player widget with playback controls.
+
+Uses libmpv (python-mpv) for high-quality audio playback with scaletempo2.
+"""
 
 import logging
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QUrl, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -13,12 +16,20 @@ from PyQt6.QtWidgets import (
     QLabel,
     QStyle,
 )
-from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 
 from fast_tts_rus.ui.models.entry import TextEntry
 from fast_tts_rus.ui.services.logging_service import safe_slot
 
 logger = logging.getLogger(__name__)
+
+# Try to import mpv; graceful degradation if unavailable
+try:
+    import mpv
+
+    _MPV_AVAILABLE = True
+except (ImportError, OSError) as e:
+    _MPV_AVAILABLE = False
+    logger.error("mpv (libmpv) недоступен — плеер не будет работать: %s", e)
 
 
 class PlayerWidget(QWidget):
@@ -47,17 +58,29 @@ class PlayerWidget(QWidget):
         self.current_entry: TextEntry | None = None
         self._current_speed_index = 2  # 1.0x
         self._duration_ms = 0
+        self._is_playing = False
+        self._mpv_available = _MPV_AVAILABLE
 
-        # Media player setup
-        self.player = QMediaPlayer()
-        self.audio_output = QAudioOutput()
-        self.player.setAudioOutput(self.audio_output)
+        # mpv player setup
+        self._player = None
+        if self._mpv_available:
+            try:
+                self._player = mpv.MPV(
+                    video=False,
+                    ytdl=False,
+                    af="scaletempo2",
+                )
+                self._player.observe_property("duration", self._on_mpv_duration)
+                self._player.observe_property("idle-active", self._on_mpv_idle)
+            except Exception as e:
+                logger.error("Не удалось создать mpv.MPV: %s", e)
+                self._mpv_available = False
+                self._player = None
 
-        # Connect player signals
-        self.player.positionChanged.connect(self._on_position_changed)
-        self.player.durationChanged.connect(self._on_duration_changed)
-        self.player.playbackStateChanged.connect(self._on_state_changed)
-        self.player.errorOccurred.connect(self._on_error)
+        # Position polling timer (5 Hz — enough for word highlight)
+        self._position_timer = QTimer(self)
+        self._position_timer.setInterval(200)
+        self._position_timer.timeout.connect(self._poll_position)
 
         self._setup_ui()
 
@@ -190,53 +213,70 @@ class PlayerWidget(QWidget):
         if not audio_path.exists():
             return False
 
+        if not self._mpv_available or self._player is None:
+            logger.warning("mpv недоступен — воспроизведение невозможно")
+            return False
+
         self.current_entry = entry
-        self.player.setSource(QUrl.fromLocalFile(str(audio_path)))
+        self._player.loadfile(str(audio_path))
         self._update_controls_enabled(True)
         return True
 
     def play(self) -> None:
         """Start or resume playback."""
-        if self.player.playbackState() == QMediaPlayer.PlaybackState.PausedState:
-            self.player.play()
-        elif self.current_entry:
-            self.player.play()
-            if self.current_entry:
-                self.playback_started.emit(self.current_entry.id)
+        if not self._mpv_available or self._player is None:
+            return
+
+        self._player.pause = False
+        self._set_playing(True)
+
+        if self.current_entry:
+            self.playback_started.emit(self.current_entry.id)
 
     def pause(self) -> None:
         """Pause playback."""
-        self.player.pause()
+        if not self._mpv_available or self._player is None:
+            return
+
+        self._player.pause = True
+        self._set_playing(False)
 
     def stop(self) -> None:
         """Stop playback."""
-        self.player.stop()
+        if not self._mpv_available or self._player is None:
+            return
+
+        self._player.command("stop")
+        self._set_playing(False)
         self.playback_stopped.emit()
 
     def toggle_play_pause(self) -> None:
         """Toggle between play and pause."""
-        if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+        if self._is_playing:
             self.pause()
         else:
             self.play()
 
     def seek(self, position_sec: float) -> None:
         """Seek to position in seconds."""
-        position_ms = int(position_sec * 1000)
-        position_ms = max(0, min(position_ms, self._duration_ms))
-        self.player.setPosition(position_ms)
+        if not self._mpv_available or self._player is None:
+            return
+
+        position_sec = max(0.0, min(position_sec, self._duration_ms / 1000.0))
+        self._player.seek(position_sec, reference="absolute")
 
     def seek_relative(self, delta_sec: float) -> None:
         """Seek relative to current position."""
-        current_ms = self.player.position()
-        new_ms = current_ms + int(delta_sec * 1000)
-        new_ms = max(0, min(new_ms, self._duration_ms))
-        self.player.setPosition(new_ms)
+        if not self._mpv_available or self._player is None:
+            return
+
+        self._player.seek(delta_sec, reference="relative")
 
     def set_speed(self, speed: float) -> None:
         """Set playback speed."""
         speed = max(0.5, min(2.0, speed))
-        self.player.setPlaybackRate(speed)
+        if self._mpv_available and self._player is not None:
+            self._player.speed = speed
         self.speed_label.setText(f"{speed}x")
 
     def speed_up(self) -> None:
@@ -253,7 +293,10 @@ class PlayerWidget(QWidget):
 
     def get_position_sec(self) -> float:
         """Get current position in seconds."""
-        return self.player.position() / 1000.0
+        if not self._mpv_available or self._player is None:
+            return 0.0
+        pos = self._player.time_pos
+        return pos if pos is not None else 0.0
 
     def get_duration_sec(self) -> float:
         """Get total duration in seconds."""
@@ -261,54 +304,85 @@ class PlayerWidget(QWidget):
 
     def is_playing(self) -> bool:
         """Check if currently playing."""
-        return self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
+        return self._is_playing
+
+    def cleanup(self) -> None:
+        """Terminate mpv event thread. Call before application exit."""
+        self._position_timer.stop()
+        if self._player is not None:
+            try:
+                self._player.terminate()
+            except Exception:
+                pass
+            self._player = None
+
+    # Private methods
+
+    def _set_playing(self, playing: bool) -> None:
+        """Update playing state and icon."""
+        self._is_playing = playing
+        if playing:
+            self.btn_play_pause.setIcon(
+                self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause)
+            )
+            self._position_timer.start()
+        else:
+            self.btn_play_pause.setIcon(
+                self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
+            )
+            self._position_timer.stop()
+
+    def _on_mpv_duration(self, _name: str, value) -> None:
+        """Handle duration property change from mpv (called from mpv thread)."""
+        if value is not None:
+            duration_ms = int(value * 1000)
+            QTimer.singleShot(0, lambda: self._on_duration_changed(duration_ms))
+
+    def _on_mpv_idle(self, _name: str, value) -> None:
+        """Handle idle-active property change (EOF detection, called from mpv thread)."""
+        if value is True:
+            QTimer.singleShot(0, self._on_playback_ended)
 
     # Private slots
 
     @safe_slot
-    def _on_position_changed(self, position_ms: int) -> None:
-        """Handle position change from player."""
-        if not self._slider_pressed:
-            self.progress_slider.setValue(position_ms)
-
-        # Update time label
-        position_sec = position_ms / 1000.0
-        self.time_current.setText(self._format_time(position_sec))
-
-        # Emit for text synchronization
-        self.position_changed.emit(position_sec)
-
-    @safe_slot
     def _on_duration_changed(self, duration_ms: int) -> None:
-        """Handle duration change."""
+        """Handle duration change (Qt thread)."""
         self._duration_ms = duration_ms
         self.progress_slider.setRange(0, duration_ms)
         self.time_total.setText(self._format_time(duration_ms / 1000.0))
 
     @safe_slot
-    def _on_state_changed(self, state: QMediaPlayer.PlaybackState) -> None:
-        """Handle playback state change."""
-        if state == QMediaPlayer.PlaybackState.PlayingState:
-            self.btn_play_pause.setIcon(
-                self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause)
-            )
-        else:
-            self.btn_play_pause.setIcon(
-                self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
-            )
-
-        if state == QMediaPlayer.PlaybackState.StoppedState:
+    def _on_playback_ended(self) -> None:
+        """Handle playback ended (Qt thread)."""
+        if self._is_playing:
+            self._set_playing(False)
             self.playback_stopped.emit()
 
     @safe_slot
-    def _on_error(self, error: QMediaPlayer.Error, error_string: str) -> None:
-        """Handle player error."""
-        logger.error("Player error: %s (code=%s)", error_string, error)
+    def _poll_position(self) -> None:
+        """Poll mpv for current position (called by QTimer)."""
+        if self._player is None:
+            return
+
+        pos = self._player.time_pos
+        if pos is None:
+            return
+
+        position_ms = int(pos * 1000)
+
+        if not self._slider_pressed:
+            self.progress_slider.setValue(position_ms)
+
+        # Update time label
+        self.time_current.setText(self._format_time(pos))
+
+        # Emit for text synchronization
+        self.position_changed.emit(pos)
 
     @safe_slot
     def _on_slider_moved(self, position_ms: int) -> None:
         """Handle slider being dragged."""
-        # Update time display while dragging
         self.time_current.setText(self._format_time(position_ms / 1000.0))
 
     _slider_pressed = False
@@ -322,12 +396,14 @@ class PlayerWidget(QWidget):
     def _on_slider_released(self) -> None:
         """Handle slider release - seek to position."""
         self._slider_pressed = False
-        self.player.setPosition(self.progress_slider.value())
+        position_sec = self.progress_slider.value() / 1000.0
+        self.seek(position_sec)
 
     @safe_slot
     def _on_volume_changed(self, value: int) -> None:
         """Handle volume slider change."""
-        self.audio_output.setVolume(value / 100.0)
+        if self._mpv_available and self._player is not None:
+            self._player.volume = value
 
     @staticmethod
     def _format_time(seconds: float) -> str:

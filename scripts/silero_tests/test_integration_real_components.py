@@ -17,8 +17,9 @@ logging.basicConfig(level=logging.DEBUG, format='%(name)s: %(message)s')
 print("=== STARTING TEST ===", flush=True)
 
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import QTimer, QUrl
-from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
+from PyQt6.QtCore import QTimer
+
+import mpv
 
 # Импортируем РЕАЛЬНЫЕ компоненты из приложения
 from fast_tts_rus.ui.models.config import UIConfig
@@ -45,9 +46,8 @@ class IntegrationTestRealComponents:
         print("  __init__: Creating StorageService...", flush=True)
         self.storage = StorageService(self.config)
 
-        # QMediaPlayer/QAudioOutput будут созданы в _setup_media()
-        self.player = None
-        self.audio_output = None
+        # mpv will be created in _setup_media()
+        self.player = None  # mpv.MPV instance
 
         print("  __init__: Creating TTSWorker...", flush=True)
         self.tts_worker = TTSWorker(self.config, self.storage)
@@ -96,19 +96,12 @@ class IntegrationTestRealComponents:
         return self.success
 
     def _setup_media(self):
-        """Создание QMediaPlayer ПОСЛЕ запуска event loop."""
-        print("\n[Setup] Создание QMediaPlayer...", flush=True)
+        """Создание mpv ПОСЛЕ запуска event loop."""
+        print("\n[Setup] Создание mpv...", flush=True)
         try:
-            self.player = QMediaPlayer()
-            print("   QMediaPlayer created", flush=True)
-
-            self.audio_output = QAudioOutput()
-            print("   QAudioOutput created", flush=True)
-
-            self.audio_output.setVolume(0.0)  # Тихий режим
-            self.player.setAudioOutput(self.audio_output)
-            self.player.mediaStatusChanged.connect(self._on_media_status)
-            print("   Media player ready", flush=True)
+            self.player = mpv.MPV(video=False, ytdl=False)
+            self.player.volume = 0  # Тихий режим
+            print("   mpv player ready", flush=True)
 
             QTimer.singleShot(100, self._step1_create_entry)
         except Exception as e:
@@ -121,9 +114,6 @@ class IntegrationTestRealComponents:
 
     def _on_timeout(self):
         self._fail("Таймаут теста")
-
-    def _on_media_status(self, status):
-        print(f"   [Player] {status}", flush=True)
 
     def _step1_create_entry(self):
         print(f"\n[Шаг 1] Создание entry: '{self.test_text[:40]}...'", flush=True)
@@ -173,15 +163,16 @@ class IntegrationTestRealComponents:
             return
 
         print(f"   Audio: {audio_path}", flush=True)
-        self.player.setSource(QUrl.fromLocalFile(str(audio_path)))
-        self.player.play()
+        self.player.loadfile(str(audio_path))
+        self.player.wait_until_playing()
+        print("   Playing...", flush=True)
 
         QTimer.singleShot(2000, self._step4_stop)
 
     def _step4_stop(self):
         print("\n[Шаг 4] Остановка и подготовка к перегенерации...", flush=True)
 
-        self.player.stop()
+        self.player.command("stop")
         print("   Плеер остановлен", flush=True)
 
         # Удаляем аудио как в реальном UI

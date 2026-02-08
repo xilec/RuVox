@@ -12,10 +12,11 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout,
     QPushButton, QLabel, QSystemTrayIcon, QMenu
 )
-from PyQt6.QtCore import QTimer, QUrl, QObject, pyqtSignal, QRunnable, QThreadPool
+from PyQt6.QtCore import QTimer, QObject, pyqtSignal, QRunnable, QThreadPool
 from PyQt6.QtGui import QIcon, QAction
-from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PyQt6.QtDBus import QDBusConnection
+
+import mpv
 
 import torch
 from fast_tts_rus.tts_pipeline import TTSPipeline
@@ -135,8 +136,7 @@ class IntegrationTestThreadPool:
         # UI
         self.main_window = None
         self.tray_icon = None
-        self.player = None
-        self.audio_output = None
+        self.player = None  # mpv.MPV instance
 
         # ThreadPool (как в реальном UI)
         self.thread_pool = QThreadPool()
@@ -195,19 +195,13 @@ class IntegrationTestThreadPool:
             self.tray_icon.setIcon(QIcon.fromTheme("audio-volume-high"))
             self.tray_icon.show()
 
-            self.player = QMediaPlayer()
-            self.audio_output = QAudioOutput()
-            self.audio_output.setVolume(0.0)  # Тихий режим для тестов
-            self.player.setAudioOutput(self.audio_output)
-            self.player.mediaStatusChanged.connect(self._on_media_status)
+            self.player = mpv.MPV(video=False, ytdl=False)
+            self.player.volume = 0  # Тихий режим для тестов
 
             print("   ✓ UI создан")
             QTimer.singleShot(100, self._step2_load_model)
         except Exception as e:
             self._fail(f"UI: {e}")
-
-    def _on_media_status(self, status):
-        print(f"   [Player] {status}")
 
     def _step2_load_model(self):
         print("\n[Шаг 2] Загрузка модели в QThreadPool...")
@@ -239,8 +233,9 @@ class IntegrationTestThreadPool:
         print("\n[Шаг 4] Воспроизведение...")
         self.main_window.status_label.setText("Воспроизведение...")
 
-        self.player.setSource(QUrl.fromLocalFile(self.audio_path))
-        self.player.play()
+        self.player.loadfile(self.audio_path)
+        self.player.wait_until_playing()
+        print("   Playing...")
 
         QTimer.singleShot(2000, self._step5_stop)
 
@@ -248,7 +243,7 @@ class IntegrationTestThreadPool:
         print("\n[Шаг 5] Остановка...")
         self.main_window.status_label.setText("Остановка...")
 
-        self.player.stop()
+        self.player.command("stop")
         if Path(self.audio_path).exists():
             Path(self.audio_path).unlink()
         print("   ✓ Остановлен, файл удалён")

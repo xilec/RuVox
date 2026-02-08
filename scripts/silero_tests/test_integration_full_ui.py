@@ -12,10 +12,11 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout,
     QPushButton, QLabel, QSystemTrayIcon, QMenu
 )
-from PyQt6.QtCore import QTimer, QUrl, QObject, pyqtSignal
+from PyQt6.QtCore import QTimer, QObject, pyqtSignal
 from PyQt6.QtGui import QIcon, QAction
-from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PyQt6.QtDBus import QDBusConnection
+
+import mpv
 
 import torch
 from fast_tts_rus.tts_pipeline import TTSPipeline
@@ -60,8 +61,7 @@ class IntegrationTestFullUI:
         self.app = QApplication(sys.argv)
         self.temp_dir = tempfile.mkdtemp(prefix="tts_test_")
         self.model = None
-        self.player = None
-        self.audio_output = None
+        self.player = None  # mpv.MPV instance
         self.test_text = "Тестовый текст для проверки перегенерации."
         self.audio_path = None
         self.success = False
@@ -195,29 +195,24 @@ class IntegrationTestFullUI:
 
     def _step4_setup_player(self):
         """Шаг 4: Настройка плеера."""
-        print("\n[Шаг 4] Настройка QMediaPlayer...")
+        print("\n[Шаг 4] Настройка mpv...")
         try:
-            self.player = QMediaPlayer()
-            self.audio_output = QAudioOutput()
-            self.audio_output.setVolume(0.0)  # Тихий режим для тестов
-            self.player.setAudioOutput(self.audio_output)
-            self.player.mediaStatusChanged.connect(self._on_media_status)
-            print("   ✓ QMediaPlayer создан")
+            self.player = mpv.MPV(video=False, ytdl=False)
+            self.player.volume = 0  # Тихий режим для тестов
+            print("   ✓ mpv создан")
 
             QTimer.singleShot(100, self._step5_play)
         except Exception as e:
             self._fail(f"Ошибка плеера: {e}")
-
-    def _on_media_status(self, status):
-        print(f"   [Player] {status}")
 
     def _step5_play(self):
         """Шаг 5: Воспроизведение."""
         print("\n[Шаг 5] Воспроизведение...")
         self.main_window.status_label.setText("Воспроизведение...")
         try:
-            self.player.setSource(QUrl.fromLocalFile(self.audio_path))
-            self.player.play()
+            self.player.loadfile(self.audio_path)
+            self.player.wait_until_playing()
+            print("   Playing...")
             QTimer.singleShot(2000, self._step6_stop)
         except Exception as e:
             self._fail(f"Воспроизведение: {e}")
@@ -227,7 +222,7 @@ class IntegrationTestFullUI:
         print("\n[Шаг 6] Остановка плеера...")
         self.main_window.status_label.setText("Остановка...")
         try:
-            self.player.stop()
+            self.player.command("stop")
             if Path(self.audio_path).exists():
                 Path(self.audio_path).unlink()
             print("   ✓ Плеер остановлен, файл удалён")

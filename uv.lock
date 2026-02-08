@@ -221,6 +221,7 @@ ui = [
     { name = "dasbus" },
     { name = "markdown" },
     { name = "pyqt6" },
+    { name = "python-mpv" },
 ]
 
 [package.dev-dependencies]
@@ -242,6 +243,7 @@ requires-dist = [
     { name = "pyqt6", marker = "extra == 'ui'", specifier = ">=6.6.0,<7" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0,<9" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0,<6" },
+    { name = "python-mpv", marker = "extra == 'ui'", specifier = ">=1.0,<2" },
     { name = "scipy", marker = "extra == 'tts'", specifier = ">=1.10,<2" },
     { name = "torch", marker = "extra == 'tts'", specifier = ">=2.0,<3" },
 ]
@@ -804,6 +806,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/74/67/00efc8d11b630c56f15f4ad9c7f9223f1e5ec275aaae3fa9118c6a223ad2/pytest-cov-5.0.0.tar.gz", hash = "sha256:5837b58e9f6ebd335b0f8060eecce69b662415b16dc503883a02f45dfeb14857", size = 63042, upload-time = "2024-03-24T20:16:34.856Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/78/3a/af5b4fa5961d9a1e6237b530eb87dd04aea6eb83da09d2a4073d81b54ccf/pytest_cov-5.0.0-py3-none-any.whl", hash = "sha256:4f0764a1219df53214206bf1feea4633c3b558a2925c8b59f144f682861ce652", size = 21990, upload-time = "2024-03-24T20:16:32.444Z" },
+]
+
+[[package]]
+name = "python-mpv"
+version = "1.0.8"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/77/bc/6aa34c8805ff62e2fefc7d171563c60598aac215d5241186031a2c839935/python_mpv-1.0.8.tar.gz", hash = "sha256:017fa359da059c831a94c419083491903e6d2f7c81b9841c33c196cabf4b3fe3", size = 52680, upload-time = "2025-04-25T09:51:40.048Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/22/f3/4c632eaacebfc62ab9414586137aecf6c0ea2a1e99708cf5a4c0dec13ae0/python_mpv-1.0.8-py3-none-any.whl", hash = "sha256:b5296403e990fb7348df4ca2211937a030f524bf638657bda7e45a00bc2df0cd", size = 46169, upload-time = "2025-04-25T09:51:37.775Z" },
 ]
 
 [[package]]

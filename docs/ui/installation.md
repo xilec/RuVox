@@ -30,12 +30,12 @@ uv run fast-tts-ui
 ```bash
 # Ubuntu/Debian
 sudo apt install python3.11 python3.11-venv \
-    qt6-base-dev qt6-multimedia-dev \
+    qt6-base-dev libmpv-dev \
     wl-clipboard  # для Wayland
 
 # Fedora
 sudo dnf install python3.11 \
-    qt6-qtbase-devel qt6-qtmultimedia-devel \
+    qt6-qtbase-devel mpv-devel \
     wl-clipboard
 ```
 
@@ -152,11 +152,12 @@ python -c "import torch; torch.hub.load('snakers4/silero-models', 'silero_tts', 
 ### Нет звука
 
 ```bash
-# Проверьте Qt multimedia backend
-python -c "from PyQt6.QtMultimedia import QMediaPlayer; print('OK')"
+# Проверьте наличие libmpv
+python -c "import mpv; p = mpv.MPV(video=False); p.terminate(); print('OK')"
 
-# Установите GStreamer плагины
-sudo apt install gstreamer1.0-plugins-good gstreamer1.0-plugins-bad
+# Установите mpv/libmpv
+sudo apt install libmpv-dev   # Ubuntu/Debian
+sudo dnf install mpv-devel    # Fedora
 ```
 
 ### Хоткеи не работают (Wayland)
