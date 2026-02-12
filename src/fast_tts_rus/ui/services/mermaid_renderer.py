@@ -5,6 +5,7 @@ Caches results by code hash. Downloads mermaid.min.js on first use.
 """
 
 import hashlib
+import html
 import logging
 import urllib.request
 from pathlib import Path
@@ -168,12 +169,7 @@ class MermaidRenderer(QObject):
     @staticmethod
     def _escape_html(text: str) -> str:
         """Escape HTML entities for embedding in <pre> tag."""
-        return (
-            text.replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace('"', "&quot;")
-        )
+        return html.escape(text)
 
     def _render_in_webview(self, code_hash: str, code: str) -> None:
         """Render mermaid diagram visually in webview for capture.

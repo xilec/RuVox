@@ -1,5 +1,6 @@
 """Modal dialog for interactive Mermaid diagram preview."""
 
+import html
 import logging
 from pathlib import Path
 
@@ -144,12 +145,7 @@ class MermaidPreviewDialog(QDialog):
     @staticmethod
     def _escape_html(text: str) -> str:
         """Escape HTML entities in text."""
-        return (
-            text.replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace('"', "&quot;")
-        )
+        return html.escape(text)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         """Close dialog on Escape (even if WebView has focus)."""
