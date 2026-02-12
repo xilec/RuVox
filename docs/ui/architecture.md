@@ -125,10 +125,17 @@ class TextViewerWidget(QTextBrowser):
 5. Если Plain mode:
    - Применить подсветку напрямую в `[original_start:original_end]`
 
+**Mermaid-диаграммы (Markdown режим):**
+- Блоки ` ```mermaid ``` ` извлекаются перед Markdown-конвертацией
+- Рендерятся как изображения через `MermaidRenderer` (hidden QWebEngineView + mermaid.js)
+- Клик по изображению открывает `MermaidPreviewDialog` с интерактивным просмотром
+- `loadResource()` override предоставляет pixmap по запросу Qt при парсинге HTML
+- В TTS pipeline mermaid-блоки заменяются на "Тут мермэйд диаграмма"
+
 **Особенности:**
 - Переключение режимов во время воспроизведения — подсветка восстанавливается автоматически
 - Автоскролл к текущей позиции
-- Кликабельные ссылки в Markdown режиме
+- Кликабельные ссылки в Markdown режиме (`setOpenLinks(False)` + `anchorClicked` для custom routing)
 - Graceful degradation при отсутствии mapping
 
 ## Утилиты
@@ -277,6 +284,47 @@ class HotkeyService(QObject):
 - Использует D-Bus portal `org.freedesktop.portal.GlobalShortcuts`
 - Библиотека dasbus для сериализации сложных типов
 - GLib для обработки сигналов
+
+### MermaidRenderer (`services/mermaid_renderer.py`)
+
+Рендеринг Mermaid-диаграмм в SVG и pixmap.
+
+```python
+class MermaidRenderer(QObject):
+    # Сигналы
+    svg_ready = pyqtSignal(str, str)  # (code_hash, svg_string)
+
+    # Методы
+    def render(self, code: str) -> None       # Очередь на рендеринг
+    def get_cached_svg(self, code: str) -> str | None
+    def get_cached_pixmap(self, code: str, width: int) -> QPixmap | None
+    def mermaid_js_path(self) -> Path | None
+    def cleanup(self) -> None
+```
+
+**Архитектура:**
+1. Скачивает `mermaid.min.js` из CDN при первом использовании
+2. Рендерит `<pre class="mermaid">` в hidden QWebEngineView через `mermaid.run()`
+3. Захватывает отрендеренную страницу как QPixmap через `QWidget.grab()`
+4. Кэширует SVG и pixmap по hash кода диаграммы
+5. Fallback: `QSvgRenderer` для простых SVG (без foreignObject/CSS)
+
+**Очередь рендеринга:** обрабатывает блоки по одному, асинхронно через polling JavaScript-результата.
+
+### MermaidPreviewDialog (`dialogs/mermaid_preview.py`)
+
+Интерактивный просмотр Mermaid-диаграмм.
+
+```python
+class MermaidPreviewDialog(QDialog):
+    def show_diagram(self, code: str, title: str = "") -> None
+```
+
+**Возможности:**
+- Полноэкранный QWebEngineView с живым рендерингом mermaid.js
+- Переключение светлой/тёмной темы
+- Zoom ±25% через toolbar-кнопки
+- Закрытие: кнопка "Закрыть" или Escape
 
 ### ClipboardService (`services/clipboard.py`)
 

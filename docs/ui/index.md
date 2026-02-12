@@ -37,16 +37,18 @@ ui/
 ├── widgets/
 │   ├── player.py        # Плеер с управлением воспроизведением
 │   ├── queue_list.py    # Список очереди
-│   └── text_viewer.py   # Просмотр текста с подсветкой (Plain/Markdown)
+│   └── text_viewer.py   # Просмотр текста с подсветкой (Plain/Markdown/Mermaid)
 │
 ├── dialogs/
-│   └── settings.py      # Диалог настроек
+│   ├── settings.py      # Диалог настроек
+│   └── mermaid_preview.py  # Интерактивный просмотр Mermaid-диаграмм
 │
 ├── services/
 │   ├── tts_worker.py    # Фоновый TTS-процессинг
 │   ├── storage.py       # Хранение записей и аудио
 │   ├── clipboard.py     # Работа с буфером обмена
 │   ├── hotkeys.py       # Глобальные горячие клавиши
+│   ├── mermaid_renderer.py # Рендеринг Mermaid → SVG/pixmap через QWebEngineView
 │   └── cleanup.py       # Очистка старых записей
 │
 ├── utils/
@@ -69,6 +71,7 @@ ui/
 - **Позиционный маппинг** для корректной подсветки в Markdown режиме
 - **Автопрокрутка** к текущей позиции
 - **Переключение режимов** без перегенерации аудио
+- **Mermaid-диаграммы** — рендерятся как картинки в Markdown режиме, клик открывает интерактивный просмотр
 
 **Технические детали:**
 - Использует `MarkdownPositionMapper` для перевода `original_pos` → `rendered_pos`
@@ -82,6 +85,7 @@ ui/
 - Курсив (`_italic_`)
 - Inline код (\`code\`)
 - Code blocks (\`\`\`python)
+- Mermaid-диаграммы (\`\`\`mermaid) — рендерятся как изображения
 - Ссылки (`[text](url)`)
 - Списки (`- item`, `1. item`)
 - Таблицы
@@ -110,8 +114,10 @@ ui/
 ## Зависимости
 
 ```
-PyQt6>=6.6.0        # UI framework
-markdown>=3.5       # Рендеринг Markdown
-dasbus>=1.7         # D-Bus для глобальных хоткеев
-torch               # Silero TTS backend
+PyQt6>=6.6.0            # UI framework
+PyQt6-WebEngine>=6.6.0  # Рендеринг Mermaid-диаграмм
+markdown>=3.5           # Рендеринг Markdown
+python-mpv>=1.0         # Аудио плеер (libmpv)
+dasbus>=1.7             # D-Bus для глобальных хоткеев
+torch                   # Silero TTS backend
 ```

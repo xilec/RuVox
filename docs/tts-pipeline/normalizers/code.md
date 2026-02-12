@@ -89,6 +89,18 @@ normalizer.normalize_kebab_case("vue-router")      # → "вью роутер"
 
 Обработка блоков кода в Markdown.
 
+### Mermaid-диаграммы
+
+Mermaid-блоки (` ```mermaid ... ``` `) обрабатываются **отдельно** от обычных блоков кода.
+Содержимое диаграммы не читается — оно заменяется маркером:
+
+```python
+pipeline.process("```mermaid\ngraph TD\n  A[Start] --> B[End]\n```")
+# → "Тут мермэйд диаграмма"
+```
+
+Это одинаково для обоих режимов (full/brief). Замена происходит в `pipeline.py` до вызова `CodeBlockHandler.process()`.
+
 ### Использование
 
 ```python
@@ -227,7 +239,7 @@ CODE_WORDS = {
 uv run pytest tests/tts_pipeline/test_code.py -v
 ```
 
-104 теста покрывают:
+117 тестов покрывают:
 - camelCase разбиение
 - snake_case разбиение
 - kebab-case разбиение

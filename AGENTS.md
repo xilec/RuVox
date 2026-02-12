@@ -61,13 +61,17 @@ src/fast_tts_rus/
     ├── widgets/               # Qt виджеты
     │   ├── player.py          # Аудио плеер
     │   ├── queue_list.py      # Список очереди
-    │   └── text_viewer.py     # Просмотр текста
+    │   └── text_viewer.py     # Просмотр текста + Mermaid
+    ├── dialogs/               # Диалоговые окна
+    │   ├── settings.py        # Настройки
+    │   └── mermaid_preview.py # Интерактивный просмотр Mermaid
     ├── services/              # Сервисы
     │   ├── tts_worker.py      # TTS генерация
     │   ├── storage.py         # Хранение истории
     │   ├── hotkeys.py         # Глобальные хоткеи
     │   ├── clipboard.py       # Работа с буфером
     │   ├── cleanup.py         # Очистка кэша
+    │   ├── mermaid_renderer.py # Рендеринг Mermaid → SVG/pixmap
     │   └── logging_service.py # Логирование
     └── models/                # Модели данных
         ├── entry.py           # TextEntry
@@ -113,6 +117,10 @@ result, mapping = pipeline.process_with_char_mapping(text)
 
 - [Логирование и обработка ошибок](ai/rules/error_handling_and_logs_rules.md)
 
+### TTS Pipeline: Mermaid-диаграммы
+
+Mermaid-блоки (` ```mermaid ... ``` `) **не озвучиваются**. Pipeline заменяет их на маркер `"Тут мермэйд диаграмма"`, чтобы обозначить наличие диаграммы. Пользователь может приостановить чтение и рассмотреть диаграмму в UI.
+
 ### TTS Pipeline: английский текст
 
 Silero TTS **не умеет читать английский**. Весь английский текст должен быть транслитерирован в кириллицу до передачи в TTS-движок. Это значит:
@@ -133,7 +141,7 @@ Silero TTS **не умеет читать английский**. Весь ан�
 | urls | 63 | test_urls.py |
 | symbols | 90 | test_symbols.py |
 | code | 117 | test_code.py |
-| pipeline | 55 | test_pipeline.py |
+| pipeline | 59 | test_pipeline.py |
 | tracked_text | 31 | test_tracked_text.py |
 | char_mapping | 38 | test_char_mapping.py |
 | word_mapping | 20 | test_word_mapping.py |
@@ -149,8 +157,10 @@ Silero TTS **не умеет читать английский**. Весь ан�
 | markdown_mapper | 18 | test_markdown_mapper.py |
 | format_selector | 9 | test_format_selector.py |
 | player | 14 | test_player.py |
+| text_viewer_mermaid | 19 | test_text_viewer_mermaid.py |
+| mermaid_e2e | 19 | test_mermaid_e2e.py |
 
-**Всего UI тестов: 127** (было 69, добавлено 58)
+**Всего UI тестов: 165** (unit: 146, e2e с WebEngine: 19)
 
 ### Error Handling (`tests/error_handling/`)
 
