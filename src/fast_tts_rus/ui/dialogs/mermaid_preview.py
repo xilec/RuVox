@@ -4,10 +4,12 @@ import logging
 from pathlib import Path
 
 from PyQt6.QtCore import QUrl, Qt
+from PyQt6.QtGui import QKeyEvent
 from PyQt6.QtWidgets import (
     QDialog,
     QVBoxLayout,
     QHBoxLayout,
+    QLabel,
     QPushButton,
     QWidget,
 )
@@ -80,10 +82,14 @@ class MermaidPreviewDialog(QDialog):
         btn_close = QPushButton("Закрыть")
         btn_close.clicked.connect(self.accept)
 
+        esc_hint = QLabel("Esc — закрыть")
+        esc_hint.setStyleSheet("color: #999; font-size: 11px;")
+
         toolbar.addWidget(btn_zoom_in)
         toolbar.addWidget(btn_zoom_out)
         toolbar.addWidget(btn_reset)
         toolbar.addStretch()
+        toolbar.addWidget(esc_hint)
         toolbar.addWidget(self._btn_theme)
         toolbar.addWidget(btn_close)
 
@@ -105,19 +111,18 @@ class MermaidPreviewDialog(QDialog):
         if title:
             self.setWindowTitle(f"Mermaid — {title}")
 
-        js_url = QUrl.fromLocalFile(str(self._mermaid_js_path)).toString()
+        self._current_code = code
+        html = self._build_html(code)
+        base_url = QUrl.fromLocalFile(str(self._mermaid_js_path.parent) + "/")
+        self._web_view.setHtml(html, base_url)
+        self.exec()
 
-        escaped = (
-            code.replace("\\", "\\\\")
-            .replace("`", "\\`")
-            .replace("$", "\\$")
-        )
-
+    def _build_html(self, code: str) -> str:
+        """Build HTML page with mermaid diagram."""
         theme = "dark" if self._dark_theme else "default"
         bg_color = "#1e1e1e" if self._dark_theme else "#ffffff"
-        self._current_code = code
 
-        html = f"""<!DOCTYPE html>
+        return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <style>
   body {{
@@ -130,14 +135,11 @@ class MermaidPreviewDialog(QDialog):
 </style>
 </head><body>
 <pre class="mermaid">{self._escape_html(code)}</pre>
-<script src="{js_url}"></script>
+<script src="mermaid.min.js"></script>
 <script>
   mermaid.initialize({{startOnLoad: true, theme: '{theme}'}});
 </script>
 </body></html>"""
-
-        self._web_view.setHtml(html)
-        self.exec()
 
     @staticmethod
     def _escape_html(text: str) -> str:
@@ -148,6 +150,13 @@ class MermaidPreviewDialog(QDialog):
             .replace(">", "&gt;")
             .replace('"', "&quot;")
         )
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        """Close dialog on Escape (even if WebView has focus)."""
+        if event.key() == Qt.Key.Key_Escape:
+            self.accept()
+        else:
+            super().keyPressEvent(event)
 
     # -- Zoom --
 
@@ -176,27 +185,6 @@ class MermaidPreviewDialog(QDialog):
         )
         # Re-render with new theme
         if hasattr(self, "_current_code"):
-            js_url = QUrl.fromLocalFile(str(self._mermaid_js_path)).toString()
-            theme = "dark" if self._dark_theme else "default"
-            bg_color = "#1e1e1e" if self._dark_theme else "#ffffff"
-
-            html = f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8">
-<style>
-  body {{
-    margin: 0; padding: 20px;
-    display: flex; justify-content: center; align-items: flex-start;
-    background: {bg_color};
-    overflow: auto;
-  }}
-  .mermaid {{ zoom: {self._zoom_level}; }}
-</style>
-</head><body>
-<pre class="mermaid">{self._escape_html(self._current_code)}</pre>
-<script src="{js_url}"></script>
-<script>
-  mermaid.initialize({{startOnLoad: true, theme: '{theme}'}});
-</script>
-</body></html>"""
-
-            self._web_view.setHtml(html)
+            html = self._build_html(self._current_code)
+            base_url = QUrl.fromLocalFile(str(self._mermaid_js_path.parent) + "/")
+            self._web_view.setHtml(html, base_url)

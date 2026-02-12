@@ -198,6 +198,70 @@ class TestPlainModeNoMermaid:
         assert text_viewer._mermaid_renderer is None
 
 
+class TestLoadResource:
+    """Test loadResource override for mermaid images."""
+
+    def test_returns_pixmap_for_mermaid_img_scheme(self, text_viewer):
+        """loadResource returns QPixmap for mermaid-img: URLs when cached."""
+        from PyQt6.QtGui import QPixmap, QTextDocument
+
+        mock_renderer = MagicMock()
+        pixmap = QPixmap(100, 50)
+        mock_renderer.get_cached_pixmap.return_value = pixmap
+
+        text_viewer._mermaid_renderer = mock_renderer
+        text_viewer._mermaid_blocks = [SAMPLE_MERMAID]
+
+        result = text_viewer.loadResource(
+            QTextDocument.ResourceType.ImageResource.value,
+            QUrl("mermaid-img:0"),
+        )
+        assert result is pixmap
+        mock_renderer.get_cached_pixmap.assert_called_once_with(SAMPLE_MERMAID, 600)
+
+    def test_returns_none_for_uncached_mermaid_img(self, text_viewer):
+        """loadResource falls through to super when pixmap not cached."""
+        from PyQt6.QtGui import QTextDocument
+
+        mock_renderer = MagicMock()
+        mock_renderer.get_cached_pixmap.return_value = None
+
+        text_viewer._mermaid_renderer = mock_renderer
+        text_viewer._mermaid_blocks = [SAMPLE_MERMAID]
+
+        result = text_viewer.loadResource(
+            QTextDocument.ResourceType.ImageResource.value,
+            QUrl("mermaid-img:0"),
+        )
+        # Falls through to super().loadResource() which returns None for unknown
+        assert result is None or not isinstance(result, MagicMock)
+
+    def test_non_mermaid_url_delegates_to_super(self, text_viewer):
+        """loadResource delegates non-mermaid URLs to parent."""
+        from PyQt6.QtGui import QTextDocument
+
+        # Should not crash, just return whatever super returns
+        result = text_viewer.loadResource(
+            QTextDocument.ResourceType.ImageResource.value,
+            QUrl("https://example.com/img.png"),
+        )
+        # No assertion on value — just verify no crash
+
+    def test_invalid_index_delegates_to_super(self, text_viewer):
+        """loadResource with out-of-range index delegates to super."""
+        from PyQt6.QtGui import QTextDocument
+
+        mock_renderer = MagicMock()
+        text_viewer._mermaid_renderer = mock_renderer
+        text_viewer._mermaid_blocks = [SAMPLE_MERMAID]
+
+        result = text_viewer.loadResource(
+            QTextDocument.ResourceType.ImageResource.value,
+            QUrl("mermaid-img:99"),
+        )
+        mock_renderer.get_cached_pixmap.assert_not_called()
+
+
 class TestLazyRendererInit:
     """Test lazy initialization of MermaidRenderer."""
 

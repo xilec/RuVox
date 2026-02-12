@@ -154,8 +154,6 @@ class MermaidRenderer(QObject):
         """Load HTML with mermaid.js and render diagram to SVG."""
         self._ensure_webview()
 
-        js_url = QUrl.fromLocalFile(str(self._mermaid_js_path)).toString()
-
         # Escape code for JS string
         escaped = (
             code.replace("\\", "\\\\")
@@ -166,7 +164,7 @@ class MermaidRenderer(QObject):
         html = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"></head>
 <body>
-<script src="{js_url}"></script>
+<script src="mermaid.min.js"></script>
 <script>
   window.renderedSvg = null;
   window.renderError = null;
@@ -181,8 +179,10 @@ class MermaidRenderer(QObject):
 
         self._current_hash = code_hash
 
+        # Base URL allows relative <script src="mermaid.min.js"> to resolve
+        base_url = QUrl.fromLocalFile(str(self._mermaid_js_path.parent) + "/")
         self._web_view.loadFinished.connect(self._on_load_finished)
-        self._web_view.setHtml(html)
+        self._web_view.setHtml(html, base_url)
 
     def _on_load_finished(self, ok: bool) -> None:
         """Called when HTML is loaded. Poll for SVG result."""

@@ -159,6 +159,47 @@ class TestRenderQueue:
         assert len(renderer._queue) == 1
 
 
+class TestRenderBaseUrl:
+    """Test that _render_in_webview passes base URL."""
+
+    def test_sethtml_called_with_base_url(self, renderer, tmp_path):
+        """_render_in_webview should pass base URL to setHtml."""
+        js_path = tmp_path / "mermaid.min.js"
+        js_path.write_text("// mock")
+        renderer._mermaid_js_path = js_path
+        renderer._js_ready = True
+
+        # Lazy-init webview with mock
+        mock_web_view = MagicMock()
+        renderer._web_view = mock_web_view
+
+        renderer._render_in_webview("abc123", "graph TD\n  A --> B")
+
+        mock_web_view.setHtml.assert_called_once()
+        args, kwargs = mock_web_view.setHtml.call_args
+        html = args[0]
+        base_url = args[1]
+
+        assert 'src="mermaid.min.js"' in html
+        assert "file:///" not in html or "mermaid.min.js" not in html.split("file:///")[0] if "file:///" in html else True
+        assert str(tmp_path) in base_url.toLocalFile()
+
+    def test_html_uses_relative_script_src(self, renderer, tmp_path):
+        """HTML should reference mermaid.min.js without file:// prefix."""
+        js_path = tmp_path / "mermaid.min.js"
+        js_path.write_text("// mock")
+        renderer._mermaid_js_path = js_path
+        renderer._js_ready = True
+
+        mock_web_view = MagicMock()
+        renderer._web_view = mock_web_view
+
+        renderer._render_in_webview("abc123", "graph TD\n  A --> B")
+
+        html = mock_web_view.setHtml.call_args[0][0]
+        assert 'src="mermaid.min.js"' in html
+
+
 class TestSvgToPixmap:
     """Test static SVG to QPixmap conversion."""
 

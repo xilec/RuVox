@@ -133,12 +133,8 @@ class TextViewerWidget(QTextBrowser):
             {html}
             """
 
-            # 4. Set HTML in document
+            # 4. Set HTML in document (loadResource() provides mermaid images on demand)
             self.setHtml(styled_html)
-
-            # 5. Register mermaid image resources in the document
-            if mermaid_blocks:
-                self._register_mermaid_resources(mermaid_blocks)
 
             # Build position mapping from the actual document
             # This ensures mapper.rendered_plain matches toPlainText()
@@ -146,7 +142,7 @@ class TextViewerWidget(QTextBrowser):
             self._markdown_mapper.rendered_plain = self.toPlainText()
             self._markdown_mapper._build_position_map()
 
-            # 6. Start async rendering for uncached blocks
+            # 5. Start async rendering for uncached blocks
             if mermaid_blocks:
                 self._start_mermaid_rendering(mermaid_blocks)
 
@@ -326,24 +322,24 @@ class TextViewerWidget(QTextBrowser):
 
         return html
 
-    def _register_mermaid_resources(self, blocks: list[str]) -> None:
-        """Register cached mermaid QPixmaps as document resources."""
-        from PyQt6.QtGui import QTextDocument
+    def loadResource(self, type_: int, url: QUrl):
+        """Provide mermaid diagram pixmaps on demand.
 
-        renderer = self._mermaid_renderer
-        if not renderer:
-            return
-
-        doc = self.document()
-        for i, code in enumerate(blocks):
-            pixmap = renderer.get_cached_pixmap(code, 600)
-            if pixmap:
-                url = QUrl(f"mermaid-img:{i}")
-                doc.addResource(
-                    QTextDocument.ResourceType.ImageResource.value,
-                    url,
-                    pixmap,
-                )
+        Qt calls this when it encounters a resource URL (e.g. ``mermaid-img:0``)
+        during HTML rendering — the image is available exactly when needed.
+        """
+        if url.scheme() == "mermaid-img" and self._mermaid_renderer:
+            try:
+                idx = int(url.path())
+                if 0 <= idx < len(self._mermaid_blocks):
+                    pixmap = self._mermaid_renderer.get_cached_pixmap(
+                        self._mermaid_blocks[idx], 600
+                    )
+                    if pixmap:
+                        return pixmap
+            except (ValueError, TypeError):
+                pass
+        return super().loadResource(type_, url)
 
     def _start_mermaid_rendering(self, blocks: list[str]) -> None:
         """Start async rendering for uncached mermaid blocks."""
