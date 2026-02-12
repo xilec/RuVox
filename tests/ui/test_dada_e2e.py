@@ -131,5 +131,53 @@ def test_dada_e2e_full_pipeline(text_viewer):
     )
 
 
+def test_words_after_link_are_highlighted(text_viewer):
+    """Слова после Markdown-ссылки должны подсвечиваться.
+
+    Баг: после [Fun with Dada](url) слова "в этой статье я начну обучать..."
+    не подсвечивались, потому что их original_pos указывал за пределы
+    rendered текста (из-за удалённого URL).
+    """
+    pipeline = TTSPipeline()
+    normalized, char_mapping = pipeline.process_with_char_mapping(DADA_ARTICLE)
+
+    norm_words = extract_words_with_positions(normalized)
+    timestamps = []
+    for i, (word, norm_start, norm_end) in enumerate(norm_words):
+        orig_start, orig_end = char_mapping.get_original_range(norm_start, norm_end)
+        timestamps.append({
+            "word": word,
+            "start": i * 0.5,
+            "end": (i + 1) * 0.5,
+            "original_pos": [orig_start, orig_end]
+        })
+
+    entry = TextEntry(original_text=DADA_ARTICLE)
+    text_viewer.set_format(TextFormat.MARKDOWN)
+    text_viewer.set_entry(entry, timestamps)
+
+    # Проверяем конкретные слова ПОСЛЕ ссылки
+    words_after_link = ["этой", "статье", "начну", "обучать", "языку",
+                        "буду", "держать", "каждый", "пост", "коротким",
+                        "могу", "написать", "пока", "пью", "кофе"]
+    not_highlighted = []
+    for target_word in words_after_link:
+        ts = next((t for t in timestamps if t["word"] == target_word), None)
+        assert ts is not None, f"Слово '{target_word}' не найдено в timestamps"
+
+        text_viewer.highlight_at_position(ts["start"] + 0.1)
+        selections = text_viewer.extraSelections()
+        if not selections:
+            orig_s, orig_e = ts["original_pos"]
+            not_highlighted.append(
+                f"'{target_word}' orig[{orig_s}:{orig_e}]="
+                f"'{DADA_ARTICLE[orig_s:orig_e]}'"
+            )
+
+    assert not not_highlighted, (
+        f"Слова после ссылки не подсвечены:\n  " + "\n  ".join(not_highlighted)
+    )
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-s"])

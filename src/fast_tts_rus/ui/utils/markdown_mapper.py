@@ -163,7 +163,11 @@ class MarkdownPositionMapper:
         """
         from difflib import SequenceMatcher
 
-        matcher = SequenceMatcher(None, self.original_text, self.rendered_plain)
+        # autojunk=False is critical: with True (default), characters appearing
+        # 1+len(b)//100 times are treated as junk, causing misalignment after
+        # large deleted sections (e.g. URLs in Markdown links)
+        matcher = SequenceMatcher(None, self.original_text, self.rendered_plain,
+                                  autojunk=False)
 
         for tag, i1, i2, j1, j2 in matcher.get_opcodes():
             if tag == 'equal':
