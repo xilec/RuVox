@@ -401,11 +401,11 @@ class TTSPipeline:
         # Remove heading markers
         tracked.sub(r'^#{1,6}\s+', '', flags=re.MULTILINE)
 
-        # Process links - keep only link text, drop URL
-        def replace_link(match):
-            return match.group(1)
-
-        tracked.sub(r'\[([^\]]+)\]\(([^)]+)\)', replace_link)
+        # Process markdown links: [text](url) → text
+        # Remove [ and ](url) separately so link text stays as original
+        # characters and can be further normalized (e.g. English transliteration)
+        tracked.sub(r'\[(?=[^\]]+\]\([^)]+\))', '')  # remove [ before link
+        tracked.sub(r'\]\([^)]+\)', '')               # remove ](url)
 
         # Process numbered lists
         def replace_list_number(match):

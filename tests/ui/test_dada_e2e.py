@@ -71,8 +71,9 @@ def test_dada_e2e_full_pipeline(text_viewer):
     assert "smallcultfollowing" not in normalized.lower()
     assert "babysteps" not in normalized.lower()
 
-    # Текст ссылки должен быть
-    assert "фан" in normalized.lower() or "fun" in normalized.lower()
+    # Текст ссылки должен быть транслитерирован (TTS не читает английский)
+    assert "fun" not in normalized.lower(), "English 'Fun' should be transliterated"
+    assert "фан" in normalized.lower(), "'Fun' should become 'фан'"
 
     # Extract words (как делает tts_worker)
     norm_words = extract_words_with_positions(normalized)
@@ -118,13 +119,15 @@ def test_dada_e2e_full_pipeline(text_viewer):
         f"'обучать' mapped to [{orig_start}:{orig_end}], expected [{expected_start}:{expected_start+7}]"
     )
 
-    # "хелло" (Hello) - должно быть внутри code блока
-    hello_ts = [ts for ts in timestamps if ts["word"] == "хелло"]
-    assert hello_ts, "Слово 'хелло' (Hello) не найдено в timestamps"
-    orig_start, orig_end = hello_ts[0]["original_pos"]
+    # "дада" из ссылки [Fun with Dada] - маппинг должен быть точный
+    # (указывать на "Dada", а не на весь "[Fun with Dada](url)")
+    link_dada = [ts for ts in timestamps if ts["word"] == "дада"]
+    assert link_dada, "Слово 'дада' не найдено в timestamps"
+    # Первое вхождение "дада" — из ссылки
+    orig_start, orig_end = link_dada[0]["original_pos"]
     orig_text = DADA_ARTICLE[orig_start:orig_end]
-    assert "Hello" in orig_text, (
-        f"'хелло' mapped to '{orig_text}' which doesn't contain 'Hello'"
+    assert orig_text == "Dada", (
+        f"'дада' from link mapped to '{orig_text}' instead of 'Dada'"
     )
 
 

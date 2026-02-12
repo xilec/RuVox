@@ -366,6 +366,50 @@ class TestMarkdownStructure:
         assert "экзампл" not in result.lower()
         assert "https" not in result.lower()
 
+    def test_links_english_text_transliterated(self, pipeline):
+        """English words in link text should be transliterated."""
+        text = "Читай [Fun with Dada](https://example.com)"
+        result = pipeline.process(text)
+        # English words must be transliterated (TTS can't read English)
+        assert "fun" not in result.lower()
+        assert "with" not in result.lower()
+        # URL should NOT be read
+        assert "https" not in result.lower()
+        assert "экзампл" not in result.lower()
+
+    def test_links_english_text_transliterated_with_mapping(self, pipeline):
+        """English link text should be transliterated in process_with_char_mapping too."""
+        text = "Пост [Fun with Dada](https://example.com/path), далее."
+        result, mapping = pipeline.process_with_char_mapping(text)
+        # English words must be transliterated
+        assert "fun" not in result.lower()
+        assert "dada" not in result.lower()
+        # URL should NOT be read
+        assert "https" not in result.lower()
+
+    def test_links_mapping_points_to_exact_words(self, pipeline):
+        """Each word in link text should map to its exact original position."""
+        import re
+        text = "Пост [Fun with Dada](https://example.com), далее."
+        result, mapping = pipeline.process_with_char_mapping(text)
+        words = {m.group(): (m.start(), m.end()) for m in re.finditer(r'\b\w+\b', result)}
+
+        # Find transliterated "Dada" (дада)
+        dada_candidates = [(w, s, e) for w, (s, e) in words.items() if 'дада' in w.lower()]
+        assert dada_candidates, f"'дада' not found in: {list(words.keys())}"
+        _, s, e = dada_candidates[0]
+        orig_start, orig_end = mapping.get_original_range(s, e)
+        assert text[orig_start:orig_end] == "Dada", (
+            f"Expected 'Dada' at orig[{orig_start}:{orig_end}], got {repr(text[orig_start:orig_end])}"
+        )
+
+    def test_bare_urls_still_read(self, pipeline):
+        """Bare URLs (not in markdown links) should still be read."""
+        text = "Сайт: https://docs.example.com"
+        result = pipeline.process(text)
+        # Bare URL should be read
+        assert "экзампл" in result.lower()
+
 
 class TestComplexTechnicalText:
     """Tests for complex real-world technical text."""

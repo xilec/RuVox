@@ -187,7 +187,8 @@ class TrackedText:
 
             # Calculate original positions using current offset entries
             orig_start = self._current_to_original(start)
-            orig_end = self._current_to_original(end)
+            # Map end via last character to avoid jumping past adjacent deletions
+            orig_end = self._current_to_original(end - 1) + 1 if end > start else orig_start
 
             # Check if this original range overlaps with an existing replacement
             # We check in ORIGINAL coordinates because current positions shift
