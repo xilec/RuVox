@@ -1,0 +1,132 @@
+"""E2E test for Dada article highlighting - полная проверка от TTS до UI."""
+
+import pytest
+from PyQt6.QtWidgets import QApplication
+
+from fast_tts_rus.ui.widgets.text_viewer import TextViewerWidget, TextFormat
+from fast_tts_rus.ui.models.entry import TextEntry
+from fast_tts_rus.tts_pipeline import TTSPipeline
+import re
+
+
+# Dada article из бага
+DADA_ARTICLE = """Вот перевод статьи на русский язык:
+
+---
+
+# Привет, Dada!
+
+Продолжая мой пост [Fun with Dada](https://smallcultfollowing.com/babysteps/blog/2026/02/08/fun-with-dada/), в этой статье я начну обучать языку Dada. Я буду держать каждый пост коротким — по сути, только то, что я могу написать, пока пью утренний кофе.
+
+## У вас есть право писать код
+
+Вот самая первая программа на Dada:
+
+```
+println("Hello, Dada!")
+```
+
+Думаю, все вы сможете догадаться, что она делает. Тем не менее, даже в этой простой программе есть кое-что, на что стоит обратить внимание:"""
+
+
+@pytest.fixture(scope="module")
+def qapp():
+    """Create QApplication instance for tests."""
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication([])
+    yield app
+
+
+@pytest.fixture
+def text_viewer(qapp):
+    """Create TextViewerWidget instance."""
+    viewer = TextViewerWidget()
+    yield viewer
+    viewer.deleteLater()
+
+
+def extract_words_with_positions(text: str) -> list[tuple[str, int, int]]:
+    """Extract words from text with their positions (как в tts_worker.py)."""
+    words = []
+    for match in re.finditer(r'\b\w+\b', text):
+        words.append((match.group(), match.start(), match.end()))
+    return words
+
+
+def test_dada_e2e_full_pipeline(text_viewer):
+    """E2E тест: TTS pipeline → timestamps → UI highlighting.
+
+    Этот тест воспроизводит полный пайплайн действий пользователя:
+    1. Генерация timestamps через TTS pipeline
+    2. Отображение в TextViewer (Markdown mode)
+    3. Симуляция воспроизведения с подсветкой
+    4. Проверка что все слова подсвечиваются (включая ссылку)
+    """
+    # STEP 1: TTS Pipeline - генерация timestamps
+    pipeline = TTSPipeline()
+    normalized, char_mapping = pipeline.process_with_char_mapping(DADA_ARTICLE)
+
+    # URL не должен быть в нормализованном тексте
+    assert "smallcultfollowing" not in normalized.lower()
+    assert "babysteps" not in normalized.lower()
+
+    # Текст ссылки должен быть
+    assert "фан" in normalized.lower() or "fun" in normalized.lower()
+
+    # Extract words (как делает tts_worker)
+    norm_words = extract_words_with_positions(normalized)
+
+    # Generate mock timestamps
+    timestamps = []
+    for i, (word, norm_start, norm_end) in enumerate(norm_words):
+        orig_start, orig_end = char_mapping.get_original_range(norm_start, norm_end)
+        timestamps.append({
+            "word": word,
+            "start": i * 0.5,
+            "end": (i + 1) * 0.5,
+            "original_pos": [orig_start, orig_end]
+        })
+
+    # STEP 2: UI Setup - TextViewer в Markdown режиме
+    entry = TextEntry(original_text=DADA_ARTICLE)
+    text_viewer.set_format(TextFormat.MARKDOWN)
+    text_viewer.set_entry(entry, timestamps)
+
+    # STEP 3: Симуляция воспроизведения - все слова должны подсвечиваться
+    highlighted_count = 0
+    for ts in timestamps:
+        time_pos = ts["start"] + 0.1
+        text_viewer.highlight_at_position(time_pos)
+        selections = text_viewer.extraSelections()
+        if selections:
+            highlighted_count += 1
+
+    # Все слова должны иметь маппинг и подсвечиваться
+    assert highlighted_count == len(timestamps), (
+        f"Только {highlighted_count}/{len(timestamps)} слов подсвечено"
+    )
+
+    # STEP 4: Проверка конкретных слов
+
+    # "обучать" - должно быть на правильной позиции
+    obuchat_ts = [ts for ts in timestamps if ts["word"] == "обучать"]
+    assert obuchat_ts, "Слово 'обучать' не найдено в timestamps"
+    orig_start, orig_end = obuchat_ts[0]["original_pos"]
+    expected_start = DADA_ARTICLE.find("обучать языку Dada")
+    assert orig_start == expected_start and orig_end == expected_start + 7, (
+        f"'обучать' mapped to [{orig_start}:{orig_end}], expected [{expected_start}:{expected_start+7}]"
+    )
+
+    # "хелло" (Hello) - должно быть внутри code блока
+    hello_ts = [ts for ts in timestamps if ts["word"] == "хелло"]
+    assert hello_ts, "Слово 'хелло' (Hello) не найдено в timestamps"
+    orig_start, orig_end = hello_ts[0]["original_pos"]
+    orig_text = DADA_ARTICLE[orig_start:orig_end]
+    assert "Hello" in orig_text, (
+        f"'хелло' mapped to '{orig_text}' which doesn't contain 'Hello'"
+    )
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v", "-s"])

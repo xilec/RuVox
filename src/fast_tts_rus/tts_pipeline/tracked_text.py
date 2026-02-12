@@ -168,6 +168,10 @@ class TrackedText:
             else:
                 new_text = match.expand(repl)
 
+            # Skip no-op replacements (old == new)
+            if new_text == old_text:
+                continue
+
             # First check: does any character in the match fall inside a replacement?
             # This catches cross-boundary matches (e.g., space from original + space from replacement)
             match_touches_replacement = False

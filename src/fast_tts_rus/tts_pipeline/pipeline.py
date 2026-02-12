@@ -401,12 +401,9 @@ class TTSPipeline:
         # Remove heading markers
         tracked.sub(r'^#{1,6}\s+', '', flags=re.MULTILINE)
 
-        # Process links
+        # Process links - keep only link text, drop URL
         def replace_link(match):
-            link_text = match.group(1)
-            url = match.group(2)
-            expanded_url = self.url_normalizer.normalize_url(url)
-            return f"{link_text} {expanded_url}"
+            return match.group(1)
 
         tracked.sub(r'\[([^\]]+)\]\(([^)]+)\)', replace_link)
 

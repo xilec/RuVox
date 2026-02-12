@@ -91,10 +91,9 @@ class TextViewerWidget(QTextBrowser):
         text = self.current_entry.original_text
 
         if self.text_format == TextFormat.MARKDOWN:
-            # Build position mapping for accurate word highlighting
-            self._markdown_mapper = MarkdownPositionMapper(text)
+            # Convert Markdown to HTML first
             self._md.reset()
-            html = self._markdown_mapper.build_mapping(self._md)
+            html = self._md.convert(text)
 
             # Add basic styling
             styled_html = f"""
@@ -109,7 +108,16 @@ class TextViewerWidget(QTextBrowser):
             </style>
             {html}
             """
+
+            # Set HTML in document FIRST
             self.setHtml(styled_html)
+
+            # Build position mapping from the actual document
+            # This ensures mapper.rendered_plain matches toPlainText()
+            self._markdown_mapper = MarkdownPositionMapper(text)
+            self._markdown_mapper.rendered_plain = self.toPlainText()
+            self._markdown_mapper._build_position_map()
+
             logger.debug("Rendered Markdown with position mapping")
         else:
             # Plain text mode - no mapping needed

@@ -357,12 +357,14 @@ class TestMarkdownStructure:
         assert "первое" in result.lower() or "один" in result.lower()
         assert "установить" in result.lower()
 
-    def test_links_read_text_and_url(self, pipeline):
-        """Links should read both text and URL."""
+    def test_links_read_text_only(self, pipeline):
+        """Links should read only link text, not URL."""
         text = "Смотри [документацию](https://docs.example.com)"
         result = pipeline.process(text)
         assert "документацию" in result.lower()
-        assert "экзампл" in result.lower()
+        # URL should NOT be read
+        assert "экзампл" not in result.lower()
+        assert "https" not in result.lower()
 
 
 class TestComplexTechnicalText:
