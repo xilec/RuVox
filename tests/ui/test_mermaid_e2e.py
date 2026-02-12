@@ -9,8 +9,10 @@ import pytest
 from unittest.mock import patch, MagicMock
 from pathlib import Path
 
-from PyQt6.QtCore import QUrl, QTimer, QEventLoop
+from PyQt6.QtCore import QUrl, QTimer, QEventLoop, Qt
 from PyQt6.QtWidgets import QApplication
+
+SCREENSHOT_DIR = Path(__file__).resolve().parent.parent.parent / "tmp"
 
 try:
     from PyQt6.QtWebEngineWidgets import QWebEngineView  # noqa: F401
@@ -267,4 +269,118 @@ class TestMermaidPreviewE2E:
                 dialog.keyPressEvent(event)
                 mock_accept.assert_called_once()
         finally:
+            dialog.deleteLater()
+
+
+def _process_events_for(ms: int) -> None:
+    """Process Qt events for given milliseconds."""
+    loop = QEventLoop()
+    QTimer.singleShot(ms, loop.quit)
+    loop.exec()
+
+
+class TestMermaidVisualE2E:
+    """Visual E2E tests with screenshots saved to tmp/."""
+
+    def test_viewer_renders_mermaid_image(self, qapp):
+        """TextViewer should render mermaid block as an image, not placeholder.
+
+        Screenshots:
+          - tmp/mermaid_01_initial.png — right after set_entry
+          - tmp/mermaid_02_rendered.png — after SVG ready, image visible
+        """
+        from fast_tts_rus.ui.widgets.text_viewer import TextViewerWidget, TextFormat
+        from fast_tts_rus.ui.models.entry import TextEntry
+
+        SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
+
+        viewer = TextViewerWidget()
+        viewer.resize(800, 600)
+        viewer.show()
+        try:
+            viewer.set_format(TextFormat.MARKDOWN)
+            entry = TextEntry(original_text=MARKDOWN_WITH_MERMAID)
+            viewer.set_entry(entry)
+
+            # Screenshot 1: initial state
+            _process_events_for(200)
+            pixmap1 = viewer.grab()
+            pixmap1.save(str(SCREENSHOT_DIR / "mermaid_01_initial.png"))
+
+            renderer = viewer._mermaid_renderer
+
+            # SVG may already be cached from earlier tests — if not, wait for render
+            already_cached = renderer and renderer.get_cached_svg(MERMAID_CODE)
+            if not already_cached:
+                assert renderer is not None, "Renderer not initialized"
+                ok = _wait_for_signal(renderer.svg_ready, timeout_ms=30000)
+                assert ok, "svg_ready not emitted"
+                # Re-render triggered by _on_mermaid_ready
+                _process_events_for(500)
+
+            # Screenshot 2: with rendered image
+            _process_events_for(200)
+            pixmap2 = viewer.grab()
+            pixmap2.save(str(SCREENSHOT_DIR / "mermaid_02_rendered.png"))
+
+            # Verify image is in the document
+            # Note: Qt's toHtml() strips CSS classes, so check src= instead
+            html = viewer.toHtml()
+            assert 'src="mermaid-img:0"' in html, (
+                "Image tag not in HTML after render — still showing placeholder"
+            )
+            assert "загружается" not in html, (
+                "Placeholder text still present after render"
+            )
+
+            # loadResource should return a pixmap
+            from PyQt6.QtGui import QTextDocument
+            resource = viewer.loadResource(
+                QTextDocument.ResourceType.ImageResource.value,
+                QUrl("mermaid-img:0"),
+            )
+            assert resource is not None, "loadResource returned None"
+        finally:
+            if viewer._mermaid_renderer:
+                viewer._mermaid_renderer.cleanup()
+            viewer.deleteLater()
+
+    def test_preview_dialog_renders_diagram(self, qapp):
+        """Preview dialog should render interactive mermaid diagram.
+
+        Screenshots:
+          - tmp/mermaid_03_preview.png — preview dialog with rendered diagram
+        """
+        from fast_tts_rus.ui.dialogs.mermaid_preview import MermaidPreviewDialog
+        from fast_tts_rus.ui.services.mermaid_renderer import _mermaid_cache_dir
+
+        SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
+
+        js_path = _mermaid_cache_dir() / "mermaid.min.js"
+        if not js_path.exists():
+            pytest.skip("mermaid.min.js not cached")
+
+        dialog = MermaidPreviewDialog(js_path)
+        dialog.resize(800, 600)
+        try:
+            # Prepare HTML but don't call exec() (would block)
+            dialog._current_code = MERMAID_CODE
+            html = dialog._build_html(MERMAID_CODE)
+            base_url = QUrl.fromLocalFile(str(js_path.parent) + "/")
+            dialog._web_view.setHtml(html, base_url)
+            dialog.setWindowTitle("Mermaid — E2E Test")
+            dialog.show()
+
+            # Wait for WebEngine to render mermaid diagram
+            _process_events_for(3000)
+
+            # Screenshot 3: preview dialog
+            pixmap = dialog.grab()
+            pixmap.save(str(SCREENSHOT_DIR / "mermaid_03_preview.png"))
+
+            # Verify dialog state
+            assert dialog.windowTitle() == "Mermaid — E2E Test"
+            assert dialog._zoom_level == 1.0
+        finally:
+            dialog.close()
             dialog.deleteLater()

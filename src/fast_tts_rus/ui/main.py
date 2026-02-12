@@ -11,6 +11,13 @@ setup_logging()
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 
+# QWebEngineView requires early import (before QApplication is created).
+# Graceful: if WebEngine is not installed, mermaid rendering will be unavailable.
+try:
+    from PyQt6.QtWebEngineWidgets import QWebEngineView  # noqa: F401
+except ImportError:
+    pass
+
 # Настройка перехвата Qt сообщений после импорта PyQt6
 setup_qt_logging()
 
