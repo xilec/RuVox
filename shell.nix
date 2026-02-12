@@ -51,6 +51,9 @@ pkgs.mkShell {
     # Required by torch
     zstd
     krb5
+    # Required by PyQt6-WebEngine (Chromium needs NSS for TLS)
+    nss
+    nspr
     # For xdg-desktop-portal integration
     xdg-desktop-portal
     # For clipboard access on Wayland
@@ -89,6 +92,8 @@ pkgs.mkShell {
     pkgs.libdrm
     pkgs.zstd
     pkgs.krb5
+    pkgs.nss
+    pkgs.nspr
   ];
 
   # Let Qt auto-detect platform (wayland or xcb)
