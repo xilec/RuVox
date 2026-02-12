@@ -43,6 +43,7 @@ class MermaidRenderer(QObject):
         super().__init__(parent)
         self._web_view = None  # lazy init
         self._svg_cache: dict[str, str] = {}  # hash → SVG
+        self._pixmap_cache: dict[str, QPixmap] = {}  # hash → captured pixmap
         self._mermaid_js_path: Path | None = None
         self._queue: list[tuple[str, str]] = []  # (hash, code)
         self._rendering = False
@@ -58,8 +59,22 @@ class MermaidRenderer(QObject):
         return self._svg_cache.get(h)
 
     def get_cached_pixmap(self, code: str, width: int) -> QPixmap | None:
-        """Convert cached SVG to QPixmap scaled to width."""
-        svg = self.get_cached_svg(code)
+        """Return cached pixmap scaled to width.
+
+        Prefers captured pixmap from webview (accurate browser rendering).
+        Falls back to QSvgRenderer conversion for simple SVGs.
+        """
+        from PyQt6.QtCore import Qt
+
+        h = _code_hash(code)
+
+        # Prefer captured pixmap (handles CSS, foreignObject, etc.)
+        pixmap = self._pixmap_cache.get(h)
+        if pixmap and width > 0:
+            return pixmap.scaledToWidth(width, Qt.TransformationMode.SmoothTransformation)
+
+        # Fallback to SVG conversion (basic diagrams)
+        svg = self._svg_cache.get(h)
         if not svg:
             return None
         return self._svg_to_pixmap(svg, width)
@@ -147,32 +162,57 @@ class MermaidRenderer(QObject):
 
         self._web_view = QWebEngineView()
         self._web_view.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
-        self._web_view.resize(1200, 800)
+        self._web_view.resize(1600, 1200)
         self._web_view.show()  # needed for rendering even though not visible
 
-    def _render_in_webview(self, code_hash: str, code: str) -> None:
-        """Load HTML with mermaid.js and render diagram to SVG."""
-        self._ensure_webview()
-
-        # Escape code for JS string
-        escaped = (
-            code.replace("\\", "\\\\")
-            .replace("`", "\\`")
-            .replace("$", "\\$")
+    @staticmethod
+    def _escape_html(text: str) -> str:
+        """Escape HTML entities for embedding in <pre> tag."""
+        return (
+            text.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
         )
 
+    def _render_in_webview(self, code_hash: str, code: str) -> None:
+        """Render mermaid diagram visually in webview for capture.
+
+        Uses mermaid.run() to render <pre class="mermaid"> content into SVG,
+        then captures the rendered page as a QPixmap for accurate rendering
+        (supports CSS, foreignObject, etc. that QSvgRenderer cannot handle).
+        """
+        self._ensure_webview()
+
+        escaped = self._escape_html(code)
+
         html = f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"></head>
-<body>
+<html><head><meta charset="utf-8">
+<style>
+  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+  body {{ background: white; padding: 8px; }}
+</style>
+</head><body>
+<pre class="mermaid">{escaped}</pre>
 <script src="mermaid.min.js"></script>
 <script>
   window.renderedSvg = null;
   window.renderError = null;
+  window.svgWidth = 0;
+  window.svgHeight = 0;
   mermaid.initialize({{startOnLoad: false, theme: 'default'}});
-  mermaid.render('diagram', `{escaped}`).then(function(result) {{
-    window.renderedSvg = result.svg;
+  mermaid.run().then(function() {{
+    var svg = document.querySelector('svg');
+    if (svg) {{
+      var rect = svg.getBoundingClientRect();
+      window.svgWidth = Math.ceil(rect.width);
+      window.svgHeight = Math.ceil(rect.height);
+      window.renderedSvg = svg.outerHTML;
+    }} else {{
+      window.renderError = 'Error: no SVG element after mermaid.run()';
+    }}
   }}).catch(function(err) {{
-    window.renderError = err.toString();
+    window.renderError = 'Error: ' + err.toString();
   }});
 </script>
 </body></html>"""
@@ -218,24 +258,63 @@ class MermaidRenderer(QObject):
             return
 
         code_hash = self._current_hash
-        self._rendering = False
 
-        if result and not result.startswith("Error"):
-            # Success - cache and emit
+        if result and not str(result).startswith("Error"):
+            # Success - cache SVG and capture webview as pixmap
             self._svg_cache[code_hash] = result
             logger.debug("Mermaid SVG rendered for hash %s", code_hash)
-            self.svg_ready.emit(code_hash, result)
+            # Get dimensions for webview resize before capture
+            self._web_view.page().runJavaScript(
+                "[window.svgWidth || 0, window.svgHeight || 0]",
+                lambda dims: self._capture_webview_pixmap(
+                    code_hash,
+                    dims[0] if dims else 800,
+                    dims[1] if dims else 600,
+                ),
+            )
         else:
             logger.error("Mermaid render failed: %s", result)
+            self._rendering = False
+            self._process_queue()
 
-        # Process next in queue
-        self._process_queue()
+    def _capture_webview_pixmap(self, code_hash: str, svg_w: int, svg_h: int) -> None:
+        """Capture rendered diagram from webview as QPixmap."""
+        from PyQt6.QtCore import QTimer
 
-    # -- SVG to QPixmap --
+        # Resize webview to fit SVG content (8px CSS padding on each side)
+        padding = 16
+        new_w = min(max(int(svg_w) + padding, 100), 4000)
+        new_h = min(max(int(svg_h) + padding, 100), 4000)
+        self._web_view.resize(new_w, new_h)
+
+        def _grab():
+            pixmap = self._web_view.grab()
+            if not pixmap.isNull():
+                self._pixmap_cache[code_hash] = pixmap
+                logger.debug(
+                    "Captured mermaid pixmap %dx%d for %s",
+                    pixmap.width(), pixmap.height(), code_hash,
+                )
+            else:
+                logger.warning("Failed to capture mermaid pixmap for %s", code_hash)
+
+            self._rendering = False
+            self.svg_ready.emit(code_hash, self._svg_cache.get(code_hash, ""))
+            self._process_queue()
+
+        # Wait for webview to repaint after resize
+        QTimer.singleShot(300, _grab)
+
+    # -- SVG to QPixmap (fallback) --
 
     @staticmethod
     def _svg_to_pixmap(svg: str, width: int) -> QPixmap | None:
-        """Convert SVG string to QPixmap scaled to width."""
+        """Convert SVG string to QPixmap scaled to width (fallback).
+
+        Note: QSvgRenderer has limited CSS support — may not render
+        foreignObject, CSS variables, or complex styles correctly.
+        Prefer _capture_webview_pixmap for accurate rendering.
+        """
         try:
             from PyQt6.QtSvg import QSvgRenderer
             from PyQt6.QtCore import QByteArray, Qt
@@ -271,3 +350,4 @@ class MermaidRenderer(QObject):
             self._web_view.close()
             self._web_view.deleteLater()
             self._web_view = None
+        self._pixmap_cache.clear()

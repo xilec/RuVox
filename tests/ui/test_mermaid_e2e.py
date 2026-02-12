@@ -2,7 +2,7 @@
 
 Tests the full cycle:
   Markdown with ```mermaid block → MermaidRenderer renders SVG via QWebEngineView
-  → SVG cached → TextViewerWidget shows image via loadResource() → preview dialog works.
+  → SVG cached → pixmap captured → TextViewerWidget shows image → preview dialog works.
 """
 
 import pytest
@@ -28,6 +28,47 @@ pytestmark = pytest.mark.skipif(
 
 MERMAID_CODE = "graph TD\n  A[Start] --> B[End]"
 
+COMPLEX_MERMAID = """\
+flowchart TB
+    subgraph Input["Входная обработка"]
+        A[Входная последовательность] --> B[Token Embedding]
+        B --> C[Positional Encoding]
+    end
+
+    subgraph Encoder["Encoder блоки (×N)"]
+        C --> D[Multi-Head Self-Attention]
+        D --> E[Add & Norm]
+        E --> F[Feed Forward Network]
+        F --> G[Add & Norm]
+        G --> H{Больше блоков?}
+        H -->|Да| D
+        H -->|Нет| I[Выход Encoder]
+    end
+
+    subgraph Decoder["Decoder блоки (×N)"]
+        J[Вход Decoder] --> K[Masked Multi-Head Self-Attention]
+        K --> L[Add & Norm]
+        I --> M[Multi-Head Cross-Attention]
+        L --> M
+        M --> N[Add & Norm]
+        N --> O[Feed Forward Network]
+        O --> P[Add & Norm]
+        P --> Q{Больше блоков?}
+        Q -->|Да| K
+        Q -->|Нет| R[Выход Decoder]
+    end
+
+    subgraph Output["Выходная генерация"]
+        R --> S[Linear Projection]
+        S --> T[Softmax]
+        T --> U[Распределение вероятностей]
+    end
+
+    style Input fill:#e1f5fe
+    style Encoder fill:#fff3e0
+    style Decoder fill:#f3e5f5
+    style Output fill:#e8f5e9"""
+
 MARKDOWN_WITH_MERMAID = f"""# Test Document
 
 Some text before diagram.
@@ -37,6 +78,15 @@ Some text before diagram.
 ```
 
 Some text after diagram.
+"""
+
+MARKDOWN_WITH_COMPLEX = f"""# Transformer Architecture
+
+```mermaid
+{COMPLEX_MERMAID}
+```
+
+End of document.
 """
 
 
@@ -65,6 +115,13 @@ def _wait_for_signal(signal, timeout_ms=10000):
     QTimer.singleShot(timeout_ms, loop.quit)
     loop.exec()
     return fired[0]
+
+
+def _process_events_for(ms: int) -> None:
+    """Process Qt events for given milliseconds."""
+    loop = QEventLoop()
+    QTimer.singleShot(ms, loop.quit)
+    loop.exec()
 
 
 class TestMermaidRendererE2E:
@@ -109,6 +166,220 @@ class TestMermaidRendererE2E:
             assert js_path is not None
             assert js_path.exists()
             assert js_path.stat().st_size > 10000  # mermaid.min.js is large
+        finally:
+            renderer.cleanup()
+            renderer.deleteLater()
+
+
+class TestMermaidRenderQuality:
+    """Test that mermaid diagrams render with proper visuals."""
+
+    def test_simple_diagram_light_background(self, qapp):
+        """Simple diagram pixmap should have a white background.
+
+        Screenshot: tmp/mermaid_quality_simple.png
+        """
+        from fast_tts_rus.ui.services.mermaid_renderer import MermaidRenderer
+
+        SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
+        renderer = MermaidRenderer()
+        try:
+            renderer.render(MERMAID_CODE)
+            ok = _wait_for_signal(renderer.svg_ready, timeout_ms=30000)
+            assert ok, "svg_ready not emitted"
+
+            pixmap = renderer.get_cached_pixmap(MERMAID_CODE, 400)
+            assert pixmap is not None
+            pixmap.save(str(SCREENSHOT_DIR / "mermaid_quality_simple.png"))
+
+            # Check corners are white (background)
+            image = pixmap.toImage()
+            corner = image.pixelColor(0, 0)
+            assert corner.red() > 240, f"Background not white: R={corner.red()}"
+            assert corner.green() > 240, f"Background not white: G={corner.green()}"
+            assert corner.blue() > 240, f"Background not white: B={corner.blue()}"
+        finally:
+            renderer.cleanup()
+            renderer.deleteLater()
+
+    def test_simple_diagram_has_visible_content(self, qapp):
+        """Pixmap should contain non-white content (the actual diagram).
+
+        Screenshot: tmp/mermaid_quality_content.png
+        """
+        from fast_tts_rus.ui.services.mermaid_renderer import MermaidRenderer
+
+        SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
+        renderer = MermaidRenderer()
+        try:
+            renderer.render(MERMAID_CODE)
+            ok = _wait_for_signal(renderer.svg_ready, timeout_ms=30000)
+            assert ok, "svg_ready not emitted"
+
+            pixmap = renderer.get_cached_pixmap(MERMAID_CODE, 600)
+            assert pixmap is not None
+            pixmap.save(str(SCREENSHOT_DIR / "mermaid_quality_content.png"))
+
+            # Scan for non-white pixels (diagram shapes/text)
+            image = pixmap.toImage()
+            has_color = False
+            for x in range(0, image.width(), 5):
+                for y in range(0, image.height(), 5):
+                    c = image.pixelColor(x, y)
+                    if c.red() < 240 or c.green() < 240 or c.blue() < 240:
+                        has_color = True
+                        break
+                if has_color:
+                    break
+            assert has_color, "Pixmap is all white — diagram not rendered"
+        finally:
+            renderer.cleanup()
+            renderer.deleteLater()
+
+    def test_simple_diagram_no_dark_blocks(self, qapp):
+        """Diagram nodes should NOT have black/dark backgrounds.
+
+        Screenshot: tmp/mermaid_quality_no_dark.png
+        """
+        from fast_tts_rus.ui.services.mermaid_renderer import MermaidRenderer
+
+        SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
+        renderer = MermaidRenderer()
+        try:
+            renderer.render(MERMAID_CODE)
+            ok = _wait_for_signal(renderer.svg_ready, timeout_ms=30000)
+            assert ok
+
+            pixmap = renderer.get_cached_pixmap(MERMAID_CODE, 600)
+            assert pixmap is not None
+            pixmap.save(str(SCREENSHOT_DIR / "mermaid_quality_no_dark.png"))
+
+            # Count very dark pixels — should be minimal (only text/arrows)
+            image = pixmap.toImage()
+            dark_count = 0
+            total = 0
+            for x in range(0, image.width(), 3):
+                for y in range(0, image.height(), 3):
+                    total += 1
+                    c = image.pixelColor(x, y)
+                    if c.red() < 30 and c.green() < 30 and c.blue() < 30:
+                        dark_count += 1
+            dark_ratio = dark_count / total if total > 0 else 0
+            assert dark_ratio < 0.15, (
+                f"Too many dark pixels ({dark_ratio:.1%}) — "
+                f"nodes have black backgrounds?"
+            )
+        finally:
+            renderer.cleanup()
+            renderer.deleteLater()
+
+    def test_complex_diagram_renders(self, qapp):
+        """Complex transformer diagram should render completely.
+
+        Screenshot: tmp/mermaid_quality_complex.png
+        """
+        from fast_tts_rus.ui.services.mermaid_renderer import MermaidRenderer
+
+        SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
+        renderer = MermaidRenderer()
+        try:
+            renderer.render(COMPLEX_MERMAID)
+            ok = _wait_for_signal(renderer.svg_ready, timeout_ms=30000)
+            assert ok, "svg_ready not emitted for complex diagram"
+
+            svg = renderer.get_cached_svg(COMPLEX_MERMAID)
+            assert svg is not None
+            assert "<svg" in svg
+
+            pixmap = renderer.get_cached_pixmap(COMPLEX_MERMAID, 800)
+            assert pixmap is not None
+            assert pixmap.height() > 200, "Complex diagram too short"
+            pixmap.save(str(SCREENSHOT_DIR / "mermaid_quality_complex.png"))
+
+            # SVG should contain text from the diagram
+            assert "Encoder" in svg or "encoder" in svg.lower(), (
+                "SVG missing 'Encoder' text"
+            )
+
+            # Check that pixmap has visible content
+            image = pixmap.toImage()
+            has_color = False
+            for x in range(0, image.width(), 10):
+                for y in range(0, image.height(), 10):
+                    c = image.pixelColor(x, y)
+                    if c.red() < 240 or c.green() < 240 or c.blue() < 240:
+                        has_color = True
+                        break
+                if has_color:
+                    break
+            assert has_color, "Complex diagram pixmap is all white"
+
+            # Check no excessive dark areas
+            dark_count = 0
+            total = 0
+            for x in range(0, image.width(), 5):
+                for y in range(0, image.height(), 5):
+                    total += 1
+                    c = image.pixelColor(x, y)
+                    if c.red() < 30 and c.green() < 30 and c.blue() < 30:
+                        dark_count += 1
+            dark_ratio = dark_count / total if total > 0 else 0
+            assert dark_ratio < 0.15, (
+                f"Complex diagram has {dark_ratio:.1%} dark pixels — "
+                f"dark theme or missing content?"
+            )
+        finally:
+            renderer.cleanup()
+            renderer.deleteLater()
+
+    def test_complex_diagram_has_subgraph_colors(self, qapp):
+        """Complex diagram with styled subgraphs should have colored areas.
+
+        Screenshot: tmp/mermaid_quality_colors.png
+        """
+        from fast_tts_rus.ui.services.mermaid_renderer import MermaidRenderer
+
+        SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
+        renderer = MermaidRenderer()
+        try:
+            renderer.render(COMPLEX_MERMAID)
+            ok = _wait_for_signal(renderer.svg_ready, timeout_ms=30000)
+            assert ok
+
+            pixmap = renderer.get_cached_pixmap(COMPLEX_MERMAID, 800)
+            assert pixmap is not None
+            pixmap.save(str(SCREENSHOT_DIR / "mermaid_quality_colors.png"))
+
+            # Check for colored pixels (subgraph backgrounds are pastel colors)
+            image = pixmap.toImage()
+            has_blue_tint = False  # #e1f5fe (Input)
+            has_orange_tint = False  # #fff3e0 (Encoder)
+            has_purple_tint = False  # #f3e5f5 (Decoder)
+            has_green_tint = False  # #e8f5e9 (Output)
+
+            for x in range(0, image.width(), 5):
+                for y in range(0, image.height(), 5):
+                    c = image.pixelColor(x, y)
+                    r, g, b = c.red(), c.green(), c.blue()
+                    # Light blue: R<240, G>240, B>250
+                    if r < 235 and g > 240 and b > 250:
+                        has_blue_tint = True
+                    # Light orange: R>250, G>240, B<235
+                    if r > 250 and g > 240 and b < 235:
+                        has_orange_tint = True
+                    # Light purple: R>240, G<240, B>240
+                    if r > 240 and g < 235 and b > 240:
+                        has_purple_tint = True
+                    # Light green: R<240, G>245, B<240
+                    if r < 240 and g > 245 and b < 240:
+                        has_green_tint = True
+
+            colored_count = sum([has_blue_tint, has_orange_tint, has_purple_tint, has_green_tint])
+            assert colored_count >= 2, (
+                f"Expected subgraph colors but only found {colored_count}/4: "
+                f"blue={has_blue_tint}, orange={has_orange_tint}, "
+                f"purple={has_purple_tint}, green={has_green_tint}"
+            )
         finally:
             renderer.cleanup()
             renderer.deleteLater()
@@ -272,13 +543,6 @@ class TestMermaidPreviewE2E:
             dialog.deleteLater()
 
 
-def _process_events_for(ms: int) -> None:
-    """Process Qt events for given milliseconds."""
-    loop = QEventLoop()
-    QTimer.singleShot(ms, loop.quit)
-    loop.exec()
-
-
 class TestMermaidVisualE2E:
     """Visual E2E tests with screenshots saved to tmp/."""
 
@@ -291,6 +555,7 @@ class TestMermaidVisualE2E:
         """
         from fast_tts_rus.ui.widgets.text_viewer import TextViewerWidget, TextFormat
         from fast_tts_rus.ui.models.entry import TextEntry
+        from fast_tts_rus.ui.services.mermaid_renderer import _code_hash
 
         SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -308,15 +573,17 @@ class TestMermaidVisualE2E:
             pixmap1.save(str(SCREENSHOT_DIR / "mermaid_01_initial.png"))
 
             renderer = viewer._mermaid_renderer
+            assert renderer is not None, "Renderer not initialized"
 
-            # SVG may already be cached from earlier tests — if not, wait for render
-            already_cached = renderer and renderer.get_cached_svg(MERMAID_CODE)
-            if not already_cached:
-                assert renderer is not None, "Renderer not initialized"
+            # Wait for full rendering pipeline: SVG render + pixmap capture.
+            # _pixmap_cache is set at the same time as svg_ready is emitted,
+            # so check it to avoid waiting for already-emitted signal.
+            h = _code_hash(MERMAID_CODE)
+            if h not in renderer._pixmap_cache:
                 ok = _wait_for_signal(renderer.svg_ready, timeout_ms=30000)
                 assert ok, "svg_ready not emitted"
-                # Re-render triggered by _on_mermaid_ready
-                _process_events_for(500)
+            # Wait for _on_mermaid_ready to re-render text
+            _process_events_for(500)
 
             # Screenshot 2: with rendered image
             _process_events_for(200)
@@ -324,7 +591,6 @@ class TestMermaidVisualE2E:
             pixmap2.save(str(SCREENSHOT_DIR / "mermaid_02_rendered.png"))
 
             # Verify image is in the document
-            # Note: Qt's toHtml() strips CSS classes, so check src= instead
             html = viewer.toHtml()
             assert 'src="mermaid-img:0"' in html, (
                 "Image tag not in HTML after render — still showing placeholder"
@@ -344,6 +610,48 @@ class TestMermaidVisualE2E:
             if viewer._mermaid_renderer:
                 viewer._mermaid_renderer.cleanup()
             viewer.deleteLater()
+            _process_events_for(100)  # Allow cleanup before next test
+
+    def test_viewer_renders_complex_diagram(self, qapp):
+        """TextViewer should render complex transformer diagram as image.
+
+        Screenshots:
+          - tmp/mermaid_04_complex_viewer.png — complex diagram in TextViewer
+        """
+        from fast_tts_rus.ui.widgets.text_viewer import TextViewerWidget, TextFormat
+        from fast_tts_rus.ui.models.entry import TextEntry
+        from fast_tts_rus.ui.services.mermaid_renderer import _code_hash
+
+        SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
+
+        viewer = TextViewerWidget()
+        viewer.resize(900, 700)
+        viewer.show()
+        try:
+            viewer.set_format(TextFormat.MARKDOWN)
+            entry = TextEntry(original_text=MARKDOWN_WITH_COMPLEX)
+            viewer.set_entry(entry)
+
+            renderer = viewer._mermaid_renderer
+            assert renderer is not None, "Renderer not initialized"
+
+            h = _code_hash(COMPLEX_MERMAID)
+            if h not in renderer._pixmap_cache:
+                ok = _wait_for_signal(renderer.svg_ready, timeout_ms=30000)
+                assert ok, "svg_ready not emitted for complex diagram"
+            _process_events_for(500)
+
+            _process_events_for(200)
+            pixmap = viewer.grab()
+            pixmap.save(str(SCREENSHOT_DIR / "mermaid_04_complex_viewer.png"))
+
+            html = viewer.toHtml()
+            assert 'src="mermaid-img:0"' in html, "Complex diagram image not in HTML"
+        finally:
+            if viewer._mermaid_renderer:
+                viewer._mermaid_renderer.cleanup()
+            viewer.deleteLater()
+            _process_events_for(100)
 
     def test_preview_dialog_renders_diagram(self, qapp):
         """Preview dialog should render interactive mermaid diagram.
@@ -384,3 +692,103 @@ class TestMermaidVisualE2E:
         finally:
             dialog.close()
             dialog.deleteLater()
+
+    def test_preview_dialog_complex_diagram(self, qapp):
+        """Preview dialog should render complex transformer diagram.
+
+        Screenshots:
+          - tmp/mermaid_05_complex_preview.png — complex diagram in preview
+        """
+        from fast_tts_rus.ui.dialogs.mermaid_preview import MermaidPreviewDialog
+        from fast_tts_rus.ui.services.mermaid_renderer import _mermaid_cache_dir
+
+        SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
+
+        js_path = _mermaid_cache_dir() / "mermaid.min.js"
+        if not js_path.exists():
+            pytest.skip("mermaid.min.js not cached")
+
+        dialog = MermaidPreviewDialog(js_path)
+        dialog.resize(1000, 800)
+        try:
+            dialog._current_code = COMPLEX_MERMAID
+            html = dialog._build_html(COMPLEX_MERMAID)
+            base_url = QUrl.fromLocalFile(str(js_path.parent) + "/")
+            dialog._web_view.setHtml(html, base_url)
+            dialog.setWindowTitle("Mermaid — Transformer Architecture")
+            dialog.show()
+
+            _process_events_for(5000)
+
+            pixmap = dialog.grab()
+            pixmap.save(str(SCREENSHOT_DIR / "mermaid_05_complex_preview.png"))
+
+            assert dialog.windowTitle() == "Mermaid — Transformer Architecture"
+        finally:
+            dialog.close()
+            dialog.deleteLater()
+
+
+class TestTextViewerLinkNavigation:
+    """Test that clicking mermaid links doesn't break TextViewer state."""
+
+    def test_mermaid_click_preserves_content(self, qapp):
+        """Clicking mermaid link should not clear TextViewer content."""
+        from fast_tts_rus.ui.widgets.text_viewer import TextViewerWidget, TextFormat
+        from fast_tts_rus.ui.models.entry import TextEntry
+
+        viewer = TextViewerWidget()
+        try:
+            viewer.set_format(TextFormat.MARKDOWN)
+
+            with patch.object(viewer, "_start_mermaid_rendering"):
+                viewer.set_entry(TextEntry(original_text=MARKDOWN_WITH_MERMAID))
+
+            html_before = viewer.toHtml()
+            assert len(html_before) > 100, "No content set"
+
+            # Simulate clicking mermaid link (with preview mocked)
+            with patch.object(viewer, "_show_mermaid_preview"):
+                viewer._on_anchor_clicked(QUrl("mermaid:0"))
+
+            # Content should be preserved
+            html_after = viewer.toHtml()
+            assert len(html_after) > 100, (
+                "Content lost after clicking mermaid link"
+            )
+            assert "Test Document" in viewer.toPlainText(), (
+                "Title text missing after clicking mermaid link"
+            )
+        finally:
+            if viewer._mermaid_renderer:
+                viewer._mermaid_renderer.cleanup()
+            viewer.deleteLater()
+
+    def test_switch_to_plain_after_click(self, qapp):
+        """Switching to plain text after mermaid click should show raw text."""
+        from fast_tts_rus.ui.widgets.text_viewer import TextViewerWidget, TextFormat
+        from fast_tts_rus.ui.models.entry import TextEntry
+
+        viewer = TextViewerWidget()
+        try:
+            viewer.set_format(TextFormat.MARKDOWN)
+
+            with patch.object(viewer, "_start_mermaid_rendering"):
+                viewer.set_entry(TextEntry(original_text=MARKDOWN_WITH_MERMAID))
+
+            # Click mermaid link
+            with patch.object(viewer, "_show_mermaid_preview"):
+                viewer._on_anchor_clicked(QUrl("mermaid:0"))
+
+            # Switch to plain text
+            viewer.set_format(TextFormat.PLAIN)
+            plain = viewer.toPlainText()
+            assert "```mermaid" in plain, (
+                f"Plain text mode doesn't show raw mermaid block: {plain[:200]}"
+            )
+            assert "Some text before" in plain
+            assert "Some text after" in plain
+        finally:
+            if viewer._mermaid_renderer:
+                viewer._mermaid_renderer.cleanup()
+            viewer.deleteLater()

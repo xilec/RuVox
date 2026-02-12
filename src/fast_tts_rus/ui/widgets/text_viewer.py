@@ -54,6 +54,9 @@ class TextViewerWidget(QTextBrowser):
         # Configure widget
         self.setReadOnly(True)
         # Handle all anchor clicks ourselves (mermaid:// and external)
+        # setOpenLinks(False) prevents QTextBrowser from navigating on click
+        # (which would clear the document content)
+        self.setOpenLinks(False)
         self.setOpenExternalLinks(False)
         self.anchorClicked.connect(self._on_anchor_clicked)
 
