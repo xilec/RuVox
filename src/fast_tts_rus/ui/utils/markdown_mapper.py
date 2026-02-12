@@ -141,24 +141,22 @@ class MarkdownPositionMapper:
         return (rendered_start, rendered_end)
 
     def _html_to_plain(self, html: str) -> str:
-        """Convert HTML to plain text by removing tags and decoding entities.
+        """Convert HTML to plain text using Qt.
 
-        Simulates QTextDocument.toPlainText() behavior by:
-        1. Removing HTML tags
-        2. Decoding HTML entities (&gt; -> >, &lt; -> <, etc)
+        Uses QTextDocument.toPlainText() to match exactly how Qt renders HTML.
+        This properly handles tables, entities, and other HTML structures.
 
         Args:
             html: HTML string
 
         Returns:
-            Plain text with HTML tags removed and entities decoded
+            Plain text as Qt would render it
         """
-        import html as html_module
-        # Remove all HTML tags
-        plain = re.sub(r"<[^>]+>", "", html)
-        # Decode HTML entities to match Qt's behavior
-        plain = html_module.unescape(plain)
-        return plain.strip()
+        from PyQt6.QtGui import QTextDocument
+
+        doc = QTextDocument()
+        doc.setHtml(html)
+        return doc.toPlainText()
 
     def _extract_text_chunks(self, root: ET.Element) -> list[str]:
         """Extract text chunks from ElementTree in document order.

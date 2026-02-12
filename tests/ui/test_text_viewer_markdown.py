@@ -258,6 +258,42 @@ class TestComplexMarkdown:
             text_viewer.highlight_at_position(ts["start"] + 0.1)
             assert text_viewer._last_highlighted_pos == tuple(ts["original_pos"])
 
+    def test_table_highlighting(self, text_viewer):
+        """Test highlighting in Markdown tables."""
+        # Valid table with separator
+        original = """Text before
+
+| Rust | Dada |
+|------|------|
+| vec.len() | vec.len() |
+
+Text after"""
+
+        entry = TextEntry(original_text=original)
+
+        # Word positions in original text
+        rust_pos = original.find("Rust")
+        dada_pos = original.find("Dada")
+        vec_pos = original.find("vec")
+        after_pos = original.find("after")
+
+        timestamps = [
+            {"word": "Rust", "start": 0.0, "end": 0.3, "original_pos": [rust_pos, rust_pos + 4]},
+            {"word": "Dada", "start": 0.5, "end": 0.8, "original_pos": [dada_pos, dada_pos + 4]},
+            {"word": "vec", "start": 1.0, "end": 1.3, "original_pos": [vec_pos, vec_pos + 3]},
+            {"word": "after", "start": 1.5, "end": 1.8, "original_pos": [after_pos, after_pos + 5]},
+        ]
+
+        text_viewer.set_format(TextFormat.MARKDOWN)
+        text_viewer.set_entry(entry, timestamps)
+
+        # All table cells should highlight correctly
+        for ts in timestamps:
+            text_viewer.highlight_at_position(ts["start"] + 0.1)
+            assert text_viewer._last_highlighted_pos == tuple(ts["original_pos"])
+            # Should have active highlighting
+            assert text_viewer.extraSelections()
+
 
 class TestEdgeCases:
     """Test edge cases and error handling."""

@@ -1,14 +1,24 @@
 """Tests for MarkdownPositionMapper."""
 
 import pytest
+from PyQt6.QtWidgets import QApplication
 
 from fast_tts_rus.ui.utils.markdown_mapper import MarkdownPositionMapper
+
+
+@pytest.fixture(scope="module")
+def qapp():
+    """Create QApplication instance for tests."""
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication([])
+    yield app
 
 
 class TestMarkdownPositionMapper:
     """Test suite for MarkdownPositionMapper."""
 
-    def test_plain_text_no_markdown(self):
+    def test_plain_text_no_markdown(self, qapp):
         """Plain text without Markdown should have 1:1 mapping."""
         original = "Simple plain text"
         mapper = MarkdownPositionMapper(original)
@@ -26,7 +36,7 @@ class TestMarkdownPositionMapper:
         result = mapper.get_rendered_range(13, 17)  # "text"
         assert result == (13, 17)
 
-    def test_bold_text(self):
+    def test_bold_text(self, qapp):
         """Bold text should map correctly, removing ** markers."""
         original = "Some **bold** text"
         mapper = MarkdownPositionMapper(original)
@@ -38,7 +48,7 @@ class TestMarkdownPositionMapper:
         result = mapper.get_rendered_range(7, 11)
         assert result == (5, 9)
 
-    def test_header(self):
+    def test_header(self, qapp):
         """Header should map correctly, removing # marker."""
         original = "# Header"
         mapper = MarkdownPositionMapper(original)
@@ -50,7 +60,7 @@ class TestMarkdownPositionMapper:
         result = mapper.get_rendered_range(2, 8)
         assert result == (0, 6)
 
-    def test_inline_code(self):
+    def test_inline_code(self, qapp):
         """Inline code should map correctly, removing ` markers."""
         original = "Run `command` now"
         mapper = MarkdownPositionMapper(original)
@@ -62,7 +72,7 @@ class TestMarkdownPositionMapper:
         result = mapper.get_rendered_range(5, 12)
         assert result == (4, 11)
 
-    def test_link(self):
+    def test_link(self, qapp):
         """Link should map correctly, extracting only visible text."""
         original = "[link text](https://example.com)"
         mapper = MarkdownPositionMapper(original)
@@ -74,7 +84,7 @@ class TestMarkdownPositionMapper:
         result = mapper.get_rendered_range(1, 10)
         assert result == (0, 9)
 
-    def test_multiple_bold(self):
+    def test_multiple_bold(self, qapp):
         """Multiple bold sections should map independently."""
         original = "**first** and **second**"
         mapper = MarkdownPositionMapper(original)
@@ -90,7 +100,7 @@ class TestMarkdownPositionMapper:
         result = mapper.get_rendered_range(16, 22)
         assert result == (10, 16)
 
-    def test_repeated_words(self):
+    def test_repeated_words(self, qapp):
         """Repeated words should map to correct occurrences."""
         original = "word **word** word"
         mapper = MarkdownPositionMapper(original)
@@ -110,7 +120,7 @@ class TestMarkdownPositionMapper:
         result = mapper.get_rendered_range(14, 18)
         assert result == (10, 14)
 
-    def test_mixed_content(self):
+    def test_mixed_content(self, qapp):
         """Mixed Markdown content should map correctly."""
         original = "# Header\nSome **bold** text and `code`"
         mapper = MarkdownPositionMapper(original)
@@ -135,7 +145,7 @@ class TestMarkdownPositionMapper:
         assert result is not None
         assert mapper.rendered_plain[result[0] : result[1]] == "code"
 
-    def test_list_items(self):
+    def test_list_items(self, qapp):
         """List items should map correctly."""
         original = "- item 1\n- item 2"
         mapper = MarkdownPositionMapper(original)
@@ -149,7 +159,7 @@ class TestMarkdownPositionMapper:
         assert result is not None
         assert mapper.rendered_plain[result[0] : result[1]] == "item"
 
-    def test_code_block(self):
+    def test_code_block(self, qapp):
         """Code block content should map correctly."""
         original = "```python\nprint('hello')\n```"
         mapper = MarkdownPositionMapper(original)
@@ -170,7 +180,7 @@ class TestMarkdownPositionMapper:
         # May include some extra characters due to word boundaries
         assert "print" in rendered_word or rendered_word == "print"
 
-    def test_table(self):
+    def test_table(self, qapp):
         """Table content should map correctly."""
         original = "| A | B |\n|---|---|\n| 1 | 2 |"
         mapper = MarkdownPositionMapper(original)
@@ -182,7 +192,7 @@ class TestMarkdownPositionMapper:
         assert "1" in mapper.rendered_plain
         assert "2" in mapper.rendered_plain
 
-    def test_empty_text(self):
+    def test_empty_text(self, qapp):
         """Empty text should not cause errors."""
         mapper = MarkdownPositionMapper("")
         html = mapper.build_mapping()
@@ -190,7 +200,7 @@ class TestMarkdownPositionMapper:
         assert mapper.rendered_plain == ""
         assert html == ""
 
-    def test_only_markdown_syntax(self):
+    def test_only_markdown_syntax(self, qapp):
         """Text with only Markdown syntax should handle gracefully."""
         original = "**  **"
         mapper = MarkdownPositionMapper(original)
@@ -199,7 +209,7 @@ class TestMarkdownPositionMapper:
         # Should be empty or whitespace after rendering
         assert len(mapper.rendered_plain.strip()) == 0
 
-    def test_unicode_text(self):
+    def test_unicode_text(self, qapp):
         """Unicode text should map correctly."""
         original = "Текст с **кириллицей** и 中文"
         mapper = MarkdownPositionMapper(original)
@@ -217,7 +227,7 @@ class TestMarkdownPositionMapper:
         assert result is not None
         assert mapper.rendered_plain[result[0] : result[1]] == word
 
-    def test_mapping_not_found(self):
+    def test_mapping_not_found(self, qapp):
         """Positions outside text should return None."""
         original = "Some text"
         mapper = MarkdownPositionMapper(original)
@@ -227,7 +237,7 @@ class TestMarkdownPositionMapper:
         result = mapper.get_rendered_range(100, 110)
         assert result is None
 
-    def test_partial_mapping(self):
+    def test_partial_mapping(self, qapp):
         """Range partially in Markdown syntax should find available mapping."""
         original = "text **bold** more"
         mapper = MarkdownPositionMapper(original)
@@ -240,7 +250,7 @@ class TestMarkdownPositionMapper:
         # Should map to "bold" in rendered text
         assert "bold" in mapper.rendered_plain[result[0] : result[1]]
 
-    def test_nested_formatting(self):
+    def test_nested_formatting(self, qapp):
         """Nested formatting should map correctly."""
         original = "**bold _italic_ bold**"
         mapper = MarkdownPositionMapper(original)
@@ -254,7 +264,7 @@ class TestMarkdownPositionMapper:
         assert result is not None
         assert mapper.rendered_plain[result[0] : result[1]] == "italic"
 
-    def test_multiline_text(self):
+    def test_multiline_text(self, qapp):
         """Multiline text should preserve line breaks and map correctly."""
         original = "First line\n**Second** line\nThird line"
         mapper = MarkdownPositionMapper(original)
@@ -268,7 +278,7 @@ class TestMarkdownPositionMapper:
         assert result is not None
         assert mapper.rendered_plain[result[0] : result[1]] == "Second"
 
-    def test_real_scenario_with_timestamps(self):
+    def test_real_scenario_with_timestamps(self, qapp):
         """Test real scenario matching timestamps from TTS pipeline."""
         # This simulates the actual use case: timestamps contain positions
         # of actual words (without Markdown markers)
