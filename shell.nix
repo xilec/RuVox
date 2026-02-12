@@ -51,9 +51,22 @@ pkgs.mkShell {
     # Required by torch
     zstd
     krb5
-    # Required by PyQt6-WebEngine (Chromium needs NSS for TLS)
+    # For patching bundled QtWebEngineProcess ELF interpreter
+    patchelf
+    # Required by PyQt6-WebEngine (Chromium runtime dependencies)
     nss
     nspr
+    xorg.libXcomposite
+    xorg.libXdamage
+    xorg.libXtst
+    xorg.libXfixes
+    xorg.libXrender
+    xorg.libxshmfence
+    xorg.libxkbfile
+    expat
+    alsa-lib
+    libgbm
+    systemdMinimal
     # For xdg-desktop-portal integration
     xdg-desktop-portal
     # For clipboard access on Wayland
@@ -94,16 +107,41 @@ pkgs.mkShell {
     pkgs.krb5
     pkgs.nss
     pkgs.nspr
+    pkgs.xorg.libXcomposite
+    pkgs.xorg.libXdamage
+    pkgs.xorg.libXtst
+    pkgs.xorg.libXfixes
+    pkgs.xorg.libXrender
+    pkgs.xorg.libxshmfence
+    pkgs.xorg.libxkbfile
+    pkgs.expat
+    pkgs.alsa-lib
+    pkgs.libgbm
+    pkgs.systemdMinimal
   ];
 
   # Let Qt auto-detect platform (wayland or xcb)
   # User can override with QT_QPA_PLATFORM=xcb if needed
 
+  # nix-ld: allow bundled QtWebEngineProcess (non-NixOS ELF) to run
+  NIX_LD = "${pkgs.glibc}/lib/ld-linux-x86-64.so.2";
+
   shellHook = ''
     export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:$LD_LIBRARY_PATH"
+    export NIX_LD_LIBRARY_PATH="$LD_LIBRARY_PATH"
 
     # Unset QT_PLUGIN_PATH to let PyQt6 use its bundled plugins
     unset QT_PLUGIN_PATH
+
+    # Patch bundled QtWebEngineProcess so it can run on NixOS
+    _webengine=".venv/lib/python3.11/site-packages/PyQt6/Qt6/libexec/QtWebEngineProcess"
+    if [ -f "$_webengine" ]; then
+      _current_interp=$(patchelf --print-interpreter "$_webengine" 2>/dev/null || true)
+      if [ "$_current_interp" = "/lib64/ld-linux-x86-64.so.2" ]; then
+        chmod +w "$_webengine"
+        patchelf --set-interpreter "$NIX_LD" "$_webengine"
+      fi
+    fi
 
     echo "Fast TTS development environment"
     echo "Python: $(python3 --version)"
