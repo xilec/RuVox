@@ -308,6 +308,74 @@ def hello():
         # Should not contain actual code
         assert "деф" not in result.lower()
 
+    def test_mermaid_block_replaced_with_marker(self, pipeline):
+        """Mermaid blocks should be replaced with 'Тут мермэйд диаграмма'."""
+        text = """Текст до диаграммы.
+
+```mermaid
+graph TD
+  A[Start] --> B[End]
+```
+
+Текст после диаграммы."""
+        result = pipeline.process(text)
+        assert "мермэйд диаграмма" in result.lower()
+        # Diagram syntax must not leak into output
+        assert "graph" not in result.lower()
+        assert "-->" not in result
+        # Surrounding text preserved
+        assert "текст до диаграммы" in result.lower()
+        assert "текст после диаграммы" in result.lower()
+
+    def test_mermaid_block_in_both_modes(self, pipeline):
+        """Mermaid replacement works regardless of code_block_mode."""
+        text = "```mermaid\nsequenceDiagram\n  A->>B: Hello\n```"
+        for mode in ("full", "brief"):
+            pipeline.config.code_block_mode = mode
+            result = pipeline.process(text)
+            assert "мермэйд диаграмма" in result.lower(), (
+                f"Mermaid not replaced in {mode} mode: {result}"
+            )
+            assert "sequence" not in result.lower()
+
+    def test_mermaid_block_char_mapping(self, pipeline):
+        """Mermaid block replacement preserves correct char mapping."""
+        text = "Начало.\n\n```mermaid\ngraph TD\n  A --> B\n```\n\nКонец."
+        result, mapping = pipeline.process_with_char_mapping(text)
+        assert "мермэйд диаграмма" in result.lower()
+        assert "конец" in result.lower()
+        # Mapping should point back into original text
+        end_pos = result.lower().find("конец")
+        if end_pos >= 0 and end_pos < len(mapping.char_map):
+            orig_start, orig_end = mapping.char_map[end_pos]
+            expected_orig = text.lower().find("конец")
+            assert orig_start >= expected_orig - 2, (
+                f"Mapping for 'конец' points to orig {orig_start}, "
+                f"expected near {expected_orig}"
+            )
+
+    def test_mermaid_with_other_code_blocks(self, pipeline):
+        """Mermaid block replaced while other code blocks processed normally."""
+        text = """```python
+print("hello")
+```
+
+```mermaid
+graph TD
+  A --> B
+```
+
+```bash
+ls -la
+```"""
+        pipeline.config.code_block_mode = "brief"
+        result = pipeline.process(text)
+        assert "пайтон" in result.lower()
+        assert "мермэйд диаграмма" in result.lower()
+        assert "баш" in result.lower()
+        # Mermaid syntax must not appear
+        assert "graph" not in result.lower()
+
 
 class TestInlineCode:
     """Tests for inline code in markdown."""

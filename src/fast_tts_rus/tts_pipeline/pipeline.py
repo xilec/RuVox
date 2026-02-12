@@ -154,6 +154,11 @@ class TTSPipeline:
         if tracked.text.startswith('\ufeff'):
             tracked.sub(r'^\ufeff', '')
 
+        # Process code blocks FIRST — before space/dash normalization which
+        # creates replacement entries inside blocks, preventing the code block
+        # regex from matching (TrackedText skips matches that touch replacements)
+        self._process_code_blocks_tracked(tracked)
+
         # Normalize quotes (tracked)
         tracked.replace('«', '"')
         tracked.replace('»', '"')
@@ -174,9 +179,6 @@ class TTSPipeline:
 
         if not tracked.text.strip():
             return "", CharMapping(original=text, transformed="", char_map=[])
-
-        # Process code blocks (brief mode)
-        self._process_code_blocks_tracked(tracked)
 
         # Process inline code
         self._process_inline_code_tracked(tracked)
@@ -337,6 +339,11 @@ class TTSPipeline:
         def replace_block(match):
             language = match.group(1) or None
             code = match.group(2)
+
+            # Mermaid diagrams: not readable text, replace with brief marker
+            if language and language.lower() == 'mermaid':
+                return 'Тут мермэйд диаграмма'
+
             self.code_block_handler.set_mode(self.config.code_block_mode)
             return self.code_block_handler.process(code.strip(), language)
 
