@@ -27,7 +27,7 @@ class TTSPipeline:
         self.english_normalizer = EnglishNormalizer()
         self.abbrev_normalizer = AbbreviationNormalizer()
         self.symbol_normalizer = SymbolNormalizer()
-        self.url_normalizer = URLPathNormalizer()
+        self.url_normalizer = URLPathNormalizer(english_normalizer=self.english_normalizer)
         self.code_normalizer = CodeIdentifierNormalizer()
         self.code_block_handler = CodeBlockHandler(mode=self.config.code_block_mode)
 
@@ -489,7 +489,7 @@ class TTSPipeline:
     _RE_IP = re.compile(r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b')
     _RE_PATH = re.compile(r'(?<![a-zA-Z0-9])([~/][a-zA-Z0-9_./\-]+\.[a-zA-Z0-9]+|[~/][a-zA-Z0-9_./\-]+)')
     _RE_SIZE = re.compile(r'\b(\d+(?:\.\d+)?)\s*(KB|MB|GB|TB|ms|sec|min|hr|px|em|rem|vh|vw|кб|мб|гб|тб)\b', re.IGNORECASE)
-    _RE_VERSION = re.compile(r'\bv?(\d+\.\d+(?:\.\d+)?(?:-[a-zA-Z]+\d*)?)\b')
+    _RE_VERSION = re.compile(r'\bv?(\d+\.\d+(?:\.\d+)?(?:-(?:alpha|beta|rc|dev|stable|release)\d*)?)\b', re.IGNORECASE)
     _RE_RANGE = re.compile(r'\b(\d+)\s*-\s*(\d+)\b')
     _RE_PERCENTAGE = re.compile(r'\b(\d+(?:\.\d+)?)\s*%')
 

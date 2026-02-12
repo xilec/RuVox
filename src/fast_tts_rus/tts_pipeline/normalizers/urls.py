@@ -51,8 +51,32 @@ class URLPathNormalizer:
         'h': 'эйч',
     }
 
-    def __init__(self):
+    def __init__(self, english_normalizer=None):
         self.number_normalizer = NumberNormalizer()
+        self._english_normalizer = english_normalizer
+
+    def _transliterate_word(self, word: str) -> str:
+        """Transliterate an English word if normalizer is available."""
+        if not self._english_normalizer or not word:
+            return word
+        if word.isascii() and any(c.isalpha() for c in word):
+            return self._english_normalizer.normalize(word)
+        return word
+
+    def _transliterate_segment(self, segment: str) -> str:
+        """Transliterate a URL path segment, handling hyphens."""
+        if not segment:
+            return segment
+        if '-' not in segment:
+            return self._transliterate_word(segment)
+        # Split by hyphens, transliterate each part
+        sub = []
+        for part in segment.split('-'):
+            if part.isdigit():
+                sub.append(self.number_normalizer.normalize_number(part))
+            else:
+                sub.append(self._transliterate_word(part))
+        return ' '.join(sub)
 
     def normalize_url(self, url: str) -> str:
         """Convert URL to speakable text."""
@@ -92,7 +116,7 @@ class URLPathNormalizer:
                 # Numeric part like version number (3.11)
                 domain_words.append(self.number_normalizer.normalize_number(part))
             else:
-                domain_words.append(part)
+                domain_words.append(self._transliterate_word(part))
 
         parts.append(' точка '.join(domain_words))
 
@@ -115,10 +139,10 @@ class URLPathNormalizer:
                         if sp.isdigit():
                             segment_words.append(self.number_normalizer.normalize_number(sp))
                         else:
-                            segment_words.append(sp)
+                            segment_words.append(self._transliterate_segment(sp))
                     parts.append(' точка '.join(segment_words))
                 else:
-                    parts.append(segment)
+                    parts.append(self._transliterate_segment(segment))
 
         # Query params (simplified - just include key parts)
         if parsed.query:
