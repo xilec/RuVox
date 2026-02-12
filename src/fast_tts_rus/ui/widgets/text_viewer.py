@@ -7,7 +7,7 @@ from typing import Any
 import markdown
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QTextCursor, QTextCharFormat, QColor
-from PyQt6.QtWidgets import QTextBrowser, QScrollBar, QWidget
+from PyQt6.QtWidgets import QTextBrowser, QTextEdit, QScrollBar, QWidget
 
 from fast_tts_rus.ui.models.entry import TextEntry
 from fast_tts_rus.ui.utils.markdown_mapper import MarkdownPositionMapper
@@ -38,15 +38,11 @@ class TextViewerWidget(QTextBrowser):
         self.timestamps: list[dict[str, Any]] | None = None
         self.text_format: TextFormat = TextFormat.PLAIN
         self._last_highlighted_pos: tuple[int, int] | None = None
-        self._last_highlight_doc_range: tuple[int, int] | None = None
 
-        # Setup highlighting format
+        # Setup highlighting format (using ExtraSelections to preserve document formatting)
         self._highlight_format = QTextCharFormat()
         self._highlight_format.setBackground(QColor("#FFFF99"))  # Yellow background
         self._highlight_format.setFontUnderline(True)
-
-        # Normal format (to restore)
-        self._normal_format = QTextCharFormat()
 
         # Configure widget
         self.setReadOnly(True)
@@ -74,7 +70,6 @@ class TextViewerWidget(QTextBrowser):
         self.current_entry = entry
         self.timestamps = timestamps
         self._last_highlighted_pos = None
-        self._last_highlight_doc_range = None
         self._render_text()
 
     def clear_entry(self) -> None:
@@ -82,8 +77,8 @@ class TextViewerWidget(QTextBrowser):
         self.current_entry = None
         self.timestamps = None
         self._last_highlighted_pos = None
-        self._last_highlight_doc_range = None
         self._markdown_mapper = None
+        self.setExtraSelections([])  # Clear any highlight
         self.clear()
 
     def _render_text(self) -> None:
@@ -153,7 +148,6 @@ class TextViewerWidget(QTextBrowser):
         # Apply new highlight and get document position
         doc_pos, doc_end = self._highlight_range(start, end)
         self._last_highlighted_pos = (start, end)
-        self._last_highlight_doc_range = (doc_pos, doc_end) if doc_pos is not None else None
 
         # Scroll to visible
         if doc_pos is not None:
@@ -173,7 +167,7 @@ class TextViewerWidget(QTextBrowser):
         return None
 
     def _highlight_range(self, start: int, end: int) -> tuple[int | None, int | None]:
-        """Highlight text range in the document.
+        """Highlight text range in the document using ExtraSelections.
 
         For plain text: positions are 1:1.
         For Markdown: uses position mapper for accurate highlighting.
@@ -187,11 +181,7 @@ class TextViewerWidget(QTextBrowser):
         """
         if self.text_format == TextFormat.PLAIN:
             # Plain text mode: positions are 1:1
-            cursor = self.textCursor()
-            cursor.setPosition(start)
-            cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
-            cursor.mergeCharFormat(self._highlight_format)
-            return start, end
+            doc_start, doc_end = start, end
         else:
             # Markdown mode: use position mapper
             if not self._markdown_mapper:
@@ -205,33 +195,29 @@ class TextViewerWidget(QTextBrowser):
                 return None, None
 
             doc_start, doc_end = result
-
-            # Apply highlight in rendered document
-            cursor = self.textCursor()
-            cursor.setPosition(doc_start)
-            cursor.setPosition(doc_end, QTextCursor.MoveMode.KeepAnchor)
-            cursor.mergeCharFormat(self._highlight_format)
-
             logger.debug(
                 "Highlighted original[%d:%d] -> rendered[%d:%d]",
                 start, end, doc_start, doc_end
             )
-            return doc_start, doc_end
+
+        # Apply highlight using ExtraSelections (preserves document formatting)
+        cursor = QTextCursor(self.document())
+        cursor.setPosition(doc_start)
+        cursor.setPosition(doc_end, QTextCursor.MoveMode.KeepAnchor)
+
+        selection = QTextEdit.ExtraSelection()
+        selection.cursor = cursor
+        selection.format = self._highlight_format
+
+        self.setExtraSelections([selection])
+
+        return doc_start, doc_end
 
     def _clear_highlight(self) -> None:
         """Clear any existing highlight."""
-        if self._last_highlight_doc_range is None:
-            return
-
-        doc_start, doc_end = self._last_highlight_doc_range
-        if doc_start is not None and doc_end is not None:
-            cursor = self.textCursor()
-            cursor.setPosition(doc_start)
-            cursor.setPosition(doc_end, QTextCursor.MoveMode.KeepAnchor)
-            cursor.setCharFormat(self._normal_format)
-
+        # Clear ExtraSelections (removes highlight without affecting document formatting)
+        self.setExtraSelections([])
         self._last_highlighted_pos = None
-        self._last_highlight_doc_range = None
 
     def _ensure_visible_at_doc_pos(self, doc_pos: int) -> None:
         """Scroll to make document position visible without setting cursor."""

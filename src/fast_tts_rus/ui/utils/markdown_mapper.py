@@ -224,11 +224,11 @@ class MarkdownPositionMapper:
             used_original_ranges.append((original_idx, original_idx + len(chunk)))
             rendered_pos = rendered_idx + len(chunk)
 
-        # Fallback: if mapping is sparse, add word-level mapping
-        # This handles cases like code blocks where ElementTree uses placeholders
-        if len(self.position_map) < len(self.rendered_plain) * 0.5:
-            logger.debug("Sparse mapping detected, adding word-level fallback")
-            self._add_word_level_mapping(used_original_ranges)
+        # Always add word-level mapping for unmapped regions (e.g., code blocks)
+        # This handles cases where ElementTree doesn't extract all text chunks
+        coverage = len(self.position_map) / len(self.rendered_plain) if self.rendered_plain else 0
+        logger.debug(f"Coverage: {coverage:.1%}, adding word-level fallback for unmapped regions")
+        self._add_word_level_mapping(used_original_ranges)
 
         logger.debug(
             "Built position map with %d mappings for %d chunks",
@@ -253,8 +253,8 @@ class MarkdownPositionMapper:
             rendered_word = rendered_match.group()
             rendered_start = rendered_match.start()
 
-            # Check if this position is already mapped
-            if any(rendered_start in self.position_map.values() for _ in range(len(rendered_word))):
+            # Check if any position in this word is already mapped
+            if any((rendered_start + i) in self.position_map.values() for i in range(len(rendered_word))):
                 continue
 
             # Find this word in original (first unused occurrence)

@@ -96,7 +96,7 @@ class TestHighlightingInMarkdownMode:
 
         # Check that highlight was applied
         assert text_viewer._last_highlighted_pos == (7, 11)
-        assert text_viewer._last_highlight_doc_range is not None
+        assert text_viewer.extraSelections()
 
     def test_highlight_header(self, text_viewer):
         """Highlighting should work for header text."""
@@ -115,7 +115,7 @@ class TestHighlightingInMarkdownMode:
         text_viewer.highlight_at_position(0.2)
 
         assert text_viewer._last_highlighted_pos == (2, 8)
-        assert text_viewer._last_highlight_doc_range is not None
+        assert text_viewer.extraSelections()
 
     def test_highlight_code(self, text_viewer):
         """Highlighting should work for inline code."""
@@ -135,7 +135,7 @@ class TestHighlightingInMarkdownMode:
         text_viewer.highlight_at_position(0.5)
 
         assert text_viewer._last_highlighted_pos == (5, 12)
-        assert text_viewer._last_highlight_doc_range is not None
+        assert text_viewer.extraSelections()
 
     def test_highlight_link_text(self, text_viewer):
         """Highlighting should work for link text (URL hidden)."""
@@ -155,7 +155,7 @@ class TestHighlightingInMarkdownMode:
 
         assert text_viewer._last_highlighted_pos == (1, 5)
         # Should find mapping even though URL is hidden
-        assert text_viewer._last_highlight_doc_range is not None
+        assert text_viewer.extraSelections()
 
     def test_highlight_repeated_words(self, text_viewer):
         """Highlighting should work for repeated words."""
@@ -214,7 +214,7 @@ class TestHighlightingInMarkdownMode:
         assert text_viewer._last_highlighted_pos == (7, 11)
         # In plain mode, doc range should match (1:1 mapping)
         # Both should work without errors
-        assert text_viewer._last_highlight_doc_range is not None
+        assert text_viewer.extraSelections()
 
 
 class TestComplexMarkdown:
