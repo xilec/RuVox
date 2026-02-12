@@ -34,6 +34,7 @@ tts = [
 ]
 ui = [
     "PyQt6>=6.6.0,<7",
+    "PyQt6-WebEngine>=6.6.0,<7",  # QWebEngineView for Mermaid diagram rendering
     "markdown>=3.5,<4",
     "dasbus>=1.7,<2",  # D-Bus library for global hotkeys (requires PyGObject)
     "python-mpv>=1.0,<2",  # libmpv bindings for audio playback (scaletempo2)

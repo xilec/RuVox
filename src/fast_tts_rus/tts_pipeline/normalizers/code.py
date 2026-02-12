@@ -504,6 +504,7 @@ class CodeBlockHandler:
         'apache': 'апачи',
         'terraform': 'терраформ',
         'powershell': 'пауэршелл',
+        'mermaid': 'мёрмэйд',
     }
 
     def __init__(self, mode: str = "full"):
