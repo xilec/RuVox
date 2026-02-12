@@ -137,6 +137,12 @@ result, mapping = pipeline.process_with_char_mapping(text)
 | storage_service | 45 | test_storage_service.py |
 | tts_chunking | 17 | test_tts_chunking.py |
 | text_viewer_highlight | 7 | test_text_viewer_highlight.py |
+| text_viewer_markdown | 16 | test_text_viewer_markdown.py |
+| markdown_mapper | 18 | test_markdown_mapper.py |
+| format_selector | 9 | test_format_selector.py |
+| player | 14 | test_player.py |
+
+**Всего UI тестов: 127** (было 69, добавлено 58)
 
 ### Error Handling (`tests/error_handling/`)
 

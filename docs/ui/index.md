@@ -37,7 +37,7 @@ ui/
 ├── widgets/
 │   ├── player.py        # Плеер с управлением воспроизведением
 │   ├── queue_list.py    # Список очереди
-│   └── text_viewer.py   # Просмотр текста с подсветкой
+│   └── text_viewer.py   # Просмотр текста с подсветкой (Plain/Markdown)
 │
 ├── dialogs/
 │   └── settings.py      # Диалог настроек
@@ -49,10 +49,57 @@ ui/
 │   ├── hotkeys.py       # Глобальные горячие клавиши
 │   └── cleanup.py       # Очистка старых записей
 │
+├── utils/
+│   └── markdown_mapper.py  # Маппинг позиций для Markdown
+│
 └── models/
     ├── entry.py         # TextEntry — модель записи
     └── config.py        # UIConfig — настройки приложения
 ```
+
+## Основные виджеты
+
+### TextViewerWidget
+
+Виджет для отображения текста с поддержкой:
+- **Два режима отображения:**
+  - `TextFormat.PLAIN` — plain text с видимыми Markdown маркерами
+  - `TextFormat.MARKDOWN` — рендеренный HTML с форматированием
+- **Подсветка текущего слова** во время воспроизведения
+- **Позиционный маппинг** для корректной подсветки в Markdown режиме
+- **Автопрокрутка** к текущей позиции
+- **Переключение режимов** без перегенерации аудио
+
+**Технические детали:**
+- Использует `MarkdownPositionMapper` для перевода `original_pos` → `rendered_pos`
+- CharMapping из timestamps: позиции в оригинальном тексте (с Markdown)
+- Подсветка через `QTextCursor` с желтым фоном
+- Обновление позиции каждые 200ms (5 Hz) от плеера
+
+**Поддерживаемый Markdown:**
+- Заголовки (`# H1`, `## H2`)
+- Жирный текст (`**bold**`)
+- Курсив (`_italic_`)
+- Inline код (\`code\`)
+- Code blocks (\`\`\`python)
+- Ссылки (`[text](url)`)
+- Списки (`- item`, `1. item`)
+- Таблицы
+
+### PlayerWidget
+
+Аудиоплеер на основе `libmpv` (python-mpv):
+- Воспроизведение с `scaletempo2` для качественного изменения скорости
+- Управление: play/pause, seek, speed (0.5x - 2.0x)
+- Обновление позиции через QTimer (200ms)
+- Graceful degradation при отсутствии mpv
+
+### QueueListWidget
+
+Список записей в очереди:
+- Статусы: PENDING, PROCESSING, READY, ERROR
+- Контекстное меню: Play, Regenerate, Delete
+- Индикация текущего воспроизводимого элемента
 
 ## Разделы
 

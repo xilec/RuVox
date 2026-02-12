@@ -10,6 +10,7 @@ from PyQt6.QtGui import QTextCursor, QTextCharFormat, QColor
 from PyQt6.QtWidgets import QTextBrowser, QScrollBar, QWidget
 
 from fast_tts_rus.ui.models.entry import TextEntry
+from fast_tts_rus.ui.utils.markdown_mapper import MarkdownPositionMapper
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,9 @@ class TextViewerWidget(QTextBrowser):
         # Markdown converter
         self._md = markdown.Markdown(extensions=['fenced_code', 'tables'])
 
+        # Markdown position mapper for accurate highlighting
+        self._markdown_mapper: MarkdownPositionMapper | None = None
+
     def set_format(self, fmt: TextFormat) -> None:
         """Switch display format between Markdown and plain text."""
         self.text_format = fmt
@@ -79,33 +83,44 @@ class TextViewerWidget(QTextBrowser):
         self.timestamps = None
         self._last_highlighted_pos = None
         self._last_highlight_doc_range = None
+        self._markdown_mapper = None
         self.clear()
 
     def _render_text(self) -> None:
         """Render text in current format."""
         if not self.current_entry:
             self.clear()
+            self._markdown_mapper = None
             return
 
         text = self.current_entry.original_text
 
         if self.text_format == TextFormat.MARKDOWN:
-            # Convert Markdown to HTML
+            # Build position mapping for accurate word highlighting
+            self._markdown_mapper = MarkdownPositionMapper(text)
             self._md.reset()
-            html = self._md.convert(text)
+            html = self._markdown_mapper.build_mapping(self._md)
+
             # Add basic styling
             styled_html = f"""
             <style>
                 body {{ font-family: sans-serif; line-height: 1.5; }}
-                code {{ background-color: #f4f4f4; padding: 2px 4px; }}
-                pre {{ background-color: #f4f4f4; padding: 8px; overflow-x: auto; }}
+                code {{ background-color: #f4f4f4; padding: 2px 4px; border-radius: 3px; }}
+                pre {{ background-color: #f4f4f4; padding: 8px; border-radius: 4px; overflow-x: auto; }}
+                pre code {{ background-color: transparent; padding: 0; }}
                 blockquote {{ border-left: 3px solid #ccc; margin-left: 0; padding-left: 12px; color: #666; }}
+                h1, h2, h3, h4, h5, h6 {{ margin-top: 0.5em; margin-bottom: 0.3em; }}
+                ul, ol {{ margin-top: 0.3em; margin-bottom: 0.3em; }}
             </style>
             {html}
             """
             self.setHtml(styled_html)
+            logger.debug("Rendered Markdown with position mapping")
         else:
+            # Plain text mode - no mapping needed
+            self._markdown_mapper = None
             self.setPlainText(text)
+            logger.debug("Rendered plain text")
 
     def highlight_at_position(self, position_sec: float) -> None:
         """Highlight word at the given audio position.
@@ -161,7 +176,11 @@ class TextViewerWidget(QTextBrowser):
         """Highlight text range in the document.
 
         For plain text: positions are 1:1.
-        For Markdown: finds the word in rendered document by searching.
+        For Markdown: uses position mapper for accurate highlighting.
+
+        Args:
+            start: Start position in original text (inclusive)
+            end: End position in original text (exclusive)
 
         Returns:
             Tuple of (doc_start, doc_end) positions, or (None, None) if not found.
@@ -174,60 +193,30 @@ class TextViewerWidget(QTextBrowser):
             cursor.mergeCharFormat(self._highlight_format)
             return start, end
         else:
-            # Markdown mode: find the word in rendered document
-            if not self.current_entry:
+            # Markdown mode: use position mapper
+            if not self._markdown_mapper:
+                logger.warning("Markdown mapper not available for highlighting")
                 return None, None
 
-            original_text = self.current_entry.original_text
-            if start >= len(original_text) or end > len(original_text):
+            # Get rendered position from mapper
+            result = self._markdown_mapper.get_rendered_range(start, end)
+            if not result:
+                logger.debug("No mapping found for range [%d, %d)", start, end)
                 return None, None
 
-            # Get the word from original text
-            word = original_text[start:end].strip()
-            if not word:
-                return None, None
+            doc_start, doc_end = result
 
-            # Count which occurrence this is in the original text
-            occurrence = self._count_word_occurrences_before(original_text, word, start)
+            # Apply highlight in rendered document
+            cursor = self.textCursor()
+            cursor.setPosition(doc_start)
+            cursor.setPosition(doc_end, QTextCursor.MoveMode.KeepAnchor)
+            cursor.mergeCharFormat(self._highlight_format)
 
-            # Find that occurrence in the rendered document
-            rendered = self.document().toPlainText()
-            doc_pos = self._find_nth_occurrence(rendered, word, occurrence)
-
-            if doc_pos >= 0:
-                doc_end = doc_pos + len(word)
-                cursor = self.textCursor()
-                cursor.setPosition(doc_pos)
-                cursor.setPosition(doc_end, QTextCursor.MoveMode.KeepAnchor)
-                cursor.mergeCharFormat(self._highlight_format)
-                return doc_pos, doc_end
-
-            return None, None
-
-    def _count_word_occurrences_before(self, text: str, word: str, pos: int) -> int:
-        """Count how many times word appears before position pos."""
-        count = 0
-        search_pos = 0
-        while search_pos < pos:
-            idx = text.find(word, search_pos)
-            if idx == -1 or idx >= pos:
-                break
-            count += 1
-            search_pos = idx + 1
-        return count
-
-    def _find_nth_occurrence(self, text: str, word: str, n: int) -> int:
-        """Find the nth (0-indexed) occurrence of word in text."""
-        pos = 0
-        for i in range(n + 1):
-            idx = text.find(word, pos)
-            if idx == -1:
-                return -1
-            if i == n:
-                return idx
-            pos = idx + 1
-        return -1
-
+            logger.debug(
+                "Highlighted original[%d:%d] -> rendered[%d:%d]",
+                start, end, doc_start, doc_end
+            )
+            return doc_start, doc_end
 
     def _clear_highlight(self) -> None:
         """Clear any existing highlight."""

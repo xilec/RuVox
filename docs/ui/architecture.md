@@ -85,22 +85,126 @@ class QueueListWidget(QListWidget):
 
 ### TextViewerWidget (`widgets/text_viewer.py`)
 
-Просмотр текста с подсветкой слов.
+Просмотр текста с подсветкой слов и поддержкой Markdown.
 
 ```python
+class TextFormat(Enum):
+    MARKDOWN = "markdown"
+    PLAIN = "plain"
+
 class TextViewerWidget(QTextBrowser):
+    current_entry: TextEntry | None
+    timestamps: list[dict] | None
+    text_format: TextFormat
+    _markdown_mapper: MarkdownPositionMapper | None
+
     # Методы
     def set_entry(self, entry: TextEntry, timestamps: list | None) -> None
     def clear_entry(self) -> None
-    def set_format(self, fmt: TextFormat) -> None  # MARKDOWN / PLAIN
+    def set_format(self, fmt: TextFormat) -> None
     def highlight_at_position(self, position_sec: float) -> None
 ```
 
+**Режимы отображения:**
+1. **PLAIN** — plain text с видимыми Markdown маркерами
+   - `setPlainText(entry.original_text)`
+   - Подсветка напрямую по `original_pos` из timestamps
+
+2. **MARKDOWN** — рендеренный HTML
+   - `setHtml(markdown_mapper.build_mapping())`
+   - `MarkdownPositionMapper` переводит `original_pos` → `rendered_pos`
+   - Подсветка через QTextCursor в отрендеренном документе
+
+**Алгоритм подсветки:**
+1. Получить `position_sec` от плеера (каждые 200ms)
+2. Найти слово в timestamps с `start <= position_sec < end`
+3. Получить `original_pos` из timestamp (позиция в `entry.original_text`)
+4. Если Markdown mode:
+   - `mapper.get_rendered_range(original_start, original_end)` → `(doc_start, doc_end)`
+   - Применить подсветку в позициях `[doc_start:doc_end]` в HTML документе
+5. Если Plain mode:
+   - Применить подсветку напрямую в `[original_start:original_end]`
+
 **Особенности:**
-- Рендеринг Markdown (заголовки, списки, код)
-- Подсветка текущего слова жёлтым цветом
+- Переключение режимов во время воспроизведения — подсветка восстанавливается автоматически
 - Автоскролл к текущей позиции
-- Подсветка только для воспроизводимой записи
+- Кликабельные ссылки в Markdown режиме
+- Graceful degradation при отсутствии mapping
+
+## Утилиты
+
+### MarkdownPositionMapper (`utils/markdown_mapper.py`)
+
+Маппинг позиций между оригинальным Markdown и отрендеренным plain text.
+
+```python
+class MarkdownPositionMapper:
+    original_text: str               # Оригинальный Markdown
+    rendered_plain: str              # Plain text из HTML (через ElementTree)
+    position_map: dict[int, int]     # original_pos → rendered_pos
+
+    def build_mapping(self, md_instance=None) -> str:
+        """Рендерит HTML и строит position_map."""
+
+    def get_rendered_range(
+        self, original_start: int, original_end: int
+    ) -> tuple[int, int] | None:
+        """Переводит диапазон original → rendered."""
+```
+
+**Алгоритм построения маппинга:**
+
+1. **Рендеринг Markdown → HTML**
+   ```python
+   html = md.convert(original_text)
+   ```
+
+2. **Извлечение видимого текста из HTML** (через ElementTree)
+   - Парсим HTML как XML
+   - Рекурсивно собираем текстовые узлы
+   - Игнорируем теги, атрибуты, комментарии
+   - Получаем `rendered_plain`
+
+3. **Построение character-level mapping**
+   - Для каждого слова в `rendered_plain`:
+     - Найти его в `original_text`
+     - Записать `position_map[original_pos] = rendered_pos`
+   - Используется отслеживание уже использованных диапазонов для корректной работы с повторяющимися словами
+
+4. **Fallback word-level mapping** (для code blocks)
+   - Если покрытие < 50%, добавляем word-level маппинг
+   - Находим слова через регулярные выражения
+   - Сопоставляем по порядку появления
+
+**Пример:**
+
+```markdown
+Original:    "Some **bold** text"
+             [0   4 56   1012  18]
+
+Rendered:    "Some bold text"
+             [0   4 5  9 10 14]
+
+position_map:
+  0 → 0   (S)
+  1 → 1   (o)
+  ...
+  7 → 5   (**bold** → bold, начало слова)
+  11 → 9  (конец слова "bold")
+```
+
+**get_rendered_range(7, 11)** → **(5, 9)**
+
+**Поддерживаемые Markdown элементы:**
+- Bold, italic: `**text**`, `_text_`
+- Headers: `# H1`, `## H2`
+- Inline code: \`code\`
+- Code blocks: \`\`\`python
+- Links: `[text](url)` — извлекается только `text`
+- Lists: `- item`, `1. item`
+- Tables
+
+**Тесты:** `tests/ui/test_markdown_mapper.py` (18 тестов)
 
 ## Сервисы
 

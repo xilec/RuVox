@@ -7,15 +7,17 @@ from PyQt6.QtWidgets import (
     QMainWindow,
     QWidget,
     QVBoxLayout,
+    QHBoxLayout,
     QSplitter,
     QLabel,
+    QComboBox,
     QStatusBar,
 )
 
 from fast_tts_rus.ui.services.logging_service import safe_slot
 from fast_tts_rus.ui.widgets.queue_list import QueueListWidget
 from fast_tts_rus.ui.widgets.player import PlayerWidget
-from fast_tts_rus.ui.widgets.text_viewer import TextViewerWidget
+from fast_tts_rus.ui.widgets.text_viewer import TextViewerWidget, TextFormat
 from fast_tts_rus.ui.models.entry import TextEntry, EntryStatus
 
 logger = logging.getLogger(__name__)
@@ -72,9 +74,34 @@ class MainWindow(QMainWindow):
         # Connect queue signals
         self._connect_queue_signals()
 
-        # Text viewer (right)
+        # Text viewer panel (right) with format selector
+        text_panel = QWidget()
+        text_panel_layout = QVBoxLayout(text_panel)
+        text_panel_layout.setContentsMargins(0, 0, 0, 0)
+        text_panel_layout.setSpacing(4)
+
+        # Text viewer
         self.text_viewer = TextViewerWidget()
-        splitter.addWidget(self.text_viewer)
+        text_panel_layout.addWidget(self.text_viewer, 1)  # stretch factor 1
+
+        # Format selector (bottom right)
+        format_row = QHBoxLayout()
+        format_row.setContentsMargins(0, 0, 0, 0)
+        format_row.addStretch()
+
+        format_label = QLabel("Формат:")
+        format_row.addWidget(format_label)
+
+        self.format_selector = QComboBox()
+        self.format_selector.addItem("📝 Plain Text", TextFormat.PLAIN.value)
+        self.format_selector.addItem("📄 Markdown", TextFormat.MARKDOWN.value)
+        self.format_selector.setMinimumWidth(150)
+        self.format_selector.currentIndexChanged.connect(self._on_format_changed)
+        format_row.addWidget(self.format_selector)
+
+        text_panel_layout.addLayout(format_row)
+
+        splitter.addWidget(text_panel)
 
         # Set initial splitter sizes (1:2 ratio)
         splitter.setSizes([300, 600])
@@ -262,6 +289,9 @@ class MainWindow(QMainWindow):
             self.queue_list.update_entries(entries)
             self._update_status_bar()
 
+        # Restore saved text format
+        self._restore_text_format()
+
     def add_entry(self, entry) -> None:
         """Add a new entry to the queue list."""
         self.queue_list.add_entry(entry)
@@ -322,6 +352,60 @@ class MainWindow(QMainWindow):
                 geom.width(),
                 geom.height(),
             )
+
+    @safe_slot
+    def _on_format_changed(self, index: int) -> None:
+        """Handle text format change from combo box.
+
+        Args:
+            index: Index of selected item in combo box
+        """
+        format_value = self.format_selector.itemData(index)
+        if not format_value:
+            return
+
+        # Convert to TextFormat enum
+        try:
+            fmt = TextFormat(format_value)
+        except ValueError:
+            logger.error(f"Invalid text format: {format_value}")
+            return
+
+        # Apply to text viewer
+        self.text_viewer.set_format(fmt)
+        logger.info(f"Text format changed to: {fmt.value}")
+
+        # Save to config
+        if self.app.config:
+            self.app.config.text_format = format_value
+            self.app.config.save()
+
+    def _restore_text_format(self) -> None:
+        """Restore saved text format from config."""
+        if not self.app.config:
+            return
+
+        # Get saved format
+        saved_format = self.app.config.text_format
+
+        # Convert to TextFormat enum
+        try:
+            fmt = TextFormat(saved_format)
+        except ValueError:
+            logger.warning(f"Invalid saved format {saved_format!r}, using default")
+            fmt = TextFormat.PLAIN
+
+        # Set in text viewer
+        self.text_viewer.set_format(fmt)
+
+        # Update combo box selection (without triggering signal)
+        index = self.format_selector.findData(fmt.value)
+        if index >= 0:
+            self.format_selector.blockSignals(True)
+            self.format_selector.setCurrentIndex(index)
+            self.format_selector.blockSignals(False)
+
+        logger.debug(f"Restored text format: {fmt.value}")
 
     def closeEvent(self, event) -> None:
         """Handle close event - hide to tray instead of closing."""
