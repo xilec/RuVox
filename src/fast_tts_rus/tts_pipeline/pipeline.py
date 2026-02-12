@@ -344,7 +344,7 @@ class TTSPipeline:
 
     def _process_inline_code_tracked(self, tracked: TrackedText) -> None:
         """Process inline code with tracking."""
-        pattern = r'`([^`]+)`'
+        pattern = r'`([^`\n]+)`'
 
         def replace_inline(match):
             code = match.group(1)
