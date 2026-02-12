@@ -190,7 +190,8 @@ class MermaidRenderer(QObject):
 <html><head><meta charset="utf-8">
 <style>
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-  body {{ background: white; padding: 8px; }}
+  html, body {{ overflow: hidden; }}
+  body {{ background: white; padding: 8px; font-size: 20px; }}
 </style>
 </head><body>
 <pre class="mermaid">{escaped}</pre>
@@ -200,7 +201,7 @@ class MermaidRenderer(QObject):
   window.renderError = null;
   window.svgWidth = 0;
   window.svgHeight = 0;
-  mermaid.initialize({{startOnLoad: false, theme: 'default'}});
+  mermaid.initialize({{startOnLoad: false, theme: 'default', themeVariables: {{fontSize: '20px'}}}});
   mermaid.run().then(function() {{
     var svg = document.querySelector('svg');
     if (svg) {{

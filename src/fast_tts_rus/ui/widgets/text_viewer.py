@@ -154,6 +154,10 @@ class TextViewerWidget(QTextBrowser):
             # Plain text mode - no mapping needed
             self._markdown_mapper = None
             self._mermaid_blocks = []
+            # Clear HTML artifacts (link styles, CSS) before setting plain text
+            self.document().clear()
+            self.document().setDefaultStyleSheet("")
+            self.setCurrentCharFormat(QTextCharFormat())
             self.setPlainText(text)
             logger.debug("Rendered plain text")
 

@@ -792,3 +792,71 @@ class TestTextViewerLinkNavigation:
             if viewer._mermaid_renderer:
                 viewer._mermaid_renderer.cleanup()
             viewer.deleteLater()
+
+    def test_plain_text_has_no_link_formatting(self, qapp):
+        """Plain text after markdown should not have link character format."""
+        from fast_tts_rus.ui.widgets.text_viewer import TextViewerWidget, TextFormat
+        from fast_tts_rus.ui.models.entry import TextEntry
+        from PyQt6.QtGui import QTextCursor
+
+        viewer = TextViewerWidget()
+        try:
+            # Set markdown with mermaid (which injects <a> tags)
+            viewer.set_format(TextFormat.MARKDOWN)
+            with patch.object(viewer, "_start_mermaid_rendering"):
+                viewer.set_entry(TextEntry(original_text=MARKDOWN_WITH_MERMAID))
+
+            # Switch to plain text
+            viewer.set_format(TextFormat.PLAIN)
+
+            # Check that no text has anchor formatting
+            cursor = QTextCursor(viewer.document())
+            cursor.movePosition(QTextCursor.MoveOperation.Start)
+            cursor.movePosition(
+                QTextCursor.MoveOperation.End,
+                QTextCursor.MoveMode.KeepAnchor,
+            )
+            char_format = cursor.charFormat()
+            assert not char_format.isAnchor(), (
+                "Plain text has anchor formatting — link styles leaked from HTML"
+            )
+
+            # Default stylesheet should be cleared
+            assert viewer.document().defaultStyleSheet() == ""
+        finally:
+            if viewer._mermaid_renderer:
+                viewer._mermaid_renderer.cleanup()
+            viewer.deleteLater()
+
+    def test_switch_entry_after_mermaid_clears_formatting(self, qapp):
+        """Switching to a new entry should not carry over link formatting."""
+        from fast_tts_rus.ui.widgets.text_viewer import TextViewerWidget, TextFormat
+        from fast_tts_rus.ui.models.entry import TextEntry
+        from PyQt6.QtGui import QTextCursor
+
+        viewer = TextViewerWidget()
+        try:
+            # Set markdown with mermaid
+            viewer.set_format(TextFormat.MARKDOWN)
+            with patch.object(viewer, "_start_mermaid_rendering"):
+                viewer.set_entry(TextEntry(original_text=MARKDOWN_WITH_MERMAID))
+
+            # Switch to plain text mode and set a simple entry
+            viewer.set_format(TextFormat.PLAIN)
+            viewer.set_entry(TextEntry(original_text="Simple plain text"))
+
+            plain = viewer.toPlainText()
+            assert plain == "Simple plain text"
+
+            # Verify no anchor format
+            cursor = QTextCursor(viewer.document())
+            cursor.movePosition(QTextCursor.MoveOperation.Start)
+            cursor.movePosition(
+                QTextCursor.MoveOperation.End,
+                QTextCursor.MoveMode.KeepAnchor,
+            )
+            assert not cursor.charFormat().isAnchor()
+        finally:
+            if viewer._mermaid_renderer:
+                viewer._mermaid_renderer.cleanup()
+            viewer.deleteLater()
