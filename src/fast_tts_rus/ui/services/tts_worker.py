@@ -318,23 +318,18 @@ class TTSRunnable(QRunnable):
     def _extract_words_with_positions(self, text: str) -> list[tuple[str, int, int]]:
         """Extract words from text with their positions.
 
+        Uses regex to extract only word characters (letters, digits, underscore),
+        excluding punctuation to avoid highlighting punctuation marks.
+
         Returns:
             List of (word, start, end) tuples
         """
+        import re
         words = []
-        i = 0
-        while i < len(text):
-            # Skip whitespace
-            while i < len(text) and text[i].isspace():
-                i += 1
-            if i >= len(text):
-                break
-            # Find word
-            start = i
-            while i < len(text) and not text[i].isspace():
-                i += 1
-            end = i
-            word = text[start:end]
+        for match in re.finditer(r'\b\w+\b', text):
+            word = match.group()
+            start = match.start()
+            end = match.end()
             words.append((word, start, end))
         return words
 
