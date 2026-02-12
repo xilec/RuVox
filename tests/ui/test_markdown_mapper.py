@@ -307,6 +307,34 @@ class TestMarkdownPositionMapper:
                 rendered_word == word
             ), f"Expected {word!r}, got {rendered_word!r}"
 
+    def test_single_char_variables(self, qapp):
+        """Test repeated single-character variables (like x, y) in code."""
+        # Regression test for issue with single-char variable highlighting
+        original = """```
+p.x += 1
+p.x = p.y
+```"""
+
+        mapper = MarkdownPositionMapper(original)
+        mapper.build_mapping()
+
+        # Find all 'x' positions in original
+        x_positions = [i for i, char in enumerate(original) if char == 'x']
+        assert len(x_positions) == 2, f"Expected 2 'x' chars, found {len(x_positions)}"
+
+        # Both 'x' should map correctly to different positions in rendered
+        results = []
+        for x_pos in x_positions:
+            result = mapper.get_rendered_range(x_pos, x_pos + 1)
+            assert result is not None, f"No mapping for 'x' at position {x_pos}"
+            rend_start, rend_end = result
+            rendered_char = mapper.rendered_plain[rend_start:rend_end]
+            assert rendered_char == 'x', f"Expected 'x', got {rendered_char!r}"
+            results.append((rend_start, rend_end))
+
+        # Positions should be different (not both mapping to the same 'x')
+        assert results[0] != results[1], "Both 'x' chars map to the same position!"
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

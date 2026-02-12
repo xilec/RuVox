@@ -2,11 +2,13 @@
 
 Maps character positions between original Markdown text and rendered plain text,
 enabling accurate word highlighting when displaying Markdown with formatting.
+
+Uses difflib.SequenceMatcher for precise character-level alignment between
+original Markdown and rendered plain text, eliminating the need for search-based
+position mapping.
 """
 
 import logging
-import re
-from xml.etree import ElementTree as ET
 
 import markdown
 
@@ -76,17 +78,8 @@ class MarkdownPositionMapper:
         if not html or not self.rendered_plain:
             return html
 
-        # Extract text chunks from ElementTree
-        # Note: parser.root may not exist for empty documents
-        if not hasattr(md_instance.parser, "root"):
-            logger.debug("Parser has no root element (empty document)")
-            return html
-
-        root = md_instance.parser.root
-        text_chunks = self._extract_text_chunks(root)
-
-        # Build position mapping
-        self._build_position_map(text_chunks)
+        # Build exact character-level position mapping using sequence alignment
+        self._build_position_map()
 
         return html
 
@@ -158,150 +151,44 @@ class MarkdownPositionMapper:
         doc.setHtml(html)
         return doc.toPlainText()
 
-    def _extract_text_chunks(self, root: ET.Element) -> list[str]:
-        """Extract text chunks from ElementTree in document order.
+    def _build_position_map(self) -> None:
+        """Build exact character-level position mapping using sequence alignment.
 
-        Only extracts text that will be visible in the rendered output,
-        ignoring Markdown syntax elements.
+        Uses difflib.SequenceMatcher to align original Markdown text with rendered
+        plain text. This provides precise position mapping without search or tracking
+        used ranges.
 
-        Args:
-            root: Root element of the parsed Markdown tree
-
-        Returns:
-            List of text chunks in document order
+        Markdown syntax (**, #, `, etc.) appears as 'delete' operations in alignment,
+        while matching text creates direct character-level mappings.
         """
-        chunks: list[str] = []
+        from difflib import SequenceMatcher
 
-        def walk(elem: ET.Element) -> None:
-            # Text before first child
-            if elem.text:
-                text = elem.text.strip()
-                if text:
-                    chunks.append(text)
+        matcher = SequenceMatcher(None, self.original_text, self.rendered_plain)
 
-            # Process children recursively
-            for child in elem:
-                walk(child)
-                # Text after child (tail)
-                if child.tail:
-                    text = child.tail.strip()
-                    if text:
-                        chunks.append(text)
-
-        walk(root)
-        return chunks
-
-    def _build_position_map(self, text_chunks: list[str]) -> None:
-        """Build character-level position mapping.
-
-        Maps each character position in original text to corresponding position
-        in rendered plain text. Handles multiple occurrences of the same text chunk.
-
-        If text_chunks from ElementTree are insufficient (e.g., code blocks use
-        placeholders), falls back to word-level matching.
-
-        Args:
-            text_chunks: List of text chunks extracted from rendered document
-        """
-        rendered_pos = 0
-        used_original_ranges: list[tuple[int, int]] = []
-
-        for chunk in text_chunks:
-            # Find chunk in rendered plain text
-            rendered_idx = self.rendered_plain.find(chunk, rendered_pos)
-            if rendered_idx == -1:
-                logger.debug("Chunk %r not found in rendered text", chunk)
-                continue
-
-            # Find first unused occurrence in original text
-            original_idx = self._find_unused_occurrence(chunk, used_original_ranges)
-            if original_idx == -1:
-                logger.debug("Chunk %r not found in original text", chunk)
-                continue
-
-            # Map each character in the chunk
-            for i in range(len(chunk)):
-                self.position_map[original_idx + i] = rendered_idx + i
-
-            # Mark this range as used
-            used_original_ranges.append((original_idx, original_idx + len(chunk)))
-            rendered_pos = rendered_idx + len(chunk)
-
-        # Always add word-level mapping for unmapped regions (e.g., code blocks)
-        # This handles cases where ElementTree doesn't extract all text chunks
-        coverage = len(self.position_map) / len(self.rendered_plain) if self.rendered_plain else 0
-        logger.debug(f"Coverage: {coverage:.1%}, adding word-level fallback for unmapped regions")
-        self._add_word_level_mapping(used_original_ranges)
+        for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+            if tag == 'equal':
+                # Characters match exactly - create direct mapping
+                for k in range(i2 - i1):
+                    self.position_map[i1 + k] = j1 + k
+            elif tag == 'delete':
+                # Markdown syntax removed during rendering - no mapping needed
+                pass
+            elif tag == 'replace':
+                # Characters changed (e.g., HTML entities decoded by Qt)
+                # Map them proportionally for rough alignment
+                orig_len = i2 - i1
+                rend_len = j2 - j1
+                if orig_len > 0 and rend_len > 0:
+                    for k in range(orig_len):
+                        # Proportional mapping for replaced sections
+                        rend_offset = int(k * rend_len / orig_len)
+                        self.position_map[i1 + k] = j1 + rend_offset
+            elif tag == 'insert':
+                # Text inserted in rendered (shouldn't happen for Markdown)
+                # This might occur if Qt adds something during rendering
+                pass
 
         logger.debug(
-            "Built position map with %d mappings for %d chunks",
+            "Built position map with %d mappings using sequence alignment",
             len(self.position_map),
-            len(text_chunks),
         )
-
-    def _add_word_level_mapping(self, used_ranges: list[tuple[int, int]]) -> None:
-        """Add word-level mapping as fallback for unmapped regions.
-
-        Extracts words from both original and rendered text and maps them.
-        Useful for code blocks and other special content.
-
-        Args:
-            used_ranges: Already mapped ranges to avoid duplicates
-        """
-        # Extract words from rendered plain
-        rendered_words = list(re.finditer(r'\b\w+\b', self.rendered_plain))
-
-        # Track rendered position
-        for rendered_match in rendered_words:
-            rendered_word = rendered_match.group()
-            rendered_start = rendered_match.start()
-
-            # Check if any position in this word is already mapped
-            if any((rendered_start + i) in self.position_map.values() for i in range(len(rendered_word))):
-                continue
-
-            # Find this word in original (first unused occurrence)
-            original_idx = self._find_unused_occurrence(rendered_word, used_ranges)
-            if original_idx == -1:
-                continue
-
-            # Map each character
-            for i in range(len(rendered_word)):
-                if original_idx + i not in self.position_map:
-                    self.position_map[original_idx + i] = rendered_start + i
-
-            used_ranges.append((original_idx, original_idx + len(rendered_word)))
-
-    def _find_unused_occurrence(
-        self, chunk: str, used_ranges: list[tuple[int, int]]
-    ) -> int:
-        """Find first occurrence of chunk not in used ranges.
-
-        Args:
-            chunk: Text to find
-            used_ranges: List of (start, end) ranges already used
-
-        Returns:
-            Start position of chunk, or -1 if not found
-        """
-        search_pos = 0
-        while True:
-            idx = self.original_text.find(chunk, search_pos)
-            if idx == -1:
-                return -1
-
-            # Check if this position overlaps with used ranges
-            chunk_end = idx + len(chunk)
-            is_used = any(
-                # Check for overlap: chunk overlaps with range if:
-                # chunk_start < range_end AND chunk_end > range_start
-                idx < range_end and chunk_end > range_start
-                for range_start, range_end in used_ranges
-            )
-
-            if not is_used:
-                return idx
-
-            search_pos = idx + 1
-
-        return -1
