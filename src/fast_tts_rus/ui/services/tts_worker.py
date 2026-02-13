@@ -333,67 +333,6 @@ class TTSRunnable(QRunnable):
             words.append((word, start, end))
         return words
 
-    def _estimate_timestamps(
-        self,
-        text: str,
-        total_duration: float,
-        char_mapping=None,
-    ) -> list[dict[str, Any]]:
-        """Estimate word timestamps based on word length.
-
-        This is a fallback method when Silero doesn't provide timestamps.
-        It estimates timing based on the proportion of each word's length
-        to the total text length.
-
-        Args:
-            text: Normalized text
-            total_duration: Total audio duration in seconds
-            char_mapping: CharMapping from TrackedText for precise position mapping
-
-        Note: This is approximate and may not align perfectly with speech.
-        """
-        words = text.split()
-        if not words:
-            return []
-
-        # Count total characters (excluding spaces)
-        total_chars = sum(len(w) for w in words)
-        if total_chars == 0:
-            return []
-
-        timestamps = []
-        current_time = 0.0
-        current_pos = 0  # Position in normalized text
-
-        for word in words:
-            # Estimate word duration proportionally to character count
-            word_duration = (len(word) / total_chars) * total_duration
-
-            # Calculate word position in normalized text
-            word_start_norm = current_pos
-            word_end_norm = current_pos + len(word)
-
-            # Map to original text position using CharMapping
-            if char_mapping is not None:
-                orig_start, orig_end = char_mapping.get_original_range(
-                    word_start_norm, word_end_norm
-                )
-            else:
-                # Fallback: use normalized positions
-                orig_start = word_start_norm
-                orig_end = word_end_norm
-
-            timestamps.append({
-                "word": word,
-                "start": round(current_time, 3),
-                "end": round(current_time + word_duration, 3),
-                "original_pos": [orig_start, orig_end]
-            })
-
-            current_time += word_duration
-            current_pos = word_end_norm + 1  # +1 for space
-
-        return timestamps
 
 
 class TTSWorker(QObject):
