@@ -4,6 +4,7 @@ import re
 from fast_tts_rus.tts_pipeline.constants import GREEK_LETTERS, MATH_SYMBOLS, ARROW_SYMBOLS
 from .numbers import NumberNormalizer
 from .abbreviations import AbbreviationNormalizer
+from .symbols import SymbolNormalizer
 
 
 class CodeIdentifierNormalizer:
@@ -622,28 +623,9 @@ class CodeBlockHandler:
                     return self.code_normalizer.CODE_WORDS[lower]
                 return self.code_normalizer._basic_transliterate(lower)
 
-        # Operators
-        operators = {
-            '=': 'равно',
-            '==': 'равно равно',
-            '!=': 'не равно',
-            '+': 'плюс',
-            '-': 'минус',
-            '*': 'умножить',
-            '/': 'делить',
-            '(': 'открывающая скобка',
-            ')': 'закрывающая скобка',
-            '[': 'открывающая квадратная скобка',
-            ']': 'закрывающая квадратная скобка',
-            '{': 'открывающая фигурная скобка',
-            '}': 'закрывающая фигурная скобка',
-            ':': 'двоеточие',
-            ';': 'точка с запятой',
-            '.': 'точка',
-            ',': 'запятая',
-        }
-
-        if token in operators:
-            return operators[token]
+        # Operators — use shared SYMBOLS dictionary
+        symbol = SymbolNormalizer.SYMBOLS.get(token)
+        if symbol is not None:
+            return symbol
 
         return ""
