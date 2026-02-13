@@ -350,9 +350,9 @@ class CodeIdentifierNormalizer:
         'm': 'эм',
     }
 
-    def __init__(self):
-        self.number_normalizer = NumberNormalizer()
-        self.abbrev_normalizer = AbbreviationNormalizer()
+    def __init__(self, number_normalizer=None, abbrev_normalizer=None):
+        self.number_normalizer = number_normalizer or NumberNormalizer()
+        self.abbrev_normalizer = abbrev_normalizer or AbbreviationNormalizer()
 
     def normalize_camel_case(self, identifier: str) -> str:
         """Convert camelCase/PascalCase to speakable text."""
@@ -508,10 +508,10 @@ class CodeBlockHandler:
         'mermaid': 'мёрмэйд',
     }
 
-    def __init__(self, mode: str = "full"):
+    def __init__(self, mode: str = "full", code_normalizer=None, number_normalizer=None):
         self.mode = mode
-        self.code_normalizer = CodeIdentifierNormalizer()
-        self.number_normalizer = NumberNormalizer()
+        self.code_normalizer = code_normalizer or CodeIdentifierNormalizer()
+        self.number_normalizer = number_normalizer or NumberNormalizer()
 
     def set_mode(self, mode: str) -> None:
         """Switch between 'full' and 'brief' modes."""

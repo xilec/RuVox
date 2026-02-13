@@ -51,8 +51,8 @@ class URLPathNormalizer:
         'h': 'эйч',
     }
 
-    def __init__(self, english_normalizer=None):
-        self.number_normalizer = NumberNormalizer()
+    def __init__(self, english_normalizer=None, number_normalizer=None):
+        self.number_normalizer = number_normalizer or NumberNormalizer()
         self._english_normalizer = english_normalizer
 
     def _transliterate_word(self, word: str) -> str:

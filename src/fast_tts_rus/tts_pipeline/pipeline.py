@@ -27,9 +27,19 @@ class TTSPipeline:
         self.english_normalizer = EnglishNormalizer()
         self.abbrev_normalizer = AbbreviationNormalizer()
         self.symbol_normalizer = SymbolNormalizer()
-        self.url_normalizer = URLPathNormalizer(english_normalizer=self.english_normalizer)
-        self.code_normalizer = CodeIdentifierNormalizer()
-        self.code_block_handler = CodeBlockHandler(mode=self.config.code_block_mode)
+        self.url_normalizer = URLPathNormalizer(
+            english_normalizer=self.english_normalizer,
+            number_normalizer=self.number_normalizer,
+        )
+        self.code_normalizer = CodeIdentifierNormalizer(
+            number_normalizer=self.number_normalizer,
+            abbrev_normalizer=self.abbrev_normalizer,
+        )
+        self.code_block_handler = CodeBlockHandler(
+            mode=self.config.code_block_mode,
+            code_normalizer=self.code_normalizer,
+            number_normalizer=self.number_normalizer,
+        )
 
         # Add custom terms if provided
         if self.config.custom_it_terms:
