@@ -499,7 +499,8 @@ class TTSPipeline:
 
         tracked.sub(self._RE_PERCENTAGE, replace_pct)
 
-    _TRACKED_OPERATORS = ['===', '!==', '->', '=>', '>=', '<=', '!=', '==', '&&', '||']
+    # Multi-char operators to replace in tracked mode (longest first for correct matching)
+    _TRACKED_OPERATOR_KEYS = ['===', '!==', '->', '=>', '>=', '<=', '!=', '==', '&&', '||']
 
     _RE_URL = re.compile(r'https?://[^\s<>"\'\)]+|ftp://[^\s<>"\'\)]+|ssh://[^\s<>"\'\)]+|git://[^\s<>"\'\)]+')
     _RE_EMAIL = re.compile(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}')
@@ -513,7 +514,7 @@ class TTSPipeline:
     def _process_operators_tracked(self, tracked: TrackedText) -> None:
         """Process operators with tracking."""
         symbols = SymbolNormalizer.SYMBOLS
-        for op in self._TRACKED_OPERATORS:
+        for op in self._TRACKED_OPERATOR_KEYS:
             tracked.replace(op, f' {symbols[op]} ')
 
     def _process_symbols_tracked(self, tracked: TrackedText) -> None:
