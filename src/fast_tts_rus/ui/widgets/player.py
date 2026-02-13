@@ -218,6 +218,18 @@ class PlayerWidget(QWidget):
             return False
 
         self.current_entry = entry
+
+        # Reset state for new file
+        self._duration_ms = 0
+        self.progress_slider.setValue(0)
+        self.progress_slider.setRange(0, 0)
+        self.time_current.setText("0:00")
+        self.time_total.setText("0:00")
+
+        # Set duration from entry (calculated from numpy data during TTS generation)
+        if entry.duration_sec is not None:
+            self._on_duration_changed(int(entry.duration_sec * 1000))
+
         self._player.loadfile(str(audio_path))
         self._update_controls_enabled(True)
         return True

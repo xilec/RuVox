@@ -1,7 +1,10 @@
 """Tests for PlayerWidget — unit tests that don't require mpv/Qt runtime."""
 
 import pytest
-from unittest.mock import patch
+from pathlib import Path
+from unittest.mock import patch, MagicMock
+
+from fast_tts_rus.ui.models.entry import TextEntry, EntryStatus
 
 
 class TestFormatTime:
@@ -103,3 +106,116 @@ class TestMpvUnavailable:
                 assert player_module._MPV_AVAILABLE is False
             finally:
                 player_module._MPV_AVAILABLE = original
+
+
+@pytest.fixture
+def player_widget(qapp, tmp_path):
+    """Create a real PlayerWidget with mocked mpv backend."""
+    import fast_tts_rus.ui.widgets.player as player_module
+
+    mock_mpv_instance = MagicMock()
+    mock_mpv_instance.duration = None
+    mock_mpv_instance.time_pos = None
+    mock_mpv_instance.pause = True
+
+    original_flag = player_module._MPV_AVAILABLE
+    player_module._MPV_AVAILABLE = True
+
+    with patch.object(player_module, "mpv", create=True) as mock_mpv_mod:
+        mock_mpv_mod.MPV.return_value = mock_mpv_instance
+        from fast_tts_rus.ui.widgets.player import PlayerWidget
+        widget = PlayerWidget()
+        # Ensure the mock player is set
+        widget._player = mock_mpv_instance
+        widget._mpv_available = True
+        yield widget
+        widget.deleteLater()
+
+    player_module._MPV_AVAILABLE = original_flag
+
+
+def _make_entry(tmp_path, duration_sec=None):
+    """Create a TextEntry with a dummy audio file."""
+    audio_file = tmp_path / "audio" / "test.wav"
+    audio_file.parent.mkdir(parents=True, exist_ok=True)
+    audio_file.write_bytes(b"\x00" * 100)
+    return TextEntry(
+        original_text="test",
+        status=EntryStatus.READY,
+        audio_path=Path("test.wav"),
+        duration_sec=duration_sec,
+    )
+
+
+class TestLoadEntryDuration:
+    """Test that load_entry correctly sets/resets duration."""
+
+    def test_load_entry_sets_duration_from_entry(self, player_widget, tmp_path):
+        """Duration from entry.duration_sec should be applied to UI."""
+        entry = _make_entry(tmp_path, duration_sec=12.5)
+        audio_dir = tmp_path / "audio"
+
+        player_widget.load_entry(entry, audio_dir)
+
+        assert player_widget._duration_ms == 12500
+        assert player_widget.time_total.text() == "0:12"
+        assert player_widget.progress_slider.maximum() == 12500
+
+    def test_load_entry_resets_old_duration(self, player_widget, tmp_path):
+        """Loading a new entry should reset the old duration first."""
+        audio_dir = tmp_path / "audio"
+
+        # Load first entry with long duration
+        entry1 = _make_entry(tmp_path, duration_sec=120.0)
+        player_widget.load_entry(entry1, audio_dir)
+        assert player_widget._duration_ms == 120000
+
+        # Load second entry with short duration
+        entry2 = _make_entry(tmp_path, duration_sec=5.0)
+        player_widget.load_entry(entry2, audio_dir)
+        assert player_widget._duration_ms == 5000
+        assert player_widget.time_total.text() == "0:05"
+
+    def test_load_entry_none_duration_resets(self, player_widget, tmp_path):
+        """Entry without duration_sec should reset duration to 0."""
+        audio_dir = tmp_path / "audio"
+
+        # First load with known duration
+        entry1 = _make_entry(tmp_path, duration_sec=30.0)
+        player_widget.load_entry(entry1, audio_dir)
+        assert player_widget._duration_ms == 30000
+
+        # Load entry without duration
+        entry2 = _make_entry(tmp_path, duration_sec=None)
+        player_widget.load_entry(entry2, audio_dir)
+        assert player_widget._duration_ms == 0
+        assert player_widget.time_total.text() == "0:00"
+
+    def test_load_entry_position_reset(self, player_widget, tmp_path):
+        """Slider and time_current should be reset to 0 on new load."""
+        audio_dir = tmp_path / "audio"
+        entry = _make_entry(tmp_path, duration_sec=10.0)
+
+        # Simulate some position state
+        player_widget.progress_slider.setValue(5000)
+        player_widget.time_current.setText("0:05")
+
+        player_widget.load_entry(entry, audio_dir)
+
+        assert player_widget.progress_slider.value() == 0
+        assert player_widget.time_current.text() == "0:00"
+
+    def test_mpv_callback_overrides_entry_duration(self, player_widget, tmp_path):
+        """mpv duration callback should override the entry-based duration."""
+        audio_dir = tmp_path / "audio"
+        entry = _make_entry(tmp_path, duration_sec=10.0)
+
+        player_widget.load_entry(entry, audio_dir)
+        assert player_widget._duration_ms == 10000
+
+        # Simulate mpv reporting a different duration
+        player_widget._on_duration_changed(10500)
+
+        assert player_widget._duration_ms == 10500
+        assert player_widget.time_total.text() == "0:10"
+        assert player_widget.progress_slider.maximum() == 10500
