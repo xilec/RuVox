@@ -18,14 +18,6 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-@pytest.fixture(scope="module")
-def qapp():
-    """Create QApplication instance for tests."""
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    yield app
-
 
 class TestMermaidPreviewDialog:
     """Test MermaidPreviewDialog creation and content."""

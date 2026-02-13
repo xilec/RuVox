@@ -90,17 +90,6 @@ End of document.
 """
 
 
-@pytest.fixture(scope="module")
-def qapp():
-    """Create QApplication instance for tests.
-
-    QWebEngineView (Chromium) requires a non-empty argv with program name.
-    """
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication(["test"])
-    yield app
-
 
 def _wait_for_signal(signal, timeout_ms=10000):
     """Block until signal emits or timeout.  Returns True if signal fired."""

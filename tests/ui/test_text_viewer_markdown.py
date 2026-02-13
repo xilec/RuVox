@@ -7,14 +7,6 @@ from fast_tts_rus.ui.widgets.text_viewer import TextViewerWidget, TextFormat
 from fast_tts_rus.ui.models.entry import TextEntry, EntryStatus
 
 
-@pytest.fixture(scope="module")
-def qapp():
-    """Create QApplication instance for tests."""
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    yield app
-
 
 @pytest.fixture
 def text_viewer(qapp):

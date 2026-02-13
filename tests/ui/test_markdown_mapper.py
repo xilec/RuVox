@@ -6,14 +6,6 @@ from PyQt6.QtWidgets import QApplication
 from fast_tts_rus.ui.utils.markdown_mapper import MarkdownPositionMapper
 
 
-@pytest.fixture(scope="module")
-def qapp():
-    """Create QApplication instance for tests."""
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    yield app
-
 
 class TestMarkdownPositionMapper:
     """Test suite for MarkdownPositionMapper."""

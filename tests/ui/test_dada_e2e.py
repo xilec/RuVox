@@ -29,14 +29,6 @@ println("Hello, Dada!")
 Думаю, все вы сможете догадаться, что она делает. Тем не менее, даже в этой простой программе есть кое-что, на что стоит обратить внимание:"""
 
 
-@pytest.fixture(scope="module")
-def qapp():
-    """Create QApplication instance for tests."""
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    yield app
-
 
 @pytest.fixture
 def text_viewer(qapp):

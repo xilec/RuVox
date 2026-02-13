@@ -10,10 +10,11 @@ from PyQt6.QtWidgets import QApplication
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _ensure_qapp_with_args():
-    """Create QApplication with argv if not yet created.
+def qapp():
+    """Create or retrieve QApplication instance for all UI tests.
 
-    Session-scoped and autouse so it runs before any module-scoped qapp fixtures.
+    Session-scoped and autouse: runs before any test and provides
+    a QApplication with non-empty argv (required by QWebEngineView/Chromium).
     """
     app = QApplication.instance()
     if app is None:
