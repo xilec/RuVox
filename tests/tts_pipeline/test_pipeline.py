@@ -403,6 +403,25 @@ class TestInlineCode:
         for part in expected_contains:
             assert part.lower() in result.lower()
 
+    @pytest.mark.parametrize(
+        "input_text,expected_contains",
+        [
+            ("`given`", ["гиван"]),
+            ("`foo`", ["фу"]),
+            ("`some unknown word`", ["сам", "анноун", "верд"]),
+            ("`run my test`", ["ран", "май", "тест"]),
+        ],
+    )
+    def test_inline_code_unknown_words_transliterated(
+        self, pipeline, input_text, expected_contains
+    ):
+        """Unknown English words in inline code should be transliterated."""
+        result = pipeline.process(input_text)
+        for part in expected_contains:
+            assert part.lower() in result.lower(), (
+                f"Expected '{part}' in result: {result}"
+            )
+
 
 class TestMarkdownStructure:
     """Tests for markdown structural elements."""

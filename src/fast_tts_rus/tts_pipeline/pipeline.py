@@ -359,6 +359,22 @@ class TTSPipeline:
 
         tracked.sub(pattern, replace_block, flags=re.DOTALL)
 
+    def _normalize_code_words(self, code: str) -> str:
+        """Normalize space-separated code words using dictionaries and English fallback."""
+        words = code.split()
+        result = []
+        for word in words:
+            word_lower = word.lower()
+            if word_lower in self.code_normalizer.CODE_WORDS:
+                result.append(self.code_normalizer.CODE_WORDS[word_lower])
+            elif word_lower in self.english_normalizer.IT_TERMS:
+                result.append(self.english_normalizer.IT_TERMS[word_lower])
+            elif word.isascii() and any(c.isalpha() for c in word):
+                result.append(self.english_normalizer.normalize(word))
+            else:
+                result.append(word)
+        return ' '.join(result)
+
     def _process_inline_code_tracked(self, tracked: TrackedText) -> None:
         """Process inline code with tracking."""
         pattern = r'`([^`\n]+)`'
@@ -380,17 +396,7 @@ class TTSPipeline:
             code = ' '.join(code.split())
 
             if has_greek_or_special:
-                words = code.split()
-                result = []
-                for word in words:
-                    word_lower = word.lower()
-                    if word_lower in self.code_normalizer.CODE_WORDS:
-                        result.append(self.code_normalizer.CODE_WORDS[word_lower])
-                    elif word_lower in self.english_normalizer.IT_TERMS:
-                        result.append(self.english_normalizer.IT_TERMS[word_lower])
-                    else:
-                        result.append(word)
-                return ' '.join(result)
+                return self._normalize_code_words(code)
 
             if '_' in code:
                 return self.code_normalizer.normalize_snake_case(code)
@@ -399,17 +405,7 @@ class TTSPipeline:
             elif any(c.isupper() for c in code[1:]) and any(c.islower() for c in code):
                 return self.code_normalizer.normalize_camel_case(code)
             else:
-                words = code.split()
-                result = []
-                for word in words:
-                    word_lower = word.lower()
-                    if word_lower in self.code_normalizer.CODE_WORDS:
-                        result.append(self.code_normalizer.CODE_WORDS[word_lower])
-                    elif word_lower in self.english_normalizer.IT_TERMS:
-                        result.append(self.english_normalizer.IT_TERMS[word_lower])
-                    else:
-                        result.append(word)
-                return ' '.join(result)
+                return self._normalize_code_words(code)
 
         tracked.sub(pattern, replace_inline)
 
