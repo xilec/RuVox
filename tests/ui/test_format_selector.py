@@ -6,11 +6,43 @@ They verify UI structure and component interactions (contracts).
 
 import pytest
 from unittest.mock import Mock, patch, MagicMock
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QWidget
 
 from fast_tts_rus.ui.main_window import MainWindow
 from fast_tts_rus.ui.widgets.text_viewer import TextFormat
 from fast_tts_rus.ui.models.config import UIConfig
+
+
+class StubPlayerWidget(QWidget):
+    """Stub PlayerWidget for testing - avoids mpv initialization."""
+
+    # Mock signals as class attributes
+    next_requested = Mock()
+    prev_requested = Mock()
+    playback_started = Mock()
+    playback_stopped = Mock()
+    position_changed = Mock()
+
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+        self.current_entry = None
+        self.setMinimumHeight(80)
+
+        # Make signals work like real Qt signals (callable mocks)
+        self.next_requested = Mock()
+        self.prev_requested = Mock()
+        self.playback_started = Mock()
+        self.playback_stopped = Mock()
+        self.position_changed = Mock()
+
+        # Mock methods
+        self.load_entry = Mock(return_value=True)
+        self.play = Mock()
+        self.stop = Mock()
+        self.toggle_play_pause = Mock()
+        self.seek_relative = Mock()
+        self.speed_up = Mock()
+        self.speed_down = Mock()
 
 
 @pytest.fixture(scope="module")
@@ -43,40 +75,6 @@ def main_window(qapp, mock_app):
     PlayerWidget is mocked because it requires mpv which causes segfault in tests.
     We verify UI structure and method calls, not player functionality.
     """
-    from PyQt6.QtWidgets import QWidget
-
-    # Create a stub PlayerWidget that is a real QWidget
-    class StubPlayerWidget(QWidget):
-        """Stub PlayerWidget for testing - avoids mpv initialization."""
-
-        # Mock signals as class attributes
-        next_requested = Mock()
-        prev_requested = Mock()
-        playback_started = Mock()
-        playback_stopped = Mock()
-        position_changed = Mock()
-
-        def __init__(self, *args, **kwargs):
-            super().__init__()
-            self.current_entry = None
-            self.setMinimumHeight(80)
-
-            # Make signals work like real Qt signals (callable mocks)
-            self.next_requested = Mock()
-            self.prev_requested = Mock()
-            self.playback_started = Mock()
-            self.playback_stopped = Mock()
-            self.position_changed = Mock()
-
-            # Mock methods
-            self.load_entry = Mock(return_value=True)
-            self.play = Mock()
-            self.stop = Mock()
-            self.toggle_play_pause = Mock()
-            self.seek_relative = Mock()
-            self.speed_up = Mock()
-            self.speed_down = Mock()
-
     with patch('fast_tts_rus.ui.main_window.PlayerWidget', StubPlayerWidget):
         window = MainWindow(mock_app)
         yield window
@@ -162,33 +160,6 @@ class TestFormatRestoration:
 
     def test_restore_markdown_format(self, qapp, mock_app):
         """Should restore markdown format from config on load_entries()."""
-        from PyQt6.QtWidgets import QWidget
-
-        class StubPlayerWidget(QWidget):
-            """Stub PlayerWidget for testing - avoids mpv initialization."""
-            next_requested = Mock()
-            prev_requested = Mock()
-            playback_started = Mock()
-            playback_stopped = Mock()
-            position_changed = Mock()
-
-            def __init__(self, *args, **kwargs):
-                super().__init__()
-                self.current_entry = None
-                self.setMinimumHeight(80)
-                self.next_requested = Mock()
-                self.prev_requested = Mock()
-                self.playback_started = Mock()
-                self.playback_stopped = Mock()
-                self.position_changed = Mock()
-                self.load_entry = Mock(return_value=True)
-                self.play = Mock()
-                self.stop = Mock()
-                self.toggle_play_pause = Mock()
-                self.seek_relative = Mock()
-                self.speed_up = Mock()
-                self.speed_down = Mock()
-
         with patch('fast_tts_rus.ui.main_window.PlayerWidget', StubPlayerWidget):
             mock_app.config.text_format = "markdown"
             mock_app.config.save = Mock()
@@ -204,33 +175,6 @@ class TestFormatRestoration:
 
     def test_invalid_format_fallback(self, qapp, mock_app):
         """Invalid format in config should fallback to plain."""
-        from PyQt6.QtWidgets import QWidget
-
-        class StubPlayerWidget(QWidget):
-            """Stub PlayerWidget for testing - avoids mpv initialization."""
-            next_requested = Mock()
-            prev_requested = Mock()
-            playback_started = Mock()
-            playback_stopped = Mock()
-            position_changed = Mock()
-
-            def __init__(self, *args, **kwargs):
-                super().__init__()
-                self.current_entry = None
-                self.setMinimumHeight(80)
-                self.next_requested = Mock()
-                self.prev_requested = Mock()
-                self.playback_started = Mock()
-                self.playback_stopped = Mock()
-                self.position_changed = Mock()
-                self.load_entry = Mock(return_value=True)
-                self.play = Mock()
-                self.stop = Mock()
-                self.toggle_play_pause = Mock()
-                self.seek_relative = Mock()
-                self.speed_up = Mock()
-                self.speed_down = Mock()
-
         with patch('fast_tts_rus.ui.main_window.PlayerWidget', StubPlayerWidget):
             mock_app.config.text_format = "invalid_format"
             mock_app.config.save = Mock()
@@ -249,33 +193,6 @@ class TestFormatPersistence:
 
     def test_format_persists_across_sessions(self, qapp, tmp_path):
         """Format should persist when saved and loaded again."""
-        from PyQt6.QtWidgets import QWidget
-
-        class StubPlayerWidget(QWidget):
-            """Stub PlayerWidget for testing - avoids mpv initialization."""
-            next_requested = Mock()
-            prev_requested = Mock()
-            playback_started = Mock()
-            playback_stopped = Mock()
-            position_changed = Mock()
-
-            def __init__(self, *args, **kwargs):
-                super().__init__()
-                self.current_entry = None
-                self.setMinimumHeight(80)
-                self.next_requested = Mock()
-                self.prev_requested = Mock()
-                self.playback_started = Mock()
-                self.playback_stopped = Mock()
-                self.position_changed = Mock()
-                self.load_entry = Mock(return_value=True)
-                self.play = Mock()
-                self.stop = Mock()
-                self.toggle_play_pause = Mock()
-                self.seek_relative = Mock()
-                self.speed_up = Mock()
-                self.speed_down = Mock()
-
         with patch('fast_tts_rus.ui.main_window.PlayerWidget', StubPlayerWidget):
             # Session 1: Create window, change format, save
             config = UIConfig(cache_dir=tmp_path)
