@@ -3,7 +3,7 @@
 import pytest
 from PyQt6.QtWidgets import QApplication
 
-from fast_tts_rus.ui.utils.markdown_mapper import MarkdownPositionMapper
+from ruvox.ui.utils.markdown_mapper import MarkdownPositionMapper
 
 
 

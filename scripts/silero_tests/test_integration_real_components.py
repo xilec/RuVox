@@ -22,10 +22,10 @@ from PyQt6.QtCore import QTimer
 import mpv
 
 # Импортируем РЕАЛЬНЫЕ компоненты из приложения
-from fast_tts_rus.ui.models.config import UIConfig
-from fast_tts_rus.ui.models.entry import TextEntry, EntryStatus
-from fast_tts_rus.ui.services.storage import StorageService
-from fast_tts_rus.ui.services.tts_worker import TTSWorker
+from ruvox.ui.models.config import UIConfig
+from ruvox.ui.models.entry import TextEntry, EntryStatus
+from ruvox.ui.services.storage import StorageService
+from ruvox.ui.services.tts_worker import TTSWorker
 
 print("All imports done", flush=True)
 

@@ -1,14 +1,14 @@
 """Tests for word mapping functionality."""
 
 import pytest
-from fast_tts_rus.tts_pipeline.word_mapping import (
+from ruvox.tts_pipeline.word_mapping import (
     WordSpan,
     WordMapping,
     tokenize_words,
     build_word_mapping,
     _is_possible_transliteration,
 )
-from fast_tts_rus.tts_pipeline import TTSPipeline
+from ruvox.tts_pipeline import TTSPipeline
 
 
 class TestTokenizeWords:

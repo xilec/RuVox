@@ -2,7 +2,7 @@
 import sys
 sys.path.insert(0, "src")
 
-from fast_tts_rus.tts_pipeline import TTSPipeline, tokenize_words
+from ruvox.tts_pipeline import TTSPipeline, tokenize_words
 
 
 def test_text(original: str):

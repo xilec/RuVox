@@ -1,7 +1,7 @@
 """Pytest configuration and fixtures."""
 
 import pytest
-from fast_tts_rus.tts_pipeline import (
+from ruvox.tts_pipeline import (
     PipelineConfig,
     TTSPipeline,
     EnglishNormalizer,

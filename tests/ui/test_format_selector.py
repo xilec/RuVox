@@ -8,9 +8,9 @@ import pytest
 from unittest.mock import Mock, patch, MagicMock
 from PyQt6.QtWidgets import QApplication, QWidget
 
-from fast_tts_rus.ui.main_window import MainWindow
-from fast_tts_rus.ui.widgets.text_viewer import TextFormat
-from fast_tts_rus.ui.models.config import UIConfig
+from ruvox.ui.main_window import MainWindow
+from ruvox.ui.widgets.text_viewer import TextFormat
+from ruvox.ui.models.config import UIConfig
 
 
 class StubPlayerWidget(QWidget):
@@ -67,7 +67,7 @@ def main_window(qapp, mock_app):
     PlayerWidget is mocked because it requires mpv which causes segfault in tests.
     We verify UI structure and method calls, not player functionality.
     """
-    with patch('fast_tts_rus.ui.main_window.PlayerWidget', StubPlayerWidget):
+    with patch('ruvox.ui.main_window.PlayerWidget', StubPlayerWidget):
         window = MainWindow(mock_app)
         yield window
         window.deleteLater()
@@ -152,7 +152,7 @@ class TestFormatRestoration:
 
     def test_restore_markdown_format(self, qapp, mock_app):
         """Should restore markdown format from config on load_entries()."""
-        with patch('fast_tts_rus.ui.main_window.PlayerWidget', StubPlayerWidget):
+        with patch('ruvox.ui.main_window.PlayerWidget', StubPlayerWidget):
             mock_app.config.text_format = "markdown"
             mock_app.config.save = Mock()
 
@@ -167,7 +167,7 @@ class TestFormatRestoration:
 
     def test_invalid_format_fallback(self, qapp, mock_app):
         """Invalid format in config should fallback to plain."""
-        with patch('fast_tts_rus.ui.main_window.PlayerWidget', StubPlayerWidget):
+        with patch('ruvox.ui.main_window.PlayerWidget', StubPlayerWidget):
             mock_app.config.text_format = "invalid_format"
             mock_app.config.save = Mock()
 
@@ -185,7 +185,7 @@ class TestFormatPersistence:
 
     def test_format_persists_across_sessions(self, qapp, tmp_path):
         """Format should persist when saved and loaded again."""
-        with patch('fast_tts_rus.ui.main_window.PlayerWidget', StubPlayerWidget):
+        with patch('ruvox.ui.main_window.PlayerWidget', StubPlayerWidget):
             # Session 1: Create window, change format, save
             config = UIConfig(cache_dir=tmp_path)
             config.text_format = "plain"

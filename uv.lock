@@ -194,70 +194,6 @@ wheels = [
 ]
 
 [[package]]
-name = "fast-tts-rus"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "evdev-binary" },
-    { name = "num2words" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-cov" },
-]
-g2p = [
-    { name = "eng-to-ipa" },
-    { name = "g2p-en" },
-]
-tts = [
-    { name = "numpy" },
-    { name = "omegaconf" },
-    { name = "scipy" },
-    { name = "torch" },
-]
-ui = [
-    { name = "dasbus" },
-    { name = "markdown" },
-    { name = "pyqt6" },
-    { name = "pyqt6-webengine" },
-    { name = "python-mpv" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-cov" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "dasbus", marker = "extra == 'ui'", specifier = ">=1.7,<2" },
-    { name = "eng-to-ipa", marker = "extra == 'g2p'", specifier = ">=0.0.2,<1" },
-    { name = "evdev-binary", specifier = ">=1.9.3,<2" },
-    { name = "g2p-en", marker = "extra == 'g2p'", specifier = ">=2.1.0,<3" },
-    { name = "markdown", marker = "extra == 'ui'", specifier = ">=3.5,<4" },
-    { name = "num2words", specifier = ">=0.5.12,<1" },
-    { name = "numpy", marker = "extra == 'tts'", specifier = ">=1.24,<3" },
-    { name = "omegaconf", marker = "extra == 'tts'", specifier = ">=2.3,<3" },
-    { name = "pyqt6", marker = "extra == 'ui'", specifier = ">=6.6.0,<7" },
-    { name = "pyqt6-webengine", marker = "extra == 'ui'", specifier = ">=6.6.0,<7" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0,<9" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0,<6" },
-    { name = "python-mpv", marker = "extra == 'ui'", specifier = ">=1.0,<2" },
-    { name = "scipy", marker = "extra == 'tts'", specifier = ">=1.10,<2" },
-    { name = "torch", marker = "extra == 'tts'", specifier = ">=2.0,<3" },
-]
-provides-extras = ["dev", "g2p", "tts", "ui"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest", specifier = ">=8.0,<9" },
-    { name = "pytest-cov", specifier = ">=4.0,<6" },
-]
-
-[[package]]
 name = "filelock"
 version = "3.20.3"
 source = { registry = "https://pypi.org/simple" }
@@ -1008,6 +944,70 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/e3/0d/3a6cfa9ae99606afb612d8fb7a66b245a9d5ff0f29bb347c8a30b6ad561b/regex-2026.1.15-cp314-cp314t-win32.whl", hash = "sha256:e90b8db97f6f2c97eb045b51a6b2c5ed69cedd8392459e0642d4199b94fabd7e", size = 274667, upload-time = "2026-01-14T23:17:19.301Z" },
     { url = "https://files.pythonhosted.org/packages/5b/b2/297293bb0742fd06b8d8e2572db41a855cdf1cae0bf009b1cb74fe07e196/regex-2026.1.15-cp314-cp314t-win_amd64.whl", hash = "sha256:5ef19071f4ac9f0834793af85bd04a920b4407715624e40cb7a0631a11137cdf", size = 284386, upload-time = "2026-01-14T23:17:21.231Z" },
     { url = "https://files.pythonhosted.org/packages/95/e4/a3b9480c78cf8ee86626cb06f8d931d74d775897d44201ccb813097ae697/regex-2026.1.15-cp314-cp314t-win_arm64.whl", hash = "sha256:ca89c5e596fc05b015f27561b3793dc2fa0917ea0d7507eebb448efd35274a70", size = 274837, upload-time = "2026-01-14T23:17:23.146Z" },
+]
+
+[[package]]
+name = "ruvox"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "evdev-binary" },
+    { name = "num2words" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+g2p = [
+    { name = "eng-to-ipa" },
+    { name = "g2p-en" },
+]
+tts = [
+    { name = "numpy" },
+    { name = "omegaconf" },
+    { name = "scipy" },
+    { name = "torch" },
+]
+ui = [
+    { name = "dasbus" },
+    { name = "markdown" },
+    { name = "pyqt6" },
+    { name = "pyqt6-webengine" },
+    { name = "python-mpv" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "dasbus", marker = "extra == 'ui'", specifier = ">=1.7,<2" },
+    { name = "eng-to-ipa", marker = "extra == 'g2p'", specifier = ">=0.0.2,<1" },
+    { name = "evdev-binary", specifier = ">=1.9.3,<2" },
+    { name = "g2p-en", marker = "extra == 'g2p'", specifier = ">=2.1.0,<3" },
+    { name = "markdown", marker = "extra == 'ui'", specifier = ">=3.5,<4" },
+    { name = "num2words", specifier = ">=0.5.12,<1" },
+    { name = "numpy", marker = "extra == 'tts'", specifier = ">=1.24,<3" },
+    { name = "omegaconf", marker = "extra == 'tts'", specifier = ">=2.3,<3" },
+    { name = "pyqt6", marker = "extra == 'ui'", specifier = ">=6.6.0,<7" },
+    { name = "pyqt6-webengine", marker = "extra == 'ui'", specifier = ">=6.6.0,<7" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0,<9" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0,<6" },
+    { name = "python-mpv", marker = "extra == 'ui'", specifier = ">=1.0,<2" },
+    { name = "scipy", marker = "extra == 'tts'", specifier = ">=1.10,<2" },
+    { name = "torch", marker = "extra == 'tts'", specifier = ">=2.0,<3" },
+]
+provides-extras = ["dev", "g2p", "tts", "ui"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.0,<9" },
+    { name = "pytest-cov", specifier = ">=4.0,<6" },
 ]
 
 [[package]]

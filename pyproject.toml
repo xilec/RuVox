@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "fast-tts-rus"
+name = "ruvox"
 version = "0.1.0"
-description = "Russian text preprocessing pipeline for TTS Silero"
+description = "RuVox — Russian text preprocessing pipeline for TTS Silero"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -41,10 +41,10 @@ ui = [
 ]
 
 [project.scripts]
-fast-tts-ui = "fast_tts_rus.ui.main:main"
+ruvox = "ruvox.ui.main:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/fast_tts_rus"]
+packages = ["src/ruvox"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -52,7 +52,7 @@ pythonpath = ["src"]
 addopts = "-v --tb=short"
 
 [tool.coverage.run]
-source = ["src/fast_tts_rus"]
+source = ["src/ruvox"]
 branch = true
 
 [tool.coverage.report]

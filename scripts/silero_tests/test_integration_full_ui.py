@@ -19,7 +19,7 @@ from PyQt6.QtDBus import QDBusConnection
 import mpv
 
 import torch
-from fast_tts_rus.tts_pipeline import TTSPipeline
+from ruvox.tts_pipeline import TTSPipeline
 
 
 class TestMainWindow(QMainWindow):

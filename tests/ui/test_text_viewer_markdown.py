@@ -3,8 +3,8 @@
 import pytest
 from PyQt6.QtWidgets import QApplication
 
-from fast_tts_rus.ui.widgets.text_viewer import TextViewerWidget, TextFormat
-from fast_tts_rus.ui.models.entry import TextEntry, EntryStatus
+from ruvox.ui.widgets.text_viewer import TextViewerWidget, TextFormat
+from ruvox.ui.models.entry import TextEntry, EntryStatus
 
 
 

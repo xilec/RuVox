@@ -6,7 +6,7 @@ import pytest
 import sys
 sys.path.insert(0, 'src')
 
-from fast_tts_rus.ui.services.tts_worker import TTSRunnable, MAX_CHUNK_SIZE
+from ruvox.ui.services.tts_worker import TTSRunnable, MAX_CHUNK_SIZE
 
 
 class MockConfig:
@@ -28,7 +28,7 @@ class TestTextChunking:
     @pytest.fixture
     def runnable(self):
         """Create a TTSRunnable for testing."""
-        from fast_tts_rus.ui.models.entry import TextEntry, EntryStatus
+        from ruvox.ui.models.entry import TextEntry, EntryStatus
         entry = TextEntry(
             id="test-id",
             original_text="test",
@@ -147,7 +147,7 @@ class TestTimestampCalculation:
     @pytest.fixture
     def runnable(self):
         """Create a TTSRunnable for testing."""
-        from fast_tts_rus.ui.models.entry import TextEntry, EntryStatus
+        from ruvox.ui.models.entry import TextEntry, EntryStatus
         entry = TextEntry(
             id="test-id",
             original_text="test",
@@ -250,7 +250,7 @@ class TestPositionMapping:
     @pytest.fixture
     def runnable(self):
         """Create a TTSRunnable for testing."""
-        from fast_tts_rus.ui.models.entry import TextEntry, EntryStatus
+        from ruvox.ui.models.entry import TextEntry, EntryStatus
         entry = TextEntry(
             id="test-id",
             original_text="test",
@@ -265,7 +265,7 @@ class TestPositionMapping:
 
     def test_char_mapping_simple(self, runnable):
         """Test CharMapping with a simple example."""
-        from fast_tts_rus.tts_pipeline.tracked_text import TrackedText
+        from ruvox.tts_pipeline.tracked_text import TrackedText
 
         # Simple case: replace one word
         tracked = TrackedText("Hello NVIDIA world")
@@ -299,7 +299,7 @@ class TestPositionMapping:
 
     def test_char_mapping_multiple_replacements(self, runnable):
         """Test CharMapping with multiple sequential replacements."""
-        from fast_tts_rus.tts_pipeline.tracked_text import TrackedText
+        from ruvox.tts_pipeline.tracked_text import TrackedText
 
         # Multiple replacements: "API and HTTP" -> "эй пи ай and эйч ти ти пи"
         tracked = TrackedText("API and HTTP")
@@ -338,7 +338,7 @@ class TestPositionMapping:
 
     def test_repeated_words(self, runnable):
         """Test that repeated words map to correct positions in order."""
-        from fast_tts_rus.tts_pipeline import TTSPipeline
+        from ruvox.tts_pipeline import TTSPipeline
 
         # Text with repeated word "Модель"
         original = "Модель работает. Модель обучается. Модель отвечает."
@@ -385,7 +385,7 @@ class TestPositionMapping:
         3. The lookahead (10 words) wasn't enough to find the next matching word
         4. Words started showing "No match" and indices got completely out of sync
         """
-        from fast_tts_rus.tts_pipeline import TTSPipeline
+        from ruvox.tts_pipeline import TTSPipeline
 
         # This mimics the GPT-5.3 article structure that caused the bug:
         # - Multiple expandable terms (NVIDIA, GPT-5.2-Codex, 25%, etc.)
@@ -447,7 +447,7 @@ class TestPositionMapping:
 
     def test_full_pipeline_with_normalization(self, runnable):
         """Test position mapping through the full pipeline with normalization."""
-        from fast_tts_rus.tts_pipeline import TTSPipeline
+        from ruvox.tts_pipeline import TTSPipeline
 
         original_text = """Модель обучалась и запускалась на системах NVIDIA GB200 NVL72. Это стойки с новыми ускорителями Blackwell, рассчитанные на плотную работу с большими моделями и агентами.
 
@@ -589,7 +589,7 @@ GPT-5.3-Codex может работать часами или днями, а п�
         The fix: check if normalized word could be transliteration of
         compound word parts (split on hyphens).
         """
-        from fast_tts_rus.tts_pipeline import TTSPipeline
+        from ruvox.tts_pipeline import TTSPipeline
 
         # Text containing the problematic sequence from the GPT-5.3 article
         original = """По бенчмаркам модель показывает лучшие результаты на SWE-Bench Pro и Terminal-Bench 2.0 — тестах, которые проверяют реальные навыки программирования и работы с терминалом. При этом GPT-5.3-Codex решает задачи."""
@@ -658,7 +658,7 @@ GPT-5.3-Codex может работать часами или днями, а п�
 
     def test_swe_bench_pro_expansion(self, runnable):
         """Test that SWE-Bench Pro expands and maps correctly."""
-        from fast_tts_rus.tts_pipeline import TTSPipeline
+        from ruvox.tts_pipeline import TTSPipeline
 
         original = "Тесты на SWE-Bench Pro показывают хорошие результаты."
 

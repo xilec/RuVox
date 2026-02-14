@@ -118,7 +118,7 @@ class TestMermaidRendererE2E:
 
     def test_render_produces_svg(self, qapp):
         """Full render cycle: code → SVG string in cache."""
-        from fast_tts_rus.ui.services.mermaid_renderer import MermaidRenderer
+        from ruvox.ui.services.mermaid_renderer import MermaidRenderer
 
         renderer = MermaidRenderer()
         try:
@@ -144,7 +144,7 @@ class TestMermaidRendererE2E:
 
     def test_mermaid_js_downloaded(self, qapp):
         """mermaid.min.js should be downloaded and cached on disk."""
-        from fast_tts_rus.ui.services.mermaid_renderer import MermaidRenderer, _mermaid_cache_dir
+        from ruvox.ui.services.mermaid_renderer import MermaidRenderer, _mermaid_cache_dir
 
         renderer = MermaidRenderer()
         try:
@@ -168,7 +168,7 @@ class TestMermaidRenderQuality:
 
         Screenshot: tmp/mermaid_quality_simple.png
         """
-        from fast_tts_rus.ui.services.mermaid_renderer import MermaidRenderer
+        from ruvox.ui.services.mermaid_renderer import MermaidRenderer
 
         SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
         renderer = MermaidRenderer()
@@ -196,7 +196,7 @@ class TestMermaidRenderQuality:
 
         Screenshot: tmp/mermaid_quality_content.png
         """
-        from fast_tts_rus.ui.services.mermaid_renderer import MermaidRenderer
+        from ruvox.ui.services.mermaid_renderer import MermaidRenderer
 
         SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
         renderer = MermaidRenderer()
@@ -230,7 +230,7 @@ class TestMermaidRenderQuality:
 
         Screenshot: tmp/mermaid_quality_no_dark.png
         """
-        from fast_tts_rus.ui.services.mermaid_renderer import MermaidRenderer
+        from ruvox.ui.services.mermaid_renderer import MermaidRenderer
 
         SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
         renderer = MermaidRenderer()
@@ -267,7 +267,7 @@ class TestMermaidRenderQuality:
 
         Screenshot: tmp/mermaid_quality_complex.png
         """
-        from fast_tts_rus.ui.services.mermaid_renderer import MermaidRenderer
+        from ruvox.ui.services.mermaid_renderer import MermaidRenderer
 
         SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
         renderer = MermaidRenderer()
@@ -326,7 +326,7 @@ class TestMermaidRenderQuality:
 
         Screenshot: tmp/mermaid_quality_colors.png
         """
-        from fast_tts_rus.ui.services.mermaid_renderer import MermaidRenderer
+        from ruvox.ui.services.mermaid_renderer import MermaidRenderer
 
         SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
         renderer = MermaidRenderer()
@@ -379,8 +379,8 @@ class TestTextViewerMermaidE2E:
 
     def test_image_appears_after_render(self, qapp):
         """Markdown with mermaid block should show image, not placeholder."""
-        from fast_tts_rus.ui.widgets.text_viewer import TextViewerWidget, TextFormat
-        from fast_tts_rus.ui.models.entry import TextEntry
+        from ruvox.ui.widgets.text_viewer import TextViewerWidget, TextFormat
+        from ruvox.ui.models.entry import TextEntry
 
         viewer = TextViewerWidget()
         try:
@@ -423,8 +423,8 @@ class TestTextViewerMermaidE2E:
 
     def test_highlighting_works_with_mermaid(self, qapp):
         """Word highlighting should work for text around mermaid blocks."""
-        from fast_tts_rus.ui.widgets.text_viewer import TextViewerWidget, TextFormat
-        from fast_tts_rus.ui.models.entry import TextEntry
+        from ruvox.ui.widgets.text_viewer import TextViewerWidget, TextFormat
+        from ruvox.ui.models.entry import TextEntry
 
         viewer = TextViewerWidget()
         try:
@@ -469,8 +469,8 @@ class TestMermaidPreviewE2E:
 
     def test_preview_loads_diagram(self, qapp):
         """Preview dialog should load mermaid diagram without errors."""
-        from fast_tts_rus.ui.dialogs.mermaid_preview import MermaidPreviewDialog
-        from fast_tts_rus.ui.services.mermaid_renderer import _mermaid_cache_dir
+        from ruvox.ui.dialogs.mermaid_preview import MermaidPreviewDialog
+        from ruvox.ui.services.mermaid_renderer import _mermaid_cache_dir
 
         js_path = _mermaid_cache_dir() / "mermaid.min.js"
         if not js_path.exists():
@@ -509,8 +509,8 @@ class TestMermaidPreviewE2E:
 
     def test_escape_key_closes(self, qapp):
         """Escape key should close the preview dialog."""
-        from fast_tts_rus.ui.dialogs.mermaid_preview import MermaidPreviewDialog
-        from fast_tts_rus.ui.services.mermaid_renderer import _mermaid_cache_dir
+        from ruvox.ui.dialogs.mermaid_preview import MermaidPreviewDialog
+        from ruvox.ui.services.mermaid_renderer import _mermaid_cache_dir
         from PyQt6.QtGui import QKeyEvent
         from PyQt6.QtCore import QEvent, Qt
 
@@ -542,9 +542,9 @@ class TestMermaidVisualE2E:
           - tmp/mermaid_01_initial.png — right after set_entry
           - tmp/mermaid_02_rendered.png — after SVG ready, image visible
         """
-        from fast_tts_rus.ui.widgets.text_viewer import TextViewerWidget, TextFormat
-        from fast_tts_rus.ui.models.entry import TextEntry
-        from fast_tts_rus.ui.services.mermaid_renderer import _code_hash
+        from ruvox.ui.widgets.text_viewer import TextViewerWidget, TextFormat
+        from ruvox.ui.models.entry import TextEntry
+        from ruvox.ui.services.mermaid_renderer import _code_hash
 
         SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -607,9 +607,9 @@ class TestMermaidVisualE2E:
         Screenshots:
           - tmp/mermaid_04_complex_viewer.png — complex diagram in TextViewer
         """
-        from fast_tts_rus.ui.widgets.text_viewer import TextViewerWidget, TextFormat
-        from fast_tts_rus.ui.models.entry import TextEntry
-        from fast_tts_rus.ui.services.mermaid_renderer import _code_hash
+        from ruvox.ui.widgets.text_viewer import TextViewerWidget, TextFormat
+        from ruvox.ui.models.entry import TextEntry
+        from ruvox.ui.services.mermaid_renderer import _code_hash
 
         SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -648,8 +648,8 @@ class TestMermaidVisualE2E:
         Screenshots:
           - tmp/mermaid_03_preview.png — preview dialog with rendered diagram
         """
-        from fast_tts_rus.ui.dialogs.mermaid_preview import MermaidPreviewDialog
-        from fast_tts_rus.ui.services.mermaid_renderer import _mermaid_cache_dir
+        from ruvox.ui.dialogs.mermaid_preview import MermaidPreviewDialog
+        from ruvox.ui.services.mermaid_renderer import _mermaid_cache_dir
 
         SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -688,8 +688,8 @@ class TestMermaidVisualE2E:
         Screenshots:
           - tmp/mermaid_05_complex_preview.png — complex diagram in preview
         """
-        from fast_tts_rus.ui.dialogs.mermaid_preview import MermaidPreviewDialog
-        from fast_tts_rus.ui.services.mermaid_renderer import _mermaid_cache_dir
+        from ruvox.ui.dialogs.mermaid_preview import MermaidPreviewDialog
+        from ruvox.ui.services.mermaid_renderer import _mermaid_cache_dir
 
         SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -723,8 +723,8 @@ class TestTextViewerLinkNavigation:
 
     def test_mermaid_click_preserves_content(self, qapp):
         """Clicking mermaid link should not clear TextViewer content."""
-        from fast_tts_rus.ui.widgets.text_viewer import TextViewerWidget, TextFormat
-        from fast_tts_rus.ui.models.entry import TextEntry
+        from ruvox.ui.widgets.text_viewer import TextViewerWidget, TextFormat
+        from ruvox.ui.models.entry import TextEntry
 
         viewer = TextViewerWidget()
         try:
@@ -755,8 +755,8 @@ class TestTextViewerLinkNavigation:
 
     def test_switch_to_plain_after_click(self, qapp):
         """Switching to plain text after mermaid click should show raw text."""
-        from fast_tts_rus.ui.widgets.text_viewer import TextViewerWidget, TextFormat
-        from fast_tts_rus.ui.models.entry import TextEntry
+        from ruvox.ui.widgets.text_viewer import TextViewerWidget, TextFormat
+        from ruvox.ui.models.entry import TextEntry
 
         viewer = TextViewerWidget()
         try:
@@ -784,8 +784,8 @@ class TestTextViewerLinkNavigation:
 
     def test_plain_text_has_no_link_formatting(self, qapp):
         """Plain text after markdown should not have link character format."""
-        from fast_tts_rus.ui.widgets.text_viewer import TextViewerWidget, TextFormat
-        from fast_tts_rus.ui.models.entry import TextEntry
+        from ruvox.ui.widgets.text_viewer import TextViewerWidget, TextFormat
+        from ruvox.ui.models.entry import TextEntry
         from PyQt6.QtGui import QTextCursor
 
         viewer = TextViewerWidget()
@@ -819,8 +819,8 @@ class TestTextViewerLinkNavigation:
 
     def test_switch_entry_after_mermaid_clears_formatting(self, qapp):
         """Switching to a new entry should not carry over link formatting."""
-        from fast_tts_rus.ui.widgets.text_viewer import TextViewerWidget, TextFormat
-        from fast_tts_rus.ui.models.entry import TextEntry
+        from ruvox.ui.widgets.text_viewer import TextViewerWidget, TextFormat
+        from ruvox.ui.models.entry import TextEntry
         from PyQt6.QtGui import QTextCursor
 
         viewer = TextViewerWidget()

@@ -1,1 +1,1 @@
-"""Tests for error handling in Fast TTS RUS."""
+"""Tests for error handling in RuVox."""

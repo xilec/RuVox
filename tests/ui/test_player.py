@@ -4,7 +4,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from fast_tts_rus.ui.models.entry import TextEntry, EntryStatus
+from ruvox.ui.models.entry import TextEntry, EntryStatus
 
 
 class TestFormatTime:
@@ -12,7 +12,7 @@ class TestFormatTime:
 
     def _format_time(self, seconds: float) -> str:
         """Import and call the static method."""
-        from fast_tts_rus.ui.widgets.player import PlayerWidget
+        from ruvox.ui.widgets.player import PlayerWidget
         return PlayerWidget._format_time(seconds)
 
     def test_zero(self):
@@ -99,7 +99,7 @@ class TestMpvUnavailable:
         import importlib
         with patch.dict("sys.modules", {"mpv": None}):
             # Force reimport of the player module
-            import fast_tts_rus.ui.widgets.player as player_module
+            import ruvox.ui.widgets.player as player_module
             original = player_module._MPV_AVAILABLE
             player_module._MPV_AVAILABLE = False
             try:
@@ -111,7 +111,7 @@ class TestMpvUnavailable:
 @pytest.fixture
 def player_widget(qapp, tmp_path):
     """Create a real PlayerWidget with mocked mpv backend."""
-    import fast_tts_rus.ui.widgets.player as player_module
+    import ruvox.ui.widgets.player as player_module
 
     mock_mpv_instance = MagicMock()
     mock_mpv_instance.duration = None
@@ -123,7 +123,7 @@ def player_widget(qapp, tmp_path):
 
     with patch.object(player_module, "mpv", create=True) as mock_mpv_mod:
         mock_mpv_mod.MPV.return_value = mock_mpv_instance
-        from fast_tts_rus.ui.widgets.player import PlayerWidget
+        from ruvox.ui.widgets.player import PlayerWidget
         widget = PlayerWidget()
         # Ensure the mock player is set
         widget._player = mock_mpv_instance

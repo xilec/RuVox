@@ -24,7 +24,7 @@ class TestMermaidPreviewDialog:
 
     def test_dialog_creates_without_error(self, qapp, tmp_path):
         """Dialog should instantiate without crashing."""
-        from fast_tts_rus.ui.dialogs.mermaid_preview import MermaidPreviewDialog
+        from ruvox.ui.dialogs.mermaid_preview import MermaidPreviewDialog
 
         js_path = tmp_path / "mermaid.min.js"
         js_path.write_text("// mock")
@@ -36,7 +36,7 @@ class TestMermaidPreviewDialog:
 
     def test_dialog_has_web_view(self, qapp, tmp_path):
         """Dialog should contain a QWebEngineView."""
-        from fast_tts_rus.ui.dialogs.mermaid_preview import MermaidPreviewDialog
+        from ruvox.ui.dialogs.mermaid_preview import MermaidPreviewDialog
 
         js_path = tmp_path / "mermaid.min.js"
         js_path.write_text("// mock")
@@ -48,7 +48,7 @@ class TestMermaidPreviewDialog:
 
     def test_show_diagram_sets_title(self, qapp, tmp_path):
         """show_diagram should set custom window title."""
-        from fast_tts_rus.ui.dialogs.mermaid_preview import MermaidPreviewDialog
+        from ruvox.ui.dialogs.mermaid_preview import MermaidPreviewDialog
 
         js_path = tmp_path / "mermaid.min.js"
         js_path.write_text("// mock")
@@ -64,7 +64,7 @@ class TestMermaidPreviewDialog:
 
     def test_html_contains_mermaid_code(self, qapp, tmp_path):
         """HTML loaded into web view should contain the mermaid code."""
-        from fast_tts_rus.ui.dialogs.mermaid_preview import MermaidPreviewDialog
+        from ruvox.ui.dialogs.mermaid_preview import MermaidPreviewDialog
 
         js_path = tmp_path / "mermaid.min.js"
         js_path.write_text("// mock")
@@ -88,7 +88,7 @@ class TestMermaidPreviewDialog:
 
     def test_zoom_level_changes(self, qapp, tmp_path):
         """Zoom methods should change zoom level."""
-        from fast_tts_rus.ui.dialogs.mermaid_preview import MermaidPreviewDialog
+        from ruvox.ui.dialogs.mermaid_preview import MermaidPreviewDialog
 
         js_path = tmp_path / "mermaid.min.js"
         js_path.write_text("// mock")
@@ -112,7 +112,7 @@ class TestMermaidPreviewDialog:
 
     def test_theme_toggle(self, qapp, tmp_path):
         """Theme toggle should switch between light and dark."""
-        from fast_tts_rus.ui.dialogs.mermaid_preview import MermaidPreviewDialog
+        from ruvox.ui.dialogs.mermaid_preview import MermaidPreviewDialog
 
         js_path = tmp_path / "mermaid.min.js"
         js_path.write_text("// mock")
@@ -132,7 +132,7 @@ class TestMermaidPreviewDialog:
 
     def test_show_diagram_passes_base_url(self, qapp, tmp_path):
         """show_diagram should pass base URL so mermaid.min.js resolves."""
-        from fast_tts_rus.ui.dialogs.mermaid_preview import MermaidPreviewDialog
+        from ruvox.ui.dialogs.mermaid_preview import MermaidPreviewDialog
 
         js_path = tmp_path / "mermaid.min.js"
         js_path.write_text("// mock")
@@ -158,7 +158,7 @@ class TestMermaidPreviewDialog:
 
     def test_toggle_theme_passes_base_url(self, qapp, tmp_path):
         """_toggle_theme should pass base URL when re-rendering."""
-        from fast_tts_rus.ui.dialogs.mermaid_preview import MermaidPreviewDialog
+        from ruvox.ui.dialogs.mermaid_preview import MermaidPreviewDialog
 
         js_path = tmp_path / "mermaid.min.js"
         js_path.write_text("// mock")
@@ -181,7 +181,7 @@ class TestMermaidPreviewDialog:
 
     def test_html_uses_relative_script_src(self, qapp, tmp_path):
         """HTML should use relative mermaid.min.js path, not file:// URL."""
-        from fast_tts_rus.ui.dialogs.mermaid_preview import MermaidPreviewDialog
+        from ruvox.ui.dialogs.mermaid_preview import MermaidPreviewDialog
 
         js_path = tmp_path / "mermaid.min.js"
         js_path.write_text("// mock")
@@ -194,7 +194,7 @@ class TestMermaidPreviewDialog:
 
     def test_escape_closes_dialog(self, qapp, tmp_path):
         """Pressing Escape should close the dialog."""
-        from fast_tts_rus.ui.dialogs.mermaid_preview import MermaidPreviewDialog
+        from ruvox.ui.dialogs.mermaid_preview import MermaidPreviewDialog
         from PyQt6.QtCore import Qt
         from PyQt6.QtGui import QKeyEvent
         from PyQt6.QtCore import QEvent
@@ -213,7 +213,7 @@ class TestMermaidPreviewDialog:
 
     def test_esc_hint_in_toolbar(self, qapp, tmp_path):
         """Toolbar should contain Esc hint label."""
-        from fast_tts_rus.ui.dialogs.mermaid_preview import MermaidPreviewDialog
+        from ruvox.ui.dialogs.mermaid_preview import MermaidPreviewDialog
         from PyQt6.QtWidgets import QLabel
 
         js_path = tmp_path / "mermaid.min.js"

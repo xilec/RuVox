@@ -234,9 +234,9 @@ class TestIntegrationWithTimestamps:
 
     def test_timestamps_to_correct_highlight(self):
         """End-to-end: timestamps should lead to correct highlight positions."""
-        from fast_tts_rus.tts_pipeline import TTSPipeline
-        from fast_tts_rus.ui.services.tts_worker import TTSRunnable
-        from fast_tts_rus.ui.models.entry import TextEntry, EntryStatus
+        from ruvox.tts_pipeline import TTSPipeline
+        from ruvox.ui.services.tts_worker import TTSRunnable
+        from ruvox.ui.models.entry import TextEntry, EntryStatus
 
         # Use the actual article text that caused the bug
         original = """Модель обучалась на системах NVIDIA GB200.

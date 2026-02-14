@@ -3,9 +3,9 @@
 import pytest
 from PyQt6.QtWidgets import QApplication
 
-from fast_tts_rus.ui.widgets.text_viewer import TextViewerWidget, TextFormat
-from fast_tts_rus.ui.models.entry import TextEntry
-from fast_tts_rus.tts_pipeline import TTSPipeline
+from ruvox.ui.widgets.text_viewer import TextViewerWidget, TextFormat
+from ruvox.ui.models.entry import TextEntry
+from ruvox.tts_pipeline import TTSPipeline
 import re
 
 

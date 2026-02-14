@@ -5,8 +5,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from fast_tts_rus.ui.models.config import UIConfig
-from fast_tts_rus.ui.services.storage import StorageService
+from ruvox.ui.models.config import UIConfig
+from ruvox.ui.services.storage import StorageService
 
 
 @pytest.fixture

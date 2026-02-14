@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-TTS Generation Script - Fast TTS RUS Pipeline + Silero v5
+TTS Generation Script - RuVox Pipeline + Silero v5
 
 Usage:
     python scripts/tts_generate.py input.txt              # Output: input.wav
@@ -21,7 +21,7 @@ import scipy.io.wavfile as wavfile
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from fast_tts_rus.pipeline import TTSPipeline
+from ruvox.pipeline import TTSPipeline
 
 
 # Available speakers for Silero v5 Russian model
@@ -175,7 +175,7 @@ def save_audio(waveform, sample_rate: int, filepath: Path):
 
 
 def process_text(text: str, show_warnings: bool = True) -> str:
-    """Process text through Fast TTS pipeline."""
+    """Process text through RuVox pipeline."""
     pipeline = TTSPipeline()
     result = pipeline.process(text)
 
@@ -187,7 +187,7 @@ def process_text(text: str, show_warnings: bool = True) -> str:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Generate speech from text using Fast TTS + Silero v5",
+        description="Generate speech from text using RuVox + Silero v5",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -209,7 +209,7 @@ Available speakers: aidar, baya, kseniya, xenia (default), eugene
     parser.add_argument('--sample-rate', '-r', type=int, default=DEFAULT_SAMPLE_RATE,
                         help=f'Sample rate in Hz (default: {DEFAULT_SAMPLE_RATE})')
     parser.add_argument('--no-preprocess', action='store_true',
-                        help='Skip Fast TTS preprocessing')
+                        help='Skip RuVox preprocessing')
     parser.add_argument('--show-text', action='store_true',
                         help='Print processed text before synthesis')
     parser.add_argument('--quiet', '-q', action='store_true',
@@ -239,7 +239,7 @@ Available speakers: aidar, baya, kseniya, xenia (default), eugene
             print("Skipping preprocessing (--no-preprocess)")
     else:
         if not args.quiet:
-            print("Preprocessing text with Fast TTS pipeline...")
+            print("Preprocessing text with RuVox pipeline...")
         text = process_text(original_text, show_warnings=not args.quiet)
 
     if args.show_text:

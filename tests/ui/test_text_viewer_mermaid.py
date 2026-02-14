@@ -7,8 +7,8 @@ from pathlib import Path
 from PyQt6.QtCore import QUrl
 from PyQt6.QtWidgets import QApplication
 
-from fast_tts_rus.ui.widgets.text_viewer import TextViewerWidget, TextFormat
-from fast_tts_rus.ui.models.entry import TextEntry
+from ruvox.ui.widgets.text_viewer import TextViewerWidget, TextFormat
+from ruvox.ui.models.entry import TextEntry
 
 
 SAMPLE_MERMAID = "graph TD\n  A --> B"
@@ -116,7 +116,7 @@ class TestAnchorClicked:
 
     def test_http_anchor_opens_browser(self, text_viewer):
         """Clicking http:// URL opens in default browser."""
-        with patch("fast_tts_rus.ui.widgets.text_viewer.QDesktopServices.openUrl") as mock:
+        with patch("ruvox.ui.widgets.text_viewer.QDesktopServices.openUrl") as mock:
             url = QUrl("https://example.com")
             text_viewer._on_anchor_clicked(url)
             mock.assert_called_once_with(url)

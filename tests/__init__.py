@@ -1,1 +1,1 @@
-"""Tests for fast_tts_rus package."""
+"""Tests for ruvox package."""

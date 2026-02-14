@@ -1,7 +1,7 @@
 """Tests for TrackedText character-level mapping."""
 
 import pytest
-from fast_tts_rus.tts_pipeline.tracked_text import (
+from ruvox.tts_pipeline.tracked_text import (
     TrackedText,
     CharMapping,
     Replacement,
@@ -303,7 +303,7 @@ class TestPipelineIntegration:
 
     def test_simple_text_mapping(self):
         """Test char mapping for simple text."""
-        from fast_tts_rus.tts_pipeline import TTSPipeline
+        from ruvox.tts_pipeline import TTSPipeline
 
         pipeline = TTSPipeline()
         original = "Hello world"
@@ -318,7 +318,7 @@ class TestPipelineIntegration:
         Note: CharMapping precision is limited for multi-step pipelines.
         The UI uses word-level matching instead for timestamp mapping.
         """
-        from fast_tts_rus.tts_pipeline import TTSPipeline
+        from ruvox.tts_pipeline import TTSPipeline
 
         pipeline = TTSPipeline()
         original = "Осталось 42 дня"
@@ -333,7 +333,7 @@ class TestPipelineIntegration:
 
     def test_code_identifier_mapping(self):
         """Test code identifier expansion maps correctly."""
-        from fast_tts_rus.tts_pipeline import TTSPipeline
+        from ruvox.tts_pipeline import TTSPipeline
 
         pipeline = TTSPipeline()
         original = "Вызови getUserData"
@@ -351,7 +351,7 @@ class TestPipelineIntegration:
 
     def test_problematic_text_mapping(self):
         """Test mapping for text that previously had issues."""
-        from fast_tts_rus.tts_pipeline import TTSPipeline
+        from ruvox.tts_pipeline import TTSPipeline
 
         pipeline = TTSPipeline()
         original = "Сейчас приоритетнее разобраться с ошибкой, почему в контекстном меню 3 команды читать сразу и читать отложено. Выдают аж ошибку, что оффер пустой."
@@ -372,7 +372,7 @@ class TestPipelineIntegration:
 
     def test_english_clipboard_mapping(self):
         """Test mapping for English text with numbers."""
-        from fast_tts_rus.tts_pipeline import TTSPipeline
+        from ruvox.tts_pipeline import TTSPipeline
 
         pipeline = TTSPipeline()
         original = "Test clipboard content 12345"
@@ -387,7 +387,7 @@ class TestPipelineIntegration:
 
     def test_word_boundary_from_char_mapping(self):
         """Test that word boundaries can be extracted from char mapping."""
-        from fast_tts_rus.tts_pipeline import TTSPipeline
+        from ruvox.tts_pipeline import TTSPipeline
 
         pipeline = TTSPipeline()
         original = "Hello world"

@@ -28,11 +28,11 @@ from unittest.mock import patch, MagicMock
 import numpy as np
 import pytest
 
-from fast_tts_rus.ui.models.config import UIConfig
-from fast_tts_rus.ui.models.entry import EntryStatus, TextEntry
-from fast_tts_rus.ui.services.storage import HISTORY_VERSION, StorageService
-from fast_tts_rus.tts_pipeline import TTSPipeline, PipelineConfig
-from fast_tts_rus.tts_pipeline.tracked_text import TrackedText, CharMapping
+from ruvox.ui.models.config import UIConfig
+from ruvox.ui.models.entry import EntryStatus, TextEntry
+from ruvox.ui.services.storage import HISTORY_VERSION, StorageService
+from ruvox.tts_pipeline import TTSPipeline, PipelineConfig
+from ruvox.tts_pipeline.tracked_text import TrackedText, CharMapping
 
 
 
@@ -606,8 +606,8 @@ class TestTTSWorkerErrorHandling:
         Verifies that socket.setdefaulttimeout is called with appropriate value
         during model loading.
         """
-        from fast_tts_rus.ui.services.tts_worker import ModelLoadRunnable
-        from fast_tts_rus.ui.models.config import UIConfig
+        from ruvox.ui.services.tts_worker import ModelLoadRunnable
+        from ruvox.ui.models.config import UIConfig
 
         config = UIConfig()
 
@@ -668,8 +668,8 @@ class TestTTSWorkerErrorHandling:
         When torch.hub.load raises ConnectionError, the error should be
         logged and error signal emitted.
         """
-        from fast_tts_rus.ui.services.tts_worker import ModelLoadRunnable
-        from fast_tts_rus.ui.models.config import UIConfig
+        from ruvox.ui.services.tts_worker import ModelLoadRunnable
+        from ruvox.ui.models.config import UIConfig
 
         config = UIConfig()
         runnable = ModelLoadRunnable(config)
@@ -700,10 +700,10 @@ class TestTTSWorkerErrorHandling:
         When normalized text is empty, ValueError should be raised and caught,
         entry status should be set to ERROR.
         """
-        from fast_tts_rus.ui.services.tts_worker import TTSRunnable
-        from fast_tts_rus.ui.models.config import UIConfig
-        from fast_tts_rus.ui.models.entry import TextEntry, EntryStatus
-        from fast_tts_rus.ui.services.storage import StorageService
+        from ruvox.ui.services.tts_worker import TTSRunnable
+        from ruvox.ui.models.config import UIConfig
+        from ruvox.ui.models.entry import TextEntry, EntryStatus
+        from ruvox.ui.services.storage import StorageService
 
         # Setup
         cache_dir = tmp_path / "cache"
@@ -742,10 +742,10 @@ class TestTTSWorkerErrorHandling:
 
         When model.apply_tts() raises RuntimeError, entry status should be ERROR.
         """
-        from fast_tts_rus.ui.services.tts_worker import TTSRunnable
-        from fast_tts_rus.ui.models.config import UIConfig
-        from fast_tts_rus.ui.models.entry import TextEntry, EntryStatus
-        from fast_tts_rus.ui.services.storage import StorageService
+        from ruvox.ui.services.tts_worker import TTSRunnable
+        from ruvox.ui.models.config import UIConfig
+        from ruvox.ui.models.entry import TextEntry, EntryStatus
+        from ruvox.ui.services.storage import StorageService
 
         # Setup
         cache_dir = tmp_path / "cache"
@@ -785,10 +785,10 @@ class TestTTSWorkerErrorHandling:
 
         Empty text should return empty list or single empty chunk.
         """
-        from fast_tts_rus.ui.services.tts_worker import TTSRunnable
-        from fast_tts_rus.ui.models.config import UIConfig
-        from fast_tts_rus.ui.models.entry import TextEntry
-        from fast_tts_rus.ui.services.storage import StorageService
+        from ruvox.ui.services.tts_worker import TTSRunnable
+        from ruvox.ui.models.config import UIConfig
+        from ruvox.ui.models.entry import TextEntry
+        from ruvox.ui.services.storage import StorageService
 
         # Setup
         cache_dir = tmp_path / "cache"
@@ -819,10 +819,10 @@ class TestTTSWorkerErrorHandling:
 
         Very long word without spaces should still be split correctly.
         """
-        from fast_tts_rus.ui.services.tts_worker import TTSRunnable, MAX_CHUNK_SIZE
-        from fast_tts_rus.ui.models.config import UIConfig
-        from fast_tts_rus.ui.models.entry import TextEntry
-        from fast_tts_rus.ui.services.storage import StorageService
+        from ruvox.ui.services.tts_worker import TTSRunnable, MAX_CHUNK_SIZE
+        from ruvox.ui.models.config import UIConfig
+        from ruvox.ui.models.entry import TextEntry
+        from ruvox.ui.services.storage import StorageService
 
         # Setup
         cache_dir = tmp_path / "cache"
@@ -858,10 +858,10 @@ class TestTTSWorkerErrorHandling:
 
         Empty chunk list should return empty timestamps.
         """
-        from fast_tts_rus.ui.services.tts_worker import TTSRunnable
-        from fast_tts_rus.ui.models.config import UIConfig
-        from fast_tts_rus.ui.models.entry import TextEntry
-        from fast_tts_rus.ui.services.storage import StorageService
+        from ruvox.ui.services.tts_worker import TTSRunnable
+        from ruvox.ui.models.config import UIConfig
+        from ruvox.ui.models.entry import TextEntry
+        from ruvox.ui.services.storage import StorageService
 
         # Setup
         cache_dir = tmp_path / "cache"
@@ -893,9 +893,9 @@ class TestTTSWorkerErrorHandling:
 
         Chunks with empty or whitespace-only text should be handled gracefully.
         """
-        from fast_tts_rus.ui.services.tts_worker import TTSRunnable
-        from fast_tts_rus.ui.models.config import UIConfig
-        from fast_tts_rus.ui.services.storage import StorageService
+        from ruvox.ui.services.tts_worker import TTSRunnable
+        from ruvox.ui.models.config import UIConfig
+        from ruvox.ui.services.storage import StorageService
 
         # Setup
         cache_dir = tmp_path / "cache"
@@ -938,8 +938,8 @@ class TestHotkeyServiceErrorHandling:
         When EVDEV_AVAILABLE is False, registration should fail and
         registration_failed signal should be emitted.
         """
-        from fast_tts_rus.ui.models.config import UIConfig
-        import fast_tts_rus.ui.services.hotkeys as hotkeys_module
+        from ruvox.ui.models.config import UIConfig
+        import ruvox.ui.services.hotkeys as hotkeys_module
 
         config = UIConfig(cache_dir=tmp_path)
 
@@ -969,8 +969,8 @@ class TestHotkeyServiceErrorHandling:
 
         When _find_keyboards returns empty list, registration should fail.
         """
-        from fast_tts_rus.ui.models.config import UIConfig
-        import fast_tts_rus.ui.services.hotkeys as hotkeys_module
+        from ruvox.ui.models.config import UIConfig
+        import ruvox.ui.services.hotkeys as hotkeys_module
 
         # Skip if evdev not available
         if not hotkeys_module.EVDEV_AVAILABLE:
@@ -996,8 +996,8 @@ class TestHotkeyServiceErrorHandling:
 
         Invalid key name should result in key_code being None.
         """
-        from fast_tts_rus.ui.models.config import UIConfig
-        import fast_tts_rus.ui.services.hotkeys as hotkeys_module
+        from ruvox.ui.models.config import UIConfig
+        import ruvox.ui.services.hotkeys as hotkeys_module
 
         # Skip if evdev not available
         if not hotkeys_module.EVDEV_AVAILABLE:
@@ -1018,8 +1018,8 @@ class TestHotkeyServiceErrorHandling:
 
         Empty string should return None key and empty modifiers.
         """
-        from fast_tts_rus.ui.models.config import UIConfig
-        import fast_tts_rus.ui.services.hotkeys as hotkeys_module
+        from ruvox.ui.models.config import UIConfig
+        import ruvox.ui.services.hotkeys as hotkeys_module
 
         # Skip if evdev not available
         if not hotkeys_module.EVDEV_AVAILABLE:
@@ -1039,8 +1039,8 @@ class TestHotkeyServiceErrorHandling:
         When device access raises PermissionError, it should be logged
         and device should be skipped.
         """
-        from fast_tts_rus.ui.models.config import UIConfig
-        import fast_tts_rus.ui.services.hotkeys as hotkeys_module
+        from ruvox.ui.models.config import UIConfig
+        import ruvox.ui.services.hotkeys as hotkeys_module
 
         # Skip if evdev not available
         if not hotkeys_module.EVDEV_AVAILABLE:
@@ -1073,8 +1073,8 @@ class TestHotkeyServiceErrorHandling:
         When device access raises OSError, it should be logged
         and device should be skipped.
         """
-        from fast_tts_rus.ui.models.config import UIConfig
-        import fast_tts_rus.ui.services.hotkeys as hotkeys_module
+        from ruvox.ui.models.config import UIConfig
+        import ruvox.ui.services.hotkeys as hotkeys_module
 
         # Skip if evdev not available
         if not hotkeys_module.EVDEV_AVAILABLE:
@@ -1106,8 +1106,8 @@ class TestHotkeyServiceErrorHandling:
         When read_loop raises OSError (device disconnected), the listener
         should handle it gracefully without crashing.
         """
-        from fast_tts_rus.ui.models.config import UIConfig
-        import fast_tts_rus.ui.services.hotkeys as hotkeys_module
+        from ruvox.ui.models.config import UIConfig
+        import ruvox.ui.services.hotkeys as hotkeys_module
 
         # Skip if evdev not available
         if not hotkeys_module.EVDEV_AVAILABLE:
@@ -1135,8 +1135,8 @@ class TestHotkeyServiceErrorHandling:
 
         Hotkey with only modifiers and no key should return None key.
         """
-        from fast_tts_rus.ui.models.config import UIConfig
-        import fast_tts_rus.ui.services.hotkeys as hotkeys_module
+        from ruvox.ui.models.config import UIConfig
+        import ruvox.ui.services.hotkeys as hotkeys_module
 
         # Skip if evdev not available
         if not hotkeys_module.EVDEV_AVAILABLE:
@@ -1164,7 +1164,7 @@ class TestClipboardServiceErrorHandling:
 
         When subprocess.run raises FileNotFoundError, should return None.
         """
-        from fast_tts_rus.ui.services import clipboard
+        from ruvox.ui.services import clipboard
 
         # Mock _is_wayland to return True
         monkeypatch.setattr(clipboard, "_is_wayland", lambda: True)
@@ -1193,7 +1193,7 @@ class TestClipboardServiceErrorHandling:
 
         When subprocess.run raises TimeoutExpired, should return None.
         """
-        from fast_tts_rus.ui.services import clipboard
+        from ruvox.ui.services import clipboard
         import subprocess
 
         # Mock _is_wayland to return True
@@ -1223,7 +1223,7 @@ class TestClipboardServiceErrorHandling:
 
         When subprocess.run raises unexpected Exception, should log and return None.
         """
-        from fast_tts_rus.ui.services import clipboard
+        from ruvox.ui.services import clipboard
         import logging
 
         # Mock _is_wayland to return True
@@ -1255,7 +1255,7 @@ class TestClipboardServiceErrorHandling:
 
         When subprocess.run returns empty stdout, should return None.
         """
-        from fast_tts_rus.ui.services import clipboard
+        from ruvox.ui.services import clipboard
 
         # Mock _is_wayland to return True
         monkeypatch.setattr(clipboard, "_is_wayland", lambda: True)
@@ -1285,7 +1285,7 @@ class TestClipboardServiceErrorHandling:
 
         When wl-paste returns non-zero exit code, should log and return None.
         """
-        from fast_tts_rus.ui.services import clipboard
+        from ruvox.ui.services import clipboard
         import logging
 
         # Mock _is_wayland to return True
@@ -1317,7 +1317,7 @@ class TestClipboardServiceErrorHandling:
 
         When clipboard contains only whitespace, should return None.
         """
-        from fast_tts_rus.ui.services import clipboard
+        from ruvox.ui.services import clipboard
 
         # Mock _is_wayland to return False (to avoid wl-paste fallback)
         monkeypatch.setattr(clipboard, "_is_wayland", lambda: False)
@@ -1346,7 +1346,7 @@ class TestClipboardServiceErrorHandling:
 
         When Qt clipboard returns text, should return it without calling wl-paste.
         """
-        from fast_tts_rus.ui.services import clipboard
+        from ruvox.ui.services import clipboard
 
         # Mock QApplication.clipboard to return valid text
         mock_clipboard = MagicMock()

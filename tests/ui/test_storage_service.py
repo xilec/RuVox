@@ -8,9 +8,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from fast_tts_rus.ui.models.config import UIConfig
-from fast_tts_rus.ui.models.entry import EntryStatus, TextEntry
-from fast_tts_rus.ui.services.storage import HISTORY_VERSION, StorageService
+from ruvox.ui.models.config import UIConfig
+from ruvox.ui.models.entry import EntryStatus, TextEntry
+from ruvox.ui.services.storage import HISTORY_VERSION, StorageService
 
 
 

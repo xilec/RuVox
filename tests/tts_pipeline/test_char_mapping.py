@@ -5,7 +5,7 @@ through the pipeline, ensuring char_map length matches transformed text length.
 """
 
 import pytest
-from fast_tts_rus.tts_pipeline import TTSPipeline
+from ruvox.tts_pipeline import TTSPipeline
 
 
 class TestCharMappingConsistency:
