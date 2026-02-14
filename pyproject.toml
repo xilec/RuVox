@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "RuVox — Russian text preprocessing pipeline for TTS Silero"
 readme = "README.md"
 requires-python = ">=3.11"
-license = "MIT"
+license = "GPL-3.0-only"
 authors = [
     { name = "evgen" }
 ]
