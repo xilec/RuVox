@@ -14,7 +14,7 @@
 ## Импорт
 
 ```python
-from fast_tts_rus.tts_pipeline import WordMapping, build_word_mapping, tokenize_words
+from ruvox.tts_pipeline import WordMapping, build_word_mapping, tokenize_words
 ```
 
 ## tokenize_words

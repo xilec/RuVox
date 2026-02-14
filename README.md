@@ -1,4 +1,4 @@
-# Fast TTS RUS
+# RuVox
 
 Приложение для озвучивания технических текстов на русском языке. Включает:
 - **Desktop UI** (PyQt6) — системный трей, очередь, аудио плеер
@@ -23,7 +23,7 @@ uv sync --extra ui --extra tts # Зависимости
 
 ```bash
 # Запуск UI приложения
-uv run fast-tts-ui
+uv run ruvox
 
 # Тесты
 uv run pytest

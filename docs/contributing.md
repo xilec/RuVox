@@ -15,7 +15,7 @@
 ### 1. Найти файл
 
 ```
-src/fast_tts_rus/tts_pipeline/normalizers/english.py
+src/ruvox/tts_pipeline/normalizers/english.py
 ```
 
 ### 2. Добавить термин

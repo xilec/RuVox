@@ -15,7 +15,7 @@
 ```bash
 # Клонирование
 git clone <repo-url>
-cd fast_tts_rus
+cd ruvox
 
 # Вход в dev-окружение
 nix-shell
@@ -53,8 +53,8 @@ uv sync --extra ui --extra tts
 ## Структура проекта
 
 ```
-fast_tts_rus/
-├── src/fast_tts_rus/
+ruvox/
+├── src/ruvox/
 │   ├── tts_pipeline/       # Движок нормализации
 │   │   ├── normalizers/    # Нормализаторы
 │   │   ├── pipeline.py     # TTSPipeline
@@ -122,7 +122,7 @@ uv run pytest
 
 ```bash
 # UI приложение
-uv run fast-tts-ui
+uv run ruvox
 
 # Генерация аудио из файла
 uv run python scripts/tts_generate.py input.txt
@@ -152,7 +152,7 @@ uv run python scripts/tts_generate.py input.txt
 ### Логи приложения
 
 ```bash
-tail -f ~/.cache/fast-tts-rus/logs/app.log
+tail -f ~/.cache/ruvox/logs/app.log
 ```
 
 ### Debug скрипты
@@ -220,7 +220,7 @@ uv sync
 uv run pytest
 
 # Проверка UI (если менялось)
-uv run fast-tts-ui
+uv run ruvox
 ```
 
 ## Git workflow

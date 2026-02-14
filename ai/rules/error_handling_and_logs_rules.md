@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 ## Вывод логов
 
-- **Файл:** `~/.cache/fast-tts-rus/logs/app.log`
+- **Файл:** `~/.cache/ruvox/logs/app.log`
 - **Ротация:** 5 файлов по 1MB
 - **stderr:** дублирование для отладки
 
@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 
 ## Реализация
 
-**Файл:** `src/fast_tts_rus/ui/services/logging_service.py`
+**Файл:** `src/ruvox/ui/services/logging_service.py`
 
 - `setup_logging()` — инициализация всех обработчиков
 - `@safe_slot` — декоратор для Qt слотов
@@ -53,6 +53,6 @@ logger = logging.getLogger(__name__)
 **Инициализация в main.py:**
 
 ```python
-from fast_tts_rus.ui.services.logging_service import setup_logging
+from ruvox.ui.services.logging_service import setup_logging
 setup_logging()  # Вызвать ДО создания QApplication
 ```

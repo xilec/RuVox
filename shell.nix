@@ -1,7 +1,7 @@
 { pkgs ? import <nixpkgs> {} }:
 
 pkgs.mkShell {
-  name = "fast-tts-dev";
+  name = "ruvox-dev";
 
   buildInputs = with pkgs; [
     python311
@@ -143,7 +143,7 @@ pkgs.mkShell {
       fi
     fi
 
-    echo "Fast TTS development environment"
+    echo "RuVox development environment"
     echo "Python: $(python3 --version)"
     echo "uv: $(uv --version)"
     echo ""
@@ -165,7 +165,7 @@ pkgs.mkShell {
     echo "Commands:"
     echo "  uv run pytest             - run all tests"
     echo "  uv run pytest -v          - verbose output"
-    echo "  uv run fast-tts-ui        - run UI application"
+    echo "  uv run ruvox              - run UI application"
     echo "  uv run python scripts/tts_generate.py FILE  - generate speech"
     echo ""
   '';

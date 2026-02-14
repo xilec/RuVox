@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Test runner script for fast_tts
+# Test runner script for RuVox
 # Usage: ./scripts/test.sh [command] [args]
 
 set -e
@@ -14,7 +14,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 show_help() {
-    echo -e "${BLUE}Fast TTS Test Runner${NC}"
+    echo -e "${BLUE}RuVox Test Runner${NC}"
     echo ""
     echo "Usage: ./scripts/test.sh [command] [args]"
     echo ""
@@ -120,11 +120,11 @@ case "${1:-all}" in
         ;;
     cov|coverage)
         echo -e "${BLUE}Running tests with coverage...${NC}"
-        run_pytest --cov=fast_tts --cov-report=term-missing "${@:2}"
+        run_pytest --cov=ruvox --cov-report=term-missing "${@:2}"
         ;;
     cov-html)
         echo -e "${BLUE}Running tests with HTML coverage report...${NC}"
-        run_pytest --cov=fast_tts --cov-report=html "${@:2}"
+        run_pytest --cov=ruvox --cov-report=html "${@:2}"
         echo -e "${GREEN}Coverage report: htmlcov/index.html${NC}"
         ;;
     list)

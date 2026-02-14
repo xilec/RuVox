@@ -1,10 +1,10 @@
-# Fast TTS RUS - Инструкции для разработки
+# RuVox - Инструкции для разработки
 
 > **ВАЖНО:** Всегда отвечай на русском языке.
 
 ## Обзор проекта
 
-**Fast TTS RUS** — приложение для озвучивания технических текстов. Включает:
+**RuVox** — приложение для озвучивания технических текстов. Включает:
 - **Desktop UI** (PyQt6) — системный трей, очередь, плеер
 - **TTS Pipeline** — нормализация текста для Silero TTS
 
@@ -33,14 +33,14 @@
 ```bash
 nix-shell                      # Dev окружение
 uv sync --extra ui --extra tts # Зависимости
-uv run fast-tts-ui             # Запуск UI
+uv run ruvox             # Запуск UI
 uv run pytest                  # Тесты
 ```
 
 ## Структура проекта
 
 ```
-src/fast_tts_rus/
+src/ruvox/
 ├── tts_pipeline/              # Нормализация текста
 │   ├── pipeline.py            # TTSPipeline
 │   ├── tracked_text.py        # Отслеживание позиций символов
@@ -87,7 +87,7 @@ src/fast_tts_rus/
 ./scripts/test.sh match 'url'  # По паттерну
 
 # Приложение
-uv run fast-tts-ui             # UI
+uv run ruvox             # UI
 uv run python scripts/tts_generate.py FILE  # Генерация аудио
 ```
 
@@ -96,7 +96,7 @@ uv run python scripts/tts_generate.py FILE  # Генерация аудио
 ### TTSPipeline
 
 ```python
-from fast_tts_rus.tts_pipeline import TTSPipeline
+from ruvox.tts_pipeline import TTSPipeline
 
 pipeline = TTSPipeline()
 result = pipeline.process("Text with API and 123")
@@ -108,7 +108,7 @@ result, mapping = pipeline.process_with_char_mapping(text)
 ### UI Application
 
 ```python
-# Точка входа: src/fast_tts_rus/ui/main.py
+# Точка входа: src/ruvox/ui/main.py
 # Главное окно: MainWindow
 # Сервисы: TTSWorker, Storage, HotkeyService
 ```

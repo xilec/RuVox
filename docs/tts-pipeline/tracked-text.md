@@ -13,7 +13,7 @@
 ## Импорт
 
 ```python
-from fast_tts_rus.tts_pipeline import TrackedText, CharMapping
+from ruvox.tts_pipeline import TrackedText, CharMapping
 ```
 
 ## TrackedText
@@ -177,7 +177,7 @@ result, mapping = pipeline.process_with_char_mapping("Test 123 API")
 # result = "тест сто двадцать три эй пи ай"
 
 # Маппинг для каждого слова
-from fast_tts_rus.tts_pipeline import tokenize_words
+from ruvox.tts_pipeline import tokenize_words
 
 for word in tokenize_words(result):
     orig_range = mapping.get_original_range(word.start, word.end)

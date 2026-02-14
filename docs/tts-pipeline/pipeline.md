@@ -5,7 +5,7 @@
 ## Импорт
 
 ```python
-from fast_tts_rus.tts_pipeline import TTSPipeline, PipelineConfig
+from ruvox.tts_pipeline import TTSPipeline, PipelineConfig
 ```
 
 ## Базовое использование
@@ -138,7 +138,7 @@ def print_warnings(self) -> None
 ## PipelineConfig
 
 ```python
-from fast_tts_rus.tts_pipeline import PipelineConfig
+from ruvox.tts_pipeline import PipelineConfig
 
 config = PipelineConfig(
     code_block_mode="brief",      # "full" или "brief"

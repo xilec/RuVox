@@ -1,6 +1,6 @@
-# Fast TTS RUS
+# RuVox
 
-**Fast TTS RUS** — приложение для озвучивания технических текстов на русском языке с использованием Silero TTS.
+**RuVox** — приложение для озвучивания технических текстов на русском языке с использованием Silero TTS.
 
 ## Проблема
 
@@ -49,7 +49,7 @@ nix-shell
 uv sync --extra ui --extra tts
 
 # Запуск
-uv run fast-tts-ui
+uv run ruvox
 ```
 
 ## Технологии

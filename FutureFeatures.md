@@ -1,4 +1,4 @@
-# Fast TTS RUS — Future Features
+# RuVox — Future Features
 
 Функционал для реализации после MVP.
 
@@ -97,16 +97,16 @@
 
 ```bash
 # Добавить текст напрямую
-fast-tts-ui --add "Текст для чтения"
+ruvox --add "Текст для чтения"
 
 # Из pipe
-echo "Текст" | fast-tts-ui --stdin
+echo "Текст" | ruvox --stdin
 
 # Из файла
-fast-tts-ui --file article.md
+ruvox --file article.md
 
 # Экспорт аудио
-fast-tts-ui --export --output article.wav --file article.md
+ruvox --export --output article.wav --file article.md
 ```
 
 ---

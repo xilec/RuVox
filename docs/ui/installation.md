@@ -11,7 +11,7 @@
 ```bash
 # Клонирование репозитория
 git clone <repo-url>
-cd fast_tts_rus
+cd ruvox
 
 # Вход в dev-окружение
 nix-shell
@@ -20,7 +20,7 @@ nix-shell
 uv sync --extra ui --extra tts
 
 # Запуск
-uv run fast-tts-ui
+uv run ruvox
 ```
 
 ## Установка на других дистрибутивах
@@ -58,13 +58,13 @@ uv sync --extra ui --extra tts
 
 ```bash
 # Через uv (рекомендуется)
-uv run fast-tts-ui
+uv run ruvox
 
 # Через установленный пакет
-fast-tts-ui
+ruvox
 
 # Напрямую
-python -m fast_tts_rus.ui.main
+python -m ruvox.ui.main
 ```
 
 ## Первый запуск
@@ -72,13 +72,13 @@ python -m fast_tts_rus.ui.main
 При первом запуске:
 
 1. **Загрузка модели** — Silero TTS (~100MB) загружается из интернета
-2. **Создание директорий** — `~/.cache/fast-tts-rus/` для аудио и логов
+2. **Создание директорий** — `~/.cache/ruvox/` для аудио и логов
 3. **Настройка хоткеев** — регистрация глобальных горячих клавиш
 
 ## Директории данных
 
 ```
-~/.cache/fast-tts-rus/
+~/.cache/ruvox/
 ├── audio/              # Сгенерированные аудиофайлы
 │   ├── <uuid>.wav      # Аудио
 │   └── <uuid>.timestamps.json  # Временные метки слов
@@ -105,11 +105,11 @@ python -m fast_tts_rus.ui.main
 ```bash
 # Создать файл автозапуска
 mkdir -p ~/.config/autostart
-cat > ~/.config/autostart/fast-tts-rus.desktop << EOF
+cat > ~/.config/autostart/ruvox.desktop << EOF
 [Desktop Entry]
 Type=Application
-Name=Fast TTS RUS
-Exec=/path/to/fast-tts-ui
+Name=RuVox
+Exec=/path/to/ruvox
 Hidden=false
 NoDisplay=false
 X-KDE-autostart-phase=2
@@ -119,13 +119,13 @@ EOF
 ### systemd user service
 
 ```bash
-# ~/.config/systemd/user/fast-tts-rus.service
+# ~/.config/systemd/user/ruvox.service
 [Unit]
-Description=Fast TTS RUS
+Description=RuVox
 After=graphical-session.target
 
 [Service]
-ExecStart=/path/to/fast-tts-ui
+ExecStart=/path/to/ruvox
 Restart=on-failure
 
 [Install]
@@ -133,8 +133,8 @@ WantedBy=default.target
 ```
 
 ```bash
-systemctl --user enable fast-tts-rus
-systemctl --user start fast-tts-rus
+systemctl --user enable ruvox
+systemctl --user start ruvox
 ```
 
 ## Решение проблем

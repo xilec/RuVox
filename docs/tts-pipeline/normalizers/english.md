@@ -5,7 +5,7 @@
 ## Импорт
 
 ```python
-from fast_tts_rus.tts_pipeline.normalizers import EnglishNormalizer
+from ruvox.tts_pipeline.normalizers import EnglishNormalizer
 ```
 
 ## Использование
@@ -164,7 +164,7 @@ pipeline = TTSPipeline(config)
 
 ### Постоянно (в код)
 
-Добавьте в `src/fast_tts_rus/tts_pipeline/normalizers/english.py`:
+Добавьте в `src/ruvox/tts_pipeline/normalizers/english.py`:
 
 ```python
 IT_TERMS = {

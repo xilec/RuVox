@@ -248,7 +248,7 @@ class TTSWorker(QObject):
 ```python
 class StorageService:
     # Пути
-    cache_dir: Path      # ~/.cache/fast-tts-rus/
+    cache_dir: Path      # ~/.cache/ruvox/
     audio_dir: Path      # cache_dir/audio/
     history_file: Path   # cache_dir/history.json
 

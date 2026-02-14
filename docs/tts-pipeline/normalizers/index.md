@@ -76,7 +76,7 @@ _process_numbers()          # 123 → сто двадцать три
 ### Через конфигурацию
 
 ```python
-from fast_tts_rus.tts_pipeline import TTSPipeline, PipelineConfig
+from ruvox.tts_pipeline import TTSPipeline, PipelineConfig
 
 config = PipelineConfig(
     custom_it_terms={

@@ -5,7 +5,7 @@
 ## Импорт
 
 ```python
-from fast_tts_rus.tts_pipeline.normalizers import SymbolNormalizer
+from ruvox.tts_pipeline.normalizers import SymbolNormalizer
 ```
 
 ## Использование

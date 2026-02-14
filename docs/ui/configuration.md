@@ -2,7 +2,7 @@
 
 ## Файл конфигурации
 
-Настройки хранятся в `~/.config/fast-tts-rus/config.json`.
+Настройки хранятся в `~/.config/ruvox/config.json`.
 
 ## Параметры
 
@@ -111,16 +111,16 @@
 
 ```bash
 # Удалить конфигурацию
-rm ~/.config/fast-tts-rus/config.json
+rm ~/.config/ruvox/config.json
 
 # Удалить кэш (аудио, логи, история)
-rm -rf ~/.cache/fast-tts-rus/
+rm -rf ~/.cache/ruvox/
 ```
 
 ## Программное изменение настроек
 
 ```python
-from fast_tts_rus.ui.models.config import UIConfig
+from ruvox.ui.models.config import UIConfig
 
 # Загрузка
 config = UIConfig.load()
