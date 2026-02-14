@@ -159,7 +159,7 @@ pkgs.mkShell {
 
     # Sync dependencies
     echo "Syncing dependencies..."
-    uv sync --all-extras
+    uv sync --all-extras --no-binary-package regex
 
     echo ""
     echo "Commands:"
