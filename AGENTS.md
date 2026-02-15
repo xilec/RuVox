@@ -131,39 +131,8 @@ Silero TTS **не умеет читать английский**. Весь ан�
 
 ## Тесты
 
-### TTS Pipeline (`tests/tts_pipeline/`)
+Актуальный список тестов (без запуска):
 
-| Модуль | Тестов | Файл |
-|--------|--------|------|
-| english | 121 | test_english.py |
-| abbreviations | 111 | test_abbreviations.py |
-| numbers | 119 | test_numbers.py |
-| urls | 63 | test_urls.py |
-| symbols | 90 | test_symbols.py |
-| code | 117 | test_code.py |
-| pipeline | 59 | test_pipeline.py |
-| tracked_text | 31 | test_tracked_text.py |
-| char_mapping | 38 | test_char_mapping.py |
-| word_mapping | 20 | test_word_mapping.py |
-
-### UI (`tests/ui/`)
-
-| Модуль | Тестов | Файл |
-|--------|--------|------|
-| storage_service | 45 | test_storage_service.py |
-| tts_chunking | 17 | test_tts_chunking.py |
-| text_viewer_highlight | 7 | test_text_viewer_highlight.py |
-| text_viewer_markdown | 16 | test_text_viewer_markdown.py |
-| markdown_mapper | 18 | test_markdown_mapper.py |
-| format_selector | 9 | test_format_selector.py |
-| player | 14 | test_player.py |
-| text_viewer_mermaid | 19 | test_text_viewer_mermaid.py |
-| mermaid_e2e | 19 | test_mermaid_e2e.py |
-
-**Всего UI тестов: 165** (unit: 146, e2e с WebEngine: 19)
-
-### Error Handling (`tests/error_handling/`)
-
-| Модуль | Тестов | Файл |
-|--------|--------|------|
-| error_handling | 23 | test_error_handling.py |
+```bash
+uv run pytest --collect-only -q
+```
