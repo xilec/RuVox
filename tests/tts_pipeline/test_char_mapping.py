@@ -364,6 +364,7 @@ class TestQtPositionCorrespondence:
         """Create QApplication for Qt tests."""
         import sys
 
+        pytest.importorskip("PyQt6")
         from PyQt6.QtWidgets import QApplication
 
         # Check if app already exists
