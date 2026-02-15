@@ -1,5 +1,9 @@
 # RuVox
 
+[![CI](https://github.com/xilec/RuVox/actions/workflows/ci.yml/badge.svg)](https://github.com/xilec/RuVox/actions/workflows/ci.yml)
+![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue)
+![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-green)
+
 Приложение для озвучивания технических текстов на русском языке. Преобразует английские термины, аббревиатуры, код и числа в читаемый русский текст и передаёт его в [Silero TTS](https://github.com/snakers4/silero-models).
 
 ```
