@@ -13,7 +13,6 @@ authors = [
     { name = "evgen" }
 ]
 dependencies = [
-    "evdev-binary>=1.9.3,<2",
     "num2words>=0.5.12,<1",
 ]
 
@@ -36,6 +35,7 @@ ui = [
     "PyQt6>=6.6.0,<7",
     "PyQt6-WebEngine>=6.6.0,<7",  # QWebEngineView for Mermaid diagram rendering
     "markdown>=3.5,<4",
+    "evdev-binary>=1.9.3,<2",  # Linux input events for hotkey fallback
     "dasbus>=1.7,<2",  # D-Bus library for global hotkeys (requires PyGObject)
     "python-mpv>=1.0,<2",  # libmpv bindings for audio playback (scaletempo2)
 ]

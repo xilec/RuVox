@@ -1,4 +1,4 @@
-"""Shared fixtures for all tests."""
+"""Shared fixtures for error handling tests."""
 
 from pathlib import Path
 

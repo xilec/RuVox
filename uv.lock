@@ -951,7 +951,6 @@ name = "ruvox"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "evdev-binary" },
     { name = "num2words" },
 ]
 
@@ -972,6 +971,7 @@ tts = [
 ]
 ui = [
     { name = "dasbus" },
+    { name = "evdev-binary" },
     { name = "markdown" },
     { name = "pyqt6" },
     { name = "pyqt6-webengine" },
@@ -988,7 +988,7 @@ dev = [
 requires-dist = [
     { name = "dasbus", marker = "extra == 'ui'", specifier = ">=1.7,<2" },
     { name = "eng-to-ipa", marker = "extra == 'g2p'", specifier = ">=0.0.2,<1" },
-    { name = "evdev-binary", specifier = ">=1.9.3,<2" },
+    { name = "evdev-binary", marker = "extra == 'ui'", specifier = ">=1.9.3,<2" },
     { name = "g2p-en", marker = "extra == 'g2p'", specifier = ">=2.1.0,<3" },
     { name = "markdown", marker = "extra == 'ui'", specifier = ">=3.5,<4" },
     { name = "num2words", specifier = ">=0.5.12,<1" },
