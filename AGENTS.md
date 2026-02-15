@@ -43,8 +43,7 @@ uv run pytest                  # Тесты
 src/ruvox/
 ├── tts_pipeline/              # Нормализация текста
 │   ├── pipeline.py            # TTSPipeline
-│   ├── tracked_text.py        # Отслеживание позиций символов
-│   ├── mapping.py             # CharMapping для позиций
+│   ├── tracked_text.py        # Отслеживание позиций символов + CharMapping
 │   ├── word_mapping.py        # WordMapping для слов
 │   ├── config.py              # PipelineConfig
 │   └── normalizers/           # Нормализаторы
