@@ -4,14 +4,14 @@ import html
 import logging
 from pathlib import Path
 
-from PyQt6.QtCore import QUrl, Qt
+from PyQt6.QtCore import Qt, QUrl
 from PyQt6.QtGui import QKeyEvent
 from PyQt6.QtWidgets import (
     QDialog,
-    QVBoxLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -38,6 +38,7 @@ class MermaidPreviewDialog(QDialog):
             screen_geom = parent.screen().availableGeometry()
         else:
             from PyQt6.QtWidgets import QApplication
+
             screen = QApplication.primaryScreen()
             screen_geom = screen.availableGeometry() if screen else None
 
@@ -176,9 +177,7 @@ class MermaidPreviewDialog(QDialog):
 
     def _toggle_theme(self) -> None:
         self._dark_theme = not self._dark_theme
-        self._btn_theme.setText(
-            "Светлая тема" if self._dark_theme else "Тёмная тема"
-        )
+        self._btn_theme.setText("Светлая тема" if self._dark_theme else "Тёмная тема")
         # Re-render with new theme
         if hasattr(self, "_current_code"):
             html = self._build_html(self._current_code)

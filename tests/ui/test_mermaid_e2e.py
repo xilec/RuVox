@@ -5,17 +5,17 @@ Tests the full cycle:
   → SVG cached → pixmap captured → TextViewerWidget shows image → preview dialog works.
 """
 
-import pytest
-from unittest.mock import patch, MagicMock
 from pathlib import Path
+from unittest.mock import patch
 
-from PyQt6.QtCore import QUrl, QTimer, QEventLoop, Qt
-from PyQt6.QtWidgets import QApplication
+import pytest
+from PyQt6.QtCore import QEventLoop, Qt, QTimer, QUrl
 
 SCREENSHOT_DIR = Path(__file__).resolve().parent.parent.parent / "tmp"
 
 try:
     from PyQt6.QtWebEngineWidgets import QWebEngineView  # noqa: F401
+
     HAS_WEBENGINE = True
 except ImportError:
     HAS_WEBENGINE = False
@@ -90,7 +90,6 @@ End of document.
 """
 
 
-
 def _wait_for_signal(signal, timeout_ms=10000):
     """Block until signal emits or timeout.  Returns True if signal fired."""
     loop = QEventLoop()
@@ -144,7 +143,7 @@ class TestMermaidRendererE2E:
 
     def test_mermaid_js_downloaded(self, qapp):
         """mermaid.min.js should be downloaded and cached on disk."""
-        from ruvox.ui.services.mermaid_renderer import MermaidRenderer, _mermaid_cache_dir
+        from ruvox.ui.services.mermaid_renderer import MermaidRenderer
 
         renderer = MermaidRenderer()
         try:
@@ -254,10 +253,7 @@ class TestMermaidRenderQuality:
                     if c.red() < 30 and c.green() < 30 and c.blue() < 30:
                         dark_count += 1
             dark_ratio = dark_count / total if total > 0 else 0
-            assert dark_ratio < 0.15, (
-                f"Too many dark pixels ({dark_ratio:.1%}) — "
-                f"nodes have black backgrounds?"
-            )
+            assert dark_ratio < 0.15, f"Too many dark pixels ({dark_ratio:.1%}) — nodes have black backgrounds?"
         finally:
             renderer.cleanup()
             renderer.deleteLater()
@@ -286,9 +282,7 @@ class TestMermaidRenderQuality:
             pixmap.save(str(SCREENSHOT_DIR / "mermaid_quality_complex.png"))
 
             # SVG should contain text from the diagram
-            assert "Encoder" in svg or "encoder" in svg.lower(), (
-                "SVG missing 'Encoder' text"
-            )
+            assert "Encoder" in svg or "encoder" in svg.lower(), "SVG missing 'Encoder' text"
 
             # Check that pixmap has visible content
             image = pixmap.toImage()
@@ -314,8 +308,7 @@ class TestMermaidRenderQuality:
                         dark_count += 1
             dark_ratio = dark_count / total if total > 0 else 0
             assert dark_ratio < 0.15, (
-                f"Complex diagram has {dark_ratio:.1%} dark pixels — "
-                f"dark theme or missing content?"
+                f"Complex diagram has {dark_ratio:.1%} dark pixels — dark theme or missing content?"
             )
         finally:
             renderer.cleanup()
@@ -379,8 +372,8 @@ class TestTextViewerMermaidE2E:
 
     def test_image_appears_after_render(self, qapp):
         """Markdown with mermaid block should show image, not placeholder."""
-        from ruvox.ui.widgets.text_viewer import TextViewerWidget, TextFormat
         from ruvox.ui.models.entry import TextEntry
+        from ruvox.ui.widgets.text_viewer import TextFormat, TextViewerWidget
 
         viewer = TextViewerWidget()
         try:
@@ -403,19 +396,17 @@ class TestTextViewerMermaidE2E:
             # Now check the HTML contains the image tag (not placeholder)
             html = viewer.toHtml()
             assert "mermaid-diagram" in html or 'src="mermaid-img:0"' in html, (
-                f"Image tag not found in HTML after render. "
-                f"HTML excerpt: {html[:500]}"
+                f"Image tag not found in HTML after render. HTML excerpt: {html[:500]}"
             )
 
             # loadResource should return a pixmap now
             from PyQt6.QtGui import QTextDocument
+
             result = viewer.loadResource(
                 QTextDocument.ResourceType.ImageResource.value,
                 QUrl("mermaid-img:0"),
             )
-            assert result is not None, (
-                "loadResource returned None — SVG not cached or pixmap conversion failed"
-            )
+            assert result is not None, "loadResource returned None — SVG not cached or pixmap conversion failed"
         finally:
             if viewer._mermaid_renderer:
                 viewer._mermaid_renderer.cleanup()
@@ -423,8 +414,8 @@ class TestTextViewerMermaidE2E:
 
     def test_highlighting_works_with_mermaid(self, qapp):
         """Word highlighting should work for text around mermaid blocks."""
-        from ruvox.ui.widgets.text_viewer import TextViewerWidget, TextFormat
         from ruvox.ui.models.entry import TextEntry
+        from ruvox.ui.widgets.text_viewer import TextFormat, TextViewerWidget
 
         viewer = TextViewerWidget()
         try:
@@ -436,11 +427,15 @@ class TestTextViewerMermaidE2E:
 
             timestamps = [
                 {
-                    "word": "Some", "start": 0.0, "end": 0.5,
+                    "word": "Some",
+                    "start": 0.0,
+                    "end": 0.5,
                     "original_pos": [before_start, before_start + 4],
                 },
                 {
-                    "word": "after", "start": 1.0, "end": 1.5,
+                    "word": "after",
+                    "start": 1.0,
+                    "end": 1.5,
                     "original_pos": [after_start + 10, after_start + 15],
                 },
             ]
@@ -509,10 +504,11 @@ class TestMermaidPreviewE2E:
 
     def test_escape_key_closes(self, qapp):
         """Escape key should close the preview dialog."""
+        from PyQt6.QtCore import QEvent
+        from PyQt6.QtGui import QKeyEvent
+
         from ruvox.ui.dialogs.mermaid_preview import MermaidPreviewDialog
         from ruvox.ui.services.mermaid_renderer import _mermaid_cache_dir
-        from PyQt6.QtGui import QKeyEvent
-        from PyQt6.QtCore import QEvent, Qt
 
         js_path = _mermaid_cache_dir() / "mermaid.min.js"
         if not js_path.exists():
@@ -542,9 +538,9 @@ class TestMermaidVisualE2E:
           - tmp/mermaid_01_initial.png — right after set_entry
           - tmp/mermaid_02_rendered.png — after SVG ready, image visible
         """
-        from ruvox.ui.widgets.text_viewer import TextViewerWidget, TextFormat
         from ruvox.ui.models.entry import TextEntry
         from ruvox.ui.services.mermaid_renderer import _code_hash
+        from ruvox.ui.widgets.text_viewer import TextFormat, TextViewerWidget
 
         SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -581,15 +577,12 @@ class TestMermaidVisualE2E:
 
             # Verify image is in the document
             html = viewer.toHtml()
-            assert 'src="mermaid-img:0"' in html, (
-                "Image tag not in HTML after render — still showing placeholder"
-            )
-            assert "загружается" not in html, (
-                "Placeholder text still present after render"
-            )
+            assert 'src="mermaid-img:0"' in html, "Image tag not in HTML after render — still showing placeholder"
+            assert "загружается" not in html, "Placeholder text still present after render"
 
             # loadResource should return a pixmap
             from PyQt6.QtGui import QTextDocument
+
             resource = viewer.loadResource(
                 QTextDocument.ResourceType.ImageResource.value,
                 QUrl("mermaid-img:0"),
@@ -607,9 +600,9 @@ class TestMermaidVisualE2E:
         Screenshots:
           - tmp/mermaid_04_complex_viewer.png — complex diagram in TextViewer
         """
-        from ruvox.ui.widgets.text_viewer import TextViewerWidget, TextFormat
         from ruvox.ui.models.entry import TextEntry
         from ruvox.ui.services.mermaid_renderer import _code_hash
+        from ruvox.ui.widgets.text_viewer import TextFormat, TextViewerWidget
 
         SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -723,8 +716,8 @@ class TestTextViewerLinkNavigation:
 
     def test_mermaid_click_preserves_content(self, qapp):
         """Clicking mermaid link should not clear TextViewer content."""
-        from ruvox.ui.widgets.text_viewer import TextViewerWidget, TextFormat
         from ruvox.ui.models.entry import TextEntry
+        from ruvox.ui.widgets.text_viewer import TextFormat, TextViewerWidget
 
         viewer = TextViewerWidget()
         try:
@@ -742,12 +735,8 @@ class TestTextViewerLinkNavigation:
 
             # Content should be preserved
             html_after = viewer.toHtml()
-            assert len(html_after) > 100, (
-                "Content lost after clicking mermaid link"
-            )
-            assert "Test Document" in viewer.toPlainText(), (
-                "Title text missing after clicking mermaid link"
-            )
+            assert len(html_after) > 100, "Content lost after clicking mermaid link"
+            assert "Test Document" in viewer.toPlainText(), "Title text missing after clicking mermaid link"
         finally:
             if viewer._mermaid_renderer:
                 viewer._mermaid_renderer.cleanup()
@@ -755,8 +744,8 @@ class TestTextViewerLinkNavigation:
 
     def test_switch_to_plain_after_click(self, qapp):
         """Switching to plain text after mermaid click should show raw text."""
-        from ruvox.ui.widgets.text_viewer import TextViewerWidget, TextFormat
         from ruvox.ui.models.entry import TextEntry
+        from ruvox.ui.widgets.text_viewer import TextFormat, TextViewerWidget
 
         viewer = TextViewerWidget()
         try:
@@ -772,9 +761,7 @@ class TestTextViewerLinkNavigation:
             # Switch to plain text
             viewer.set_format(TextFormat.PLAIN)
             plain = viewer.toPlainText()
-            assert "```mermaid" in plain, (
-                f"Plain text mode doesn't show raw mermaid block: {plain[:200]}"
-            )
+            assert "```mermaid" in plain, f"Plain text mode doesn't show raw mermaid block: {plain[:200]}"
             assert "Some text before" in plain
             assert "Some text after" in plain
         finally:
@@ -784,9 +771,10 @@ class TestTextViewerLinkNavigation:
 
     def test_plain_text_has_no_link_formatting(self, qapp):
         """Plain text after markdown should not have link character format."""
-        from ruvox.ui.widgets.text_viewer import TextViewerWidget, TextFormat
-        from ruvox.ui.models.entry import TextEntry
         from PyQt6.QtGui import QTextCursor
+
+        from ruvox.ui.models.entry import TextEntry
+        from ruvox.ui.widgets.text_viewer import TextFormat, TextViewerWidget
 
         viewer = TextViewerWidget()
         try:
@@ -806,9 +794,7 @@ class TestTextViewerLinkNavigation:
                 QTextCursor.MoveMode.KeepAnchor,
             )
             char_format = cursor.charFormat()
-            assert not char_format.isAnchor(), (
-                "Plain text has anchor formatting — link styles leaked from HTML"
-            )
+            assert not char_format.isAnchor(), "Plain text has anchor formatting — link styles leaked from HTML"
 
             # Default stylesheet should be cleared
             assert viewer.document().defaultStyleSheet() == ""
@@ -819,9 +805,10 @@ class TestTextViewerLinkNavigation:
 
     def test_switch_entry_after_mermaid_clears_formatting(self, qapp):
         """Switching to a new entry should not carry over link formatting."""
-        from ruvox.ui.widgets.text_viewer import TextViewerWidget, TextFormat
-        from ruvox.ui.models.entry import TextEntry
         from PyQt6.QtGui import QTextCursor
+
+        from ruvox.ui.models.entry import TextEntry
+        from ruvox.ui.widgets.text_viewer import TextFormat, TextViewerWidget
 
         viewer = TextViewerWidget()
         try:

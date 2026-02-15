@@ -1,10 +1,8 @@
 """Tests for MarkdownPositionMapper."""
 
 import pytest
-from PyQt6.QtWidgets import QApplication
 
 from ruvox.ui.utils.markdown_mapper import MarkdownPositionMapper
-
 
 
 class TestMarkdownPositionMapper:
@@ -295,9 +293,7 @@ class TestMarkdownPositionMapper:
             assert result is not None, f"Mapping not found for {word!r}"
 
             rendered_word = mapper.rendered_plain[result[0] : result[1]]
-            assert (
-                rendered_word == word
-            ), f"Expected {word!r}, got {rendered_word!r}"
+            assert rendered_word == word, f"Expected {word!r}, got {rendered_word!r}"
 
     def test_single_char_variables(self, qapp):
         """Test repeated single-character variables (like x, y) in code."""
@@ -311,7 +307,7 @@ p.x = p.y
         mapper.build_mapping()
 
         # Find all 'x' positions in original
-        x_positions = [i for i, char in enumerate(original) if char == 'x']
+        x_positions = [i for i, char in enumerate(original) if char == "x"]
         assert len(x_positions) == 2, f"Expected 2 'x' chars, found {len(x_positions)}"
 
         # Both 'x' should map correctly to different positions in rendered
@@ -321,7 +317,7 @@ p.x = p.y
             assert result is not None, f"No mapping for 'x' at position {x_pos}"
             rend_start, rend_end = result
             rendered_char = mapper.rendered_plain[rend_start:rend_end]
-            assert rendered_char == 'x', f"Expected 'x', got {rendered_char!r}"
+            assert rendered_char == "x", f"Expected 'x', got {rendered_char!r}"
             results.append((rend_start, rend_end))
 
         # Positions should be different (not both mapping to the same 'x')

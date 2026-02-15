@@ -4,21 +4,21 @@ import logging
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QMainWindow,
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QSplitter,
-    QLabel,
     QComboBox,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QSplitter,
     QStatusBar,
+    QVBoxLayout,
+    QWidget,
 )
 
+from ruvox.ui.models.entry import EntryStatus, TextEntry
 from ruvox.ui.services.logging_service import safe_slot
-from ruvox.ui.widgets.queue_list import QueueListWidget
 from ruvox.ui.widgets.player import PlayerWidget
-from ruvox.ui.widgets.text_viewer import TextViewerWidget, TextFormat
-from ruvox.ui.models.entry import TextEntry, EntryStatus
+from ruvox.ui.widgets.queue_list import QueueListWidget
+from ruvox.ui.widgets.text_viewer import TextFormat, TextViewerWidget
 
 logger = logging.getLogger(__name__)
 
@@ -210,9 +210,11 @@ class MainWindow(QMainWindow):
     def _on_playback_position_changed(self, position_sec: float) -> None:
         """Handle playback position change - update text highlighting."""
         # Only highlight if the viewer is showing the currently playing entry
-        if (self.player.current_entry and
-            self.text_viewer.current_entry and
-            self.player.current_entry.id == self.text_viewer.current_entry.id):
+        if (
+            self.player.current_entry
+            and self.text_viewer.current_entry
+            and self.player.current_entry.id == self.text_viewer.current_entry.id
+        ):
             self.text_viewer.highlight_at_position(position_sec)
 
     @safe_slot
@@ -261,10 +263,7 @@ class MainWindow(QMainWindow):
         """Get list of entries that are ready to play."""
         if not self.app.storage:
             return []
-        return [
-            e for e in self.app.storage.get_all_entries()
-            if e.status == EntryStatus.READY
-        ]
+        return [e for e in self.app.storage.get_all_entries() if e.status == EntryStatus.READY]
 
     def play_entry(self, entry_id: str) -> None:
         """Play entry by ID (called from app on play_requested)."""
@@ -317,7 +316,7 @@ class MainWindow(QMainWindow):
 
     def _setup_shortcuts(self) -> None:
         """Setup keyboard shortcuts for player."""
-        from PyQt6.QtGui import QShortcut, QKeySequence
+        from PyQt6.QtGui import QKeySequence, QShortcut
 
         # Play/Pause
         QShortcut(QKeySequence(Qt.Key.Key_Space), self, self.player.toggle_play_pause)

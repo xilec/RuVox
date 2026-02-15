@@ -8,13 +8,13 @@ from pathlib import Path
 
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
     QHBoxLayout,
+    QLabel,
     QPushButton,
     QSlider,
-    QLabel,
     QStyle,
+    QVBoxLayout,
+    QWidget,
 )
 
 from ruvox.ui.models.entry import TextEntry
@@ -45,7 +45,7 @@ class PlayerWidget(QWidget):
 
     # Signals
     position_changed = pyqtSignal(float)  # Position in seconds for text sync
-    playback_started = pyqtSignal(str)    # entry_id
+    playback_started = pyqtSignal(str)  # entry_id
     playback_stopped = pyqtSignal()
     next_requested = pyqtSignal()
     prev_requested = pyqtSignal()
@@ -339,14 +339,10 @@ class PlayerWidget(QWidget):
         """Update playing state and icon."""
         self._is_playing = playing
         if playing:
-            self.btn_play_pause.setIcon(
-                self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause)
-            )
+            self.btn_play_pause.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause))
             self._position_timer.start()
         else:
-            self.btn_play_pause.setIcon(
-                self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
-            )
+            self.btn_play_pause.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
             self._position_timer.stop()
 
     def _ensure_duration(self) -> None:

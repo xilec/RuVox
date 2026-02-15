@@ -1,11 +1,11 @@
 """Text entry model for TTS queue."""
 
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
-import uuid
 
 
 class EntryStatus(Enum):
@@ -55,15 +55,9 @@ class TextEntry:
             "normalized_text": self.normalized_text,
             "status": self.status.value,
             "created_at": self.created_at.isoformat(),
-            "audio_generated_at": (
-                self.audio_generated_at.isoformat()
-                if self.audio_generated_at
-                else None
-            ),
+            "audio_generated_at": (self.audio_generated_at.isoformat() if self.audio_generated_at else None),
             "audio_path": str(self.audio_path) if self.audio_path else None,
-            "timestamps_path": (
-                str(self.timestamps_path) if self.timestamps_path else None
-            ),
+            "timestamps_path": (str(self.timestamps_path) if self.timestamps_path else None),
             "duration_sec": self.duration_sec,
             "was_regenerated": self.was_regenerated,
             "error_message": self.error_message,
@@ -79,14 +73,10 @@ class TextEntry:
             status=EntryStatus(data["status"]),
             created_at=datetime.fromisoformat(data["created_at"]),
             audio_generated_at=(
-                datetime.fromisoformat(data["audio_generated_at"])
-                if data.get("audio_generated_at")
-                else None
+                datetime.fromisoformat(data["audio_generated_at"]) if data.get("audio_generated_at") else None
             ),
             audio_path=Path(data["audio_path"]) if data.get("audio_path") else None,
-            timestamps_path=(
-                Path(data["timestamps_path"]) if data.get("timestamps_path") else None
-            ),
+            timestamps_path=(Path(data["timestamps_path"]) if data.get("timestamps_path") else None),
             duration_sec=data.get("duration_sec"),
             was_regenerated=data.get("was_regenerated", False),
             error_message=data.get("error_message"),

@@ -9,9 +9,8 @@ import numpy as np
 import pytest
 
 from ruvox.ui.models.config import UIConfig
-from ruvox.ui.models.entry import EntryStatus, TextEntry
+from ruvox.ui.models.entry import EntryStatus
 from ruvox.ui.services.storage import HISTORY_VERSION, StorageService
-
 
 
 @pytest.fixture
@@ -180,9 +179,7 @@ class TestUpdateEntry:
         assert updated.normalized_text == "Modified"
         assert updated.status == EntryStatus.READY
 
-    def test_update_entry_persists_to_history(
-        self, storage: StorageService, config: UIConfig
-    ):
+    def test_update_entry_persists_to_history(self, storage: StorageService, config: UIConfig):
         """Updated entry should be persisted to history.json."""
         entry = storage.add_entry("Original")
         entry.normalized_text = "Updated for persistence"
@@ -224,9 +221,7 @@ class TestDeleteEntry:
 
         assert storage.get_entry(entry_id) is None
 
-    def test_delete_entry_removes_audio_file(
-        self, storage: StorageService, mock_audio_data: np.ndarray
-    ):
+    def test_delete_entry_removes_audio_file(self, storage: StorageService, mock_audio_data: np.ndarray):
         """delete_entry should remove associated audio file."""
         entry = storage.add_entry("With audio")
         audio_path = storage.save_audio(entry.id, mock_audio_data, 48000)
@@ -240,9 +235,7 @@ class TestDeleteEntry:
 
         assert not full_audio_path.exists()
 
-    def test_delete_entry_removes_timestamps_file(
-        self, storage: StorageService, sample_timestamps: list[dict]
-    ):
+    def test_delete_entry_removes_timestamps_file(self, storage: StorageService, sample_timestamps: list[dict]):
         """delete_entry should remove associated timestamps file."""
         entry = storage.add_entry("With timestamps")
         ts_path = storage.save_timestamps(entry.id, sample_timestamps)
@@ -256,9 +249,7 @@ class TestDeleteEntry:
 
         assert not full_ts_path.exists()
 
-    def test_delete_entry_persists_to_history(
-        self, storage: StorageService, config: UIConfig
-    ):
+    def test_delete_entry_persists_to_history(self, storage: StorageService, config: UIConfig):
         """delete_entry should update history.json."""
         entry = storage.add_entry("To persist delete")
         entry_id = entry.id
@@ -271,9 +262,7 @@ class TestDeleteEntry:
         entry_ids = [e["id"] for e in data["entries"]]
         assert entry_id not in entry_ids
 
-    def test_delete_entry_handles_missing_audio_gracefully(
-        self, storage: StorageService
-    ):
+    def test_delete_entry_handles_missing_audio_gracefully(self, storage: StorageService):
         """delete_entry should not fail if audio file is already missing."""
         entry = storage.add_entry("No audio")
         entry.audio_path = Path("missing.wav")
@@ -293,9 +282,7 @@ class TestDeleteEntry:
 class TestDeleteAudio:
     """Tests for delete_audio method."""
 
-    def test_delete_audio_removes_wav_file(
-        self, storage: StorageService, mock_audio_data: np.ndarray
-    ):
+    def test_delete_audio_removes_wav_file(self, storage: StorageService, mock_audio_data: np.ndarray):
         """delete_audio should remove the WAV file."""
         entry = storage.add_entry("Audio to delete")
         audio_path = storage.save_audio(entry.id, mock_audio_data, 48000)
@@ -332,9 +319,7 @@ class TestDeleteAudio:
 
         assert not full_ts_path.exists()
 
-    def test_delete_audio_resets_status_to_pending(
-        self, storage: StorageService, mock_audio_data: np.ndarray
-    ):
+    def test_delete_audio_resets_status_to_pending(self, storage: StorageService, mock_audio_data: np.ndarray):
         """delete_audio should reset entry status to PENDING."""
         entry = storage.add_entry("Ready entry")
         audio_path = storage.save_audio(entry.id, mock_audio_data, 48000)
@@ -347,9 +332,7 @@ class TestDeleteAudio:
         updated = storage.get_entry(entry.id)
         assert updated.status == EntryStatus.PENDING
 
-    def test_delete_audio_clears_metadata(
-        self, storage: StorageService, mock_audio_data: np.ndarray
-    ):
+    def test_delete_audio_clears_metadata(self, storage: StorageService, mock_audio_data: np.ndarray):
         """delete_audio should clear audio-related metadata."""
         entry = storage.add_entry("Entry with metadata")
         audio_path = storage.save_audio(entry.id, mock_audio_data, 48000)
@@ -415,9 +398,7 @@ class TestGetAllEntries:
 class TestAudioOperations:
     """Tests for audio file operations."""
 
-    def test_save_audio_creates_wav_file(
-        self, storage: StorageService, mock_audio_data: np.ndarray
-    ):
+    def test_save_audio_creates_wav_file(self, storage: StorageService, mock_audio_data: np.ndarray):
         """save_audio should create a WAV file."""
         entry = storage.add_entry("Audio test")
         audio_path = storage.save_audio(entry.id, mock_audio_data, 48000)
@@ -426,9 +407,7 @@ class TestAudioOperations:
         assert full_path.exists()
         assert full_path.suffix == ".wav"
 
-    def test_save_audio_returns_relative_path(
-        self, storage: StorageService, mock_audio_data: np.ndarray
-    ):
+    def test_save_audio_returns_relative_path(self, storage: StorageService, mock_audio_data: np.ndarray):
         """save_audio should return path relative to audio_dir."""
         entry = storage.add_entry("Relative path test")
         audio_path = storage.save_audio(entry.id, mock_audio_data, 48000)
@@ -436,9 +415,7 @@ class TestAudioOperations:
         assert str(audio_path) == f"{entry.id}.wav"
         assert not audio_path.is_absolute()
 
-    def test_save_audio_saves_correct_sample_rate(
-        self, storage: StorageService, mock_audio_data: np.ndarray
-    ):
+    def test_save_audio_saves_correct_sample_rate(self, storage: StorageService, mock_audio_data: np.ndarray):
         """save_audio should save with correct sample rate."""
         from scipy.io import wavfile
 
@@ -451,9 +428,7 @@ class TestAudioOperations:
 
         assert saved_rate == sample_rate
 
-    def test_save_timestamps_creates_json_file(
-        self, storage: StorageService, sample_timestamps: list[dict]
-    ):
+    def test_save_timestamps_creates_json_file(self, storage: StorageService, sample_timestamps: list[dict]):
         """save_timestamps should create a JSON file."""
         entry = storage.add_entry("Timestamps test")
         ts_path = storage.save_timestamps(entry.id, sample_timestamps)
@@ -463,9 +438,7 @@ class TestAudioOperations:
         assert full_path.suffix == ".json"
         assert ".timestamps." in str(ts_path)
 
-    def test_save_timestamps_preserves_data_structure(
-        self, storage: StorageService, sample_timestamps: list[dict]
-    ):
+    def test_save_timestamps_preserves_data_structure(self, storage: StorageService, sample_timestamps: list[dict]):
         """save_timestamps should preserve the timestamps data structure."""
         entry = storage.add_entry("Structure test")
         ts_path = storage.save_timestamps(entry.id, sample_timestamps)
@@ -478,9 +451,7 @@ class TestAudioOperations:
         assert data["words"][0]["word"] == "Hello"
         assert data["words"][1]["original_pos"] == [6, 11]
 
-    def test_load_timestamps_returns_words_list(
-        self, storage: StorageService, sample_timestamps: list[dict]
-    ):
+    def test_load_timestamps_returns_words_list(self, storage: StorageService, sample_timestamps: list[dict]):
         """load_timestamps should return the words list."""
         entry = storage.add_entry("Load test")
         ts_path = storage.save_timestamps(entry.id, sample_timestamps)
@@ -493,17 +464,13 @@ class TestAudioOperations:
         assert len(loaded) == 2
         assert loaded[0]["word"] == "Hello"
 
-    def test_load_timestamps_returns_none_for_missing_entry(
-        self, storage: StorageService
-    ):
+    def test_load_timestamps_returns_none_for_missing_entry(self, storage: StorageService):
         """load_timestamps should return None for non-existent entry."""
         result = storage.load_timestamps("non-existent-id")
 
         assert result is None
 
-    def test_get_audio_path_returns_full_path(
-        self, storage: StorageService, mock_audio_data: np.ndarray
-    ):
+    def test_get_audio_path_returns_full_path(self, storage: StorageService, mock_audio_data: np.ndarray):
         """get_audio_path should return full absolute path."""
         entry = storage.add_entry("Path test")
         audio_path = storage.save_audio(entry.id, mock_audio_data, 48000)
@@ -546,9 +513,7 @@ class TestStatistics:
 
         assert size == 0
 
-    def test_get_audio_count_counts_wav_files(
-        self, storage: StorageService, mock_audio_data: np.ndarray
-    ):
+    def test_get_audio_count_counts_wav_files(self, storage: StorageService, mock_audio_data: np.ndarray):
         """get_audio_count should count WAV files only."""
         entry1 = storage.add_entry("Audio 1")
         entry2 = storage.add_entry("Audio 2")
@@ -575,9 +540,7 @@ class TestStatistics:
 class TestValidationAndLoading:
     """Tests for validation and history loading."""
 
-    def test_validate_entry_status_ready_when_audio_exists(
-        self, temp_cache_dir: Path, mock_audio_data: np.ndarray
-    ):
+    def test_validate_entry_status_ready_when_audio_exists(self, temp_cache_dir: Path, mock_audio_data: np.ndarray):
         """Entry should be READY if audio file exists."""
         from scipy.io import wavfile
 
@@ -615,9 +578,7 @@ class TestValidationAndLoading:
         entry = storage.get_entry("test-id")
         assert entry.status == EntryStatus.READY
 
-    def test_validate_entry_status_pending_when_audio_deleted(
-        self, temp_cache_dir: Path
-    ):
+    def test_validate_entry_status_pending_when_audio_deleted(self, temp_cache_dir: Path):
         """Entry should be PENDING if audio file is missing."""
         # Create history with entry pointing to non-existent audio
         (temp_cache_dir / "audio").mkdir(parents=True, exist_ok=True)
@@ -700,9 +661,7 @@ class TestValidationAndLoading:
         # Backup should be created
         assert (temp_cache_dir / "history.json.bak").exists()
 
-    def test_save_history_creates_json_file(
-        self, storage: StorageService, config: UIConfig
-    ):
+    def test_save_history_creates_json_file(self, storage: StorageService, config: UIConfig):
         """save_history should create properly formatted JSON."""
         storage.add_entry("Test entry")
 

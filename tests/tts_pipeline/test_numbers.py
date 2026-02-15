@@ -125,7 +125,7 @@ class TestRanges:
         "range_str,expected",
         [
             ("10–20", "от десяти до двадцати"),  # en-dash
-            ("100—200", "от ста до двухсот"),    # em-dash (may need separate handling)
+            ("100—200", "от ста до двухсот"),  # em-dash (may need separate handling)
         ],
     )
     def test_range_with_dashes(self, number_normalizer, range_str, expected):

@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 class CleanupSignals(QObject):
     """Signals for cleanup runnable."""
+
     completed = pyqtSignal(int)  # Number of deleted items
 
 
@@ -63,18 +64,16 @@ class CleanupRunnable(QRunnable):
     def _cleanup_old_audio_files(self) -> int:
         """Delete old audio files, keeping only the most recent N."""
         entries_with_audio = [
-            e for e in self.storage.get_all_entries()
+            e
+            for e in self.storage.get_all_entries()
             if e.audio_path and e.audio_path.exists() and not e.was_regenerated
         ]
 
         # Sort by generation time (newest first)
-        entries_with_audio.sort(
-            key=lambda e: e.audio_generated_at or e.created_at,
-            reverse=True
-        )
+        entries_with_audio.sort(key=lambda e: e.audio_generated_at or e.created_at, reverse=True)
 
         deleted = 0
-        for entry in entries_with_audio[self.config.audio_max_files:]:
+        for entry in entries_with_audio[self.config.audio_max_files :]:
             self.storage.delete_audio(entry.id)
             deleted += 1
 

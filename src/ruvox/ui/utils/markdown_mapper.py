@@ -83,9 +83,7 @@ class MarkdownPositionMapper:
 
         return html
 
-    def get_rendered_range(
-        self, original_start: int, original_end: int
-    ) -> tuple[int, int] | None:
+    def get_rendered_range(self, original_start: int, original_end: int) -> tuple[int, int] | None:
         """Get position range in rendered text from original text range.
 
         Handles cases where boundaries fall on Markdown syntax that gets removed
@@ -166,18 +164,17 @@ class MarkdownPositionMapper:
         # autojunk=False is critical: with True (default), characters appearing
         # 1+len(b)//100 times are treated as junk, causing misalignment after
         # large deleted sections (e.g. URLs in Markdown links)
-        matcher = SequenceMatcher(None, self.original_text, self.rendered_plain,
-                                  autojunk=False)
+        matcher = SequenceMatcher(None, self.original_text, self.rendered_plain, autojunk=False)
 
         for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-            if tag == 'equal':
+            if tag == "equal":
                 # Characters match exactly - create direct mapping
                 for k in range(i2 - i1):
                     self.position_map[i1 + k] = j1 + k
-            elif tag == 'delete':
+            elif tag == "delete":
                 # Markdown syntax removed during rendering - no mapping needed
                 pass
-            elif tag == 'replace':
+            elif tag == "replace":
                 # Characters changed (e.g., HTML entities decoded by Qt)
                 # Map them proportionally for rough alignment
                 orig_len = i2 - i1
@@ -187,7 +184,7 @@ class MarkdownPositionMapper:
                         # Proportional mapping for replaced sections
                         rend_offset = int(k * rend_len / orig_len)
                         self.position_map[i1 + k] = j1 + rend_offset
-            elif tag == 'insert':
+            elif tag == "insert":
                 # Text inserted in rendered (shouldn't happen for Markdown)
                 # This might occur if Qt adds something during rendering
                 pass

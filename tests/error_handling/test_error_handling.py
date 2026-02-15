@@ -23,17 +23,16 @@ Total: 46 tests
 import json
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 
+from ruvox.tts_pipeline import PipelineConfig, TTSPipeline
+from ruvox.tts_pipeline.tracked_text import TrackedText
 from ruvox.ui.models.config import UIConfig
-from ruvox.ui.models.entry import EntryStatus, TextEntry
+from ruvox.ui.models.entry import EntryStatus
 from ruvox.ui.services.storage import HISTORY_VERSION, StorageService
-from ruvox.tts_pipeline import TTSPipeline, PipelineConfig
-from ruvox.tts_pipeline.tracked_text import TrackedText, CharMapping
-
 
 
 @pytest.fixture
@@ -133,9 +132,7 @@ class TestStorageServiceErrorHandling:
         assert entry.status == EntryStatus.PENDING, "Status should be PENDING when audio is missing"
         assert entry.audio_path is None, "audio_path should be None when file is missing"
 
-    def test_delete_entry_file_not_found(
-        self, storage: StorageService, mock_audio_data: np.ndarray
-    ):
+    def test_delete_entry_file_not_found(self, storage: StorageService, mock_audio_data: np.ndarray):
         """delete_entry should not raise exception when audio file is already deleted.
 
         Scenario: Entry exists with audio_path, but the file was manually deleted.
@@ -287,9 +284,7 @@ class TestStorageServiceErrorHandling:
         new_entry = storage.add_entry("Test after delete nonexistent")
         assert new_entry is not None
 
-    def test_update_entry_preserves_audio_on_missing_file(
-        self, storage: StorageService, mock_audio_data: np.ndarray
-    ):
+    def test_update_entry_preserves_audio_on_missing_file(self, storage: StorageService, mock_audio_data: np.ndarray):
         """update_entry should work even when audio file is missing.
 
         If entry.audio_path points to missing file but we're just updating
@@ -515,7 +510,7 @@ class TestEdgeCasesErrorHandling:
             "\u200b",  # Zero-width space
             "\u00a0",  # Non-breaking space
             "\ufeff",  # BOM character
-            "emoji: \U0001F600",  # Emoji
+            "emoji: \U0001f600",  # Emoji
             "\u0301",  # Combining accent
             "RTL: \u0627\u0644\u0639\u0631\u0628\u064a\u0629",  # Arabic
         ]
@@ -536,9 +531,7 @@ class TestEdgeCasesErrorHandling:
         assert isinstance(result, str)
         assert len(result) > 0
 
-    def test_storage_concurrent_access_simulation(
-        self, config: UIConfig, mock_audio_data: np.ndarray
-    ):
+    def test_storage_concurrent_access_simulation(self, config: UIConfig, mock_audio_data: np.ndarray):
         """Simulate concurrent access to storage (basic test).
 
         While not a true concurrency test, this verifies that multiple
@@ -606,8 +599,8 @@ class TestTTSWorkerErrorHandling:
         Verifies that socket.setdefaulttimeout is called with appropriate value
         during model loading.
         """
-        from ruvox.ui.services.tts_worker import ModelLoadRunnable
         from ruvox.ui.models.config import UIConfig
+        from ruvox.ui.services.tts_worker import ModelLoadRunnable
 
         config = UIConfig()
 
@@ -637,15 +630,17 @@ class TestTTSWorkerErrorHandling:
         runnable.signals.error.connect(lambda msg: error_message.append(msg))
 
         # Patch imports inside run()
-        with patch.dict('sys.modules', {'socket': mock_socket, 'torch': mock_torch}):
+        with patch.dict("sys.modules", {"socket": mock_socket, "torch": mock_torch}):
             # Import socket inside run() - need to patch at module level
             import socket
+
             original_setdefaulttimeout = socket.setdefaulttimeout
             original_getdefaulttimeout = socket.getdefaulttimeout
             socket.setdefaulttimeout = mock_setdefaulttimeout
             socket.getdefaulttimeout = mock_getdefaulttimeout
 
             import torch
+
             original_hub_load = torch.hub.load
             torch.hub.load = mock_hub_load
 
@@ -668,8 +663,8 @@ class TestTTSWorkerErrorHandling:
         When torch.hub.load raises ConnectionError, the error should be
         logged and error signal emitted.
         """
-        from ruvox.ui.services.tts_worker import ModelLoadRunnable
         from ruvox.ui.models.config import UIConfig
+        from ruvox.ui.services.tts_worker import ModelLoadRunnable
 
         config = UIConfig()
         runnable = ModelLoadRunnable(config)
@@ -682,6 +677,7 @@ class TestTTSWorkerErrorHandling:
             raise ConnectionError("Network unreachable")
 
         import torch
+
         original_hub_load = torch.hub.load
         torch.hub.load = mock_hub_load
 
@@ -700,10 +696,10 @@ class TestTTSWorkerErrorHandling:
         When normalized text is empty, ValueError should be raised and caught,
         entry status should be set to ERROR.
         """
-        from ruvox.ui.services.tts_worker import TTSRunnable
         from ruvox.ui.models.config import UIConfig
-        from ruvox.ui.models.entry import TextEntry, EntryStatus
+        from ruvox.ui.models.entry import EntryStatus
         from ruvox.ui.services.storage import StorageService
+        from ruvox.ui.services.tts_worker import TTSRunnable
 
         # Setup
         cache_dir = tmp_path / "cache"
@@ -742,10 +738,10 @@ class TestTTSWorkerErrorHandling:
 
         When model.apply_tts() raises RuntimeError, entry status should be ERROR.
         """
-        from ruvox.ui.services.tts_worker import TTSRunnable
         from ruvox.ui.models.config import UIConfig
-        from ruvox.ui.models.entry import TextEntry, EntryStatus
+        from ruvox.ui.models.entry import EntryStatus
         from ruvox.ui.services.storage import StorageService
+        from ruvox.ui.services.tts_worker import TTSRunnable
 
         # Setup
         cache_dir = tmp_path / "cache"
@@ -785,10 +781,9 @@ class TestTTSWorkerErrorHandling:
 
         Empty text should return empty list or single empty chunk.
         """
-        from ruvox.ui.services.tts_worker import TTSRunnable
         from ruvox.ui.models.config import UIConfig
-        from ruvox.ui.models.entry import TextEntry
         from ruvox.ui.services.storage import StorageService
+        from ruvox.ui.services.tts_worker import TTSRunnable
 
         # Setup
         cache_dir = tmp_path / "cache"
@@ -812,17 +807,16 @@ class TestTTSWorkerErrorHandling:
         assert isinstance(result, list)
         if result:
             assert result[0][0] == ""  # chunk text
-            assert result[0][1] == 0   # start position
+            assert result[0][1] == 0  # start position
 
     def test_split_into_chunks_no_spaces(self, tmp_path):
         """Test _split_into_chunks with text without spaces.
 
         Very long word without spaces should still be split correctly.
         """
-        from ruvox.ui.services.tts_worker import TTSRunnable, MAX_CHUNK_SIZE
         from ruvox.ui.models.config import UIConfig
-        from ruvox.ui.models.entry import TextEntry
         from ruvox.ui.services.storage import StorageService
+        from ruvox.ui.services.tts_worker import MAX_CHUNK_SIZE, TTSRunnable
 
         # Setup
         cache_dir = tmp_path / "cache"
@@ -858,10 +852,9 @@ class TestTTSWorkerErrorHandling:
 
         Empty chunk list should return empty timestamps.
         """
-        from ruvox.ui.services.tts_worker import TTSRunnable
         from ruvox.ui.models.config import UIConfig
-        from ruvox.ui.models.entry import TextEntry
         from ruvox.ui.services.storage import StorageService
+        from ruvox.ui.services.tts_worker import TTSRunnable
 
         # Setup
         cache_dir = tmp_path / "cache"
@@ -893,9 +886,9 @@ class TestTTSWorkerErrorHandling:
 
         Chunks with empty or whitespace-only text should be handled gracefully.
         """
-        from ruvox.ui.services.tts_worker import TTSRunnable
         from ruvox.ui.models.config import UIConfig
         from ruvox.ui.services.storage import StorageService
+        from ruvox.ui.services.tts_worker import TTSRunnable
 
         # Setup
         cache_dir = tmp_path / "cache"
@@ -938,8 +931,8 @@ class TestHotkeyServiceErrorHandling:
         When EVDEV_AVAILABLE is False, registration should fail and
         registration_failed signal should be emitted.
         """
-        from ruvox.ui.models.config import UIConfig
         import ruvox.ui.services.hotkeys as hotkeys_module
+        from ruvox.ui.models.config import UIConfig
 
         config = UIConfig(cache_dir=tmp_path)
 
@@ -969,8 +962,8 @@ class TestHotkeyServiceErrorHandling:
 
         When _find_keyboards returns empty list, registration should fail.
         """
-        from ruvox.ui.models.config import UIConfig
         import ruvox.ui.services.hotkeys as hotkeys_module
+        from ruvox.ui.models.config import UIConfig
 
         # Skip if evdev not available
         if not hotkeys_module.EVDEV_AVAILABLE:
@@ -996,8 +989,8 @@ class TestHotkeyServiceErrorHandling:
 
         Invalid key name should result in key_code being None.
         """
-        from ruvox.ui.models.config import UIConfig
         import ruvox.ui.services.hotkeys as hotkeys_module
+        from ruvox.ui.models.config import UIConfig
 
         # Skip if evdev not available
         if not hotkeys_module.EVDEV_AVAILABLE:
@@ -1018,8 +1011,8 @@ class TestHotkeyServiceErrorHandling:
 
         Empty string should return None key and empty modifiers.
         """
-        from ruvox.ui.models.config import UIConfig
         import ruvox.ui.services.hotkeys as hotkeys_module
+        from ruvox.ui.models.config import UIConfig
 
         # Skip if evdev not available
         if not hotkeys_module.EVDEV_AVAILABLE:
@@ -1039,8 +1032,8 @@ class TestHotkeyServiceErrorHandling:
         When device access raises PermissionError, it should be logged
         and device should be skipped.
         """
-        from ruvox.ui.models.config import UIConfig
         import ruvox.ui.services.hotkeys as hotkeys_module
+        from ruvox.ui.models.config import UIConfig
 
         # Skip if evdev not available
         if not hotkeys_module.EVDEV_AVAILABLE:
@@ -1059,6 +1052,7 @@ class TestHotkeyServiceErrorHandling:
         try:
             # Create fake /dev/input directory with event files
             import logging
+
             with caplog.at_level(logging.DEBUG):
                 keyboards = service._find_keyboards()
 
@@ -1073,8 +1067,8 @@ class TestHotkeyServiceErrorHandling:
         When device access raises OSError, it should be logged
         and device should be skipped.
         """
-        from ruvox.ui.models.config import UIConfig
         import ruvox.ui.services.hotkeys as hotkeys_module
+        from ruvox.ui.models.config import UIConfig
 
         # Skip if evdev not available
         if not hotkeys_module.EVDEV_AVAILABLE:
@@ -1092,6 +1086,7 @@ class TestHotkeyServiceErrorHandling:
 
         try:
             import logging
+
             with caplog.at_level(logging.DEBUG):
                 keyboards = service._find_keyboards()
 
@@ -1106,8 +1101,8 @@ class TestHotkeyServiceErrorHandling:
         When read_loop raises OSError (device disconnected), the listener
         should handle it gracefully without crashing.
         """
-        from ruvox.ui.models.config import UIConfig
         import ruvox.ui.services.hotkeys as hotkeys_module
+        from ruvox.ui.models.config import UIConfig
 
         # Skip if evdev not available
         if not hotkeys_module.EVDEV_AVAILABLE:
@@ -1135,8 +1130,8 @@ class TestHotkeyServiceErrorHandling:
 
         Hotkey with only modifiers and no key should return None key.
         """
-        from ruvox.ui.models.config import UIConfig
         import ruvox.ui.services.hotkeys as hotkeys_module
+        from ruvox.ui.models.config import UIConfig
 
         # Skip if evdev not available
         if not hotkeys_module.EVDEV_AVAILABLE:
@@ -1193,8 +1188,9 @@ class TestClipboardServiceErrorHandling:
 
         When subprocess.run raises TimeoutExpired, should return None.
         """
-        from ruvox.ui.services import clipboard
         import subprocess
+
+        from ruvox.ui.services import clipboard
 
         # Mock _is_wayland to return True
         monkeypatch.setattr(clipboard, "_is_wayland", lambda: True)
@@ -1223,8 +1219,9 @@ class TestClipboardServiceErrorHandling:
 
         When subprocess.run raises unexpected Exception, should log and return None.
         """
-        from ruvox.ui.services import clipboard
         import logging
+
+        from ruvox.ui.services import clipboard
 
         # Mock _is_wayland to return True
         monkeypatch.setattr(clipboard, "_is_wayland", lambda: True)
@@ -1285,8 +1282,9 @@ class TestClipboardServiceErrorHandling:
 
         When wl-paste returns non-zero exit code, should log and return None.
         """
-        from ruvox.ui.services import clipboard
         import logging
+
+        from ruvox.ui.services import clipboard
 
         # Mock _is_wayland to return True
         monkeypatch.setattr(clipboard, "_is_wayland", lambda: True)

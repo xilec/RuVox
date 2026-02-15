@@ -6,9 +6,9 @@ from enum import Enum
 from typing import Any
 
 import markdown
-from PyQt6.QtCore import Qt, QUrl
-from PyQt6.QtGui import QDesktopServices, QTextCursor, QTextCharFormat, QColor
-from PyQt6.QtWidgets import QTextBrowser, QTextEdit, QScrollBar, QWidget
+from PyQt6.QtCore import QUrl
+from PyQt6.QtGui import QColor, QDesktopServices, QTextCharFormat, QTextCursor
+from PyQt6.QtWidgets import QTextBrowser, QTextEdit, QWidget
 
 from ruvox.ui.models.entry import TextEntry
 from ruvox.ui.utils.markdown_mapper import MarkdownPositionMapper
@@ -24,6 +24,7 @@ _MERMAID_BLOCK_RE = re.compile(
 
 class TextFormat(Enum):
     """Text display format."""
+
     MARKDOWN = "markdown"
     PLAIN = "plain"
 
@@ -61,7 +62,7 @@ class TextViewerWidget(QTextBrowser):
         self.anchorClicked.connect(self._on_anchor_clicked)
 
         # Markdown converter
-        self._md = markdown.Markdown(extensions=['fenced_code', 'tables'])
+        self._md = markdown.Markdown(extensions=["fenced_code", "tables"])
 
         # Markdown position mapper for accurate highlighting
         self._markdown_mapper: MarkdownPositionMapper | None = None
@@ -130,8 +131,14 @@ class TextViewerWidget(QTextBrowser):
                 blockquote {{ border-left: 3px solid #ccc; margin-left: 0; padding-left: 12px; color: #666; }}
                 h1, h2, h3, h4, h5, h6 {{ margin-top: 0.5em; margin-bottom: 0.3em; }}
                 ul, ol {{ margin-top: 0.3em; margin-bottom: 0.3em; }}
-                img.mermaid-diagram {{ cursor: pointer; max-width: 100%; border: 1px solid #ddd; border-radius: 4px; padding: 8px; }}
-                .mermaid-placeholder {{ background: #f0f0f0; border: 1px dashed #aaa; border-radius: 4px; padding: 12px; text-align: center; color: #666; }}
+                img.mermaid-diagram {{
+                    cursor: pointer; max-width: 100%;
+                    border: 1px solid #ddd; border-radius: 4px; padding: 8px;
+                }}
+                .mermaid-placeholder {{
+                    background: #f0f0f0; border: 1px dashed #aaa;
+                    border-radius: 4px; padding: 12px; text-align: center; color: #666;
+                }}
             </style>
             {html}
             """
@@ -239,10 +246,7 @@ class TextViewerWidget(QTextBrowser):
                 return None, None
 
             doc_start, doc_end = result
-            logger.debug(
-                "Highlighted original[%d:%d] -> rendered[%d:%d]",
-                start, end, doc_start, doc_end
-            )
+            logger.debug("Highlighted original[%d:%d] -> rendered[%d:%d]", start, end, doc_start, doc_end)
 
         # Apply highlight using ExtraSelections (preserves document formatting)
         cursor = QTextCursor(self.document())
@@ -272,9 +276,7 @@ class TextViewerWidget(QTextBrowser):
 
         # Get the rectangle for this position and scroll to it
         rect = self.cursorRect(cursor)
-        self.verticalScrollBar().setValue(
-            self.verticalScrollBar().value() + rect.top() - self.height() // 3
-        )
+        self.verticalScrollBar().setValue(self.verticalScrollBar().value() + rect.top() - self.height() // 3)
 
     # -- Mermaid support --
 
@@ -316,10 +318,7 @@ class TextViewerWidget(QTextBrowser):
                 )
             else:
                 replacement = (
-                    f'<p class="mermaid-placeholder">'
-                    f'<a href="mermaid:{i}">'
-                    f'[Mermaid-диаграмма — загружается...]'
-                    f'</a></p>'
+                    f'<p class="mermaid-placeholder"><a href="mermaid:{i}">[Mermaid-диаграмма — загружается...]</a></p>'
                 )
 
             if marker_in_p in html:
@@ -339,9 +338,7 @@ class TextViewerWidget(QTextBrowser):
             try:
                 idx = int(url.path())
                 if 0 <= idx < len(self._mermaid_blocks):
-                    pixmap = self._mermaid_renderer.get_cached_pixmap(
-                        self._mermaid_blocks[idx], 600
-                    )
+                    pixmap = self._mermaid_renderer.get_cached_pixmap(self._mermaid_blocks[idx], 600)
                     if pixmap:
                         return pixmap
             except (ValueError, TypeError):
@@ -351,8 +348,7 @@ class TextViewerWidget(QTextBrowser):
     def _start_mermaid_rendering(self, blocks: list[str]) -> None:
         """Start async rendering for uncached mermaid blocks."""
         uncached = [
-            code for code in blocks
-            if not (self._mermaid_renderer and self._mermaid_renderer.get_cached_svg(code))
+            code for code in blocks if not (self._mermaid_renderer and self._mermaid_renderer.get_cached_svg(code))
         ]
 
         if not uncached:

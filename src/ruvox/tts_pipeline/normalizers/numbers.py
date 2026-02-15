@@ -1,6 +1,7 @@
 """Numbers normalizer - converts numbers to Russian words."""
 
 import re
+
 from num2words import num2words
 
 
@@ -9,100 +10,111 @@ class NumberNormalizer:
 
     # Single digit words for reading after decimal point
     DIGITS = {
-        '0': 'ноль',
-        '1': 'один',
-        '2': 'два',
-        '3': 'три',
-        '4': 'четыре',
-        '5': 'пять',
-        '6': 'шесть',
-        '7': 'семь',
-        '8': 'восемь',
-        '9': 'девять',
+        "0": "ноль",
+        "1": "один",
+        "2": "два",
+        "3": "три",
+        "4": "четыре",
+        "5": "пять",
+        "6": "шесть",
+        "7": "семь",
+        "8": "восемь",
+        "9": "девять",
     }
 
     # Size units with declension forms (nominative singular, genitive singular, genitive plural)
     # Fourth element is gender: 'm' = masculine, 'f' = feminine, 'n' = neuter
     SIZE_UNITS = {
         # Bytes (masculine)
-        'kb': ('килобайт', 'килобайта', 'килобайт', 'm'),
-        'mb': ('мегабайт', 'мегабайта', 'мегабайт', 'm'),
-        'gb': ('гигабайт', 'гигабайта', 'гигабайт', 'm'),
-        'tb': ('терабайт', 'терабайта', 'терабайт', 'm'),
-        'кб': ('килобайт', 'килобайта', 'килобайт', 'm'),
-        'мб': ('мегабайт', 'мегабайта', 'мегабайт', 'm'),
-        'гб': ('гигабайт', 'гигабайта', 'гигабайт', 'm'),
-        'тб': ('терабайт', 'терабайта', 'терабайт', 'm'),
+        "kb": ("килобайт", "килобайта", "килобайт", "m"),
+        "mb": ("мегабайт", "мегабайта", "мегабайт", "m"),
+        "gb": ("гигабайт", "гигабайта", "гигабайт", "m"),
+        "tb": ("терабайт", "терабайта", "терабайт", "m"),
+        "кб": ("килобайт", "килобайта", "килобайт", "m"),
+        "мб": ("мегабайт", "мегабайта", "мегабайт", "m"),
+        "гб": ("гигабайт", "гигабайта", "гигабайт", "m"),
+        "тб": ("терабайт", "терабайта", "терабайт", "m"),
         # Time (feminine for секунда, минута; masculine for час)
-        'ms': ('миллисекунда', 'миллисекунды', 'миллисекунд', 'f'),
-        'sec': ('секунда', 'секунды', 'секунд', 'f'),
-        'min': ('минута', 'минуты', 'минут', 'f'),
-        'hr': ('час', 'часа', 'часов', 'm'),
+        "ms": ("миллисекунда", "миллисекунды", "миллисекунд", "f"),
+        "sec": ("секунда", "секунды", "секунд", "f"),
+        "min": ("минута", "минуты", "минут", "f"),
+        "hr": ("час", "часа", "часов", "m"),
         # CSS (masculine for пиксель)
-        'px': ('пиксель', 'пикселя', 'пикселей', 'm'),
-        'em': ('эм', 'эм', 'эм', 'm'),
-        'rem': ('рем', 'рем', 'рем', 'm'),
-        'vh': ('ви эйч', 'ви эйч', 'ви эйч', 'm'),
-        'vw': ('ви дабл ю', 'ви дабл ю', 'ви дабл ю', 'm'),
+        "px": ("пиксель", "пикселя", "пикселей", "m"),
+        "em": ("эм", "эм", "эм", "m"),
+        "rem": ("рем", "рем", "рем", "m"),
+        "vh": ("ви эйч", "ви эйч", "ви эйч", "m"),
+        "vw": ("ви дабл ю", "ви дабл ю", "ви дабл ю", "m"),
     }
 
     # Month names in genitive case
     MONTHS_GENITIVE = [
-        '', 'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
-        'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'
+        "",
+        "января",
+        "февраля",
+        "марта",
+        "апреля",
+        "мая",
+        "июня",
+        "июля",
+        "августа",
+        "сентября",
+        "октября",
+        "ноября",
+        "декабря",
     ]
 
     # Version suffixes
     VERSION_SUFFIXES = {
-        'alpha': 'альфа',
-        'beta': 'бета',
-        'rc': 'эр си',
-        'dev': 'дев',
-        'stable': 'стейбл',
-        'release': 'релиз',
+        "alpha": "альфа",
+        "beta": "бета",
+        "rc": "эр си",
+        "dev": "дев",
+        "stable": "стейбл",
+        "release": "релиз",
     }
 
     def normalize_number(self, num_str: str) -> str:
         """Convert integer to Russian words."""
         try:
             num = int(num_str)
-            return num2words(num, lang='ru')
+            return num2words(num, lang="ru")
         except (ValueError, TypeError):
             return num_str
 
     def normalize_float(self, float_str: str) -> str:
         """Convert float to Russian words with digit-by-digit after decimal."""
         # Replace comma with dot
-        float_str = float_str.replace(',', '.')
+        float_str = float_str.replace(",", ".")
 
-        if '.' not in float_str:
+        if "." not in float_str:
             return self.normalize_number(float_str)
 
-        parts = float_str.split('.')
+        parts = float_str.split(".")
         if len(parts) != 2:
             return float_str
 
         integer_part = self.normalize_number(parts[0])
         # Read decimal digits one by one
-        decimal_part = ' '.join(self.DIGITS.get(d, d) for d in parts[1])
+        decimal_part = " ".join(self.DIGITS.get(d, d) for d in parts[1])
 
         return f"{integer_part} точка {decimal_part}"
 
     def normalize_percentage(self, pct_str: str) -> str:
         """Convert percentage to Russian words with proper declension."""
         # Remove % sign
-        num_str = pct_str.rstrip('%').strip()
+        num_str = pct_str.rstrip("%").strip()
 
         # Check if it's a float
-        if '.' in num_str or ',' in num_str:
+        if "." in num_str or "," in num_str:
             num_words = self.normalize_float(num_str)
             return f"{num_words} процентов"
 
         # Integer percentage
         try:
             num = int(num_str)
-            num_words = num2words(num, lang='ru')
-            suffix = self._get_declension(num, ('процент', 'процента', 'процентов'))
+            num_words = num2words(num, lang="ru")
+            suffix = self._get_declension(num, ("процент", "процента", "процентов"))
             return f"{num_words} {suffix}"
         except (ValueError, TypeError):
             return pct_str
@@ -110,7 +122,7 @@ class NumberNormalizer:
     def normalize_range(self, range_str: str) -> str:
         """Convert range to 'от X до Y' format with genitive case."""
         # Split by various dash types
-        parts = re.split(r'[-–—]', range_str)
+        parts = re.split(r"[-–—]", range_str)
         if len(parts) != 2:
             return range_str
 
@@ -119,8 +131,8 @@ class NumberNormalizer:
             end = int(parts[1].strip())
 
             # Use genitive case for both numbers
-            start_words = num2words(start, lang='ru', to='cardinal')
-            end_words = num2words(end, lang='ru', to='cardinal')
+            start_words = num2words(start, lang="ru", to="cardinal")
+            end_words = num2words(end, lang="ru", to="cardinal")
 
             # Convert to genitive case (approximation - num2words doesn't support cases directly)
             start_genitive = self._to_genitive(start, start_words)
@@ -134,48 +146,48 @@ class NumberNormalizer:
         """Convert number words to genitive case (approximate)."""
         # Common replacements for genitive
         replacements = [
-            ('один', 'одного'),
-            ('одна', 'одной'),
-            ('два', 'двух'),
-            ('две', 'двух'),
-            ('три', 'трёх'),
-            ('четыре', 'четырёх'),
-            ('пять', 'пяти'),
-            ('шесть', 'шести'),
-            ('семь', 'семи'),
-            ('восемь', 'восьми'),
-            ('девять', 'девяти'),
-            ('десять', 'десяти'),
-            ('одиннадцать', 'одиннадцати'),
-            ('двенадцать', 'двенадцати'),
-            ('тринадцать', 'тринадцати'),
-            ('четырнадцать', 'четырнадцати'),
-            ('пятнадцать', 'пятнадцати'),
-            ('шестнадцать', 'шестнадцати'),
-            ('семнадцать', 'семнадцати'),
-            ('восемнадцать', 'восемнадцати'),
-            ('девятнадцать', 'девятнадцати'),
-            ('двадцать', 'двадцати'),
-            ('тридцать', 'тридцати'),
-            ('сорок', 'сорока'),
-            ('пятьдесят', 'пятидесяти'),
-            ('шестьдесят', 'шестидесяти'),
-            ('семьдесят', 'семидесяти'),
-            ('восемьдесят', 'восьмидесяти'),
-            ('девяносто', 'девяноста'),
-            ('сто', 'ста'),
-            ('двести', 'двухсот'),
-            ('триста', 'трёхсот'),
-            ('четыреста', 'четырёхсот'),
-            ('пятьсот', 'пятисот'),
-            ('шестьсот', 'шестисот'),
-            ('семьсот', 'семисот'),
-            ('восемьсот', 'восьмисот'),
-            ('девятьсот', 'девятисот'),
-            ('тысяча', 'тысячи'),
-            ('тысячи', 'тысяч'),
-            ('миллион', 'миллиона'),
-            ('миллиона', 'миллионов'),
+            ("один", "одного"),
+            ("одна", "одной"),
+            ("два", "двух"),
+            ("две", "двух"),
+            ("три", "трёх"),
+            ("четыре", "четырёх"),
+            ("пять", "пяти"),
+            ("шесть", "шести"),
+            ("семь", "семи"),
+            ("восемь", "восьми"),
+            ("девять", "девяти"),
+            ("десять", "десяти"),
+            ("одиннадцать", "одиннадцати"),
+            ("двенадцать", "двенадцати"),
+            ("тринадцать", "тринадцати"),
+            ("четырнадцать", "четырнадцати"),
+            ("пятнадцать", "пятнадцати"),
+            ("шестнадцать", "шестнадцати"),
+            ("семнадцать", "семнадцати"),
+            ("восемнадцать", "восемнадцати"),
+            ("девятнадцать", "девятнадцати"),
+            ("двадцать", "двадцати"),
+            ("тридцать", "тридцати"),
+            ("сорок", "сорока"),
+            ("пятьдесят", "пятидесяти"),
+            ("шестьдесят", "шестидесяти"),
+            ("семьдесят", "семидесяти"),
+            ("восемьдесят", "восьмидесяти"),
+            ("девяносто", "девяноста"),
+            ("сто", "ста"),
+            ("двести", "двухсот"),
+            ("триста", "трёхсот"),
+            ("четыреста", "четырёхсот"),
+            ("пятьсот", "пятисот"),
+            ("шестьсот", "шестисот"),
+            ("семьсот", "семисот"),
+            ("восемьсот", "восьмисот"),
+            ("девятьсот", "девятисот"),
+            ("тысяча", "тысячи"),
+            ("тысячи", "тысяч"),
+            ("миллион", "миллиона"),
+            ("миллиона", "миллионов"),
         ]
 
         # For year-like numbers (2020-2024), use ordinal genitive
@@ -185,7 +197,7 @@ class NumberNormalizer:
         result = words
         for nom, gen in replacements:
             # Replace whole words only
-            result = re.sub(r'\b' + nom + r'\b', gen, result)
+            result = re.sub(r"\b" + nom + r"\b", gen, result)
 
         return result
 
@@ -193,19 +205,19 @@ class NumberNormalizer:
         """Convert year to ordinal genitive form."""
         # This is complex in Russian, using approximation
         try:
-            ordinal = num2words(year, lang='ru', to='ordinal')
+            ordinal = num2words(year, lang="ru", to="ordinal")
             # Convert ordinal to genitive
-            ordinal = ordinal.replace('ый', 'ого').replace('ий', 'ого')
+            ordinal = ordinal.replace("ый", "ого").replace("ий", "ого")
             return ordinal
         except (NotImplementedError, OverflowError):
             # num2words may not support ordinal form for some numbers in Russian;
             # fall back to cardinal form ("двадцать четыре" instead of "двадцать четвёртого")
-            return num2words(year, lang='ru')
+            return num2words(year, lang="ru")
 
     def normalize_size(self, size_str: str) -> str:
         """Convert size with units to Russian words."""
         # Parse number and unit
-        match = re.match(r'^([\d.,]+)\s*([a-zA-Zа-яА-Я]+)$', size_str.strip())
+        match = re.match(r"^([\d.,]+)\s*([a-zA-Zа-яА-Я]+)$", size_str.strip())
         if not match:
             return size_str
 
@@ -218,10 +230,10 @@ class NumberNormalizer:
 
         unit_data = self.SIZE_UNITS[unit]
         unit_forms = unit_data[:3]
-        gender = unit_data[3] if len(unit_data) > 3 else 'm'
+        gender = unit_data[3] if len(unit_data) > 3 else "m"
 
         # Check if number is float
-        if '.' in num_str or ',' in num_str:
+        if "." in num_str or "," in num_str:
             num_words = self.normalize_float(num_str)
             return f"{num_words} {unit_forms[2]}"  # Use plural for floats
 
@@ -236,15 +248,15 @@ class NumberNormalizer:
 
     def _number_with_gender(self, num: int, gender: str) -> str:
         """Convert number to words with proper gender for 1 and 2."""
-        words = num2words(num, lang='ru')
+        words = num2words(num, lang="ru")
 
-        if gender == 'f':
+        if gender == "f":
             # Feminine: один → одна, два → две
-            words = re.sub(r'\bодин\b', 'одна', words)
-            words = re.sub(r'\bдва\b', 'две', words)
-        elif gender == 'n':
+            words = re.sub(r"\bодин\b", "одна", words)
+            words = re.sub(r"\bдва\b", "две", words)
+        elif gender == "n":
             # Neuter: один → одно, два → два (same)
-            words = re.sub(r'\bодин\b', 'одно', words)
+            words = re.sub(r"\bодин\b", "одно", words)
 
         return words
 
@@ -273,40 +285,38 @@ class NumberNormalizer:
     def normalize_version(self, ver_str: str) -> str:
         """Convert version to Russian words."""
         # Remove leading 'v' or 'V'
-        ver_str = ver_str.lstrip('vV')
+        ver_str = ver_str.lstrip("vV")
 
         # Split by dots and dashes
         parts = []
         current = ""
         for char in ver_str:
-            if char == '.':
+            if char == ".":
                 if current:
-                    parts.append(('num', current))
+                    parts.append(("num", current))
                     current = ""
-                parts.append(('dot', '.'))
-            elif char == '-':
+                parts.append(("dot", "."))
+            elif char == "-":
                 if current:
-                    parts.append(('num', current))
+                    parts.append(("num", current))
                     current = ""
-                parts.append(('dash', '-'))
+                parts.append(("dash", "-"))
             else:
                 current += char
         if current:
-            parts.append(('num', current))
+            parts.append(("num", current))
 
         # Convert parts to words
         result = []
         for part_type, part_value in parts:
-            if part_type == 'dot':
-                result.append('точка')
-            elif part_type == 'dash':
+            if part_type == "dot":
+                result.append("точка")
+            elif part_type == "dash":
                 pass  # Skip dash, suffix follows directly
-            elif part_type == 'num':
+            elif part_type == "num":
                 # Check if it's a known suffix
-                suffix_lower = part_value.lower()
-
                 # Handle combined suffix like "rc1", "beta1"
-                suffix_match = re.match(r'^([a-zA-Z]+)(\d*)$', part_value)
+                suffix_match = re.match(r"^([a-zA-Z]+)(\d*)$", part_value)
                 if suffix_match:
                     suffix_name = suffix_match.group(1).lower()
                     suffix_num = suffix_match.group(2)
@@ -324,7 +334,7 @@ class NumberNormalizer:
                 else:
                     result.append(part_value)
 
-        return ' '.join(result)
+        return " ".join(result)
 
     def normalize_date(self, date_str: str) -> str:
         """Convert date to Russian words."""
@@ -332,7 +342,7 @@ class NumberNormalizer:
         # ISO: YYYY-MM-DD or YYYY/MM/DD
         # European: DD.MM.YYYY or DD/MM/YYYY
 
-        parts = re.split(r'[-/.]', date_str)
+        parts = re.split(r"[-/.]", date_str)
         if len(parts) != 3:
             return date_str
 
@@ -354,9 +364,9 @@ class NumberNormalizer:
                 return date_str
 
             # Build Russian date string
-            day_ordinal = num2words(day, lang='ru', to='ordinal')
+            day_ordinal = num2words(day, lang="ru", to="ordinal")
             # Make neuter gender for date
-            day_ordinal = day_ordinal.replace('ый', 'ое').replace('ий', 'ее').replace('ой', 'ое')
+            day_ordinal = day_ordinal.replace("ый", "ое").replace("ий", "ее").replace("ой", "ое")
 
             month_name = self.MONTHS_GENITIVE[month]
 
@@ -376,23 +386,23 @@ class NumberNormalizer:
 
         # For years like 2024, we need "две тысячи двадцать четвёртого"
         try:
-            ordinal = num2words(year, lang='ru', to='ordinal')
+            ordinal = num2words(year, lang="ru", to="ordinal")
             # Convert to genitive - order matters!
             # First handle special cases like "третий" → "третьего"
-            ordinal = ordinal.replace('третий', 'третьего')
-            ordinal = ordinal.replace('тий', 'того')  # for other -тий endings
-            ordinal = ordinal.replace('ый', 'ого')
-            ordinal = ordinal.replace('ий', 'ого')
-            ordinal = ordinal.replace('ой', 'ого')
+            ordinal = ordinal.replace("третий", "третьего")
+            ordinal = ordinal.replace("тий", "того")  # for other -тий endings
+            ordinal = ordinal.replace("ый", "ого")
+            ordinal = ordinal.replace("ий", "ого")
+            ordinal = ordinal.replace("ой", "ого")
             return ordinal
         except (NotImplementedError, OverflowError):
             # num2words may not support ordinal form for some numbers in Russian;
             # fall back to cardinal form
-            return num2words(year, lang='ru')
+            return num2words(year, lang="ru")
 
     def normalize_time(self, time_str: str) -> str:
         """Convert time to Russian words with proper declension."""
-        parts = time_str.split(':')
+        parts = time_str.split(":")
         if len(parts) < 2:
             return time_str
 
@@ -404,23 +414,23 @@ class NumberNormalizer:
             result_parts = []
 
             # Hours
-            hours_word = num2words(hours, lang='ru')
-            hours_suffix = self._get_declension(hours, ('час', 'часа', 'часов'))
+            hours_word = num2words(hours, lang="ru")
+            hours_suffix = self._get_declension(hours, ("час", "часа", "часов"))
             result_parts.append(f"{hours_word} {hours_suffix}")
 
             # Minutes (only if non-zero or seconds are present)
             if minutes > 0 or (seconds > 0):
-                minutes_word = num2words(minutes, lang='ru')
-                minutes_suffix = self._get_declension(minutes, ('минута', 'минуты', 'минут'))
+                minutes_word = num2words(minutes, lang="ru")
+                minutes_suffix = self._get_declension(minutes, ("минута", "минуты", "минут"))
                 result_parts.append(f"{minutes_word} {minutes_suffix}")
 
             # Seconds (only if non-zero)
             if seconds > 0:
-                seconds_word = num2words(seconds, lang='ru')
-                seconds_suffix = self._get_declension(seconds, ('секунда', 'секунды', 'секунд'))
+                seconds_word = num2words(seconds, lang="ru")
+                seconds_suffix = self._get_declension(seconds, ("секунда", "секунды", "секунд"))
                 result_parts.append(f"{seconds_word} {seconds_suffix}")
 
-            return ' '.join(result_parts)
+            return " ".join(result_parts)
 
         except (ValueError, TypeError):
             return time_str

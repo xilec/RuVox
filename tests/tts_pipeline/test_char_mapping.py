@@ -5,6 +5,7 @@ through the pipeline, ensuring char_map length matches transformed text length.
 """
 
 import pytest
+
 from ruvox.tts_pipeline import TTSPipeline
 
 
@@ -129,8 +130,7 @@ if containing_entry is not None:
 
         normalized, mapping = pipeline.process_with_char_mapping(text)
         assert len(mapping.char_map) == len(mapping.transformed), (
-            f"char_map length ({len(mapping.char_map)}) != "
-            f"transformed length ({len(mapping.transformed)})"
+            f"char_map length ({len(mapping.char_map)}) != transformed length ({len(mapping.transformed)})"
         )
 
     def test_word_position_mapping(self, pipeline):
@@ -143,9 +143,7 @@ if containing_entry is not None:
         # Find "докер" in normalized text
         docker_pos = normalized.lower().find("докер")
         if docker_pos >= 0:
-            orig_start, orig_end = mapping.get_original_range(
-                docker_pos, docker_pos + len("докер")
-            )
+            orig_start, orig_end = mapping.get_original_range(docker_pos, docker_pos + len("докер"))
             # Should map back to "Docker" in original
             assert text[orig_start:orig_end] == "Docker"
 
@@ -300,9 +298,7 @@ class TestPreprocessingTracking:
                 continue
 
             # Map back to original
-            orig_start, orig_end = mapping.get_original_range(
-                norm_pos, norm_pos + len(word)
-            )
+            orig_start, orig_end = mapping.get_original_range(norm_pos, norm_pos + len(word))
             assert text[orig_start:orig_end] == word, (
                 f"Word '{word}' at norm_pos {norm_pos} "
                 f"mapped to [{orig_start}:{orig_end}] = '{text[orig_start:orig_end]}'"
@@ -352,9 +348,7 @@ class TestCharMappingRanges:
         # Find "докер"
         docker_pos = normalized.lower().find("докер")
         if docker_pos >= 0:
-            orig_start, orig_end = mapping.get_original_range(
-                docker_pos, docker_pos + 5
-            )
+            orig_start, orig_end = mapping.get_original_range(docker_pos, docker_pos + 5)
             assert text[orig_start:orig_end] == "Docker"
 
 
@@ -368,8 +362,9 @@ class TestQtPositionCorrespondence:
     @pytest.fixture
     def qt_app(self):
         """Create QApplication for Qt tests."""
-        from PyQt6.QtWidgets import QApplication
         import sys
+
+        from PyQt6.QtWidgets import QApplication
 
         # Check if app already exists
         app = QApplication.instance()
@@ -381,6 +376,7 @@ class TestQtPositionCorrespondence:
     def text_document(self, qt_app):
         """Create a QTextDocument for testing."""
         from PyQt6.QtGui import QTextDocument
+
         return QTextDocument()
 
     def test_simple_text_positions(self, text_document):
@@ -496,7 +492,7 @@ class TestQtPositionCorrespondence:
 
     def test_highlighting_position_accuracy(self, text_document):
         """Simulates highlighting and verifies position accuracy."""
-        from PyQt6.QtGui import QTextCursor, QTextCharFormat, QColor
+        from PyQt6.QtGui import QColor, QTextCharFormat, QTextCursor
 
         text = "Привет   мир  и  всё"  # Multiple spaces
         text_document.setPlainText(text)

@@ -1,13 +1,12 @@
 """E2E test for Dada article highlighting - полная проверка от TTS до UI."""
 
-import pytest
-from PyQt6.QtWidgets import QApplication
-
-from ruvox.ui.widgets.text_viewer import TextViewerWidget, TextFormat
-from ruvox.ui.models.entry import TextEntry
-from ruvox.tts_pipeline import TTSPipeline
 import re
 
+import pytest
+
+from ruvox.tts_pipeline import TTSPipeline
+from ruvox.ui.models.entry import TextEntry
+from ruvox.ui.widgets.text_viewer import TextFormat, TextViewerWidget
 
 # Dada article из бага
 DADA_ARTICLE = """Вот перевод статьи на русский язык:
@@ -29,7 +28,6 @@ println("Hello, Dada!")
 Думаю, все вы сможете догадаться, что она делает. Тем не менее, даже в этой простой программе есть кое-что, на что стоит обратить внимание:"""
 
 
-
 @pytest.fixture
 def text_viewer(qapp):
     """Create TextViewerWidget instance."""
@@ -41,7 +39,7 @@ def text_viewer(qapp):
 def extract_words_with_positions(text: str) -> list[tuple[str, int, int]]:
     """Extract words from text with their positions (как в tts_worker.py)."""
     words = []
-    for match in re.finditer(r'\b\w+\b', text):
+    for match in re.finditer(r"\b\w+\b", text):
         words.append((match.group(), match.start(), match.end()))
     return words
 
@@ -74,12 +72,9 @@ def test_dada_e2e_full_pipeline(text_viewer):
     timestamps = []
     for i, (word, norm_start, norm_end) in enumerate(norm_words):
         orig_start, orig_end = char_mapping.get_original_range(norm_start, norm_end)
-        timestamps.append({
-            "word": word,
-            "start": i * 0.5,
-            "end": (i + 1) * 0.5,
-            "original_pos": [orig_start, orig_end]
-        })
+        timestamps.append(
+            {"word": word, "start": i * 0.5, "end": (i + 1) * 0.5, "original_pos": [orig_start, orig_end]}
+        )
 
     # STEP 2: UI Setup - TextViewer в Markdown режиме
     entry = TextEntry(original_text=DADA_ARTICLE)
@@ -96,9 +91,7 @@ def test_dada_e2e_full_pipeline(text_viewer):
             highlighted_count += 1
 
     # Все слова должны иметь маппинг и подсвечиваться
-    assert highlighted_count == len(timestamps), (
-        f"Только {highlighted_count}/{len(timestamps)} слов подсвечено"
-    )
+    assert highlighted_count == len(timestamps), f"Только {highlighted_count}/{len(timestamps)} слов подсвечено"
 
     # STEP 4: Проверка конкретных слов
 
@@ -108,7 +101,7 @@ def test_dada_e2e_full_pipeline(text_viewer):
     orig_start, orig_end = obuchat_ts[0]["original_pos"]
     expected_start = DADA_ARTICLE.find("обучать языку Dada")
     assert orig_start == expected_start and orig_end == expected_start + 7, (
-        f"'обучать' mapped to [{orig_start}:{orig_end}], expected [{expected_start}:{expected_start+7}]"
+        f"'обучать' mapped to [{orig_start}:{orig_end}], expected [{expected_start}:{expected_start + 7}]"
     )
 
     # "дада" из ссылки [Fun with Dada] - маппинг должен быть точный
@@ -118,9 +111,7 @@ def test_dada_e2e_full_pipeline(text_viewer):
     # Первое вхождение "дада" — из ссылки
     orig_start, orig_end = link_dada[0]["original_pos"]
     orig_text = DADA_ARTICLE[orig_start:orig_end]
-    assert orig_text == "Dada", (
-        f"'дада' from link mapped to '{orig_text}' instead of 'Dada'"
-    )
+    assert orig_text == "Dada", f"'дада' from link mapped to '{orig_text}' instead of 'Dada'"
 
 
 def test_words_after_link_are_highlighted(text_viewer):
@@ -137,21 +128,32 @@ def test_words_after_link_are_highlighted(text_viewer):
     timestamps = []
     for i, (word, norm_start, norm_end) in enumerate(norm_words):
         orig_start, orig_end = char_mapping.get_original_range(norm_start, norm_end)
-        timestamps.append({
-            "word": word,
-            "start": i * 0.5,
-            "end": (i + 1) * 0.5,
-            "original_pos": [orig_start, orig_end]
-        })
+        timestamps.append(
+            {"word": word, "start": i * 0.5, "end": (i + 1) * 0.5, "original_pos": [orig_start, orig_end]}
+        )
 
     entry = TextEntry(original_text=DADA_ARTICLE)
     text_viewer.set_format(TextFormat.MARKDOWN)
     text_viewer.set_entry(entry, timestamps)
 
     # Проверяем конкретные слова ПОСЛЕ ссылки
-    words_after_link = ["этой", "статье", "начну", "обучать", "языку",
-                        "буду", "держать", "каждый", "пост", "коротким",
-                        "могу", "написать", "пока", "пью", "кофе"]
+    words_after_link = [
+        "этой",
+        "статье",
+        "начну",
+        "обучать",
+        "языку",
+        "буду",
+        "держать",
+        "каждый",
+        "пост",
+        "коротким",
+        "могу",
+        "написать",
+        "пока",
+        "пью",
+        "кофе",
+    ]
     not_highlighted = []
     for target_word in words_after_link:
         ts = next((t for t in timestamps if t["word"] == target_word), None)
@@ -161,14 +163,9 @@ def test_words_after_link_are_highlighted(text_viewer):
         selections = text_viewer.extraSelections()
         if not selections:
             orig_s, orig_e = ts["original_pos"]
-            not_highlighted.append(
-                f"'{target_word}' orig[{orig_s}:{orig_e}]="
-                f"'{DADA_ARTICLE[orig_s:orig_e]}'"
-            )
+            not_highlighted.append(f"'{target_word}' orig[{orig_s}:{orig_e}]='{DADA_ARTICLE[orig_s:orig_e]}'")
 
-    assert not not_highlighted, (
-        f"Слова после ссылки не подсвечены:\n  " + "\n  ".join(not_highlighted)
-    )
+    assert not not_highlighted, "Слова после ссылки не подсвечены:\n  " + "\n  ".join(not_highlighted)
 
 
 if __name__ == "__main__":

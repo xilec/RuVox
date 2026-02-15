@@ -6,16 +6,15 @@ import threading
 from datetime import datetime
 from typing import Any
 
+import numpy as np
+
 # IMPORTANT: torch must be imported early at module level.
 # Importing torch in a worker thread can cause crashes due to memory
 # initialization conflicts with other native libraries.
-import torch
-import numpy as np
-
 from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal
 
-from ruvox.ui.models.entry import TextEntry, EntryStatus
 from ruvox.ui.models.config import UIConfig
+from ruvox.ui.models.entry import EntryStatus, TextEntry
 
 logger = logging.getLogger(__name__)
 
@@ -25,16 +24,18 @@ MAX_CHUNK_SIZE = 900
 
 class TTSSignals(QObject):
     """Signals for TTS runnable."""
-    started = pyqtSignal(str)           # entry_id
-    progress = pyqtSignal(str, float)   # entry_id, progress 0-1
-    completed = pyqtSignal(str)         # entry_id
-    error = pyqtSignal(str, str)        # entry_id, error_message
+
+    started = pyqtSignal(str)  # entry_id
+    progress = pyqtSignal(str, float)  # entry_id, progress 0-1
+    completed = pyqtSignal(str)  # entry_id
+    error = pyqtSignal(str, str)  # entry_id, error_message
 
 
 class ModelLoadSignals(QObject):
     """Signals for model loading runnable."""
-    loaded = pyqtSignal(object)         # model
-    error = pyqtSignal(str)             # error_message
+
+    loaded = pyqtSignal(object)  # model
+    error = pyqtSignal(str)  # error_message
 
 
 class ModelLoadRunnable(QRunnable):
@@ -49,6 +50,7 @@ class ModelLoadRunnable(QRunnable):
         """Load the Silero TTS model."""
         try:
             import socket
+
             import torch
 
             # Set timeout for network operations to prevent hanging forever
@@ -59,10 +61,7 @@ class ModelLoadRunnable(QRunnable):
                 # Load Silero model V5
                 # Model will be downloaded on first run
                 model, _ = torch.hub.load(
-                    repo_or_dir='snakers4/silero-models',
-                    model='silero_tts',
-                    language='ru',
-                    speaker='v5_ru'
+                    repo_or_dir="snakers4/silero-models", model="silero_tts", language="ru", speaker="v5_ru"
                 )
 
                 self.signals.loaded.emit(model)
@@ -97,16 +96,15 @@ class TTSRunnable(QRunnable):
             self.signals.started.emit(self.entry.id)
 
             # Import here to avoid loading at module level
-            from ruvox.tts_pipeline import TTSPipeline
             import torch
+
+            from ruvox.tts_pipeline import TTSPipeline
 
             pipeline = TTSPipeline()
 
             # Step 1: Normalize text with precise character mapping
             logger.debug("Нормализация текста...")
-            normalized, char_mapping = pipeline.process_with_char_mapping(
-                self.entry.original_text
-            )
+            normalized, char_mapping = pipeline.process_with_char_mapping(self.entry.original_text)
             self.entry.normalized_text = normalized
 
             if not normalized.strip():
@@ -117,13 +115,15 @@ class TTSRunnable(QRunnable):
             # Step 2: Split into chunks and synthesize audio
             chunks = self._split_into_chunks(normalized)
             logger.debug(f"Синтез аудио... Текст ({len(normalized)} символов), {len(chunks)} частей")
-            logger.debug(f"Model type: {type(self.silero_model)}, speaker={self.config.speaker}, rate={self.config.sample_rate}")
+            logger.debug(
+                f"Model type: {type(self.silero_model)}, speaker={self.config.speaker}, rate={self.config.sample_rate}"
+            )
 
             audio_parts: list[np.ndarray] = []
             chunk_durations: list[tuple[int, int, float]] = []  # (norm_start, norm_end, duration)
 
             for i, (chunk_text, chunk_start) in enumerate(chunks):
-                logger.debug(f"Синтез части {i+1}/{len(chunks)}: {len(chunk_text)} символов")
+                logger.debug(f"Синтез части {i + 1}/{len(chunks)}: {len(chunk_text)} символов")
 
                 with torch.no_grad():
                     audio = self.silero_model.apply_tts(
@@ -153,23 +153,14 @@ class TTSRunnable(QRunnable):
             duration_sec = len(audio_np) / self.config.sample_rate
 
             # Step 3: Estimate timestamps with precise mapping to original text
-            timestamps = self._estimate_timestamps_chunked(
-                normalized, chunk_durations, char_mapping
-            )
+            timestamps = self._estimate_timestamps_chunked(normalized, chunk_durations, char_mapping)
 
             self.signals.progress.emit(self.entry.id, 0.9)
 
             # Step 4: Save audio and timestamps
             logger.debug("Сохранение аудио...")
-            audio_path = self.storage.save_audio(
-                self.entry.id,
-                audio_np,
-                self.config.sample_rate
-            )
-            timestamps_path = self.storage.save_timestamps(
-                self.entry.id,
-                timestamps
-            )
+            audio_path = self.storage.save_audio(self.entry.id, audio_np, self.config.sample_rate)
+            timestamps_path = self.storage.save_timestamps(self.entry.id, timestamps)
 
             # Step 5: Update entry
             self.entry.audio_path = audio_path
@@ -223,17 +214,17 @@ class TTSRunnable(QRunnable):
 
             # Try to find sentence end (. ! ?)
             best_split = -1
-            for match in re.finditer(r'[.!?]\s+', chunk_text):
+            for match in re.finditer(r"[.!?]\s+", chunk_text):
                 best_split = match.end()
 
             if best_split == -1:
                 # No sentence boundary, try comma or semicolon
-                for match in re.finditer(r'[,;:]\s+', chunk_text):
+                for match in re.finditer(r"[,;:]\s+", chunk_text):
                     best_split = match.end()
 
             if best_split == -1:
                 # No punctuation, split on word boundary
-                for match in re.finditer(r'\s+', chunk_text):
+                for match in re.finditer(r"\s+", chunk_text):
                     best_split = match.end()
 
             if best_split == -1 or best_split < len(chunk_text) // 2:
@@ -241,7 +232,7 @@ class TTSRunnable(QRunnable):
                 best_split = MAX_CHUNK_SIZE
 
             # Add chunk
-            actual_chunk = text[current_pos:current_pos + best_split].strip()
+            actual_chunk = text[current_pos : current_pos + best_split].strip()
             if actual_chunk:
                 chunks.append((actual_chunk, current_pos))
 
@@ -296,18 +287,18 @@ class TTSRunnable(QRunnable):
 
                 # Map to original text position using CharMapping
                 if char_mapping is not None:
-                    orig_start, orig_end = char_mapping.get_original_range(
-                        norm_start, norm_end
-                    )
+                    orig_start, orig_end = char_mapping.get_original_range(norm_start, norm_end)
                 else:
                     orig_start, orig_end = norm_start, norm_end
 
-                timestamps.append({
-                    "word": word,
-                    "start": round(audio_offset + current_time, 3),
-                    "end": round(audio_offset + current_time + word_duration, 3),
-                    "original_pos": [orig_start, orig_end]
-                })
+                timestamps.append(
+                    {
+                        "word": word,
+                        "start": round(audio_offset + current_time, 3),
+                        "end": round(audio_offset + current_time + word_duration, 3),
+                        "original_pos": [orig_start, orig_end],
+                    }
+                )
 
                 current_time += word_duration
 
@@ -325,8 +316,9 @@ class TTSRunnable(QRunnable):
             List of (word, start, end) tuples
         """
         import re
+
         words = []
-        for match in re.finditer(r'\b\w+\b', text):
+        for match in re.finditer(r"\b\w+\b", text):
             word = match.group()
             start = match.start()
             end = match.end()
@@ -334,23 +326,22 @@ class TTSRunnable(QRunnable):
         return words
 
 
-
 class TTSWorker(QObject):
     """Background TTS worker managing synthesis jobs."""
 
     # Entry status signals
-    started = pyqtSignal(str)           # entry_id
-    progress = pyqtSignal(str, float)   # entry_id, progress 0-1
-    completed = pyqtSignal(str)         # entry_id
-    error = pyqtSignal(str, str)        # entry_id, error_message
+    started = pyqtSignal(str)  # entry_id
+    progress = pyqtSignal(str, float)  # entry_id, progress 0-1
+    completed = pyqtSignal(str)  # entry_id
+    error = pyqtSignal(str, str)  # entry_id, error_message
 
     # Model loading signals
-    model_loading = pyqtSignal()        # Started loading model
-    model_loaded = pyqtSignal()         # Model ready
-    model_error = pyqtSignal(str)       # Error loading model
+    model_loading = pyqtSignal()  # Started loading model
+    model_loaded = pyqtSignal()  # Model ready
+    model_error = pyqtSignal(str)  # Error loading model
 
     # Playback signal
-    play_requested = pyqtSignal(str)    # entry_id to play
+    play_requested = pyqtSignal(str)  # entry_id to play
 
     def __init__(self, config: UIConfig, storage, parent=None):
         super().__init__(parent)
@@ -501,10 +492,7 @@ class TTSWorker(QObject):
                 self.play_queue.remove(entry_id)
 
             # Remove from pending jobs
-            self._pending_jobs = [
-                (e, p) for e, p in self._pending_jobs
-                if e.id != entry_id
-            ]
+            self._pending_jobs = [(e, p) for e, p in self._pending_jobs if e.id != entry_id]
 
     def is_model_loaded(self) -> bool:
         """Check if the TTS model is loaded."""

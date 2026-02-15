@@ -4,13 +4,14 @@ These tests use mocks to avoid creating PlayerWidget (which requires mpv).
 They verify UI structure and component interactions (contracts).
 """
 
+from unittest.mock import Mock, patch
+
 import pytest
-from unittest.mock import Mock, patch, MagicMock
-from PyQt6.QtWidgets import QApplication, QWidget
+from PyQt6.QtWidgets import QWidget
 
 from ruvox.ui.main_window import MainWindow
-from ruvox.ui.widgets.text_viewer import TextFormat
 from ruvox.ui.models.config import UIConfig
+from ruvox.ui.widgets.text_viewer import TextFormat
 
 
 class StubPlayerWidget(QWidget):
@@ -45,7 +46,6 @@ class StubPlayerWidget(QWidget):
         self.speed_down = Mock()
 
 
-
 @pytest.fixture
 def mock_app(tmp_path):
     """Create mock TTSApplication with real config."""
@@ -67,7 +67,7 @@ def main_window(qapp, mock_app):
     PlayerWidget is mocked because it requires mpv which causes segfault in tests.
     We verify UI structure and method calls, not player functionality.
     """
-    with patch('ruvox.ui.main_window.PlayerWidget', StubPlayerWidget):
+    with patch("ruvox.ui.main_window.PlayerWidget", StubPlayerWidget):
         window = MainWindow(mock_app)
         yield window
         window.deleteLater()
@@ -78,7 +78,7 @@ class TestFormatSelectorUI:
 
     def test_format_selector_created(self, main_window):
         """FORMAT_SELECTOR widget should be created in MainWindow."""
-        assert hasattr(main_window, 'format_selector')
+        assert hasattr(main_window, "format_selector")
         assert main_window.format_selector is not None
 
     def test_format_selector_has_two_options(self, main_window):
@@ -152,7 +152,7 @@ class TestFormatRestoration:
 
     def test_restore_markdown_format(self, qapp, mock_app):
         """Should restore markdown format from config on load_entries()."""
-        with patch('ruvox.ui.main_window.PlayerWidget', StubPlayerWidget):
+        with patch("ruvox.ui.main_window.PlayerWidget", StubPlayerWidget):
             mock_app.config.text_format = "markdown"
             mock_app.config.save = Mock()
 
@@ -167,7 +167,7 @@ class TestFormatRestoration:
 
     def test_invalid_format_fallback(self, qapp, mock_app):
         """Invalid format in config should fallback to plain."""
-        with patch('ruvox.ui.main_window.PlayerWidget', StubPlayerWidget):
+        with patch("ruvox.ui.main_window.PlayerWidget", StubPlayerWidget):
             mock_app.config.text_format = "invalid_format"
             mock_app.config.save = Mock()
 
@@ -185,7 +185,7 @@ class TestFormatPersistence:
 
     def test_format_persists_across_sessions(self, qapp, tmp_path):
         """Format should persist when saved and loaded again."""
-        with patch('ruvox.ui.main_window.PlayerWidget', StubPlayerWidget):
+        with patch("ruvox.ui.main_window.PlayerWidget", StubPlayerWidget):
             # Session 1: Create window, change format, save
             config = UIConfig(cache_dir=tmp_path)
             config.text_format = "plain"

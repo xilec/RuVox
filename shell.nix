@@ -6,6 +6,7 @@ pkgs.mkShell {
   buildInputs = with pkgs; [
     python311
     uv
+    ruff
     # PyGObject for D-Bus (used by dasbus for global hotkeys)
     gobject-introspection
     (python311Packages.pygobject3)

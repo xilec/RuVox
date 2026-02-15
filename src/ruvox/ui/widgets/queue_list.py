@@ -2,19 +2,19 @@
 
 import logging
 
-from PyQt6.QtCore import Qt, pyqtSignal, QPoint
+from PyQt6.QtCore import QPoint, Qt, pyqtSignal
+from PyQt6.QtGui import QAction, QBrush, QColor
 from PyQt6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
     QListWidget,
     QListWidgetItem,
     QMenu,
-    QWidget,
     QVBoxLayout,
-    QHBoxLayout,
-    QLabel,
+    QWidget,
 )
-from PyQt6.QtGui import QAction, QColor, QBrush
 
-from ruvox.ui.models.entry import TextEntry, EntryStatus
+from ruvox.ui.models.entry import EntryStatus, TextEntry
 from ruvox.ui.services.logging_service import safe_slot
 
 logger = logging.getLogger(__name__)
@@ -70,10 +70,10 @@ class QueueItemWidget(QWidget):
         """Update display from entry data."""
         # Status icon
         status_icons = {
-            EntryStatus.PENDING: "\u23f3",      # hourglass
+            EntryStatus.PENDING: "\u23f3",  # hourglass
             EntryStatus.PROCESSING: "\U0001f504",  # arrows counterclockwise
-            EntryStatus.READY: "\u2713",        # check mark
-            EntryStatus.ERROR: "\u2717",        # X mark
+            EntryStatus.READY: "\u2713",  # check mark
+            EntryStatus.ERROR: "\u2717",  # X mark
         }
         self.status_label.setText(status_icons.get(self.entry.status, "?"))
 
@@ -115,10 +115,7 @@ class QueueItemWidget(QWidget):
 
 def _month_name(month: int) -> str:
     """Get Russian month name abbreviation."""
-    months = [
-        "", "янв", "фев", "мар", "апр", "май", "июн",
-        "июл", "авг", "сен", "окт", "ноя", "дек"
-    ]
+    months = ["", "янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"]
     return months[month] if 1 <= month <= 12 else ""
 
 
@@ -349,5 +346,6 @@ class QueueListWidget(QListWidget):
     def _copy_text(self, text: str) -> None:
         """Copy text to clipboard."""
         from PyQt6.QtWidgets import QApplication
+
         clipboard = QApplication.clipboard()
         clipboard.setText(text)

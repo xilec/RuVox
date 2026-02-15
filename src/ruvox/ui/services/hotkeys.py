@@ -163,11 +163,7 @@ class HotkeyService(QObject):
                 current_mods.add("SHIFT")
 
         # Check read_now hotkey
-        if (
-            self._read_now_key is not None
-            and key_code == self._read_now_key
-            and current_mods == self._read_now_mods
-        ):
+        if self._read_now_key is not None and key_code == self._read_now_key and current_mods == self._read_now_mods:
             return "read_now"
 
         # Check read_later hotkey
@@ -245,12 +241,8 @@ class HotkeyService(QObject):
             return False
 
         # Parse hotkey configurations
-        self._read_now_key, self._read_now_mods = self._parse_hotkey(
-            self.config.hotkey_read_now
-        )
-        self._read_later_key, self._read_later_mods = self._parse_hotkey(
-            self.config.hotkey_read_later
-        )
+        self._read_now_key, self._read_now_mods = self._parse_hotkey(self.config.hotkey_read_now)
+        self._read_later_key, self._read_later_mods = self._parse_hotkey(self.config.hotkey_read_later)
 
         if self._read_now_key is None and self._read_later_key is None:
             self._emit_fallback("Failed to parse hotkey configurations")

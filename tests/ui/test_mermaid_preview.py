@@ -1,13 +1,12 @@
 """Tests for MermaidPreviewDialog."""
 
-import pytest
-from unittest.mock import patch, MagicMock
-from pathlib import Path
+from unittest.mock import MagicMock, patch
 
-from PyQt6.QtWidgets import QApplication
+import pytest
 
 try:
     from PyQt6.QtWebEngineWidgets import QWebEngineView  # noqa: F401
+
     HAS_WEBENGINE = True
 except ImportError:
     HAS_WEBENGINE = False
@@ -16,7 +15,6 @@ pytestmark = pytest.mark.skipif(
     not HAS_WEBENGINE,
     reason="PyQt6-WebEngine not available (missing system libraries)",
 )
-
 
 
 class TestMermaidPreviewDialog:
@@ -194,10 +192,10 @@ class TestMermaidPreviewDialog:
 
     def test_escape_closes_dialog(self, qapp, tmp_path):
         """Pressing Escape should close the dialog."""
-        from ruvox.ui.dialogs.mermaid_preview import MermaidPreviewDialog
-        from PyQt6.QtCore import Qt
+        from PyQt6.QtCore import QEvent, Qt
         from PyQt6.QtGui import QKeyEvent
-        from PyQt6.QtCore import QEvent
+
+        from ruvox.ui.dialogs.mermaid_preview import MermaidPreviewDialog
 
         js_path = tmp_path / "mermaid.min.js"
         js_path.write_text("// mock")
@@ -213,8 +211,9 @@ class TestMermaidPreviewDialog:
 
     def test_esc_hint_in_toolbar(self, qapp, tmp_path):
         """Toolbar should contain Esc hint label."""
-        from ruvox.ui.dialogs.mermaid_preview import MermaidPreviewDialog
         from PyQt6.QtWidgets import QLabel
+
+        from ruvox.ui.dialogs.mermaid_preview import MermaidPreviewDialog
 
         js_path = tmp_path / "mermaid.min.js"
         js_path.write_text("// mock")

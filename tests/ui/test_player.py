@@ -1,10 +1,11 @@
 """Tests for PlayerWidget — unit tests that don't require mpv/Qt runtime."""
 
-import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from ruvox.ui.models.entry import TextEntry, EntryStatus
+import pytest
+
+from ruvox.ui.models.entry import EntryStatus, TextEntry
 
 
 class TestFormatTime:
@@ -13,6 +14,7 @@ class TestFormatTime:
     def _format_time(self, seconds: float) -> str:
         """Import and call the static method."""
         from ruvox.ui.widgets.player import PlayerWidget
+
         return PlayerWidget._format_time(seconds)
 
     def test_zero(self):
@@ -96,10 +98,10 @@ class TestMpvUnavailable:
 
     def test_mpv_unavailable_flag(self):
         """When mpv import fails, _MPV_AVAILABLE should be False."""
-        import importlib
         with patch.dict("sys.modules", {"mpv": None}):
             # Force reimport of the player module
             import ruvox.ui.widgets.player as player_module
+
             original = player_module._MPV_AVAILABLE
             player_module._MPV_AVAILABLE = False
             try:
@@ -124,6 +126,7 @@ def player_widget(qapp, tmp_path):
     with patch.object(player_module, "mpv", create=True) as mock_mpv_mod:
         mock_mpv_mod.MPV.return_value = mock_mpv_instance
         from ruvox.ui.widgets.player import PlayerWidget
+
         widget = PlayerWidget()
         # Ensure the mock player is set
         widget._player = mock_mpv_instance

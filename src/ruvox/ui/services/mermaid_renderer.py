@@ -10,7 +10,7 @@ import logging
 import urllib.request
 from pathlib import Path
 
-from PyQt6.QtCore import pyqtSignal, QObject, QUrl
+from PyQt6.QtCore import QObject, QUrl, pyqtSignal
 from PyQt6.QtGui import QImage, QPixmap
 from PyQt6.QtWidgets import QWidget
 
@@ -158,8 +158,8 @@ class MermaidRenderer(QObject):
         if self._web_view is not None:
             return
 
-        from PyQt6.QtWebEngineWidgets import QWebEngineView
         from PyQt6.QtCore import Qt
+        from PyQt6.QtWebEngineWidgets import QWebEngineView
 
         self._web_view = QWebEngineView()
         self._web_view.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
@@ -236,7 +236,6 @@ class MermaidRenderer(QObject):
 
     def _poll_for_svg(self) -> None:
         """Poll JavaScript for rendered SVG."""
-        from PyQt6.QtCore import QTimer
 
         self._web_view.page().runJavaScript(
             "window.renderedSvg || window.renderError",
@@ -290,7 +289,9 @@ class MermaidRenderer(QObject):
                 self._pixmap_cache[code_hash] = pixmap
                 logger.debug(
                     "Captured mermaid pixmap %dx%d for %s",
-                    pixmap.width(), pixmap.height(), code_hash,
+                    pixmap.width(),
+                    pixmap.height(),
+                    code_hash,
                 )
             else:
                 logger.warning("Failed to capture mermaid pixmap for %s", code_hash)
@@ -313,8 +314,8 @@ class MermaidRenderer(QObject):
         Prefer _capture_webview_pixmap for accurate rendering.
         """
         try:
-            from PyQt6.QtSvg import QSvgRenderer
             from PyQt6.QtCore import QByteArray, Qt
+            from PyQt6.QtSvg import QSvgRenderer
 
             renderer = QSvgRenderer(QByteArray(svg.encode()))
             if not renderer.isValid():
@@ -332,6 +333,7 @@ class MermaidRenderer(QObject):
             image.fill(Qt.GlobalColor.transparent)
 
             from PyQt6.QtGui import QPainter
+
             painter = QPainter(image)
             renderer.render(painter)
             painter.end()

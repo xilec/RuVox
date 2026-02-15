@@ -51,9 +51,7 @@ class WordMapping:
         # Check if we have explicit mapping
         if trans_word_idx in self.word_map:
             orig_start_idx, orig_end_idx = self.word_map[trans_word_idx]
-            if orig_start_idx < len(self.original_words) and orig_end_idx <= len(
-                self.original_words
-            ):
+            if orig_start_idx < len(self.original_words) and orig_end_idx <= len(self.original_words):
                 start = self.original_words[orig_start_idx].start
                 end = self.original_words[orig_end_idx - 1].end
                 return (start, end)
@@ -69,9 +67,7 @@ class WordMapping:
 
         return None
 
-    def get_original_range_for_position(
-        self, trans_start: int, trans_end: int
-    ) -> tuple[int, int] | None:
+    def get_original_range_for_position(self, trans_start: int, trans_end: int) -> tuple[int, int] | None:
         """Get character range in original text for a position range in transformed text.
 
         Args:
@@ -136,9 +132,7 @@ def tokenize_words(text: str) -> list[WordSpan]:
     return words
 
 
-def build_word_mapping(
-    original: str, transformed: str, pipeline=None
-) -> WordMapping:
+def build_word_mapping(original: str, transformed: str, pipeline=None) -> WordMapping:
     """Build word mapping between original and transformed text.
 
     This uses heuristics to match words:
@@ -234,15 +228,55 @@ def build_word_mapping(
 def _is_russian_number_word(word: str) -> bool:
     """Check if word is a Russian number word."""
     number_words = {
-        'ноль', 'один', 'одна', 'одно', 'два', 'две', 'три', 'четыре', 'пять',
-        'шесть', 'семь', 'восемь', 'девять', 'десять', 'одиннадцать',
-        'двенадцать', 'тринадцать', 'четырнадцать', 'пятнадцать',
-        'шестнадцать', 'семнадцать', 'восемнадцать', 'девятнадцать',
-        'двадцать', 'тридцать', 'сорок', 'пятьдесят', 'шестьдесят',
-        'семьдесят', 'восемьдесят', 'девяносто', 'сто', 'двести', 'триста',
-        'четыреста', 'пятьсот', 'шестьсот', 'семьсот', 'восемьсот',
-        'девятьсот', 'тысяча', 'тысячи', 'тысяч', 'миллион', 'миллиона',
-        'миллионов', 'миллиард', 'миллиарда', 'миллиардов',
+        "ноль",
+        "один",
+        "одна",
+        "одно",
+        "два",
+        "две",
+        "три",
+        "четыре",
+        "пять",
+        "шесть",
+        "семь",
+        "восемь",
+        "девять",
+        "десять",
+        "одиннадцать",
+        "двенадцать",
+        "тринадцать",
+        "четырнадцать",
+        "пятнадцать",
+        "шестнадцать",
+        "семнадцать",
+        "восемнадцать",
+        "девятнадцать",
+        "двадцать",
+        "тридцать",
+        "сорок",
+        "пятьдесят",
+        "шестьдесят",
+        "семьдесят",
+        "восемьдесят",
+        "девяносто",
+        "сто",
+        "двести",
+        "триста",
+        "четыреста",
+        "пятьсот",
+        "шестьсот",
+        "семьсот",
+        "восемьсот",
+        "девятьсот",
+        "тысяча",
+        "тысячи",
+        "тысяч",
+        "миллион",
+        "миллиона",
+        "миллионов",
+        "миллиард",
+        "миллиарда",
+        "миллиардов",
     }
     return word.lower() in number_words
 
@@ -260,25 +294,40 @@ def _is_possible_transliteration(english: str, russian: str) -> bool:
         return False
 
     # Check if russian contains Cyrillic
-    if not any('\u0400' <= c <= '\u04ff' for c in russian):
+    if not any("\u0400" <= c <= "\u04ff" for c in russian):
         return False
 
     # Common first-letter transliterations
     first_letter_map = {
-        'a': ['а', 'э'], 'b': ['б'], 'c': ['с', 'к', 'ц'],
-        'd': ['д'], 'e': ['е', 'э', 'и'], 'f': ['ф'],
-        'g': ['г', 'дж'], 'h': ['х', 'г'], 'i': ['и', 'ай'],
-        'j': ['дж', 'й', 'ж'], 'k': ['к'], 'l': ['л'],
-        'm': ['м'], 'n': ['н'], 'o': ['о', 'а'],
-        'p': ['п'], 'q': ['к', 'кв'], 'r': ['р'],
-        's': ['с', 'ш', 'з'], 't': ['т'], 'u': ['у', 'ю', 'а'],
-        'v': ['в'], 'w': ['в', 'у'], 'x': ['кс', 'х', 'з'],
-        'y': ['й', 'и', 'ы'], 'z': ['з', 'ц'],
+        "a": ["а", "э"],
+        "b": ["б"],
+        "c": ["с", "к", "ц"],
+        "d": ["д"],
+        "e": ["е", "э", "и"],
+        "f": ["ф"],
+        "g": ["г", "дж"],
+        "h": ["х", "г"],
+        "i": ["и", "ай"],
+        "j": ["дж", "й", "ж"],
+        "k": ["к"],
+        "l": ["л"],
+        "m": ["м"],
+        "n": ["н"],
+        "o": ["о", "а"],
+        "p": ["п"],
+        "q": ["к", "кв"],
+        "r": ["р"],
+        "s": ["с", "ш", "з"],
+        "t": ["т"],
+        "u": ["у", "ю", "а"],
+        "v": ["в"],
+        "w": ["в", "у"],
+        "x": ["кс", "х", "з"],
+        "y": ["й", "и", "ы"],
+        "z": ["з", "ц"],
     }
 
     eng_first = english[0].lower()
-    rus_first = russian[0].lower()
-
     expected_options = first_letter_map.get(eng_first, [])
     for expected in expected_options:
         if russian.lower().startswith(expected):

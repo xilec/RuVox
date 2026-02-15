@@ -1,18 +1,17 @@
 """Tests for MermaidRenderer service."""
 
-import pytest
-from unittest.mock import patch, MagicMock
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
-from PyQt6.QtWidgets import QApplication
+import pytest
 from PyQt6.QtGui import QPixmap
-
 
 
 @pytest.fixture
 def renderer(qapp):
     """Create MermaidRenderer instance."""
     from ruvox.ui.services.mermaid_renderer import MermaidRenderer
+
     r = MermaidRenderer()
     yield r
     r.cleanup()
@@ -24,17 +23,20 @@ class TestCodeHash:
 
     def test_same_code_same_hash(self):
         from ruvox.ui.services.mermaid_renderer import _code_hash
+
         code = "graph TD\n  A --> B"
         assert _code_hash(code) == _code_hash(code)
 
     def test_different_code_different_hash(self):
         from ruvox.ui.services.mermaid_renderer import _code_hash
+
         h1 = _code_hash("graph TD\n  A --> B")
         h2 = _code_hash("graph LR\n  A --> B")
         assert h1 != h2
 
     def test_strips_whitespace(self):
         from ruvox.ui.services.mermaid_renderer import _code_hash
+
         h1 = _code_hash("graph TD\n  A --> B")
         h2 = _code_hash("  graph TD\n  A --> B  \n")
         assert h1 == h2
@@ -48,6 +50,7 @@ class TestSvgCache:
 
     def test_cache_hit_after_manual_insert(self, renderer):
         from ruvox.ui.services.mermaid_renderer import _code_hash
+
         code = "graph TD\n  A --> B"
         h = _code_hash(code)
         renderer._svg_cache[h] = "<svg>test</svg>"
@@ -58,6 +61,7 @@ class TestSvgCache:
 
     def test_cached_pixmap_returns_pixmap_when_svg_valid(self, renderer):
         from ruvox.ui.services.mermaid_renderer import _code_hash
+
         code = "graph TD\n  A --> B"
         h = _code_hash(code)
         # Minimal valid SVG
@@ -83,6 +87,7 @@ class TestMermaidJsDownload:
                 # Simulate download creating the file
                 def fake_download(url, path):
                     Path(path).write_text("// mermaid.min.js")
+
                 mock_dl.side_effect = fake_download
 
                 renderer._ensure_mermaid_js(callback)
@@ -123,6 +128,7 @@ class TestRenderQueue:
 
     def test_cached_code_emits_immediately(self, renderer):
         from ruvox.ui.services.mermaid_renderer import _code_hash
+
         code = "graph TD\n  A --> B"
         h = _code_hash(code)
         renderer._svg_cache[h] = "<svg>cached</svg>"
@@ -173,7 +179,9 @@ class TestRenderBaseUrl:
         base_url = args[1]
 
         assert 'src="mermaid.min.js"' in html
-        assert "file:///" not in html or "mermaid.min.js" not in html.split("file:///")[0] if "file:///" in html else True
+        assert (
+            "file:///" not in html or "mermaid.min.js" not in html.split("file:///")[0] if "file:///" in html else True
+        )
         assert str(tmp_path) in base_url.toLocalFile()
 
     def test_html_uses_relative_script_src(self, renderer, tmp_path):
@@ -197,11 +205,13 @@ class TestSvgToPixmap:
 
     def test_invalid_svg_returns_none(self, qapp):
         from ruvox.ui.services.mermaid_renderer import MermaidRenderer
+
         result = MermaidRenderer._svg_to_pixmap("not valid svg", 200)
         assert result is None
 
     def test_valid_svg_returns_pixmap(self, qapp):
         from ruvox.ui.services.mermaid_renderer import MermaidRenderer
+
         svg = '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="50"><rect width="100" height="50" fill="red"/></svg>'
         result = MermaidRenderer._svg_to_pixmap(svg, 300)
         assert result is not None

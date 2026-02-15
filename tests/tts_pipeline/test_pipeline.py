@@ -333,9 +333,7 @@ graph TD
         for mode in ("full", "brief"):
             pipeline.config.code_block_mode = mode
             result = pipeline.process(text)
-            assert "мермэйд диаграмма" in result.lower(), (
-                f"Mermaid not replaced in {mode} mode: {result}"
-            )
+            assert "мермэйд диаграмма" in result.lower(), f"Mermaid not replaced in {mode} mode: {result}"
             assert "sequence" not in result.lower()
 
     def test_mermaid_block_char_mapping(self, pipeline):
@@ -350,8 +348,7 @@ graph TD
             orig_start, orig_end = mapping.char_map[end_pos]
             expected_orig = text.lower().find("конец")
             assert orig_start >= expected_orig - 2, (
-                f"Mapping for 'конец' points to orig {orig_start}, "
-                f"expected near {expected_orig}"
+                f"Mapping for 'конец' points to orig {orig_start}, expected near {expected_orig}"
             )
 
     def test_mermaid_with_other_code_blocks(self, pipeline):
@@ -412,15 +409,11 @@ class TestInlineCode:
             ("`run my test`", ["ран", "май", "тест"]),
         ],
     )
-    def test_inline_code_unknown_words_transliterated(
-        self, pipeline, input_text, expected_contains
-    ):
+    def test_inline_code_unknown_words_transliterated(self, pipeline, input_text, expected_contains):
         """Unknown English words in inline code should be transliterated."""
         result = pipeline.process(input_text)
         for part in expected_contains:
-            assert part.lower() in result.lower(), (
-                f"Expected '{part}' in result: {result}"
-            )
+            assert part.lower() in result.lower(), f"Expected '{part}' in result: {result}"
 
 
 class TestMarkdownStructure:
@@ -477,12 +470,13 @@ class TestMarkdownStructure:
     def test_links_mapping_points_to_exact_words(self, pipeline):
         """Each word in link text should map to its exact original position."""
         import re
+
         text = "Пост [Fun with Dada](https://example.com), далее."
         result, mapping = pipeline.process_with_char_mapping(text)
-        words = {m.group(): (m.start(), m.end()) for m in re.finditer(r'\b\w+\b', result)}
+        words = {m.group(): (m.start(), m.end()) for m in re.finditer(r"\b\w+\b", result)}
 
         # Find transliterated "Dada" (дада)
-        dada_candidates = [(w, s, e) for w, (s, e) in words.items() if 'дада' in w.lower()]
+        dada_candidates = [(w, s, e) for w, (s, e) in words.items() if "дада" in w.lower()]
         assert dada_candidates, f"'дада' not found in: {list(words.keys())}"
         _, s, e = dada_candidates[0]
         orig_start, orig_end = mapping.get_original_range(s, e)
@@ -631,7 +625,9 @@ class TestGreekLettersInCode:
         # Check that Greek alpha is converted to "альфа"
         assert "альфа" in result.lower(), f"α should be converted to 'альфа', got: {result}"
         # All 3 alphas in `plus : α → α → α` should be converted
-        assert result.lower().count("альфа") >= 3, f"Expected at least 3 'альфа', got {result.lower().count('альфа')} in: {result}"
+        assert result.lower().count("альфа") >= 3, (
+            f"Expected at least 3 'альфа', got {result.lower().count('альфа')} in: {result}"
+        )
         # Arrow should be converted
         assert "стрелка" in result.lower(), f"→ should be converted to 'стрелка', got: {result}"
 
@@ -640,26 +636,28 @@ class TestGreekLettersInCode:
 
         Full Lean code block with Greek letters.
         """
-        text = '''```lean
+        text = """```lean
 class Plus (α : Type) where
   plus : α → α → α
-```'''
+```"""
         pipeline.config.code_block_mode = "full"
         result = pipeline.process(text)
 
         # Check that Greek alpha is converted to "альфа" in code block too
         assert "альфа" in result.lower(), f"α in code block should be converted to 'альфа', got: {result}"
         # Should have multiple alphas
-        assert result.lower().count("альфа") >= 2, f"Expected at least 2 'альфа' in code block, got {result.lower().count('альфа')} in: {result}"
+        assert result.lower().count("альфа") >= 2, (
+            f"Expected at least 2 'альфа' in code block, got {result.lower().count('альфа')} in: {result}"
+        )
 
     def test_lean_full_example(self, pipeline):
         """Full Lean example with both inline code and code block."""
-        text = '''В следующем объявлении класса типов `Plus` — это имя класса, `α : Type` — единственный аргумент, а `plus : α → α → α` — единственный метод:
+        text = """В следующем объявлении класса типов `Plus` — это имя класса, `α : Type` — единственный аргумент, а `plus : α → α → α` — единственный метод:
 
 ```lean
 class Plus (α : Type) where
   plus : α → α → α
-```'''
+```"""
         pipeline.config.code_block_mode = "full"
         result = pipeline.process(text)
 

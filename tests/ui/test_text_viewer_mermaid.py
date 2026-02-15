@@ -1,15 +1,12 @@
 """Tests for Mermaid integration in TextViewerWidget."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
-from pathlib import Path
-
 from PyQt6.QtCore import QUrl
-from PyQt6.QtWidgets import QApplication
 
-from ruvox.ui.widgets.text_viewer import TextViewerWidget, TextFormat
 from ruvox.ui.models.entry import TextEntry
-
+from ruvox.ui.widgets.text_viewer import TextFormat, TextViewerWidget
 
 SAMPLE_MERMAID = "graph TD\n  A --> B"
 
@@ -23,7 +20,6 @@ Some text before.
 
 Some text after.
 """
-
 
 
 @pytest.fixture
@@ -55,11 +51,7 @@ class TestExtractMermaidBlocks:
 
     def test_multiple_mermaid_blocks(self, text_viewer):
         """Multiple mermaid blocks are all extracted."""
-        text = (
-            "```mermaid\ngraph TD\n  A --> B\n```\n"
-            "Middle text\n"
-            "```mermaid\nsequenceDiagram\n  A->>B: Hello\n```"
-        )
+        text = "```mermaid\ngraph TD\n  A --> B\n```\nMiddle text\n```mermaid\nsequenceDiagram\n  A->>B: Hello\n```"
         result_text, blocks = text_viewer._extract_mermaid_blocks(text)
         assert len(blocks) == 2
         assert blocks[0] == "graph TD\n  A --> B"

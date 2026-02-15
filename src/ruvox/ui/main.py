@@ -2,14 +2,14 @@
 
 import logging
 import sys
-from pathlib import Path
 
 # Инициализация логирования ДО импорта PyQt6
 from ruvox.ui.services.logging_service import setup_logging, setup_qt_logging, shutdown_logging
+
 setup_logging()
 
-from PyQt6.QtWidgets import QApplication
-from PyQt6.QtNetwork import QLocalServer, QLocalSocket
+from PyQt6.QtNetwork import QLocalServer, QLocalSocket  # noqa: E402
+from PyQt6.QtWidgets import QApplication  # noqa: E402
 
 # QWebEngineView requires early import (before QApplication is created).
 # Graceful: if WebEngine is not installed, mermaid rendering will be unavailable.
@@ -21,7 +21,7 @@ except ImportError:
 # Настройка перехвата Qt сообщений после импорта PyQt6
 setup_qt_logging()
 
-from ruvox.ui.app import TTSApplication
+from ruvox.ui.app import TTSApplication  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

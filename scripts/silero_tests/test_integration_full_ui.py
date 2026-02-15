@@ -1,24 +1,20 @@
 #!/usr/bin/env python3
 """Интеграционный тест: полный UI с QMainWindow, tray, hotkeys."""
 
-import sys
 import signal
+import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, 'src')
-
-from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout,
-    QPushButton, QLabel, QSystemTrayIcon, QMenu
-)
-from PyQt6.QtCore import QTimer, QObject, pyqtSignal
-from PyQt6.QtGui import QIcon, QAction
-from PyQt6.QtDBus import QDBusConnection
+sys.path.insert(0, "src")
 
 import mpv
-
 import torch
+from PyQt6.QtCore import QTimer
+from PyQt6.QtDBus import QDBusConnection
+from PyQt6.QtGui import QAction, QIcon
+from PyQt6.QtWidgets import QApplication, QLabel, QMainWindow, QMenu, QPushButton, QSystemTrayIcon, QVBoxLayout, QWidget
+
 from ruvox.tts_pipeline import TTSPipeline
 
 
@@ -140,6 +136,7 @@ class IntegrationTestFullUI:
             QTimer.singleShot(500, self._step2_load_model)
         except Exception as e:
             import traceback
+
             traceback.print_exc()
             self._fail(f"Ошибка создания UI: {e}")
 
@@ -149,10 +146,7 @@ class IntegrationTestFullUI:
         self.main_window.status_label.setText("Загрузка модели...")
         try:
             self.model, _ = torch.hub.load(
-                repo_or_dir='snakers4/silero-models',
-                model='silero_tts',
-                language='ru',
-                speaker='v5_ru'
+                repo_or_dir="snakers4/silero-models", model="silero_tts", language="ru", speaker="v5_ru"
             )
             print(f"   ✓ Модель загружена, speakers: {self.model.speakers}")
             QTimer.singleShot(100, self._step3_first_generation)
@@ -169,11 +163,7 @@ class IntegrationTestFullUI:
             print(f"   Нормализовано: '{normalized}'")
 
             with torch.no_grad():
-                audio = self.model.apply_tts(
-                    text=normalized,
-                    speaker='xenia',
-                    sample_rate=48000
-                )
+                audio = self.model.apply_tts(text=normalized, speaker="xenia", sample_rate=48000)
 
             if isinstance(audio, torch.Tensor):
                 audio_np = audio.numpy()
@@ -181,6 +171,7 @@ class IntegrationTestFullUI:
                 audio_np = audio
 
             from scipy.io import wavfile
+
             self.audio_path = f"{self.temp_dir}/test.wav"
             wavfile.write(self.audio_path, 48000, audio_np)
 
@@ -190,6 +181,7 @@ class IntegrationTestFullUI:
             QTimer.singleShot(100, self._step4_setup_player)
         except Exception as e:
             import traceback
+
             traceback.print_exc()
             self._fail(f"Первая генерация: {e}")
 
@@ -243,11 +235,7 @@ class IntegrationTestFullUI:
 
             print("   Вызов apply_tts...")
             with torch.no_grad():
-                audio = self.model.apply_tts(
-                    text=normalized,
-                    speaker='xenia',
-                    sample_rate=48000
-                )
+                audio = self.model.apply_tts(text=normalized, speaker="xenia", sample_rate=48000)
 
             if isinstance(audio, torch.Tensor):
                 audio_np = audio.numpy()
@@ -266,6 +254,7 @@ class IntegrationTestFullUI:
 
         except Exception as e:
             import traceback
+
             traceback.print_exc()
             self._fail(f"Перегенерация: {e}")
 

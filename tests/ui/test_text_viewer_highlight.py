@@ -43,8 +43,8 @@ class TestHighlightBugReproduction:
         # Verify positions
         assert positions[0] == 0
         # Second "Модель" is after first paragraph
-        assert text[positions[1]:positions[1] + 6] == "Модель"
-        assert text[positions[2]:positions[2] + 6] == "Модель"
+        assert text[positions[1] : positions[1] + 6] == "Модель"
+        assert text[positions[2] : positions[2] + 6] == "Модель"
 
     def test_bug_demonstration(self):
         """Demonstrate the bug: find() always returns first match.
@@ -60,13 +60,15 @@ class TestHighlightBugReproduction:
         third_pos = text.find("Модель", second_pos + 1)
 
         print(f"\nPositions: first={first_pos}, second={second_pos}, third={third_pos}")
-        print(f"Text at positions: '{text[first_pos:first_pos+6]}', "
-              f"'{text[second_pos:second_pos+6]}', '{text[third_pos:third_pos+6]}'")
+        print(
+            f"Text at positions: '{text[first_pos : first_pos + 6]}', "
+            f"'{text[second_pos : second_pos + 6]}', '{text[third_pos : third_pos + 6]}'"
+        )
 
         # Verify all positions point to "Модель"
-        assert text[first_pos:first_pos + 6] == "Модель"
-        assert text[second_pos:second_pos + 6] == "Модель"
-        assert text[third_pos:third_pos + 6] == "Модель"
+        assert text[first_pos : first_pos + 6] == "Модель"
+        assert text[second_pos : second_pos + 6] == "Модель"
+        assert text[third_pos : third_pos + 6] == "Модель"
 
         # The bug: if we just call find("Модель") it always returns first_pos
         # So highlighting the 2nd occurrence at second_pos would
@@ -79,6 +81,7 @@ class TestTextViewerHighlightFix:
     @pytest.fixture
     def mock_text_viewer(self):
         """Create a mock that simulates TextViewerWidget behavior."""
+
         class MockTextViewer:
             def __init__(self):
                 self.original_text = ""
@@ -153,7 +156,7 @@ class TestTextViewerHighlightFix:
         target_pos = 13
 
         # Verify the word is actually at that position
-        assert text[target_pos:target_pos + 6] == "Модель"
+        assert text[target_pos : target_pos + 6] == "Модель"
 
         # Use the fixed method
         result = mock_text_viewer.highlight_word_at_position_fixed("Модель", target_pos)
@@ -178,8 +181,9 @@ class TestTextViewerHighlightFix:
                 pos += 1
         target_pos = pos
 
-        assert text[target_pos:target_pos + 6] == "Модель", \
-            f"Expected 'Модель' at {target_pos}, got '{text[target_pos:target_pos + 6]}'"
+        assert text[target_pos : target_pos + 6] == "Модель", (
+            f"Expected 'Модель' at {target_pos}, got '{text[target_pos : target_pos + 6]}'"
+        )
 
         result = mock_text_viewer.highlight_word_at_position_fixed("Модель", target_pos)
 
@@ -214,8 +218,7 @@ class TestTextViewerHighlightFix:
 
             print(f"Occurrence {i + 1}: target={target_pos}, highlighted={result}")
 
-            assert result == target_pos, \
-                f"Occurrence {i + 1}: expected position {target_pos}, got {result}"
+            assert result == target_pos, f"Occurrence {i + 1}: expected position {target_pos}, got {result}"
 
     def test_occurrence_index_calculation(self, mock_text_viewer):
         """Test that occurrence index is correctly calculated from position."""
@@ -235,8 +238,8 @@ class TestIntegrationWithTimestamps:
     def test_timestamps_to_correct_highlight(self):
         """End-to-end: timestamps should lead to correct highlight positions."""
         from ruvox.tts_pipeline import TTSPipeline
+        from ruvox.ui.models.entry import EntryStatus, TextEntry
         from ruvox.ui.services.tts_worker import TTSRunnable
-        from ruvox.ui.models.entry import TextEntry, EntryStatus
 
         # Use the actual article text that caused the bug
         original = """Модель обучалась на системах NVIDIA GB200.
@@ -265,9 +268,7 @@ class TestIntegrationWithTimestamps:
 
         # Generate timestamps
         chunk_durations = [(0, len(normalized), 10.0)]
-        timestamps = runnable._estimate_timestamps_chunked(
-            normalized, chunk_durations, char_mapping
-        )
+        timestamps = runnable._estimate_timestamps_chunked(normalized, chunk_durations, char_mapping)
 
         # Find all "Модель" in original text
         expected_positions = []
@@ -286,15 +287,19 @@ class TestIntegrationWithTimestamps:
 
         print(f"Found {len(model_timestamps)} 'Модель' timestamps:")
         for i, ts in enumerate(model_timestamps):
-            print(f"  {i + 1}: original_pos={ts['original_pos']}, "
-                  f"expected={expected_positions[i] if i < len(expected_positions) else 'N/A'}")
+            print(
+                f"  {i + 1}: original_pos={ts['original_pos']}, "
+                f"expected={expected_positions[i] if i < len(expected_positions) else 'N/A'}"
+            )
 
         # Verify each timestamp points to correct position
-        assert len(model_timestamps) == len(expected_positions), \
+        assert len(model_timestamps) == len(expected_positions), (
             f"Expected {len(expected_positions)} 'Модель' timestamps, got {len(model_timestamps)}"
+        )
 
         for i, ts in enumerate(model_timestamps):
             actual_start = ts["original_pos"][0]
             expected_start = expected_positions[i]
-            assert actual_start == expected_start, \
+            assert actual_start == expected_start, (
                 f"'Модель' #{i + 1}: expected position {expected_start}, got {actual_start}"
+            )

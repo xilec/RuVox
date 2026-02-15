@@ -1,26 +1,20 @@
 #!/usr/bin/env python3
 """Интеграционный тест: с QThreadPool как в реальном UI."""
 
-import sys
 import signal
+import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, 'src')
-
-from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout,
-    QPushButton, QLabel, QSystemTrayIcon, QMenu
-)
-from PyQt6.QtCore import QTimer, QObject, pyqtSignal, QRunnable, QThreadPool
-from PyQt6.QtGui import QIcon, QAction
-from PyQt6.QtDBus import QDBusConnection
+sys.path.insert(0, "src")
 
 import mpv
-
 import torch
-from ruvox.tts_pipeline import TTSPipeline
+from PyQt6.QtCore import QObject, QRunnable, QThreadPool, QTimer, pyqtSignal
+from PyQt6.QtGui import QIcon
+from PyQt6.QtWidgets import QApplication, QLabel, QMainWindow, QSystemTrayIcon, QVBoxLayout, QWidget
 
+from ruvox.tts_pipeline import TTSPipeline
 
 # Глобальная модель (как в реальном UI)
 g_model = None
@@ -43,10 +37,7 @@ class ModelLoadRunnable(QRunnable):
         try:
             print("   [Thread] Загрузка модели V5...")
             g_model, _ = torch.hub.load(
-                repo_or_dir='snakers4/silero-models',
-                model='silero_tts',
-                language='ru',
-                speaker='v5_ru'
+                repo_or_dir="snakers4/silero-models", model="silero_tts", language="ru", speaker="v5_ru"
             )
             print(f"   [Thread] Модель загружена: {g_model.speakers}")
             self.signals.loaded.emit(g_model)
@@ -82,11 +73,7 @@ class TTSRunnable(QRunnable):
             print("   [Thread] Вызов apply_tts...")
 
             with torch.no_grad():
-                audio = g_model.apply_tts(
-                    text=normalized,
-                    speaker='xenia',
-                    sample_rate=48000
-                )
+                audio = g_model.apply_tts(text=normalized, speaker="xenia", sample_rate=48000)
 
             if isinstance(audio, torch.Tensor):
                 audio_np = audio.numpy()
@@ -94,6 +81,7 @@ class TTSRunnable(QRunnable):
                 audio_np = audio
 
             from scipy.io import wavfile
+
             wavfile.write(self.output_path, 48000, audio_np)
 
             duration = len(audio_np) / 48000
@@ -102,6 +90,7 @@ class TTSRunnable(QRunnable):
 
         except Exception as e:
             import traceback
+
             traceback.print_exc()
             print(f"   [Thread] ОШИБКА: {e}")
             self.signals.error.emit(str(e))
@@ -128,7 +117,9 @@ class IntegrationTestThreadPool:
         self.app = QApplication(sys.argv)
         self.temp_dir = tempfile.mkdtemp(prefix="tts_test_")
         # Точно такой же текст как в реальном UI
-        self.test_text = "Окно теперь показывается (visible: True). Есть предупреждение о медиа-бэкенде, но окно работает."
+        self.test_text = (
+            "Окно теперь показывается (visible: True). Есть предупреждение о медиа-бэкенде, но окно работает."
+        )
         self.audio_path = f"{self.temp_dir}/test.wav"
         self.success = False
         self.error_msg = None
@@ -217,7 +208,7 @@ class IntegrationTestThreadPool:
         QTimer.singleShot(100, self._step3_first_tts)
 
     def _step3_first_tts(self):
-        print(f"\n[Шаг 3] Первая генерация в QThreadPool...")
+        print("\n[Шаг 3] Первая генерация в QThreadPool...")
         self.main_window.status_label.setText("Первая генерация...")
 
         runnable = TTSRunnable(self.test_text, self.audio_path)
@@ -251,7 +242,7 @@ class IntegrationTestThreadPool:
         QTimer.singleShot(500, self._step6_regenerate)
 
     def _step6_regenerate(self):
-        print(f"\n[Шаг 6] ПЕРЕГЕНЕРАЦИЯ в QThreadPool...")
+        print("\n[Шаг 6] ПЕРЕГЕНЕРАЦИЯ в QThreadPool...")
         print("   >>> КРИТИЧЕСКИЙ МОМЕНТ <<<")
         self.main_window.status_label.setText("ПЕРЕГЕНЕРАЦИЯ...")
 

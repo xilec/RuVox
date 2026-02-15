@@ -1,10 +1,7 @@
 """Tests for TrackedText character-level mapping."""
 
-import pytest
 from ruvox.tts_pipeline.tracked_text import (
     TrackedText,
-    CharMapping,
-    Replacement,
     create_tracked_text,
 )
 

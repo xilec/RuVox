@@ -32,23 +32,16 @@ def setup_logging(log_dir: Path | None = None) -> None:
     root_logger = logging.getLogger("ruvox")
     root_logger.setLevel(logging.DEBUG)
 
-    # Формат сообщений
-    formatter = logging.Formatter(
-        "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
-    )
-
     # Сокращаем имя модуля для читаемости
     class ShortNameFormatter(logging.Formatter):
         def format(self, record):
             # ruvox.ui.services.tts_worker -> ui.services.tts_worker
             if record.name.startswith("ruvox."):
-                record.name = record.name[len("ruvox."):]
+                record.name = record.name[len("ruvox.") :]
             return super().format(record)
 
     short_formatter = ShortNameFormatter(
-        "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
+        "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
     )
 
     global _file_handler
@@ -58,7 +51,7 @@ def setup_logging(log_dir: Path | None = None) -> None:
         log_file,
         maxBytes=1024 * 1024,  # 1MB
         backupCount=5,
-        encoding="utf-8"
+        encoding="utf-8",
     )
     _file_handler.setLevel(logging.DEBUG)
     _file_handler.setFormatter(short_formatter)
@@ -92,7 +85,7 @@ def setup_qt_logging() -> None:
     global _original_qt_handler
 
     try:
-        from PyQt6.QtCore import qInstallMessageHandler, QtMsgType
+        from PyQt6.QtCore import QtMsgType, qInstallMessageHandler
 
         def qt_message_handler(msg_type, context, message):
             """Обработчик Qt сообщений."""
@@ -132,10 +125,7 @@ def _exception_hook(exc_type, exc_value, exc_traceback):
         return
 
     logger = logging.getLogger("ruvox")
-    logger.critical(
-        "Необработанное исключение",
-        exc_info=(exc_type, exc_value, exc_traceback)
-    )
+    logger.critical("Необработанное исключение", exc_info=(exc_type, exc_value, exc_traceback))
 
 
 def safe_slot(func: Callable) -> Callable:
@@ -148,16 +138,15 @@ def safe_slot(func: Callable) -> Callable:
         def on_button_clicked(self):
             ...
     """
+
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
         except Exception as e:
             logger = logging.getLogger("ruvox.qt.slots")
-            logger.error(
-                f"Ошибка в слоте {func.__qualname__}: {e}",
-                exc_info=True
-            )
+            logger.error(f"Ошибка в слоте {func.__qualname__}: {e}", exc_info=True)
+
     return wrapper
 
 

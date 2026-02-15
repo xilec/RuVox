@@ -4,26 +4,26 @@
 Исправлена проблема с зависанием - Qt multimedia создаётся после app.exec().
 """
 
-import sys
+import shutil
 import signal
+import sys
 import tempfile
 from pathlib import Path
-import shutil
 
-sys.path.insert(0, 'src')
+sys.path.insert(0, "src")
 
 import logging
-logging.basicConfig(level=logging.DEBUG, format='%(name)s: %(message)s')
+
+logging.basicConfig(level=logging.DEBUG, format="%(name)s: %(message)s")
 print("=== STARTING TEST ===", flush=True)
 
-from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import QTimer
-
 import mpv
+from PyQt6.QtCore import QTimer
+from PyQt6.QtWidgets import QApplication
 
 # Импортируем РЕАЛЬНЫЕ компоненты из приложения
 from ruvox.ui.models.config import UIConfig
-from ruvox.ui.models.entry import TextEntry, EntryStatus
+from ruvox.ui.models.entry import EntryStatus
 from ruvox.ui.services.storage import StorageService
 from ruvox.ui.services.tts_worker import TTSWorker
 
@@ -52,7 +52,9 @@ class IntegrationTestRealComponents:
         print("  __init__: Creating TTSWorker...", flush=True)
         self.tts_worker = TTSWorker(self.config, self.storage)
 
-        self.test_text = "Окно теперь показывается (visible: True). Есть предупреждение о медиа-бэкенде, но окно работает."
+        self.test_text = (
+            "Окно теперь показывается (visible: True). Есть предупреждение о медиа-бэкенде, но окно работает."
+        )
         self.entry = None
         self.success = False
         self.error_msg = None
@@ -141,7 +143,7 @@ class IntegrationTestRealComponents:
         self.entry = self.storage.get_entry(entry_id)
 
         if self.entry.status == EntryStatus.READY:
-            if not hasattr(self, '_regenerated'):
+            if not hasattr(self, "_regenerated"):
                 # Первая генерация - переходим к воспроизведению
                 QTimer.singleShot(100, self._step3_play)
             else:

@@ -97,10 +97,11 @@ class CharMapping:
 @dataclass
 class OffsetEntry:
     """Tracks a single replacement for offset calculation."""
+
     current_pos: int  # Position in current text at time of replacement
-    orig_start: int   # Start position in original text
-    orig_end: int     # End position in original text
-    new_len: int      # Length of replacement text
+    orig_start: int  # Start position in original text
+    orig_end: int  # End position in original text
+    new_len: int  # Length of replacement text
 
 
 class TrackedText:
@@ -213,12 +214,15 @@ class TrackedText:
             )
 
             # Record offset entry (insert at beginning since we process in reverse)
-            self._offset_entries.insert(0, OffsetEntry(
-                current_pos=start,
-                orig_start=orig_start,
-                orig_end=orig_end,
-                new_len=len(new_text),
-            ))
+            self._offset_entries.insert(
+                0,
+                OffsetEntry(
+                    current_pos=start,
+                    orig_start=orig_start,
+                    orig_end=orig_end,
+                    new_len=len(new_text),
+                ),
+            )
 
             self._sorted_entries_cache = None
 
@@ -260,9 +264,7 @@ class TrackedText:
 
         return False
 
-    def _find_containing_replacement(
-        self, orig_start: int, orig_end: int
-    ) -> OffsetEntry | None:
+    def _find_containing_replacement(self, orig_start: int, orig_end: int) -> OffsetEntry | None:
         """Find an existing replacement that contains or overlaps the given range.
 
         This is checked in ORIGINAL text coordinates, not current text coordinates,

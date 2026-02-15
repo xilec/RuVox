@@ -2,14 +2,13 @@
 
 import json
 import logging
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
-from ruvox.ui.models.entry import TextEntry, EntryStatus
 from ruvox.ui.models.config import UIConfig
+from ruvox.ui.models.entry import EntryStatus, TextEntry
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +66,7 @@ class StorageService:
             if needs_save:
                 self._save_history()
 
-        except (json.JSONDecodeError, KeyError, ValueError) as e:
+        except (json.JSONDecodeError, KeyError, ValueError):
             # Corrupted history file - start fresh but backup old file
             backup_path = self.history_file.with_suffix(".json.bak")
             if self.history_file.exists():
@@ -130,7 +129,7 @@ class StorageService:
         would cause position mismatch between Python string and Qt widget.
         """
         # Strip BOM to match Qt's behavior
-        clean_text = text.lstrip('\ufeff')
+        clean_text = text.lstrip("\ufeff")
         entry = TextEntry(original_text=clean_text)
         self._entries[entry.id] = entry
         self._save_history()

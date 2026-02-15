@@ -1,12 +1,13 @@
 """Tests for TTS text chunking and timestamp calculation."""
 
-import pytest
-
 # Import the module to test chunking logic
 import sys
-sys.path.insert(0, 'src')
 
-from ruvox.ui.services.tts_worker import TTSRunnable, MAX_CHUNK_SIZE
+import pytest
+
+sys.path.insert(0, "src")
+
+from ruvox.ui.services.tts_worker import TTSRunnable
 
 
 class MockConfig:
@@ -28,7 +29,8 @@ class TestTextChunking:
     @pytest.fixture
     def runnable(self):
         """Create a TTSRunnable for testing."""
-        from ruvox.ui.models.entry import TextEntry, EntryStatus
+        from ruvox.ui.models.entry import EntryStatus, TextEntry
+
         entry = TextEntry(
             id="test-id",
             original_text="test",
@@ -57,7 +59,7 @@ class TestTextChunking:
         # Verify each chunk's position is correct
         for chunk_text, start_pos in chunks:
             # The chunk text should be found at start_pos in original
-            actual_text = text[start_pos:start_pos + len(chunk_text)]
+            actual_text = text[start_pos : start_pos + len(chunk_text)]
             # Account for possible stripping
             assert chunk_text in text, f"Chunk '{chunk_text[:50]}...' not found in text"
 
@@ -73,8 +75,9 @@ class TestTextChunking:
 
         original_words = text.split()
 
-        assert len(reconstructed_words) == len(original_words), \
+        assert len(reconstructed_words) == len(original_words), (
             f"Word count mismatch: {len(reconstructed_words)} vs {len(original_words)}"
+        )
 
     def test_gpt_article_text(self, runnable):
         """Test with the actual problematic text."""
@@ -96,20 +99,20 @@ GPT-5.3-Codex также лучше ориентируется в графиче
 
         chunks = runnable._split_into_chunks(text)
 
-        print(f"\n=== Text chunking analysis ===")
+        print("\n=== Text chunking analysis ===")
         print(f"Original text length: {len(text)}")
         print(f"Number of chunks: {len(chunks)}")
 
         total_chars = 0
         for i, (chunk_text, start_pos) in enumerate(chunks):
-            print(f"\nChunk {i+1}:")
+            print(f"\nChunk {i + 1}:")
             print(f"  Start pos: {start_pos}")
             print(f"  Length: {len(chunk_text)}")
             print(f"  Text: '{chunk_text[:60]}...'")
 
             # Verify position
             if start_pos + len(chunk_text) <= len(text):
-                actual = text[start_pos:start_pos + len(chunk_text)]
+                actual = text[start_pos : start_pos + len(chunk_text)]
                 matches = actual == chunk_text
                 print(f"  Position matches: {matches}")
                 if not matches:
@@ -124,7 +127,7 @@ GPT-5.3-Codex также лучше ориентируется в графиче
         for chunk_text, _ in chunks:
             chunk_words.extend(chunk_text.split())
 
-        print(f"\n=== Word analysis ===")
+        print("\n=== Word analysis ===")
         print(f"Original word count: {len(original_words)}")
         print(f"Chunked word count: {len(chunk_words)}")
 
@@ -137,8 +140,9 @@ GPT-5.3-Codex также лучше ориентируется в графиче
         if extra:
             print(f"Extra words: {extra}")
 
-        assert len(chunk_words) == len(original_words), \
+        assert len(chunk_words) == len(original_words), (
             f"Word count mismatch: {len(chunk_words)} vs {len(original_words)}"
+        )
 
 
 class TestTimestampCalculation:
@@ -147,7 +151,8 @@ class TestTimestampCalculation:
     @pytest.fixture
     def runnable(self):
         """Create a TTSRunnable for testing."""
-        from ruvox.ui.models.entry import TextEntry, EntryStatus
+        from ruvox.ui.models.entry import EntryStatus, TextEntry
+
         entry = TextEntry(
             id="test-id",
             original_text="test",
@@ -170,8 +175,7 @@ class TestTimestampCalculation:
         timestamps = runnable._estimate_timestamps_chunked(text, chunk_durations, None)
 
         words = text.split()
-        assert len(timestamps) == len(words), \
-            f"Timestamp count {len(timestamps)} != word count {len(words)}"
+        assert len(timestamps) == len(words), f"Timestamp count {len(timestamps)} != word count {len(words)}"
 
     def test_timestamps_monotonically_increasing(self, runnable):
         """Timestamps should always increase."""
@@ -179,22 +183,20 @@ class TestTimestampCalculation:
 
         # Simulate 2 chunks
         chunk_durations = [
-            (0, 300, 5.0),      # First chunk: 5 seconds
-            (300, 600, 5.0),   # Second chunk: 5 seconds
+            (0, 300, 5.0),  # First chunk: 5 seconds
+            (300, 600, 5.0),  # Second chunk: 5 seconds
         ]
 
         timestamps = runnable._estimate_timestamps_chunked(
             "Слово " * 50 + "Слово " * 50,  # Simulated chunked text
             chunk_durations,
-            None
+            None,
         )
 
         prev_end = 0.0
         for i, ts in enumerate(timestamps):
-            assert ts["start"] >= prev_end - 0.001, \
-                f"Timestamp {i} start {ts['start']} < previous end {prev_end}"
-            assert ts["end"] >= ts["start"], \
-                f"Timestamp {i} end {ts['end']} < start {ts['start']}"
+            assert ts["start"] >= prev_end - 0.001, f"Timestamp {i} start {ts['start']} < previous end {prev_end}"
+            assert ts["end"] >= ts["start"], f"Timestamp {i} end {ts['end']} < start {ts['start']}"
             prev_end = ts["end"]
 
     def test_original_positions_within_bounds(self, runnable):
@@ -235,13 +237,12 @@ class TestTimestampCalculation:
             last_chunk1_end = timestamps[chunk1_words - 1]["end"]
             first_chunk2_start = timestamps[chunk1_words]["start"]
 
-            print(f"\nChunk transition:")
+            print("\nChunk transition:")
             print(f"  Last word of chunk 1 ends at: {last_chunk1_end}")
             print(f"  First word of chunk 2 starts at: {first_chunk2_start}")
 
             # Chunk 2 should start at or after chunk 1's audio duration (2.0s)
-            assert first_chunk2_start >= 1.9, \
-                f"Chunk 2 starts too early: {first_chunk2_start} < 2.0"
+            assert first_chunk2_start >= 1.9, f"Chunk 2 starts too early: {first_chunk2_start} < 2.0"
 
 
 class TestPositionMapping:
@@ -250,7 +251,8 @@ class TestPositionMapping:
     @pytest.fixture
     def runnable(self):
         """Create a TTSRunnable for testing."""
-        from ruvox.ui.models.entry import TextEntry, EntryStatus
+        from ruvox.ui.models.entry import EntryStatus, TextEntry
+
         entry = TextEntry(
             id="test-id",
             original_text="test",
@@ -269,10 +271,10 @@ class TestPositionMapping:
 
         # Simple case: replace one word
         tracked = TrackedText("Hello NVIDIA world")
-        tracked.sub(r'NVIDIA', 'эн ви ай ди ай эй')
+        tracked.sub(r"NVIDIA", "эн ви ай ди ай эй")
         mapping = tracked.build_mapping()
 
-        print(f"\n=== Simple CharMapping test ===")
+        print("\n=== Simple CharMapping test ===")
         print(f"Original: '{tracked.original}' ({len(tracked.original)} chars)")
         print(f"Transformed: '{tracked.text}' ({len(tracked.text)} chars)")
         print(f"Char map length: {len(mapping.char_map)}")
@@ -280,20 +282,26 @@ class TestPositionMapping:
         # Check a few positions
         # "Hello " (0-5) should map to itself
         for i in range(6):
-            orig_range = mapping.get_original_range(i, i+1)
-            print(f"  Trans[{i}]='{tracked.text[i]}' -> Orig{orig_range}='{tracked.original[orig_range[0]:orig_range[1]]}'")
+            orig_range = mapping.get_original_range(i, i + 1)
+            print(
+                f"  Trans[{i}]='{tracked.text[i]}' -> Orig{orig_range}='{tracked.original[orig_range[0] : orig_range[1]]}'"
+            )
 
         # "эн ви ай ди ай эй" (6-23) should all map to "NVIDIA" (6-12)
         trans_nvidia_start = 6
-        trans_nvidia_end = 6 + len('эн ви ай ди ай эй')
+        trans_nvidia_end = 6 + len("эн ви ай ди ай эй")
         orig_range = mapping.get_original_range(trans_nvidia_start, trans_nvidia_end)
-        print(f"  Trans[{trans_nvidia_start}:{trans_nvidia_end}]='{tracked.text[trans_nvidia_start:trans_nvidia_end]}' -> Orig{orig_range}='{tracked.original[orig_range[0]:orig_range[1]]}'")
+        print(
+            f"  Trans[{trans_nvidia_start}:{trans_nvidia_end}]='{tracked.text[trans_nvidia_start:trans_nvidia_end]}' -> Orig{orig_range}='{tracked.original[orig_range[0] : orig_range[1]]}'"
+        )
 
         # " world" should map correctly
         trans_world_start = trans_nvidia_end
         trans_world_end = len(tracked.text)
         orig_range = mapping.get_original_range(trans_world_start, trans_world_end)
-        print(f"  Trans[{trans_world_start}:{trans_world_end}]='{tracked.text[trans_world_start:trans_world_end]}' -> Orig{orig_range}='{tracked.original[orig_range[0]:orig_range[1]]}'")
+        print(
+            f"  Trans[{trans_world_start}:{trans_world_end}]='{tracked.text[trans_world_start:trans_world_end]}' -> Orig{orig_range}='{tracked.original[orig_range[0] : orig_range[1]]}'"
+        )
 
         assert orig_range == (12, 18), f"Expected (12, 18) for ' world', got {orig_range}"
 
@@ -303,19 +311,20 @@ class TestPositionMapping:
 
         # Multiple replacements: "API and HTTP" -> "эй пи ай and эйч ти ти пи"
         tracked = TrackedText("API and HTTP")
-        tracked.sub(r'API', 'эй пи ай')
-        tracked.sub(r'HTTP', 'эйч ти ти пи')
+        tracked.sub(r"API", "эй пи ай")
+        tracked.sub(r"HTTP", "эйч ти ти пи")
         mapping = tracked.build_mapping()
 
-        print(f"\n=== Multiple replacements test ===")
+        print("\n=== Multiple replacements test ===")
         print(f"Original: '{tracked.original}' ({len(tracked.original)} chars)")
         print(f"Transformed: '{tracked.text}' ({len(tracked.text)} chars)")
         print(f"Char map length: {len(mapping.char_map)}")
         print(f"Replacements: {len(tracked._replacements)}")
 
         # Check if lengths match
-        assert len(mapping.char_map) == len(tracked.text), \
+        assert len(mapping.char_map) == len(tracked.text), (
             f"Char map length {len(mapping.char_map)} != text length {len(tracked.text)}"
+        )
 
         # Check positions for " and "
         # In transformed: "эй пи ай" (9 chars) + " and " (5 chars) + "эйч ти ти пи" (12 chars)
@@ -323,16 +332,20 @@ class TestPositionMapping:
         and_end = and_start + 5  # 14
         orig_range = mapping.get_original_range(and_start, and_end)
         expected_orig = (3, 8)  # " and " in original is at 3:8
-        print(f"  Trans[{and_start}:{and_end}]='{tracked.text[and_start:and_end]}' -> Orig{orig_range}='{tracked.original[orig_range[0]:orig_range[1]]}'")
-        print(f"  Expected: Orig{expected_orig}='{tracked.original[expected_orig[0]:expected_orig[1]]}'")
+        print(
+            f"  Trans[{and_start}:{and_end}]='{tracked.text[and_start:and_end]}' -> Orig{orig_range}='{tracked.original[orig_range[0] : orig_range[1]]}'"
+        )
+        print(f"  Expected: Orig{expected_orig}='{tracked.original[expected_orig[0] : expected_orig[1]]}'")
 
         # Check position of "эйч ти ти пи"
         http_start = and_end  # 14
         http_end = len(tracked.text)  # 26
         orig_range = mapping.get_original_range(http_start, http_end)
         expected_orig = (8, 12)  # "HTTP" in original is at 8:12
-        print(f"  Trans[{http_start}:{http_end}]='{tracked.text[http_start:http_end]}' -> Orig{orig_range}='{tracked.original[orig_range[0]:orig_range[1]]}'")
-        print(f"  Expected: Orig{expected_orig}='{tracked.original[expected_orig[0]:expected_orig[1]]}'")
+        print(
+            f"  Trans[{http_start}:{http_end}]='{tracked.text[http_start:http_end]}' -> Orig{orig_range}='{tracked.original[orig_range[0] : orig_range[1]]}'"
+        )
+        print(f"  Expected: Orig{expected_orig}='{tracked.original[expected_orig[0] : expected_orig[1]]}'")
 
         assert orig_range == expected_orig, f"Expected {expected_orig}, got {orig_range}"
 
@@ -345,15 +358,13 @@ class TestPositionMapping:
         pipeline = TTSPipeline()
         normalized, char_mapping = pipeline.process_with_char_mapping(original)
 
-        print(f"\n=== Repeated words test ===")
+        print("\n=== Repeated words test ===")
         print(f"Original: '{original}'")
         print(f"Normalized: '{normalized}'")
 
         # Build timestamps
         chunk_durations = [(0, len(normalized), 5.0)]
-        timestamps = runnable._estimate_timestamps_chunked(
-            normalized, chunk_durations, char_mapping
-        )
+        timestamps = runnable._estimate_timestamps_chunked(normalized, chunk_durations, char_mapping)
 
         # Find all "Модель" timestamps
         model_timestamps = [ts for ts in timestamps if ts["word"] == "Модель"]
@@ -399,18 +410,16 @@ class TestPositionMapping:
         pipeline = TTSPipeline()
         normalized, char_mapping = pipeline.process_with_char_mapping(original)
 
-        print(f"\n=== Repeated words after multiple expansions test ===")
+        print("\n=== Repeated words after multiple expansions test ===")
         print(f"Original ({len(original)} chars):")
-        for i, line in enumerate(original.split('\n')):
+        for i, line in enumerate(original.split("\n")):
             if line.strip():
                 print(f"  P{i}: '{line[:60]}...' " if len(line) > 60 else f"  P{i}: '{line}'")
         print(f"Normalized ({len(normalized)} chars)")
 
         # Build timestamps
         chunk_durations = [(0, len(normalized), 10.0)]
-        timestamps = runnable._estimate_timestamps_chunked(
-            normalized, chunk_durations, char_mapping
-        )
+        timestamps = runnable._estimate_timestamps_chunked(normalized, chunk_durations, char_mapping)
 
         # Find all "Модель" timestamps
         model_timestamps = [ts for ts in timestamps if ts["word"] == "Модель"]
@@ -433,7 +442,9 @@ class TestPositionMapping:
             extracted = original[orig_start:orig_end] if orig_end <= len(original) else "OUT OF BOUNDS"
             expected_pos = model_positions_in_original[i] if i < len(model_positions_in_original) else "N/A"
             match = "✓" if orig_start == expected_pos else "✗"
-            print(f"  Модель #{i+1}: orig[{orig_start}:{orig_end}] = '{extracted}' (expected pos {expected_pos}) {match}")
+            print(
+                f"  Модель #{i + 1}: orig[{orig_start}:{orig_end}] = '{extracted}' (expected pos {expected_pos}) {match}"
+            )
 
         assert len(model_timestamps) == 3, f"Expected 3 'Модель', got {len(model_timestamps)}"
 
@@ -441,9 +452,10 @@ class TestPositionMapping:
         for i, ts in enumerate(model_timestamps):
             actual_pos = ts["original_pos"][0]
             expected_pos = model_positions_in_original[i]
-            assert actual_pos == expected_pos, \
-                f"'Модель' #{i+1} should be at position {expected_pos}, got {actual_pos}. " \
+            assert actual_pos == expected_pos, (
+                f"'Модель' #{i + 1} should be at position {expected_pos}, got {actual_pos}. "
                 f"Bug: word index got desynchronized after expansions."
+            )
 
     def test_full_pipeline_with_normalization(self, runnable):
         """Test position mapping through the full pipeline with normalization."""
@@ -459,7 +471,7 @@ GPT-5.3-Codex может работать часами или днями, а п�
         pipeline = TTSPipeline()
         normalized, char_mapping = pipeline.process_with_char_mapping(original_text)
 
-        print(f"\n=== Full pipeline test ===")
+        print("\n=== Full pipeline test ===")
         print(f"Original length: {len(original_text)}")
         print(f"Normalized length: {len(normalized)}")
         print(f"CharMapping.original length: {len(char_mapping.original)}")
@@ -513,7 +525,9 @@ GPT-5.3-Codex может работать часами или днями, а п�
 
             # Show first 10 and last 10
             if i < 10 or i >= len(timestamps) - 10:
-                print(f"  [{i:3d}] {start_time:6.2f}-{end_time:6.2f}s: '{word}' -> orig[{orig_start}:{orig_end}] = '{extracted}'")
+                print(
+                    f"  [{i:3d}] {start_time:6.2f}-{end_time:6.2f}s: '{word}' -> orig[{orig_start}:{orig_end}] = '{extracted}'"
+                )
 
         if errors:
             print("\nERRORS:")
@@ -553,7 +567,7 @@ GPT-5.3-Codex может работать часами или днями, а п�
 
         timestamps = runnable._estimate_timestamps_chunked(text, chunk_durations, None)
 
-        print(f"\n=== Position mapping test ===")
+        print("\n=== Position mapping test ===")
         print(f"Text length: {len(text)}")
         print(f"Chunks: {len(chunks)}")
 
@@ -597,22 +611,20 @@ GPT-5.3-Codex может работать часами или днями, а п�
         pipeline = TTSPipeline()
         normalized, char_mapping = pipeline.process_with_char_mapping(original)
 
-        print(f"\n=== Terminal-Bench compound word test ===")
+        print("\n=== Terminal-Bench compound word test ===")
         print(f"Original: {original[:100]}...")
         print(f"Normalized: {normalized[:150]}...")
 
         # Generate timestamps
         chunk_durations = [(0, len(normalized), 15.0)]
-        timestamps = runnable._estimate_timestamps_chunked(
-            normalized, chunk_durations, char_mapping
-        )
+        timestamps = runnable._estimate_timestamps_chunked(normalized, chunk_durations, char_mapping)
 
         # Find positions of key words in original
         terminal_bench_pos = original.find("Terminal-Bench")
         gpt_codex_pos = original.find("GPT-5.3-Codex")
         raboty_pos = original.find("работы")
 
-        print(f"Key positions in original:")
+        print("Key positions in original:")
         print(f"  Terminal-Bench: {terminal_bench_pos}")
         print(f"  работы: {raboty_pos}")
         print(f"  GPT-5.3-Codex: {gpt_codex_pos}")
@@ -628,16 +640,17 @@ GPT-5.3-Codex может работать часами или днями, а п�
         terminal_ts = terminal_timestamps[0]
         terminal_orig_pos = terminal_ts["original_pos"][0]
 
-        print(f"\n'терминал' timestamp:")
+        print("\n'терминал' timestamp:")
         print(f"  original_pos: {terminal_ts['original_pos']}")
         print(f"  Expected to map to Terminal-Bench at {terminal_bench_pos}")
 
         # "терминал" should map to "Terminal-Bench", not to "работы" or later words
-        assert terminal_orig_pos == terminal_bench_pos, \
-            f"'терминал' should map to Terminal-Bench at {terminal_bench_pos}, " \
-            f"but mapped to position {terminal_orig_pos} " \
-            f"('{original[terminal_orig_pos:terminal_orig_pos+20]}...'). " \
+        assert terminal_orig_pos == terminal_bench_pos, (
+            f"'терминал' should map to Terminal-Bench at {terminal_bench_pos}, "
+            f"but mapped to position {terminal_orig_pos} "
+            f"('{original[terminal_orig_pos : terminal_orig_pos + 20]}...'). "
             f"Bug: compound word expansion not matched correctly."
+        )
 
         # Also verify that words AFTER Terminal-Bench 2.0 don't all map to GPT-5.3-Codex
         # Find "тестах" which should map to "тестах" in original, not GPT-5.3-Codex
@@ -647,14 +660,14 @@ GPT-5.3-Codex может работать часами или днями, а п�
             testah_orig_pos = testah_ts["original_pos"][0]
             testah_expected = original.find("тестах")
 
-            print(f"\n'тестах' timestamp:")
+            print("\n'тестах' timestamp:")
             print(f"  original_pos: {testah_ts['original_pos']}")
             print(f"  Expected position: {testah_expected}")
 
             # "тестах" should map to itself, not to GPT-5.3-Codex
-            assert testah_orig_pos != gpt_codex_pos, \
-                f"'тестах' should NOT map to GPT-5.3-Codex. " \
-                f"Bug: word index got stuck at wrong expandable word."
+            assert testah_orig_pos != gpt_codex_pos, (
+                "'тестах' should NOT map to GPT-5.3-Codex. Bug: word index got stuck at wrong expandable word."
+            )
 
     def test_swe_bench_pro_expansion(self, runnable):
         """Test that SWE-Bench Pro expands and maps correctly."""
@@ -665,14 +678,12 @@ GPT-5.3-Codex может работать часами или днями, а п�
         pipeline = TTSPipeline()
         normalized, char_mapping = pipeline.process_with_char_mapping(original)
 
-        print(f"\n=== SWE-Bench Pro test ===")
+        print("\n=== SWE-Bench Pro test ===")
         print(f"Original: {original}")
         print(f"Normalized: {normalized}")
 
         chunk_durations = [(0, len(normalized), 5.0)]
-        timestamps = runnable._estimate_timestamps_chunked(
-            normalized, chunk_durations, char_mapping
-        )
+        timestamps = runnable._estimate_timestamps_chunked(normalized, chunk_durations, char_mapping)
 
         swe_bench_pos = original.find("SWE-Bench")
         pro_pos = original.find("Pro")
@@ -680,13 +691,12 @@ GPT-5.3-Codex может работать часами или днями, а п�
         # All expansion words from "SWE-Bench" should map to SWE-Bench position
         # "Pro" expansion should map to "Pro" position
 
-        print(f"Timestamps:")
+        print("Timestamps:")
         for ts in timestamps:
             print(f"  {ts['word']}: {ts['original_pos']}")
 
         # Find "бенч" or similar in timestamps
-        bench_timestamps = [ts for ts in timestamps
-                          if "бенч" in ts["word"].lower() or "бенкх" in ts["word"].lower()]
+        bench_timestamps = [ts for ts in timestamps if "бенч" in ts["word"].lower() or "бенкх" in ts["word"].lower()]
 
         if bench_timestamps:
             bench_ts = bench_timestamps[0]
@@ -696,5 +706,6 @@ GPT-5.3-Codex может работать часами или днями, а п�
             print(f"SWE-Bench is at position {swe_bench_pos}")
 
             # Should map to SWE-Bench, not to something else
-            assert bench_orig_pos == swe_bench_pos, \
+            assert bench_orig_pos == swe_bench_pos, (
                 f"'бенч' should map to SWE-Bench at {swe_bench_pos}, got {bench_orig_pos}"
+            )

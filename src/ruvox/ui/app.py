@@ -4,23 +4,22 @@ import logging
 from pathlib import Path
 
 from PyQt6.QtCore import QObject, pyqtSignal
-from PyQt6.QtGui import QIcon, QAction
+from PyQt6.QtGui import QAction, QIcon
 from PyQt6.QtWidgets import (
     QApplication,
-    QSystemTrayIcon,
     QMenu,
-    QMessageBox,
+    QSystemTrayIcon,
 )
 
 from ruvox.ui.models.config import UIConfig
+from ruvox.ui.services.cleanup import CleanupWorker
+from ruvox.ui.services.clipboard import get_clipboard_text
+from ruvox.ui.services.hotkeys import HotkeyService
 from ruvox.ui.services.logging_service import safe_slot
+from ruvox.ui.services.storage import StorageService
+from ruvox.ui.services.tts_worker import TTSWorker
 
 logger = logging.getLogger(__name__)
-from ruvox.ui.services.storage import StorageService
-from ruvox.ui.services.cleanup import CleanupWorker
-from ruvox.ui.services.tts_worker import TTSWorker
-from ruvox.ui.services.hotkeys import HotkeyService
-from ruvox.ui.services.clipboard import get_clipboard_text
 
 
 class TTSApplication(QObject):
@@ -212,6 +211,7 @@ class TTSApplication(QObject):
         if self._main_window is None:
             # Lazy load main window to reduce startup time
             from ruvox.ui.main_window import MainWindow
+
             self._main_window = MainWindow(self)
             # Load existing entries
             self._main_window.load_entries()
@@ -333,6 +333,7 @@ class TTSApplication(QObject):
     def _show_settings(self) -> None:
         """Show settings dialog."""
         from ruvox.ui.dialogs.settings import SettingsDialog
+
         dialog = SettingsDialog(self.config, self.hotkey_service)
         dialog.exec()
 
@@ -351,6 +352,7 @@ class TTSApplication(QObject):
             self.config.save()
 
         from ruvox.ui.services.logging_service import shutdown_logging
+
         shutdown_logging()
 
         QApplication.quit()

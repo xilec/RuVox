@@ -1,10 +1,9 @@
 """UI configuration model."""
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-import json
-
 
 CONFIG_VERSION = 1
 
@@ -30,9 +29,7 @@ class UIConfig:
         window_geometry: Saved window geometry (x, y, width, height)
     """
 
-    cache_dir: Path = field(
-        default_factory=lambda: Path.home() / ".cache" / "ruvox"
-    )
+    cache_dir: Path = field(default_factory=lambda: Path.home() / ".cache" / "ruvox")
 
     # Global hotkeys
     hotkey_read_now: str = "Control+grave"

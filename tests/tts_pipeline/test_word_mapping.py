@@ -1,14 +1,15 @@
 """Tests for word mapping functionality."""
 
 import pytest
-from ruvox.tts_pipeline.word_mapping import (
-    WordSpan,
-    WordMapping,
-    tokenize_words,
-    build_word_mapping,
-    _is_possible_transliteration,
-)
+
 from ruvox.tts_pipeline import TTSPipeline
+from ruvox.tts_pipeline.word_mapping import (
+    WordMapping,
+    WordSpan,
+    _is_possible_transliteration,
+    build_word_mapping,
+    tokenize_words,
+)
 
 
 class TestTokenizeWords:
@@ -152,7 +153,7 @@ class TestBuildWordMapping:
         # First word should map to first word
         orig_range = mapping.get_original_range_for_word(0)
         assert orig_range is not None
-        assert original[orig_range[0]:orig_range[1]] == "Hello"
+        assert original[orig_range[0] : orig_range[1]] == "Hello"
 
     def test_camel_case_expansion(self):
         """Test mapping for camelCase expansion."""
@@ -182,7 +183,7 @@ class TestBuildWordMapping:
         # "Вызови" should map to "Вызови"
         first_range = mapping.get_original_range_for_word(0)
         assert first_range is not None
-        assert original[first_range[0]:first_range[1]] == "Вызови"
+        assert original[first_range[0] : first_range[1]] == "Вызови"
 
 
 class TestIsPossibleTransliteration:
@@ -251,7 +252,7 @@ class TestPipelineWithMapping:
         # First word should map correctly
         first_range = mapping.get_original_range_for_word(0)
         assert first_range is not None
-        assert original[first_range[0]:first_range[1]] == "Вызови"
+        assert original[first_range[0] : first_range[1]] == "Вызови"
 
     def test_mapping_for_numbers(self, pipeline):
         """Test mapping for numbers."""

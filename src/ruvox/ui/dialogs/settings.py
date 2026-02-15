@@ -4,21 +4,21 @@ import logging
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
     QDialog,
-    QVBoxLayout,
-    QHBoxLayout,
+    QDialogButtonBox,
     QGridLayout,
     QGroupBox,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
-    QComboBox,
+    QPushButton,
     QSlider,
     QSpinBox,
-    QCheckBox,
-    QPushButton,
-    QTextEdit,
-    QDialogButtonBox,
     QTabWidget,
+    QTextEdit,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -58,9 +58,9 @@ class SettingsDialog(QDialog):
 
         # Button box
         buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok |
-            QDialogButtonBox.StandardButton.Cancel |
-            QDialogButtonBox.StandardButton.Apply
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel
+            | QDialogButtonBox.StandardButton.Apply
         )
         buttons.accepted.connect(self._on_ok)
         buttons.rejected.connect(self.reject)
@@ -96,9 +96,7 @@ class SettingsDialog(QDialog):
         self.instructions_text.setReadOnly(True)
         self.instructions_text.setMaximumHeight(200)
         if self.hotkey_service:
-            self.instructions_text.setPlainText(
-                self.hotkey_service.get_fallback_instructions()
-            )
+            self.instructions_text.setPlainText(self.hotkey_service.get_fallback_instructions())
         else:
             self.instructions_text.setPlainText(
                 "Настройте хоткеи вручную в вашем окружении рабочего стола.\n\n"
@@ -222,7 +220,9 @@ class SettingsDialog(QDialog):
         speaker_idx = self.SPEAKERS.index(self.config.speaker) if self.config.speaker in self.SPEAKERS else 3
         self.speaker_combo.setCurrentIndex(speaker_idx)
         self.rate_slider.setValue(int(self.config.speech_rate * 100))
-        sample_idx = self.SAMPLE_RATES.index(self.config.sample_rate) if self.config.sample_rate in self.SAMPLE_RATES else 2
+        sample_idx = (
+            self.SAMPLE_RATES.index(self.config.sample_rate) if self.config.sample_rate in self.SAMPLE_RATES else 2
+        )
         self.sample_rate_combo.setCurrentIndex(sample_idx)
 
         # Storage
@@ -275,6 +275,7 @@ class SettingsDialog(QDialog):
     def _open_cache_folder(self) -> None:
         """Open cache folder in file manager."""
         import subprocess
+
         try:
             subprocess.run(["xdg-open", str(self.config.cache_dir)], check=False)
         except Exception:
