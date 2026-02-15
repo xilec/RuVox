@@ -115,6 +115,7 @@ result, mapping = pipeline.process_with_char_mapping(text)
 ## Правила разработки
 
 - Код должен соответствовать стилю, проверяемому `ruff`. Перед коммитом запускай `ruff check .` и `ruff format --check .`, исправляй ошибки.
+- Опциональная проверка типов: `mypy src/ruvox/tts_pipeline/`. Проверяет только аннотированный код, неаннотированные функции пропускает.
 - [Логирование и обработка ошибок](ai/rules/error_handling_and_logs_rules.md)
 
 ### TTS Pipeline: Mermaid-диаграммы

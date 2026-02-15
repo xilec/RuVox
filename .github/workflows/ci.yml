@@ -22,4 +22,5 @@ jobs:
         with:
           python-version: "3.11"
       - run: uv sync --group dev
+      - run: uv run mypy src/ruvox/tts_pipeline/
       - run: uv run pytest tests/tts_pipeline/ --cov
