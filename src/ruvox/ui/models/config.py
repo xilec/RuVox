@@ -66,6 +66,9 @@ class UIConfig:
         }
     )
 
+    # Appearance
+    theme: str = "dark_pro"
+
     # Window state
     window_geometry: tuple[int, int, int, int] | None = None  # x, y, width, height
 
@@ -86,6 +89,7 @@ class UIConfig:
             "notify_on_error": self.notify_on_error,
             "text_format": self.text_format,
             "player_hotkeys": self.player_hotkeys,
+            "theme": self.theme,
             "window_geometry": self.window_geometry,
         }
 
@@ -111,6 +115,7 @@ class UIConfig:
             notify_on_error=data.get("notify_on_error", True),
             text_format=data.get("text_format", "markdown"),
             player_hotkeys=data.get("player_hotkeys", cls.__dataclass_fields__["player_hotkeys"].default_factory()),
+            theme=data.get("theme", "dark_pro"),
             window_geometry=data.get("window_geometry"),
         )
 

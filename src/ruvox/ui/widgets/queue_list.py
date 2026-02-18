@@ -3,8 +3,9 @@
 import logging
 
 from PyQt6.QtCore import QPoint, Qt, pyqtSignal
-from PyQt6.QtGui import QAction, QBrush, QColor
+from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (
+    QFrame,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -33,9 +34,19 @@ class QueueItemWidget(QWidget):
 
     def _setup_ui(self) -> None:
         """Setup the item layout."""
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 6, 8, 6)
-        layout.setSpacing(2)
+        outer = QHBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        # Playing bar — 3px accent stripe on the left
+        self.playing_bar = QFrame()
+        self.playing_bar.setFixedWidth(3)
+        self.playing_bar.setStyleSheet("background: transparent;")
+        outer.addWidget(self.playing_bar)
+
+        content = QVBoxLayout()
+        content.setContentsMargins(8, 6, 8, 6)
+        content.setSpacing(2)
 
         # First row: status + text preview
         top_row = QHBoxLayout()
@@ -49,11 +60,7 @@ class QueueItemWidget(QWidget):
         self.text_label.setWordWrap(False)
         top_row.addWidget(self.text_label, 1)
 
-        self.play_indicator = QLabel()
-        self.play_indicator.setFixedWidth(20)
-        top_row.addWidget(self.play_indicator)
-
-        layout.addLayout(top_row)
+        content.addLayout(top_row)
 
         # Second row: duration + timestamp
         bottom_row = QHBoxLayout()
@@ -61,10 +68,12 @@ class QueueItemWidget(QWidget):
         bottom_row.setContentsMargins(28, 0, 0, 0)  # Indent under status icon
 
         self.info_label = QLabel()
-        self.info_label.setStyleSheet("color: #666; font-size: 11px;")
+        self.info_label.setObjectName("info_label")
+        self.info_label.setStyleSheet("font-size: 11px;")
         bottom_row.addWidget(self.info_label, 1)
 
-        layout.addLayout(bottom_row)
+        content.addLayout(bottom_row)
+        outer.addLayout(content, 1)
 
     def _update_display(self) -> None:
         """Update display from entry data."""
@@ -104,8 +113,14 @@ class QueueItemWidget(QWidget):
             self.setToolTip("")
 
     def set_playing(self, is_playing: bool) -> None:
-        """Show/hide playing indicator."""
-        self.play_indicator.setText("\u25b6" if is_playing else "")
+        """Show/hide playing indicator (accent bar on the left)."""
+        if is_playing:
+            from ruvox.ui.themes import get_current_theme
+
+            color = get_current_theme().accent
+            self.playing_bar.setStyleSheet(f"background: {color};")
+        else:
+            self.playing_bar.setStyleSheet("background: transparent;")
 
     def update_entry(self, entry: TextEntry) -> None:
         """Update with new entry data."""
@@ -219,38 +234,22 @@ class QueueListWidget(QListWidget):
                 self._item_widgets[entry.id].update_entry(entry)
 
     def set_current_playing(self, entry_id: str | None) -> None:
-        """Set which entry is currently playing (changes active item highlight)."""
+        """Set which entry is currently playing (accent bar indicator)."""
         if entry_id is None:
-            # Just stop the play indicator, keep the highlight
+            # Just stop the play indicator
             if self._current_playing_id and self._current_playing_id in self._item_widgets:
                 self._item_widgets[self._current_playing_id].set_playing(False)
             return
 
-        # Clear previous highlight
-        if self._current_playing_id:
-            if self._current_playing_id in self._item_widgets:
-                self._item_widgets[self._current_playing_id].set_playing(False)
-            prev_item = self._find_item_by_entry_id(self._current_playing_id)
-            if prev_item:
-                prev_item.setBackground(QBrush())  # Reset to default
+        # Clear previous
+        if self._current_playing_id and self._current_playing_id in self._item_widgets:
+            self._item_widgets[self._current_playing_id].set_playing(False)
 
         self._current_playing_id = entry_id
 
-        # Set new highlight and play indicator
+        # Set new play indicator
         if entry_id in self._item_widgets:
             self._item_widgets[entry_id].set_playing(True)
-        curr_item = self._find_item_by_entry_id(entry_id)
-        if curr_item:
-            curr_item.setBackground(QBrush(QColor("#d4edda")))  # Light green
-
-    def _find_item_by_entry_id(self, entry_id: str) -> QListWidgetItem | None:
-        """Find QListWidgetItem by entry ID."""
-        for i in range(self.count()):
-            item = self.item(i)
-            widget = self.itemWidget(item)
-            if isinstance(widget, QueueItemWidget) and widget.entry.id == entry_id:
-                return item
-        return None
 
     def remove_entry(self, entry_id: str) -> None:
         """Remove an entry from the list."""

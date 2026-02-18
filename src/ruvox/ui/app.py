@@ -53,10 +53,33 @@ class TTSApplication(QObject):
     def start(self) -> None:
         """Initialize and start the application."""
         self._load_config()
+        self._apply_saved_theme()
         self._init_services()
         self._init_tray()
         self._connect_signals()
         self._register_hotkeys()
+
+    def _apply_saved_theme(self) -> None:
+        """Apply the theme saved in config."""
+        from ruvox.ui.themes import apply_theme
+
+        apply_theme(self.config.theme)
+
+    def change_theme(self, theme_id: str) -> None:
+        """Switch theme at runtime and persist the choice."""
+        self.preview_theme(theme_id)
+        self.config.theme = theme_id
+        self.config.save()
+
+    def preview_theme(self, theme_id: str) -> None:
+        """Apply theme visually without saving config."""
+        from ruvox.ui.themes import apply_theme
+
+        apply_theme(theme_id)
+
+        # Refresh text viewer if main window is open
+        if self._main_window is not None:
+            self._main_window.text_viewer.refresh_theme()
 
     def _load_config(self) -> None:
         """Load configuration from file."""
@@ -334,7 +357,11 @@ class TTSApplication(QObject):
         """Show settings dialog."""
         from ruvox.ui.dialogs.settings import SettingsDialog
 
-        dialog = SettingsDialog(self.config, self.hotkey_service)
+        dialog = SettingsDialog(
+            self.config,
+            self.hotkey_service,
+            on_theme_changed=self.preview_theme,
+        )
         dialog.exec()
 
     def _quit(self) -> None:

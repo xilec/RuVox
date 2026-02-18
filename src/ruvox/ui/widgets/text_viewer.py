@@ -49,8 +49,7 @@ class TextViewerWidget(QTextBrowser):
 
         # Setup highlighting format (using ExtraSelections to preserve document formatting)
         self._highlight_format = QTextCharFormat()
-        self._highlight_format.setBackground(QColor("#FFFF99"))  # Yellow background
-        self._highlight_format.setFontUnderline(True)
+        self._update_highlight_color()
 
         # Configure widget
         self.setReadOnly(True)
@@ -70,6 +69,31 @@ class TextViewerWidget(QTextBrowser):
         # Mermaid rendering state
         self._mermaid_blocks: list[str] = []  # diagram code for current text
         self._mermaid_renderer = None  # lazy init: MermaidRenderer
+
+    def _update_highlight_color(self) -> None:
+        """Recreate highlight format from current theme."""
+        from ruvox.ui.themes import get_current_theme
+
+        bg = QColor(get_current_theme().highlight_bg)
+        fmt = QTextCharFormat()
+        fmt.setFontUnderline(True)
+        fmt.setBackground(bg)
+        # Explicit foreground for contrast: dark text on light bg, light on dark
+        fg = QColor("#111111") if bg.lightnessF() > 0.5 else QColor("#e0e0e0")
+        fmt.setForeground(fg)
+        self._highlight_format = fmt
+
+    def refresh_theme(self) -> None:
+        """Re-apply theme colors and re-render content."""
+        self._update_highlight_color()
+        saved_pos = self._last_highlighted_pos
+        if self.current_entry:
+            self._render_text()
+        # Re-create highlight from scratch with new format
+        if saved_pos is not None:
+            self._last_highlighted_pos = None
+            self._highlight_range(*saved_pos)
+            self._last_highlighted_pos = saved_pos
 
     def set_format(self, fmt: TextFormat) -> None:
         """Switch display format between Markdown and plain text."""
@@ -121,24 +145,13 @@ class TextViewerWidget(QTextBrowser):
             if mermaid_blocks:
                 html = self._inject_mermaid_images(html, mermaid_blocks)
 
-            # Add basic styling
+            # Add theme-aware styling
+            from ruvox.ui.themes import get_current_theme
+
+            markdown_css = get_current_theme().markdown_css
             styled_html = f"""
             <style>
-                body {{ font-family: sans-serif; line-height: 1.5; }}
-                code {{ background-color: #f4f4f4; padding: 2px 4px; border-radius: 3px; }}
-                pre {{ background-color: #f4f4f4; padding: 8px; border-radius: 4px; overflow-x: auto; }}
-                pre code {{ background-color: transparent; padding: 0; }}
-                blockquote {{ border-left: 3px solid #ccc; margin-left: 0; padding-left: 12px; color: #666; }}
-                h1, h2, h3, h4, h5, h6 {{ margin-top: 0.5em; margin-bottom: 0.3em; }}
-                ul, ol {{ margin-top: 0.3em; margin-bottom: 0.3em; }}
-                img.mermaid-diagram {{
-                    cursor: pointer; max-width: 100%;
-                    border: 1px solid #ddd; border-radius: 4px; padding: 8px;
-                }}
-                .mermaid-placeholder {{
-                    background: #f0f0f0; border: 1px dashed #aaa;
-                    border-radius: 4px; padding: 12px; text-align: center; color: #666;
-                }}
+                {markdown_css}
             </style>
             {html}
             """

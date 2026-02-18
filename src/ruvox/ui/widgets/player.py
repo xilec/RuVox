@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QWheelEvent
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -32,6 +33,27 @@ except (ImportError, OSError) as e:
     logger.error("mpv (libmpv) недоступен — плеер не будет работать: %s", e)
 
 
+class SpeedLabel(QLabel):
+    """Speed label with mouse wheel and click support."""
+
+    speed_up_requested = pyqtSignal()
+    speed_down_requested = pyqtSignal()
+    reset_requested = pyqtSignal()
+
+    def wheelEvent(self, event: QWheelEvent) -> None:
+        if event.angleDelta().y() > 0:
+            self.speed_up_requested.emit()
+        elif event.angleDelta().y() < 0:
+            self.speed_down_requested.emit()
+        event.accept()
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.reset_requested.emit()
+        else:
+            super().mousePressEvent(event)
+
+
 class PlayerWidget(QWidget):
     """Audio player widget with controls.
 
@@ -50,13 +72,11 @@ class PlayerWidget(QWidget):
     next_requested = pyqtSignal()
     prev_requested = pyqtSignal()
 
-    SPEEDS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
-
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
 
         self.current_entry: TextEntry | None = None
-        self._current_speed_index = 2  # 1.0x
+        self._current_speed: float = 1.0
         self._duration_ms = 0
         self._is_playing = False
         self._mpv_available = _MPV_AVAILABLE
@@ -154,22 +174,43 @@ class PlayerWidget(QWidget):
         controls_row.addSpacing(16)
 
         # Speed control
-        self.btn_speed_down = QPushButton("[")
-        self.btn_speed_down.setFixedSize(24, 32)
-        self.btn_speed_down.setToolTip("Медленнее ([)")
-        self.btn_speed_down.clicked.connect(self.speed_down)
-        controls_row.addWidget(self.btn_speed_down)
-
-        self.speed_label = QLabel("1.0x")
-        self.speed_label.setFixedWidth(40)
+        self.speed_label = SpeedLabel("x1.0")
+        self.speed_label.setFixedWidth(36)
         self.speed_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.speed_label.setToolTip("Скорость (скролл / клик = сброс)")
+        self.speed_label.speed_up_requested.connect(self.speed_up)
+        self.speed_label.speed_down_requested.connect(self.speed_down)
+        self.speed_label.reset_requested.connect(self.speed_reset)
         controls_row.addWidget(self.speed_label)
 
-        self.btn_speed_up = QPushButton("]")
-        self.btn_speed_up.setFixedSize(24, 32)
+        speed_btn_box = QVBoxLayout()
+        speed_btn_box.setSpacing(2)
+        speed_btn_box.setContentsMargins(0, 0, 0, 0)
+        speed_btn_box.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+
+        _speed_btn_base = "font-size: 7px; border: none;"
+
+        self.btn_speed_up = QPushButton("\u25b2")
+        self.btn_speed_up.setFixedSize(24, 13)
+        self.btn_speed_up.setStyleSheet(_speed_btn_base + " padding: 0 0 2px 0;")
         self.btn_speed_up.setToolTip("Быстрее (])")
+        self.btn_speed_up.setAutoRepeat(True)
+        self.btn_speed_up.setAutoRepeatDelay(400)
+        self.btn_speed_up.setAutoRepeatInterval(150)
         self.btn_speed_up.clicked.connect(self.speed_up)
-        controls_row.addWidget(self.btn_speed_up)
+        speed_btn_box.addWidget(self.btn_speed_up)
+
+        self.btn_speed_down = QPushButton("\u25bc")
+        self.btn_speed_down.setFixedSize(24, 13)
+        self.btn_speed_down.setStyleSheet(_speed_btn_base + " padding: 0;")
+        self.btn_speed_down.setToolTip("Медленнее ([)")
+        self.btn_speed_down.setAutoRepeat(True)
+        self.btn_speed_down.setAutoRepeatDelay(400)
+        self.btn_speed_down.setAutoRepeatInterval(150)
+        self.btn_speed_down.clicked.connect(self.speed_down)
+        speed_btn_box.addWidget(self.btn_speed_down)
+
+        controls_row.addLayout(speed_btn_box)
 
         controls_row.addStretch()
 
@@ -291,22 +332,23 @@ class PlayerWidget(QWidget):
 
     def set_speed(self, speed: float) -> None:
         """Set playback speed."""
-        speed = max(0.5, min(2.0, speed))
+        speed = max(0.1, min(3.0, round(speed, 1)))
+        self._current_speed = speed
         if self._mpv_available and self._player is not None:
             self._player.speed = speed
-        self.speed_label.setText(f"{speed}x")
+        self.speed_label.setText(f"x{speed:.1f}")
 
     def speed_up(self) -> None:
-        """Increase playback speed to next preset."""
-        if self._current_speed_index < len(self.SPEEDS) - 1:
-            self._current_speed_index += 1
-            self.set_speed(self.SPEEDS[self._current_speed_index])
+        """Increase playback speed by 0.1."""
+        self.set_speed(self._current_speed + 0.1)
 
     def speed_down(self) -> None:
-        """Decrease playback speed to previous preset."""
-        if self._current_speed_index > 0:
-            self._current_speed_index -= 1
-            self.set_speed(self.SPEEDS[self._current_speed_index])
+        """Decrease playback speed by 0.1."""
+        self.set_speed(self._current_speed - 0.1)
+
+    def speed_reset(self) -> None:
+        """Reset playback speed to 1.0."""
+        self.set_speed(1.0)
 
     def get_position_sec(self) -> float:
         """Get current position in seconds."""

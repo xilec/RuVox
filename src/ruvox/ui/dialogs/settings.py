@@ -34,10 +34,12 @@ class SettingsDialog(QDialog):
     SPEAKERS = ["aidar", "baya", "kseniya", "xenia", "eugene"]
     SAMPLE_RATES = [8000, 24000, 48000]
 
-    def __init__(self, config: UIConfig, hotkey_service=None, parent=None):
+    def __init__(self, config: UIConfig, hotkey_service=None, parent=None, on_theme_changed=None):
         super().__init__(parent)
         self.config = config
         self.hotkey_service = hotkey_service
+        self._original_theme: str = config.theme
+        self._on_theme_changed_callback = on_theme_changed
 
         self.setWindowTitle("Настройки")
         self.setMinimumWidth(500)
@@ -51,6 +53,7 @@ class SettingsDialog(QDialog):
 
         # Tab widget
         tabs = QTabWidget()
+        tabs.addTab(self._create_appearance_tab(), "Оформление")
         tabs.addTab(self._create_hotkeys_tab(), "Хоткеи")
         tabs.addTab(self._create_voice_tab(), "Голос")
         tabs.addTab(self._create_storage_tab(), "Хранение")
@@ -63,9 +66,46 @@ class SettingsDialog(QDialog):
             | QDialogButtonBox.StandardButton.Apply
         )
         buttons.accepted.connect(self._on_ok)
-        buttons.rejected.connect(self.reject)
+        buttons.rejected.connect(self._on_cancel)
         buttons.button(QDialogButtonBox.StandardButton.Apply).clicked.connect(self._apply_settings)
         layout.addWidget(buttons)
+
+    def _create_appearance_tab(self) -> QWidget:
+        """Create appearance settings tab."""
+        from ruvox.ui.themes import get_available_themes
+
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        group = QGroupBox("Тема оформления")
+        group_layout = QVBoxLayout(group)
+
+        self.theme_combo = QComboBox()
+        self._theme_ids: list[str] = []
+        for theme_id, theme_name in get_available_themes():
+            self.theme_combo.addItem(theme_name)
+            self._theme_ids.append(theme_id)
+        self.theme_combo.currentIndexChanged.connect(self._on_theme_changed)
+
+        group_layout.addWidget(QLabel("Выберите тему:"))
+        group_layout.addWidget(self.theme_combo)
+
+        layout.addWidget(group)
+        layout.addStretch()
+
+        return tab
+
+    @safe_slot
+    def _on_theme_changed(self, index: int) -> None:
+        """Apply theme instantly for preview."""
+        if 0 <= index < len(self._theme_ids):
+            theme_id = self._theme_ids[index]
+            if self._on_theme_changed_callback:
+                self._on_theme_changed_callback(theme_id)
+            else:
+                from ruvox.ui.themes import apply_theme
+
+                apply_theme(theme_id)
 
     def _create_hotkeys_tab(self) -> QWidget:
         """Create hotkeys settings tab."""
@@ -212,6 +252,10 @@ class SettingsDialog(QDialog):
 
     def _load_settings(self) -> None:
         """Load current settings into UI."""
+        # Appearance
+        if self.config.theme in self._theme_ids:
+            self.theme_combo.setCurrentIndex(self._theme_ids.index(self.config.theme))
+
         # Hotkeys
         self.hotkey_read_now.setText(self.config.hotkey_read_now)
         self.hotkey_read_later.setText(self.config.hotkey_read_later)
@@ -239,6 +283,12 @@ class SettingsDialog(QDialog):
 
     def _apply_settings(self) -> None:
         """Apply settings to config."""
+        # Appearance
+        idx = self.theme_combo.currentIndex()
+        if 0 <= idx < len(self._theme_ids):
+            self.config.theme = self._theme_ids[idx]
+            self._original_theme = self.config.theme
+
         # Hotkeys
         self.config.hotkey_read_now = self.hotkey_read_now.text() or "Control+t"
         self.config.hotkey_read_later = self.hotkey_read_later.text() or "Control+Shift+t"
@@ -259,6 +309,17 @@ class SettingsDialog(QDialog):
 
         # Save config
         self.config.save()
+
+    @safe_slot
+    def _on_cancel(self) -> None:
+        """Handle Cancel button — revert theme preview."""
+        if self._on_theme_changed_callback:
+            self._on_theme_changed_callback(self._original_theme)
+        else:
+            from ruvox.ui.themes import apply_theme
+
+            apply_theme(self._original_theme)
+        self.reject()
 
     @safe_slot
     def _on_ok(self) -> None:
