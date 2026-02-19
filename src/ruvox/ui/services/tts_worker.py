@@ -8,9 +8,12 @@ from typing import Any
 
 import numpy as np
 
-# IMPORTANT: torch must be imported early at module level.
-# Importing torch in a worker thread can cause crashes due to memory
-# initialization conflicts with other native libraries.
+# IMPORTANT: torch must be imported at module level (in the main thread).
+# If torch is first imported inside a QThreadPool worker thread, the PyTorch
+# C++ runtime initializes in a non-main-thread context, which causes a segfault
+# when the BERT TorchScript model (homosolver) is called with real text containing
+# homographs. Importing torch here ensures initialization happens in the main thread.
+import torch  # noqa: F401 (imported for side-effect: early C++ runtime init)
 from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal
 
 from ruvox.ui.models.config import UIConfig
@@ -50,8 +53,6 @@ class ModelLoadRunnable(QRunnable):
         """Load the Silero TTS model."""
         try:
             import socket
-
-            import torch
 
             # Set timeout for network operations to prevent hanging forever
             old_timeout = socket.getdefaulttimeout()
@@ -95,9 +96,6 @@ class TTSRunnable(QRunnable):
             logger.info(f"TTS начало: {self.entry.id[:8]}...")
             self.signals.started.emit(self.entry.id)
 
-            # Import here to avoid loading at module level
-            import torch
-
             from ruvox.tts_pipeline import TTSPipeline
 
             pipeline = TTSPipeline()
@@ -125,9 +123,10 @@ class TTSRunnable(QRunnable):
             for i, (chunk_text, chunk_start) in enumerate(chunks):
                 logger.debug(f"Синтез части {i + 1}/{len(chunks)}: {len(chunk_text)} символов")
 
+                silero_text = self._sanitize_for_silero(chunk_text)
                 with torch.no_grad():
                     audio = self.silero_model.apply_tts(
-                        text=chunk_text,
+                        text=silero_text,
                         speaker=self.config.speaker,
                         sample_rate=self.config.sample_rate,
                     )
@@ -306,6 +305,19 @@ class TTSRunnable(QRunnable):
 
         return timestamps
 
+    def _sanitize_for_silero(self, text: str) -> str:
+        """Sanitize text before passing to Silero TTS model.
+
+        Silero's character-level tokenizer supports only a limited set of
+        characters. Control characters like newlines cause a fatal C-level
+        abort (SIGABRT) inside prepare_tts_model_input.
+
+        Replaces newlines with spaces and collapses repeated spaces.
+        """
+        text = re.sub(r"\s*\n\s*", " ", text)
+        text = re.sub(r" +", " ", text)
+        return text.strip()
+
     def _extract_words_with_positions(self, text: str) -> list[tuple[str, int, int]]:
         """Extract words from text with their positions.
 
@@ -350,7 +362,7 @@ class TTSWorker(QObject):
         self.silero_model = None
         self.model_loading_in_progress = False
         self.thread_pool = QThreadPool()
-        self.thread_pool.setMaxThreadCount(2)  # Limit: one for current, one for prefetch
+        self.thread_pool.setMaxThreadCount(1)  # Silero model is not thread-safe; one job at a time
         self.play_queue: list[str] = []  # entry_ids to play after ready
         self._pending_jobs: list[tuple[TextEntry, bool]] = []
         self._active_runnables: dict[str, TTSRunnable] = {}  # entry_id -> runnable

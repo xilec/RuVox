@@ -541,6 +541,9 @@ class TTSPipeline:
         for symbol, replacement in (*GREEK_LETTERS.items(), *MATH_SYMBOLS.items(), *ARROW_SYMBOLS.items()):
             tracked.replace(symbol, f" {replacement} ")
 
+        # Tilde before a number means "approximately": ~46 → около 46
+        tracked.sub(r"~(?=\s*\d)", "около ")
+
     def _process_code_identifiers_tracked(self, tracked: TrackedText) -> None:
         """Process code identifiers with tracking."""
         # CamelCase

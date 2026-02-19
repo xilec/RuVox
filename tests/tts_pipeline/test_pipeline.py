@@ -416,9 +416,7 @@ class TestInlineCode:
         """
         result = pipeline.process(input_text)
         for variants in expected_contains:
-            assert any(
-                v.lower() in result.lower() for v in variants
-            ), f"Expected one of {variants} in result: {result}"
+            assert any(v.lower() in result.lower() for v in variants), f"Expected one of {variants} in result: {result}"
 
 
 class TestMarkdownStructure:
@@ -695,3 +693,40 @@ class TestPreprocessing:
         text = "10–20 и 100—200"  # en-dash and em-dash
         result = pipeline.process(text)
         assert "десяти" in result.lower() or "от" in result.lower()
+
+
+class TestTildeApproximation:
+    """Tests for tilde (~) before numbers — means 'approximately' in Russian tech texts."""
+
+    @pytest.mark.parametrize(
+        "input_text,expected_contains",
+        [
+            # Basic cases
+            ("~46 пользователей", "около"),
+            ("от ~100 до 200", "около"),
+            # In a real sentence context
+            ("от ~46 000 активных агентов", "около"),
+        ],
+    )
+    def test_tilde_before_number_becomes_okolo(self, pipeline, input_text, expected_contains):
+        """Tilde before a number should be replaced with 'около'."""
+        result = pipeline.process(input_text)
+        assert expected_contains in result, f"Expected '{expected_contains}' in '{result}'"
+
+    def test_tilde_number_no_tilde_in_result(self, pipeline):
+        """Tilde must not appear in the normalized output."""
+        result = pipeline.process("~46 пользователей")
+        assert "~" not in result
+
+    def test_tilde_replaced_before_number_expansion(self, pipeline):
+        """Tilde is replaced before the number is expanded to words."""
+        result = pipeline.process("~5 секунд")
+        assert "около" in result
+        assert "пять" in result or "~" not in result
+
+    def test_tilde_in_real_failing_sentence(self, pipeline):
+        """Regression test: the exact sentence that crashed Silero."""
+        text = "комментариев от ~46 000 активных агентов"
+        result = pipeline.process(text)
+        assert "~" not in result
+        assert "около" in result

@@ -709,3 +709,100 @@ GPT-5.3-Codex может работать часами или днями, а п�
             assert bench_orig_pos == swe_bench_pos, (
                 f"'бенч' should map to SWE-Bench at {swe_bench_pos}, got {bench_orig_pos}"
             )
+
+
+class TestSanitizeForSilero:
+    """Tests for _sanitize_for_silero — guards against Silero tokenizer crashes.
+
+    Silero's char-level tokenizer aborts (SIGABRT) on control characters like
+    newlines. This class tests that sanitization removes them before synthesis.
+    """
+
+    @pytest.fixture
+    def runnable(self):
+        from ruvox.ui.models.entry import EntryStatus, TextEntry
+
+        entry = TextEntry(id="test-id", original_text="test", status=EntryStatus.PENDING)
+        return TTSRunnable(
+            entry=entry,
+            config=MockConfig(),
+            storage=MockStorage(),
+            silero_model=MockModel(),
+        )
+
+    def test_newline_replaced_with_space(self, runnable):
+        """Single newline must be replaced with a space."""
+        result = runnable._sanitize_for_silero("первая строка\nвторая строка")
+        assert "\n" not in result
+        assert result == "первая строка вторая строка"
+
+    def test_multiple_newlines_collapsed(self, runnable):
+        """Multiple newlines (paragraph break) must collapse to a single space."""
+        result = runnable._sanitize_for_silero("первое\n\nвторое")
+        assert "\n" not in result
+        assert result == "первое второе"
+
+    def test_newline_with_surrounding_spaces(self, runnable):
+        """Spaces around newline must not produce double spaces."""
+        result = runnable._sanitize_for_silero("слово1 \n слово2")
+        assert "\n" not in result
+        assert "  " not in result
+        assert result == "слово1 слово2"
+
+    def test_clean_text_unchanged(self, runnable):
+        """Text without newlines must pass through unchanged."""
+        text = "Нормальный текст без переносов строк."
+        result = runnable._sanitize_for_silero(text)
+        assert result == text
+
+    def test_leading_trailing_whitespace_stripped(self, runnable):
+        """Leading/trailing whitespace must be stripped."""
+        result = runnable._sanitize_for_silero("  текст  ")
+        assert result == "текст"
+
+    def test_real_failing_chunk(self, runnable):
+        """Regression: the exact chunk that caused Silero SIGABRT crash.
+
+        The first chunk of the Moltbook analytics text contained newlines
+        that made Silero's prepare_tts_model_input call abort().
+        """
+        chunk = (
+            "пятое:Новая аналитика по моултбук\n"
+            "Это один из самых интересных аспектов:\n"
+            '"калэктив бихэйвйер" (ар ксив): Анализ триста агентов.'
+        )
+        result = runnable._sanitize_for_silero(chunk)
+        assert "\n" not in result
+        assert len(result) > 0
+
+
+class TestTTSWorkerConcurrency:
+    """Tests for TTSWorker concurrency settings.
+
+    The Silero TTS model is not thread-safe. Running two synthesis jobs
+    simultaneously can cause SIGABRT (uncatchable crash). The thread pool
+    must be limited to one concurrent job.
+    """
+
+    def test_thread_pool_max_count_is_one(self):
+        """TTSWorker thread pool must allow only one concurrent job."""
+        import os
+        import sys
+
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PyQt6.QtWidgets import QApplication
+
+        app = QApplication.instance() or QApplication(sys.argv)
+
+        from ruvox.ui.models.config import UIConfig
+        from ruvox.ui.services.tts_worker import TTSWorker
+
+        class MockStorage:
+            pass
+
+        config = UIConfig()
+        worker = TTSWorker(config=config, storage=MockStorage())
+        assert worker.thread_pool.maxThreadCount() == 1, (
+            "Thread pool must allow only 1 concurrent TTS job — "
+            "Silero model is not thread-safe, parallel synthesis causes SIGABRT"
+        )

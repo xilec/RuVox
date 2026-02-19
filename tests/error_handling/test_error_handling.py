@@ -599,6 +599,10 @@ class TestTTSWorkerErrorHandling:
         Verifies that socket.setdefaulttimeout is called with appropriate value
         during model loading.
         """
+        import socket
+
+        import torch
+
         from ruvox.ui.models.config import UIConfig
         from ruvox.ui.services.tts_worker import ModelLoadRunnable
 
@@ -607,49 +611,24 @@ class TestTTSWorkerErrorHandling:
         # Track timeout calls
         timeout_calls = []
 
-        def mock_setdefaulttimeout(timeout):
-            timeout_calls.append(timeout)
+        # Mock torch.hub.load to raise timeout-like error.
+        # torch is imported at module level in tts_worker.py, so we patch
+        # the real torch.hub.load directly via monkeypatch.
+        monkeypatch.setattr(
+            torch.hub, "load", lambda *a, **kw: (_ for _ in ()).throw(TimeoutError("Connection timed out"))
+        )
 
-        def mock_getdefaulttimeout():
-            return None
-
-        # Mock torch.hub.load to raise timeout-like error
-        def mock_hub_load(*args, **kwargs):
-            raise TimeoutError("Connection timed out")
-
-        mock_socket = MagicMock()
-        mock_socket.setdefaulttimeout = mock_setdefaulttimeout
-        mock_socket.getdefaulttimeout = mock_getdefaulttimeout
-
-        mock_torch = MagicMock()
-        mock_torch.hub.load = mock_hub_load
+        # socket is still imported locally inside run(), so patching it via
+        # monkeypatch works — run() gets the same module object from sys.modules.
+        monkeypatch.setattr(socket, "setdefaulttimeout", lambda t: timeout_calls.append(t))
+        monkeypatch.setattr(socket, "getdefaulttimeout", lambda: None)
 
         # Track error signal
         error_message = []
         runnable = ModelLoadRunnable(config)
         runnable.signals.error.connect(lambda msg: error_message.append(msg))
 
-        # Patch imports inside run()
-        with patch.dict("sys.modules", {"socket": mock_socket, "torch": mock_torch}):
-            # Import socket inside run() - need to patch at module level
-            import socket
-
-            original_setdefaulttimeout = socket.setdefaulttimeout
-            original_getdefaulttimeout = socket.getdefaulttimeout
-            socket.setdefaulttimeout = mock_setdefaulttimeout
-            socket.getdefaulttimeout = mock_getdefaulttimeout
-
-            import torch
-
-            original_hub_load = torch.hub.load
-            torch.hub.load = mock_hub_load
-
-            try:
-                runnable.run()
-            finally:
-                socket.setdefaulttimeout = original_setdefaulttimeout
-                socket.getdefaulttimeout = original_getdefaulttimeout
-                torch.hub.load = original_hub_load
+        runnable.run()
 
         # Verify timeout was set to 60 seconds
         assert 60.0 in timeout_calls, "Timeout should be set to 60 seconds"
