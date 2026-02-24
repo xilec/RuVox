@@ -13,11 +13,11 @@ from PyQt6.QtWidgets import (
     QLabel,
     QPushButton,
     QSlider,
-    QStyle,
     QVBoxLayout,
     QWidget,
 )
 
+from ruvox.ui import icons
 from ruvox.ui.models.entry import TextEntry
 from ruvox.ui.services.logging_service import safe_slot
 
@@ -135,37 +135,45 @@ class PlayerWidget(QWidget):
         controls_row = QHBoxLayout()
         controls_row.setSpacing(4)
 
-        # Navigation and playback buttons
+        # Navigation and playback buttons (custom QPainterPath icons)
+        from ruvox.ui.themes import get_current_theme
+
+        theme = get_current_theme()
+        ic = theme.icon_color
+        ic_dis = theme.icon_disabled_color
+
         self.btn_prev = QPushButton()
-        self.btn_prev.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaSkipBackward))
+        self.btn_prev.setIcon(icons.icon_skip_backward(ic, ic_dis))
         self.btn_prev.setFixedSize(32, 32)
         self.btn_prev.setToolTip("Предыдущий (P)")
         self.btn_prev.clicked.connect(self.prev_requested.emit)
         controls_row.addWidget(self.btn_prev)
 
         self.btn_back = QPushButton()
-        self.btn_back.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaSeekBackward))
+        self.btn_back.setIcon(icons.icon_seek_backward(ic, ic_dis))
         self.btn_back.setFixedSize(32, 32)
         self.btn_back.setToolTip("-5 сек (\u2190)")
         self.btn_back.clicked.connect(lambda: self.seek_relative(-5))
         controls_row.addWidget(self.btn_back)
 
         self.btn_play_pause = QPushButton()
-        self.btn_play_pause.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
+        self._icon_play = icons.icon_play(ic, ic_dis)
+        self._icon_pause = icons.icon_pause(ic, ic_dis)
+        self.btn_play_pause.setIcon(self._icon_play)
         self.btn_play_pause.setFixedSize(48, 32)
         self.btn_play_pause.setToolTip("Play/Pause (Space)")
         self.btn_play_pause.clicked.connect(self.toggle_play_pause)
         controls_row.addWidget(self.btn_play_pause)
 
         self.btn_forward = QPushButton()
-        self.btn_forward.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaSeekForward))
+        self.btn_forward.setIcon(icons.icon_seek_forward(ic, ic_dis))
         self.btn_forward.setFixedSize(32, 32)
         self.btn_forward.setToolTip("+5 сек (\u2192)")
         self.btn_forward.clicked.connect(lambda: self.seek_relative(5))
         controls_row.addWidget(self.btn_forward)
 
         self.btn_next = QPushButton()
-        self.btn_next.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaSkipForward))
+        self.btn_next.setIcon(icons.icon_skip_forward(ic, ic_dis))
         self.btn_next.setFixedSize(32, 32)
         self.btn_next.setToolTip("Следующий (N)")
         self.btn_next.clicked.connect(self.next_requested.emit)
@@ -188,11 +196,10 @@ class PlayerWidget(QWidget):
         speed_btn_box.setContentsMargins(0, 0, 0, 0)
         speed_btn_box.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
-        _speed_btn_base = "font-size: 7px; border: none;"
-
-        self.btn_speed_up = QPushButton("\u25b2")
+        self.btn_speed_up = QPushButton()
+        self.btn_speed_up.setObjectName("speed_btn")
+        self.btn_speed_up.setIcon(icons.icon_arrow_up(ic, ic_dis, 10))
         self.btn_speed_up.setFixedSize(24, 13)
-        self.btn_speed_up.setStyleSheet(_speed_btn_base + " padding: 0 0 2px 0;")
         self.btn_speed_up.setToolTip("Быстрее (])")
         self.btn_speed_up.setAutoRepeat(True)
         self.btn_speed_up.setAutoRepeatDelay(400)
@@ -200,9 +207,10 @@ class PlayerWidget(QWidget):
         self.btn_speed_up.clicked.connect(self.speed_up)
         speed_btn_box.addWidget(self.btn_speed_up)
 
-        self.btn_speed_down = QPushButton("\u25bc")
+        self.btn_speed_down = QPushButton()
+        self.btn_speed_down.setObjectName("speed_btn")
+        self.btn_speed_down.setIcon(icons.icon_arrow_down(ic, ic_dis, 10))
         self.btn_speed_down.setFixedSize(24, 13)
-        self.btn_speed_down.setStyleSheet(_speed_btn_base + " padding: 0;")
         self.btn_speed_down.setToolTip("Медленнее ([)")
         self.btn_speed_down.setAutoRepeat(True)
         self.btn_speed_down.setAutoRepeatDelay(400)
@@ -381,10 +389,10 @@ class PlayerWidget(QWidget):
         """Update playing state and icon."""
         self._is_playing = playing
         if playing:
-            self.btn_play_pause.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause))
+            self.btn_play_pause.setIcon(self._icon_pause)
             self._position_timer.start()
         else:
-            self.btn_play_pause.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
+            self.btn_play_pause.setIcon(self._icon_play)
             self._position_timer.stop()
 
     def _ensure_duration(self) -> None:
