@@ -422,20 +422,30 @@ Ready-tasks после завершения:
 - **big unblock:** запущены R2, R3, R4, R5, R7 параллельно (5 нормалайзеров).
 
 ### U7 — Mermaid rendering
-- status: **awaiting review**
+- status: **merged**
 - branch: task/u7-mermaid
 - worker_commit: `e507177 feat(ui): inline Mermaid rendering in text viewer`
+- fix_commit: `9ab8aa5 fix(ui): preserve fence content for unknown languages`
+- reviewer: autopilot Opus, review_result: ok (после fix-патча reviewer'a в той же ветке)
+- merge_sha: `b691a65 merge(u7): inline Mermaid rendering`
 - deps_met: U4 merged.
-- deliverable: `mermaid@^11` в package.json, `src/lib/mermaid.ts` (initMermaid + renderMermaidIn с theme sync), fence renderer в markdown.ts возвращает `<div class="mermaid">` для mermaid-блоков, `TextViewer` вызывает `renderMermaidIn` через `useEffect`, click-to-zoom модалка (бонус).
-- verified: нет (sandbox). Ревьюер проверит pnpm install/typecheck/build на хосте.
-- theme sync: `data-processed` сбрасывается перед `mermaid.run()` при смене темы для перерендера.
-- crates added: `regex = "1"`.
-- tests: **35/35 passed** в изолированном мини-крейте (sandbox без nix-shell). Порт из `legacy/tests/tts_pipeline/test_tracked_text.py` + `test_char_mapping.py` + несколько расширенных edge-cases (nested replacement, char_map length после expansion/contraction).
-- architecture: **Unicode codepoint индексы** в `CharMapping.char_map` (не байтовые) — семантически идентично Python `str`. Вспомогательные функции `byte_to_char_idx`/`char_to_byte_idx`/`char_len`. Важно для корректной работы с кириллицей.
-- API: `TrackedText::new/text/replace/sub/build_mapping`, `CharMapping::get_original_range/get_original_word_range`. `TrackedText.original` — публичное поле (как в Python).
-- deviations:
-  - `TrackedText::sub` не поддерживает `count=N` параметр — идиома Rust: счётчик в замыкании.
-- next_unblocks: R2, R3, R4, R5, R7 (4 нормалайзера + код: R6 ждёт ещё R2+R3, R8 ждёт R5+R7).
+- deliverable:
+  - `mermaid@^11` в `package.json` deps.
+  - `src/lib/mermaid.ts` — `renderMermaidIn(container, colorScheme)`: переинициализирует mermaid с темой `default`/`dark`, сбрасывает `data-processed` на нодах `.mermaid` и вызывает `mermaid.run()`.
+  - `src/lib/markdown.ts` — fence renderer перехватывает info=`mermaid` и эмитит `<div class="mermaid">{escaped}</div>` вместо `<pre><code>`. HTML-escape входного блока перед инъекцией → mermaid сам парсит/санитизирует SVG.
+  - `src/components/TextViewer.tsx` — `useEffect` запускает `renderMermaidIn` после ререндера content (deps: content/format/colorScheme). Click-to-zoom: второй `useEffect` слушает клики по `.mermaid`, по выбранному SVG открывает Mantine `<Modal size="xl">` с увеличенной копией. `useComputedColorScheme('light')` синхронизирует тему mermaid с Mantine color scheme.
+- verified: pnpm install/typecheck/build не запущены (sandbox блокирует nix-shell + DNS). Статический ревью ОК; код ожидает live-проверки на хосте перед `pnpm tauri dev`. `pnpm-lock.yaml` НЕ обновлён воркером — потребуется `pnpm install` на хосте чтобы зафиксировать `mermaid@^11` (лок-файл всё ещё с U4-набором).
+- review_findings:
+  - **Критичный bug в fence renderer** (исправлен fix-коммитом): `md.options.highlight?.(...) ?? escapeHtml(content)` — оператор `??` срабатывает только для `null`/`undefined`, а highlight callback возвращает `''` для unknown/missing языков → `<code></code>` пустой, контент кодоблоков без языка терялся. Fix: explicit truthy check + явный `escapeHtml(token.content)` fallback.
+  - Theme sync OK: `data-processed` reset перед `mermaid.run()` гарантирует ререндер после смены `colorScheme`. Re-init mermaid с темой `default`/`dark` — допустимый паттерн (mermaid поддерживает повторный `initialize`).
+  - XSS-safety: `html: false` в markdown-it; mermaid-блок escapeHtml-ится перед вставкой; `securityLevel: 'loose'` отвечает за HTML-в-labels mermaid и target=_blank на ссылках. Для пользовательского markdown допустимо в MVP, но в идеале ужесточить до `antiscript`/`strict` — follow-up.
+  - Click-to-zoom использует прямой Mantine `<Modal>`, а не `@mantine/modals.openModal`. AGENTS.md рекомендует `@mantine/modals` для confirm-диалогов; для viewer-content (display-only) прямой `<Modal>` приемлем — Mantine 8 поддерживает оба паттерна.
+  - TS strict: компонент функциональный, без `React.FC`, без `sx`/`createStyles`/emotion. Mantine 8 правила соблюдены.
+- followups (не блокеры):
+  - `pnpm install` на хосте для генерации lock-entry для `mermaid@^11`.
+  - Рассмотреть `securityLevel: 'antiscript'` или `'strict'` для пользовательского markdown.
+  - Mermaid bundle тяжёлый (~1 MB) — следить за размером бандла, при необходимости lazy-import (`await import('mermaid')`) внутри `renderMermaidIn`.
+- next_unblocks: нет прямых задач, U7 — leaf в дереве enrichment-фичей.
 
 ### B5-fix — после первого ревью (needs_fix) → merged
 - status: **merged**
