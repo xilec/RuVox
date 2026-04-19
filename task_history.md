@@ -373,11 +373,23 @@ Ready-tasks после завершения:
   - `capabilities/default.json` добавить `mpv:default` если фронт захочет прямой invoke (не требуется для MVP).
 
 ### U10 — Notifications integration
-- status: **awaiting review**
+- status: **merged**
+- branch: task/u10-notifications
 - worker_commit: `22be80b feat(ui): wire backend events to Mantine notifications`
-- deliverable: `src/lib/notificationBridge.ts` подписывает на 5 событий: `model_loading` (loading spinner), `model_loaded` (зелёная 3s), `model_error` (красная 8s), `tts_error` (красная 5s, id per entry_id), `synthesis_progress` (update с процентом).
-- App.tsx интегрирует bridge через `useEffect` + cleanup.
-- verified: нет (sandbox). Reviewer верифицирует на хосте.
+- reviewer: autopilot Opus, review_result: ok (с minor follow-up'ами)
+- merge_sha: `10763c4 merge(u10): notifications bridge for backend events`
+- deliverable: `src/lib/notificationBridge.ts` (79 строк) подписывает на 5 событий через typed-wrapper'ы из U1 `src/lib/tauri.ts` (events.modelLoading/modelLoaded/modelError/ttsError/synthesisProgress). App.tsx (+12 строк) интегрирует bridge через `useEffect([]) + .then(fn => cleanup = fn)` с вызовом cleanup при unmount.
+- merge_note: U10 форкался от U1 (`78a0034`), до всех R/B/U4/U7 работ. Merge чистый, ort-стратегия auto-merged только два файла (`App.tsx` конфликтов нет — в ruvox2 после U1 этот файл не трогали; `notificationBridge.ts` — новый файл). Никаких конфликтов с U7 (mermaid в TextViewer), R-нормалайзерами, B2/B3/B5 (Rust-модули). `@mantine/notifications` уже был в `package.json` с U1 merge, новые deps не требуются.
+- verified_static: TypeScript strict-совместим (без `any`, типы выводятся через `Event<T>` → payload). Mantine 8 API (`notifications.show`/`notifications.update` с `id`). Функциональный компонент, без `React.FC`, без `sx`/`createStyles`. Cleanup в `useEffect` возвращает closure, вызывающий unlisten callbacks из `@tauri-apps/api/event`. `modelLoading` использует `loading: true` + `autoClose: false`, переход к `modelLoaded`/`modelError` — через `notifications.update` с тем же id `'model-loading'` (корректное in-place обновление loading-notification).
+- verified_live: НЕТ. `nix-shell --run "pnpm install && pnpm typecheck && pnpm build"` в sandbox ревьюера невозможен — nix-daemon SQLite cache заблокирован sandbox (`unable to open /home/evgen/.cache/nix/fetcher-cache-v4.sqlite`). На хост-машине требуется live-проверка.
+- review_findings:
+  1. **Race condition в cleanup (minor, не критично):** если компонент unmount'ится до резолва `setupNotificationBridge()`, cleanup из Promise пропустится — `cleanup?.()` в return-callback вызовется до `cleanup = fn`. Bridge не держит тяжёлых ресурсов, unlisteners осиротеют до следующего reload. StrictMode двойной mount/unmount может это проявить. Более robust паттерн: `let unmounted = false; then(fn => unmounted ? fn() : cleanup = fn)`. Follow-up для U1-refactor.
+  2. **`synthesis_progress` → `notifications.update` без предварительного `show` (minor):** Mantine 8 `notifications.update` — noop для несуществующего id. Первый `synthesis_progress` event для нового `entry_id` ничего не покажет. Корректный pattern: `show` для первого progress, `update` для последующих. Практический impact низкий — backend обычно emit'ит progress несколько раз (chunk-by-chunk синтез), пользователь увидит progress начиная со 2-й итерации. Follow-up для U3/Player-integration или U10-v2.
+  3. **`tts_error` через `notifications.show` c id (edge-case):** повторные ошибки для одного entry_id создадут дубликат (Mantine `show` для существующего id — noop, но первый остаётся). Спецификация задачи упоминала «через `notifications.update`, не дублировать» — здесь применяется `show`. Impact низкий: backend emit'ит `tts_error` один раз на entry (после `entry_updated` со статусом `error`). Повторный retry создаст новую ошибку через другой entry_id. Follow-up.
+  4. **Cleanup корректность (sync unlisten):** `UnlistenFn` из Tauri — sync, массив собран правильно, итерация безопасна. OK.
+  5. **Event coverage vs `docs/ipc-contract.md`:** все 5 событий из § U10-deliverable покрыты. Не подписаны `entry_updated`, `playback_*`, `tray_*` — это верно, они обрабатываются в QueueList (U2, ждёт B4) / Player (U3, ждёт B4) и App-level tray-hooks (follow-up).
+- known_gaps: live-верификация на хосте (pnpm install → typecheck → build → tauri dev) остаётся за пользователем. Follow-up'ы (1-3) — minor, могут быть зафиксированы в рамках U10-v2 или соседних задач (U2/U3).
+- unblocks: ничего нового. U10 — leaf в дереве enrichment-фичей (зависимость только от U1, разблокирован с U1-merge). U8 (HTML format) не тронут.
 
 ### U4 — Text viewer (plain + markdown)
 - status: **merged**
