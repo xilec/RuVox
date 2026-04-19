@@ -1,25 +1,29 @@
-import { AppShell as MantineAppShell, Title, Group } from '@mantine/core';
+import { AppShell as MantineAppShell, Title, Group, Stack } from '@mantine/core';
 import { useState } from 'react';
 import type { TextEntry } from '../lib/tauri';
 import { ThemeSwitcher } from './ThemeSwitcher';
 import { TextViewer } from './TextViewer';
+import { Player } from './Player';
 
 export function AppShell() {
   const [selectedEntry] = useState<TextEntry | null>(null);
 
   return (
     <MantineAppShell
-      header={{ height: 56 }}
+      header={{ height: 108 }}
       navbar={{ width: 280, breakpoint: 'sm' }}
       padding="md"
     >
       <MantineAppShell.Header>
-        <Group h="100%" px="md" justify="space-between">
-          <Title order={3}>RuVox 2</Title>
-          <Group>
-            <ThemeSwitcher />
+        <Stack gap={0}>
+          <Group h={56} px="md" justify="space-between">
+            <Title order={3}>RuVox 2</Title>
+            <Group>
+              <ThemeSwitcher />
+            </Group>
           </Group>
-        </Group>
+          <Player />
+        </Stack>
       </MantineAppShell.Header>
 
       <MantineAppShell.Navbar p="md">
@@ -28,7 +32,6 @@ export function AppShell() {
       </MantineAppShell.Navbar>
 
       <MantineAppShell.Main>
-        {/* Player placeholder (U3) */}
         <TextViewer entry={selectedEntry} />
       </MantineAppShell.Main>
     </MantineAppShell>

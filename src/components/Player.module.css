@@ -1,0 +1,38 @@
+.root {
+  width: 100%;
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-md);
+  border-bottom: 1px solid var(--mantine-color-default-border);
+  background: var(--mantine-color-body);
+  min-height: 52px;
+  align-items: center;
+}
+
+.timeDisplay {
+  font-size: var(--mantine-font-size-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--mantine-color-dimmed);
+  min-width: 90px;
+  text-align: center;
+}
+
+.progressSlider {
+  flex: 1;
+  min-width: 80px;
+}
+
+.speedInput {
+  width: 72px;
+}
+
+.volumeSlider {
+  width: 80px;
+}
+
+.navButton {
+  flex-shrink: 0;
+}
+
+.playButton {
+  flex-shrink: 0;
+}
