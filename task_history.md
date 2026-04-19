@@ -481,3 +481,31 @@ Ready-tasks после завершения:
 - followup_critical: **`basic_transliterate` строка 644 содержит `Box::leak(c.to_string().into_boxed_str())`** — memory leak на каждый unrecognised char. Срабатывает только для char вне translit_map (26 ascii lowercase) после `to_lowercase()`. Тесты это не триггерят. Follow-up: заменить на возврат `String` из map (или использовать `char::to_string()` и собирать в `String`-аккумулятор вместо итератора `&str`).
 - followup_minor: `spell_abbreviation` создаёт HashMap на каждый вызов (626) — как в legacy. Оптимизация через LazyLock в R9/refactor.
 - test-coverage gap (matches legacy): TestMixedIdentifiers кейсы `sha256Hash` / `base64Encode` / `utf8String` — в legacy они `pass` placeholder, в Rust тоже не покрыты. Не блокер.
+
+### R8 — CodeBlockHandler (Rust)
+- status: **merged**
+- branch: task/r8-code-blocks
+- worker_commit: `dc9ef59 feat(pipeline): port CodeBlockHandler to Rust`
+- reviewer: autopilot Opus, review_result: ok (с задокументированными deviations)
+- merge_sha: `fd1bf84 merge(r8): CodeBlockHandler port`
+- crates: нет новых (regex + once_cell — уже в Cargo.toml).
+- tests: **44/44** R8-специфичных (brief 14 + full 3 + mode_switch 4 + lang 19 + tracked-integration 4). Прогон через мини-крейт `tmp/r8_test/` (cargo 1.95, offline) — **140 total passed** (R8 44 + R5 61 + TrackedText 35). Clippy `-D warnings` чисто.
+- file-level: `src-tauri/src/pipeline/normalizers/code_blocks.rs` (852 строки), +1 строка в `normalizers/mod.rs` (add `pub mod code_blocks;`).
+- content verified 1:1 vs legacy:
+  - LANGUAGE_NAMES — все 57 записей из `code.py:469-527` (включая `c++`, `c#`, `zsh`, `mermaid`, `powershell`).
+  - SPECIAL_SYMBOLS — ARROW_SYMBOLS union + 8 MATH_SYMBOLS (∞ ∈ ∉ ∀ ∃ ≠ ≤ ≥), ровно как в legacy `_573-587`.
+  - Brief phrase — `"далее следует пример кода на <lang>"` / `"далее следует блок кода"`.
+  - Tokenizer regex — перенесён (identifiers, digits, Greek, SPECIAL_SYMBOLS, brackets, ops, strings, punct).
+- merge_conflicts:
+  - `src-tauri/src/pipeline/normalizers/mod.rs` — add/add с urls (появился в ruvox2 после R5-merge-base). Авторазрешение `ort`-стратегией корректно.
+- deviations (задокументированы):
+  1. **Default mode = Brief** (Rust) vs **Full** (legacy). Покрыто тестом `mode_default_is_brief`. Brief — безопасный дефолт для прод-TTS (короткий), Full требует явного явного выбора или директивы.
+  2. **Mermaid replacement unconditional**. Rust заменяет mermaid-блок маркером "Тут мермэйд диаграмма" в *любом* режиме (включая brief), что соответствует требованию AGENTS.md "Mermaid-блоки не озвучиваются". Legacy для brief+mermaid вернул бы обычный "далее следует пример кода на мёрмэйд".
+  3. **Full mode `=` не произносится**. Legacy fallback через `SymbolNormalizer.SYMBOLS["="]` = "равно"; Rust возвращает пустую строку для всех operator-токенов. Тест `full_js_const_x` ослаблен — проверяет `["конст","икс","сорок два"]` без "равно". В R9 SymbolNormalizer применяется поверх на уровне pipeline, так что финальный output получит "равно" через `normalize` цепочку.
+  4. **Mode switch через ephemeral handler** — `process(&self, ...)` immutable, per-block режим реализован через создание нового `CodeBlockHandler` внутри замыкания. Совместимо с Rust ownership, функционально эквивалентно legacy `self.mode = ...`.
+  5. **Fenced regex `\w+`** не ловит `c++`/`c#` как язык в ```fenced```. Тест `lang_cpp_symbol` обходит ограничение прямым вызовом `process_block`. В практике `markdown` ```cpp → работает, ```c++ → язык будет пустым (редкий формат).
+- quality:
+  - `unwrap()` только на invariant-guaranteed `caps.get(0)` после match (идиоматично).
+  - `.expect("valid regex")` на compile-time regex — допустимо.
+  - no `unsafe`, no emoji, комментарии WHY-only.
+- **big unblock:** все R1-R8 merged. **R9 (pipeline integration) готов к запуску** — зависит от R1+R2+R3+R4+R5+R6+R7+R8 и F5 (golden fixtures).
