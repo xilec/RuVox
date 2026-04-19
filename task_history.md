@@ -624,7 +624,52 @@ Ready-tasks после завершения:
 - verification_gap: полный `nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml"` на всём крейте в sandbox ревьюера невозможен (gtk/webkit system libs через nix-daemon). Ревьюер верифицировал pipeline как изолированный lib-крейт — компилирует clean на stable Rust + 620/620 тестов зелёные offline. **Live-прогон полного `cargo test` на хосте (с nix-shell) остаётся за пользователем** перед запуском R10 (golden harness integration).
 - **big unblock**: R10 (golden-test harness integration) + B4 (Tauri commands поверх pipeline) теперь разблокированы. U11 также разблокирован, если зависит от R9+B4.
 
+### U8 — HTML format support
+- status: **merged** (2026-04-20)
+- branch: task/u8-html-format
+- worker_commits:
+  - `fb64336 feat(ui): HTML format support in text viewer`
+  - `9ee1cbe feat(pipeline): HTML-to-text extractor with mapping`
+- reviewer: autopilot Opus, review_result: ok
+- merge_sha: `6722e02 merge(u8): HTML format support`
+- deps_met: U4 merged (`3eae9db`). После merge разрешил также все последующие наложения R-серии, U7, U10.
+- deliverable:
+  - **Frontend (`fb64336`):**
+    - `src/lib/html.ts` — `renderHtml(raw)` через DOMPurify 3.4 + highlight.js. Sanitize config: `USE_PROFILES:{html:true}`, `FORBID_TAGS:['script','style','iframe','object','embed','form','input']`, `FORBID_ATTR:['style']`, `ALLOW_DATA_ATTR:true`. После sanitize walks `pre code.language-*` элементов и применяет `hljs.highlight()` / `highlightAuto()` с relevance threshold ≥ 5.
+    - `src/components/TextViewer.tsx` — `Format` расширен до `'plain' | 'markdown' | 'html'`, SegmentedControl теперь 3-mode, `useMemo` switch на рендерер.
+    - `src/components/TextViewer.module.css` — новые правила для `img` (max-width:100%), `table/th/td` (borders + zebra header), `blockquote` (blue left border).
+    - `package.json` — `dompurify ^3.4.0` в dependencies.
+  - **Rust (`9ee1cbe`):**
+    - `src-tauri/src/pipeline/html_extractor.rs` (550 строк): `extract_text_for_tts(html) -> TrackedHtml` через scraper (html5ever backend). Walks DOM tree, excludes `nav/footer/aside/script/style/head/noscript/template/svg/math/button/select/option/optgroup/datalist` subtrees целиком. Блочные теги (p/div/section/article/main/header/h[1-6]/blockquote/pre/ul/ol/li/dt/dd/dl/figure/figcaption/table/thead/tbody/tfoot/tr/th/td/details/summary/br/hr) получают leading+trailing `\n`. Whitespace collapse (включая `\u{00a0}` NBSP) как в браузере. `TrackedHtml.html_range_for(start,end)` — lookup HTML span для text-range.
+    - `src-tauri/src/pipeline/mod.rs` — добавлен `pub mod html_extractor;`.
+    - `src-tauri/Cargo.toml` — `scraper = "0.19"` (thiserror/tracing уже были после R9).
+    - 20 unit-тестов: simple_paragraph, multiple_paragraphs, headings, nested_blocks, nav/footer/aside/script/style exclusions, ul/ol, inline_code, pre/code, full_article, whitespace, spans_exist, html_range_for_empty, normalise_multiple_blank_lines, blockquote, table_cells, empty_html.
+- review_findings:
+  - **XSS safety (frontend):** DOMPurify 3.4 config — строгий. `script/style/iframe/object/embed/form/input` forbidden; `FORBID_ATTR:['style']` отсекает CSS-injection. DOMPurify по умолчанию блокирует `on*` handlers, `javascript:`/`data:` URIs в href/src (кроме whitelisted image mime-types), `srcdoc`, `formaction` и др. `highlightCodeBlocks` парсит уже очищенный HTML в temp `<div>` и переписывает `codeEl.innerHTML = result.value` — hljs output — это escaped HTML spans, безопасно. TrustedHTML cast через `as unknown as string` — необходимый костыль DOMPurify 3.4 типов, не влияет на runtime. В связке с Tauri CSP (двойная защита) — acceptable.
+  - **Rust html_extractor:** без `unwrap()`/`expect()` в горячих путях (используется `Selector::parse` только в dead_code helper `build_exclusion_selector`). `extract_text_for_tts` инфаллибильный — возвращает `TrackedHtml` без `Result`. Exclusion list покрывает всё что требует task-spec (nav/footer/aside) + защита от script/style/svg. Whitespace collapse идентичен browser inline-text normalization.
+  - **HtmlCharSpan sentinel `html_start/end = 0`**: задокументирован в `push_text` (line 253-257): "We cannot reliably get scraper source offsets from text nodes without patching the library, so we mark html_start == html_end as a sentinel meaning 'source position unknown for this span.' The word highlighter in the UI will gracefully degrade." Full source mapping — follow-up через html5ever tokenizer (нужен для U5 word-highlighting на HTML-режиме).
+  - **TS strict:** функциональный компонент, нет `React.FC`, нет `any`, нет `sx`/`createStyles`/emotion. Mantine 8 правила соблюдены.
+  - **Rust style:** `thiserror` для `HtmlExtractError`, `tracing::warn` импортирован (но не используется в текущем коде — зарезервирован для будущих warnings), нет `anyhow` в prod, нет `unsafe`, нет emoji.
+- known_deviations (задокументированы):
+  1. `scraper = "0.19"` вместо более новой 0.26 — в sandbox cargo registry доступна только 0.19. Работает корректно; 0.19 пулит отдельный html5ever 0.27/markup5ever 0.13 не конфликтуя с html5ever 0.29 уже в дереве.
+  2. `HtmlCharSpan.html_start/end = 0` sentinel — full source mapping отложен до U5 HTML word-highlight.
+  3. `TextEntry.format` в schema не добавлен (есть TODO-коммент в TextViewer.tsx). Будет в B1/F4 при расширении schema. Пока format — ephemeral client-side state.
+- merge_conflicts:
+  - `src-tauri/Cargo.toml` — U8 добавлял `scraper+thiserror+tracing`, R9 уже добавил `thiserror+tracing+dirs+tokio+parking_lot` и поднял rust-version до 1.80. Резолв: union deps, `scraper = "0.19"` добавлен рядом, rust-version остался 1.80, dev-dependencies сохранены.
+  - `src-tauri/Cargo.lock` — в секции `[[package]] name = "ruvox-tauri"` конфликт в списке dependencies (U8 видел только thiserror, HEAD имел tempfile+thiserror+tokio). Резолв: HEAD-версия, т.к. она уже включает thiserror и добавляет прочие deps; scraper присутствует в объединённом списке выше.
+  - `src/components/TextViewer.tsx` — единственный конфликт был в импорте (HEAD: `renderMermaidIn`, U8: `renderHtml`). Остальное авто-объединилось корректно: U8 SegmentedControl с 3 опциями + U7 useRef/useEffect для mermaid + Modal. В итоговом компоненте: `Format = 'plain' | 'markdown' | 'html'`, switch-cases rendererа (plain/html/markdown), mermaid useEffect срабатывает **только** в markdown режиме (`if (format !== 'markdown')`), click-to-zoom useEffect — всегда (в html-режиме mermaid-дивов не будет, closest('.mermaid') вернёт null).
+  - `src-tauri/src/pipeline/mod.rs` — auto-merged корректно: `pub mod html_extractor;` добавлен рядом с `pub mod constants; pub mod normalizers; pub mod tracked_text;`, R9 TTSPipeline сохранён ниже 1:1.
+  - `src/components/TextViewer.module.css`, `package.json`, `pnpm-lock.yaml` — auto-merged (чистые дополнения).
+- verified: статический ревью. `nix-shell --run "cargo test"` / `pnpm install && pnpm typecheck && pnpm build` не запущены в sandbox ревьюера (DNS + gtk/webkit system deps через nix-daemon). Воркер-ревизия U8 делала изолированный test-crate: 20/20 html_extractor тестов зелёные на cargo 1.95 offline. `pnpm-lock.yaml` уже содержит dompurify 3.4.0 (с deprecated `@types/dompurify` стабом — можно убрать follow-up), но валидация lockfile требует `pnpm install` на хосте.
+- followups (не блокеры):
+  - Live `nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml"` и `pnpm typecheck && pnpm build` на хосте — проверить что `scraper 0.19` + `html5ever 0.27` не конфликтуют с `html5ever 0.29` уже подтянутым в дерево.
+  - U5 HTML word-highlighting потребует full source mapping в `HtmlCharSpan` (текущий sentinel 0/0 закроет graceful-degrade).
+  - B1/F4: добавить `format: 'plain' | 'markdown' | 'html'` в `TextEntry` schema (плюс `html` text/html MIME-detection из clipboard).
+  - Рассмотреть удаление `@types/dompurify` стаба из lock (deprecated — DOMPurify 3.x приносит встроенные типы).
+  - Integration: HTML-pipeline пока не подключен к `TTSPipeline::process_with_char_mapping` — сейчас `extract_text_for_tts` standalone. Для полноценного "copy HTML → TTS" потребуется: frontend detect `text/html` MIME → backend command `process_html_for_tts(html) -> (String, CharMapping)` внутри которого `extract_text_for_tts` → `TTSPipeline::process_with_char_mapping`. Follow-up для B4.
+- next_unblocks: нет прямых задач. U8 — leaf в дереве enrichment-фичей. Разблокировка через B4 (frontend HTML-pipeline bridge) и U5 (word highlighting в HTML режиме).
+
 ### Следующие действия координатора
 - Запустить **R10** worker (golden harness в `src-tauri/tests/golden.rs` с diff-выводом при несовпадениях).
 - Запустить **B4** worker (Tauri commands `normalize_text`, `synthesize_text`, и т.д. используя `TTSPipeline`). Потребуется B1+B2+B3+R9 — все merged.
-- Hot-spot для хоста: прогнать `nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml -p ruvox-tauri"` на ruvox2 HEAD (`84e09b1`) чтобы поймать возможные edge-cases взаимодействия всего крейта (webkit/gtk system deps нужны).
+- Hot-spot для хоста: прогнать `nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml -p ruvox-tauri"` на ruvox2 HEAD (`6722e02` после U8 merge) чтобы поймать возможные edge-cases взаимодействия всего крейта (webkit/gtk system deps нужны). `pnpm install && pnpm typecheck && pnpm build` аналогично — проверить сборку фронта после добавления dompurify.
