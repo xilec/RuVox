@@ -2,6 +2,7 @@
 
 import logging
 import sys
+from pathlib import Path
 
 from pydantic import BaseModel, ValidationError
 
@@ -14,8 +15,11 @@ from ttsd.protocol import (
     RequestAdapter,
     SynthesizeRequest,
 )
+from ttsd.silero import SileroEngine
 
 logger = logging.getLogger("ttsd")
+
+_engine = SileroEngine()
 
 
 def _setup_logging() -> None:
@@ -29,15 +33,49 @@ def _write_response(response: BaseModel) -> None:
     sys.stdout.flush()
 
 
-def _handle_warmup() -> OkWarmup:
-    # Silero load happens in F7; skeleton just reports ready.
-    logger.info("warmup: skeleton (model load deferred to F7)")
+def _handle_warmup() -> OkWarmup | ErrResponse:
+    """Load the Silero model.
+
+    On failure, returns ErrResponse instead of crashing so ttsd keeps running
+    and can accept a retry warmup request.  The Rust backend will emit
+    model_error and may retry.
+    """
+    try:
+        _engine.load()
+    except Exception as exc:
+        logger.exception("warmup failed")
+        return ErrResponse(error="model_not_loaded", message=str(exc))
     return OkWarmup(version=__version__)
 
 
 def _handle_synthesize(req: SynthesizeRequest) -> OkSynthesize | ErrResponse:
-    # Actual synthesis implemented in F7. Skeleton returns error.
-    return ErrResponse(error="model_not_loaded", message="Silero model not loaded yet (F7 pending)")
+    if not _engine.is_loaded():
+        return ErrResponse(
+            error="model_not_loaded",
+            message="Silero model is not loaded; send warmup first",
+        )
+
+    if not req.text.strip():
+        return ErrResponse(error="bad_input", message="text must not be empty")
+
+    try:
+        char_mapping = (
+            [entry.model_dump() for entry in req.char_mapping] if req.char_mapping else None
+        )
+        result = _engine.synthesize(
+            text=req.text,
+            speaker=req.speaker,
+            sample_rate=req.sample_rate,
+            out_wav=Path(req.out_wav),
+            char_mapping=char_mapping,
+        )
+    except ValueError as exc:
+        return ErrResponse(error="bad_input", message=str(exc))
+    except Exception as exc:
+        logger.exception("synthesis failed")
+        return ErrResponse(error="synthesis_failed", message=str(exc))
+
+    return OkSynthesize(timestamps=result.timestamps, duration_sec=result.duration_sec)
 
 
 def _handle_shutdown() -> OkShutdown:
@@ -55,8 +93,8 @@ def main() -> int:
                 continue
             try:
                 req = RequestAdapter.validate_json(line)
-            except ValidationError as e:
-                _write_response(ErrResponse(error="bad_input", message=str(e)))
+            except ValidationError as exc:
+                _write_response(ErrResponse(error="bad_input", message=str(exc)))
                 continue
             if req.cmd == "warmup":
                 _write_response(_handle_warmup())
@@ -65,6 +103,10 @@ def main() -> int:
             elif req.cmd == "shutdown":
                 _write_response(_handle_shutdown())
                 return 0
+            else:
+                _write_response(
+                    ErrResponse(error="bad_input", message=f"unknown cmd: {req.cmd}")  # type: ignore[union-attr]
+                )
     except KeyboardInterrupt:
         logger.info("interrupted")
         return 0
