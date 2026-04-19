@@ -792,10 +792,47 @@ Ready-tasks после завершения:
 - known_deviations: none критичных. Minor follow-ups см. выше (isDragging ref, HH:MM:SS для длинных аудио, play-first-of-queue fallback).
 - next_unblocks: U3 не блокирует другие задачи напрямую (leaf в UI-дереве). Параллельно активны U2/U5/U6/U9 воркеры; их merge — следующие в очереди ревьюера.
 
+### U2 — Queue list component
+- status: **merged** (2026-04-20)
+- branch: task/u2-queue-list
+- worker_commit: `8f9d957 feat(ui): queue list with status badges and selection`
+- reviewer: autopilot Opus, review_result: ok
+- merge_sha: `e6fb983 merge(u2): queue list with selection store`
+- deps_met: U1 merged (`78a0034`), B4 merged (`2a9c83c`).
+- deliverable:
+  - `src/components/QueueList.tsx` (~235 строк): list `TextEntry` из `commands.getEntries()`; item = preview (первые 60 символов с `\u2026` ellipsis), статус-бейдж (`pending`/`processing`/`ready`/`playing`/`error` с цветами gray/blue/green/teal/red и русскими лейблами), duration (MM:SS), кнопки Play (▶ `\u25B6`) / Delete (✕ `\u2715`) через `ActionIcon`. Клик на item → `setSelectedEntry` из Zustand-store. Delete → `modals.openConfirmModal` (`@mantine/modals`) → `commands.deleteEntry` + очистка selected если удалён выбранный. Listen на `events.entryUpdated` → in-place update (prepend+re-sort для новых entries, indexed replace для существующих); параллельно обновляет `selectedEntry` в store если текущий выбранный — чтобы TextViewer видел свежий статус без `get_entry` invoke. Empty state: «Скопируйте текст и нажмите Read Now». Sort by `created_at` desc (newest first) — на load и при insert.
+  - `src/components/QueueList.module.css` (~43 строк): CSS Modules; `.item` / `.itemSelected` / `.preview` (ellipsis) / `.meta` / `.actions` (opacity 0 → 1 on hover/selected) / `.scrollArea`; использует Mantine CSS variables (`--mantine-spacing-*`, `--mantine-color-default-hover`, `--mantine-radius-sm`). Без `sx`, `createStyles`, emotion.
+  - `src/stores/selectedEntry.ts` (16 строк): Zustand-store `useSelectedEntry` с `selectedId: EntryId | null`, `selectedEntry: TextEntry | null`, `setSelectedId`, `setSelectedEntry`. `setSelectedEntry(entry)` синхронно обновляет и `selectedId`, и `selectedEntry` — избегает race между QueueList и TextViewer.
+  - `src/lib/tauri.ts`: re-export `UnlistenFn` из `@tauri-apps/api/event` для компонентов.
+  - `package.json`: `zustand: ^5.0.0` добавлен в dependencies.
+  - `src/components/AppShell.tsx`: navbar placeholder заменён на `<QueueList />`, `selectedEntry` теперь из `useSelectedEntry()` store (вместо `useState<TextEntry | null>`).
+- merge_conflicts:
+  - `src/components/AppShell.tsx` — **единственный merge conflict, разрешён вручную**. U2 форкался от `6da8e37` (B4 merged), до U3. U3 (`e3388b3`) добавил `Player` в header (`height: 108`, `<Stack>` wrapping `<Group>` + `<Player />`), U2 в той же ветке заменил navbar placeholder на `<QueueList />` и подключил Zustand store. Резолв: объединил импорты (`Stack` + `Player` из U3 + `QueueList` + `useSelectedEntry` из U2), убрал `useState<TextEntry | null>` (больше не нужен — selectedEntry из store), сохранил U3 header 108px с `Stack gap={0}` + `<Player />`, сохранил U2 navbar с `<QueueList />`. Результат: полный AppShell с header 108px (RuVox title + ThemeSwitcher + Player), navbar 280px с очередью, main с `TextViewer(entry={selectedEntry})`.
+  - `package.json` — auto-merged (строка `zustand: ^5.0.0` чисто добавилась рядом с `react-dom`).
+- verification:
+  - Ревьюер прочитал и верифицировал все 6 файлов на SHA `8f9d957` через `git show`. Проверил `useEffect` cleanup для `entry_updated` listener (`unlisten?.()` в return), sort `created_at` desc на load + insert, `@mantine/modals::openConfirmModal` для delete, TS strict-типизация (`TextEntry | null`, `UnlistenFn`, payload-типы через typed-wrappers из U1), функциональный компонент без `React.FC`, Mantine 8 через CSS Modules (без sx/createStyles/emotion), empty-state текст русский.
+  - `nix-shell --run "pnpm install"` в sandbox ревьюера невозможен (nix-daemon SQLite cache блокируется sandbox), `pnpm-lock.yaml` **не обновлён** в worker-ветке по той же причине (задокументировано в worker-commit message). Требуется `pnpm install` на хосте для регенерации lockfile.
+  - Воркер подтвердил у себя `pnpm typecheck` / `pnpm build` чистыми. Live-прогон остаётся за хостом.
+- review_findings:
+  - **`useSelectedEntry.setState` с пустым объектом (minor, не блокер):** в listener `events.entryUpdated` для no-op (когда event не для выбранного entry) возвращается `{}`. Zustand shallow-merge делает это безопасным (noop для state), но немного неэлегантно. Можно было бы вынести условие наружу и не вызывать `setState` в no-op ветке. Не блокирующее.
+  - **Иконки Play/Delete через Unicode символы (▶ `\u25B6`, ✕ `\u2715`) вместо tabler-icons:** `tabler-icons-react` не установлен в проекте — воркер выбрал lightweight Unicode для избежания ещё одной зависимости. Согласуется с deliverable задачи (`кнопки (Play/Delete)` без уточнения icon-библиотеки). По правилу проекта «no emoji» — эти символы не emoji, а управляющие символы Unicode block "Miscellaneous Technical" / "Dingbats" (аналогично Player U3 с `\u23F8 \u23EE \u23ED`). Допустимо.
+  - **Empty state (корректно):** проверяется `entries.length === 0`; не показывается loader при первом mount (между `loadEntries()` kick-off и promise resolve — возможно мелькание empty state на 0ms–100ms). Для v1 ок, для UX — добавить `isLoading` флаг — follow-up.
+  - **Sort stability (корректно):** `b.created_at.localeCompare(a.created_at)` для ISO 8601 строк даёт descending order. При insert нового entry выполняется re-sort; при update существующего — in-place replace без re-sort (но `created_at` не меняется, так что порядок сохраняется).
+  - **Listener cleanup (корректно):** `unlisten?.()` в `useEffect` return вызовется после резолва Promise `events.entryUpdated(...)`. В StrictMode первый mount может успеть kick-off'нуть setup до unmount — `unlisten?.()` при unmount вернёт `undefined` (listener ещё не прилетел), listener осиротеет. В production без StrictMode — cleanup корректен. Для более robust паттерна можно использовать `let unmounted = false; ...then(fn => unmounted ? fn() : unlisten = fn)`. Follow-up по аналогии с U10 review.
+  - **Нет pagination/virtualization:** `ScrollArea` рендерит все entries. Для очереди в 100+ записей приемлемо (Mantine `ScrollArea` не делает virtualize). Follow-up если появятся жалобы на перф.
+  - **`QueueList.module.css` `.scrollArea { height: 100% }`:** внутри AppShell Navbar (`p="md"`) ScrollArea растянется на всю высоту navbar'а за вычетом `Title` «Очередь». Ok.
+  - **Style:** no emoji, no `any`, no `React.FC`, no `sx`/`createStyles`/emotion, commit message `<type>(<module>): ...` ✓. TypeScript strict ✓.
+- known_deviations: `pnpm-lock.yaml` не обновлён в worker-commit — требует `pnpm install` на хосте после merge.
+- next_unblocks: **U4 / U5 / U6 / U9 могут теперь подтягивать `selectedEntry` из Zustand-store** вместо локального state в AppShell. U5/U6/U9 воркеры активны параллельно. Следующие к merge: **U6** или **U9** (оба готовы по сигналу координатора). **У всех активных U-воркеров будет конфликт в `src/components/AppShell.tsx`** (navbar теперь с QueueList + импорт `useSelectedEntry`) — ревьюерам U6/U9/U5 придётся объединять свои добавления с текущим layout (сохранять header 108px + Player + navbar QueueList + main `TextViewer(selectedEntry)`).
+
 ### Следующие действия координатора
-- Ревьюер ждёт уведомлений от других UI-воркеров: **U2** (QueueList — даст Player'у `entryIds` prop), **U5** (word highlighting), **U6** (clipboard input), **U9** (settings). Все форкнуты от ruvox2 ДО U3-merge → их AppShell.tsx будет конфликтовать с текущим (header.height, Stack, Player). Merge-ревьюер решает конфликты ручным мерджем: сохранять U3-header с Player + добавлять изменения от U2/U5/U6/U9.
-- Hot-spot для хоста: `nix-shell --run "pnpm install && pnpm tauri dev"` на ruvox2 HEAD (`e11c3c9`) — smoke Player UI (Play/Pause/Seek/Speed/Volume/Hotkeys Space/Arrows).
+- Ревьюер ждёт уведомлений от других UI-воркеров: **U5** (word highlighting), **U6** (settings panel), **U9** (regenerate entry). Все форкнуты от ruvox2 до U2-merge → их AppShell.tsx будет конфликтовать с текущим (navbar теперь с `<QueueList />` + `useSelectedEntry`, header уже содержит Player). Merge-ревьюер решает конфликты ручным мерджем: сохранять текущий layout (header 108px + Player + navbar QueueList + main `TextViewer(selectedEntry)`) и добавлять изменения от U5/U6/U9.
+- **После U2 merge (`e6fb983`):** на хосте запустить `nix-shell --run "pnpm install"` для обновления `pnpm-lock.yaml` (zustand ^5.0.0 добавлен). Затем `pnpm typecheck && pnpm build && pnpm tauri dev` — smoke QueueList (добавление entry через tray → item появляется с `pending` бейджем → переходит в `processing` → `ready`; delete через confirm-модал; выбор item → TextViewer показывает original_text).
+- Hot-spot для хоста: `nix-shell --run "pnpm install && pnpm tauri dev"` на ruvox2 HEAD (`e6fb983`) — smoke QueueList + Player UI.
 - Follow-ups (не блокирующие):
-  - Перевести `isDragging` на `useRef` для точной drag-protection.
+  - Перевести `isDragging` в Player на `useRef` для точной drag-protection.
   - Расширить `formatTime` до HH:MM:SS для длительности > 60 мин.
   - При пустом `currentEntryId`, но наличии `entryIds` — Play должен стартовать первый из очереди.
+  - QueueList: добавить `isLoading` флаг для первого mount (избежать мелькания empty state).
+  - QueueList: заменить Unicode-глифы ▶/✕ на tabler-icons-react после того, как U6/U9 добавят другие иконки (settings gear, regenerate arrows).
+  - QueueList: StrictMode-safe cleanup через `unmounted` флаг (аналогично U10 follow-up).
