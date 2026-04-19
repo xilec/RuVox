@@ -1,0 +1,1 @@
+Класс UserController наследуется.

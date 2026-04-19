@@ -1,0 +1,1 @@
+Установите Docker версии >= 20.10 с https://docker.com и проверьте getUserData() возвращает корректный JSON с полем user_id.
