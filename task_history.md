@@ -398,12 +398,15 @@ Ready-tasks после завершения:
 ## Wave 6 — Rust normalizers (после merge R1)
 
 ### R2 — NumberNormalizer (Rust)
-- status: **awaiting review**
+- status: **merged**
 - branch: task/r2-numbers-normalizer
 - worker_commit: `75b954c feat(pipeline): port NumberNormalizer to Rust`
-- crate_choice: manual port (нет готового Rust num2words для русского). Все тестовые строки совпадают с Python.
-- tests: **103/103** в изолированном мини-крейте. Классы: Integers (21), Floats (10), Percentages (11), Ranges (8), SizeUnits (18), Versions (12), Dates (7), Times (12) + остальные.
-- TestOrdinalNumbers пропущен (в оригинале placeholder `pass`).
+- reviewer: autopilot Opus, review_result: ok
+- merge_sha: `664172b merge(r2): NumberNormalizer port`
+- tests: **103/103** в мини-крейте. Классы: Integers (21), Floats (10), Percentages (11), Ranges (8), SizeUnits (18), Versions (12), Dates (7), Times (12).
+- spot-check ревьюера: `normalize_date("01.12.2023")` → `первое декабря две тысячи двадцать третьего года` — совпадает с Python. `int_to_words_with_gender` покрывает миллиарды/миллионы/тысячи с женским родом для 1/2.
+- followup_perf: `to_genitive` использует `Regex::new` внутри цикла — можно оптимизировать через OnceLock в R9.
+- TestOrdinalNumbers пропущен (placeholder `pass`).
 
 ### R4 — AbbreviationNormalizer (Rust)
 - status: **awaiting review**
