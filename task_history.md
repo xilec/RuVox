@@ -69,3 +69,59 @@ Ready-tasks после завершения:
 - F8 done → standalone.
 
 Первый kandidат следующей волны — F2 и F6 (зависят от F1).
+
+---
+
+## Wave 1 — завершение и результаты
+
+### F3 — IPC contract doc
+- status: **merged**
+- branch: task/f3-ipc-contract
+- worker_commit: `fab358a docs(ipc): IPC contract between frontend, backend, and ttsd subprocess`
+- reviewer: autopilot (Opus), review_result: ok
+- merge_sha: `c93d6c7 merge(f3): IPC contract documentation`
+- notes: 905 строк в `docs/ipc-contract.md`. Три слоя: 18 Tauri-команд (14 обязательных + extra: `cancel_synthesis`, `stop_playback`, `clear_cache`, `get_cache_stats`), 11 событий (8 обязательных + `playback_paused`, `playback_finished`, `synthesis_progress`), ttsd JSON-протокол с `warmup`/`synthesize`/`shutdown` и 4 кодами ошибок. Добавлен `char_mapping` в запросе synthesize — для передачи маппинга из Rust-pipeline. Три example-exchange'а. `TextEntry.edited_text` предусмотрено для U12. `UIConfig.theme` переосмыслено как `light | dark | auto` вместо старых PyQt-тем.
+
+### F8 — AGENTS.md/CLAUDE.md update
+- status: **merged**
+- branch: task/f8-project-instructions
+- worker_commit: `7c60401 docs(rewrite): update AGENTS.md and CLAUDE.md for ruvox2 stack`
+- reviewer: autopilot (Opus), review_result: ok
+- merge_sha: `66ac764 merge(f8): update AGENTS.md and CLAUDE.md for ruvox2 stack`
+- notes: 171 строка в новом AGENTS.md. Стек описан (Tauri 2 / React 18 + TS / Mantine 8 / Rust / ttsd). Правило «Всегда отвечай на русском» сохранено. Mantine 8 правила: CSS Modules + `classNames`, явный запрет `sx`/`createStyles`/emotion/Mantine 6-7 legacy. `@mantine/form` обязателен. Обновлён `docs/index.md`. `CLAUDE.md` — pointer на AGENTS.md + ссылки на RewriteNotes/RewriteTaskPlan.
+- **false-positive security warning** от worker-агента о «commit without draft approval» — проигнорирован, коммиты без драфтов явно разрешены координатором.
+
+### F5 — Golden-test fixtures
+- status: **merged**
+- branch: task/f5-golden-fixtures
+- worker_commit: `4bd8d5a test(fixtures): golden test cases from legacy pipeline`
+- reviewer: autopilot (Opus), review_result: ok
+- merge_sha: `d3775c8 merge(f5): golden test cases from legacy pipeline`
+- notes: 37 кейсов × 3 файла (`.input.txt`/`.expected.txt`/`.char_map.json`) + README = 112 файлов в `src-tauri/tests/fixtures/pipeline/`. Покрыты все категории: числа/размеры/версии/диапазоны/проценты, english/abbreviations, camelCase/PascalCase/snake_case/kebab-case, URL/email/IP/path, greek/math/arrow symbols, markdown-структуры, mermaid, mixed_paragraph. Ревьюер перегенерировал — diff пустой (байт-в-байт).
+- workaround: worker-агент не мог запустить `nix-shell legacy/shell.nix` из-за sandbox-ограничения на Unix-domain-socket к nix-daemon. Обошёл через `PYTHONPATH=legacy/src python3.13 scripts/generate_golden.py` (python из nix-store + `num2words` из uv-cache). На хост-машине документированный путь `nix-shell legacy/shell.nix --run "..."` работает.
+- schema check: `len(char_map) == len(transformed)` для всех 37 фикстур; содержимое `expected.txt` реально отражает pipeline output (прописные числа, транслит английского, camelCase→слова, mermaid-маркер).
+
+### F1 — Nix flake
+- status: **awaiting review**
+- branch: task/f1-nix-flake
+- worker_commit: `cb4edb8 build(nix): shell.nix with Rust + Node + Python + Tauri deps`
+- reviewer: запущен, в процессе (live-тест `nix-shell --run ...` может занять 10–20 мин на первой сборке webkitgtk)
+- **deviation (documented):** `cargo-tauri` отсутствует в nixpkgs 25.11 → пользователь ставит через `cargo install tauri-cli --version "^2"`. Задокументировано в комментарии shell.nix.
+- ref: rustc 1.91.1 из стандартного nixpkgs (не `rust-overlay`/`fenix`), rustfmt+clippy+clippy-driver включены. nodejs_20 + pnpm + uv (3.12 python). `webkitgtk_4_1`, `libsoup_3`, `mpv-unwrapped`, pkg-config — включены.
+
+---
+
+## Подготовка к Wave 2
+
+После merge F1:
+- **Unblocked:** F2 (Tauri init), F6 (ttsd skeleton).
+- **Запланированный запуск:** F2 + F6 параллельно (оба зависят только от F1).
+
+После merge F2:
+- **Unblocked:** F4 (storage schema), B3 (player), B5 (tray), U1 (app shell).
+- F4 разблокирует B1 (storage service), R1 (TrackedText).
+
+После merge F6:
+- **Unblocked:** F7 (Silero wrapper).
+
+После merge F7 + F3 (уже merged) → **unblocked B2** (TTS subprocess manager).
