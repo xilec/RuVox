@@ -4,6 +4,7 @@
 /// Number-to-words logic is a manual port of the Python `num2words(n, lang="ru")`
 /// output, since no Rust crate provides equivalent Russian-language support.
 use regex::Regex;
+use std::sync::OnceLock;
 
 // ---- Size units: (nom_sg, gen_sg, gen_pl, gender) ----
 
@@ -607,16 +608,44 @@ fn apply_genitive_replacements(words: &str) -> String {
         ("миллиард", "миллиарда"),
     ];
 
+    // Applying word-boundary replacements. Russian word boundaries don't coincide with
+    // \b (which is ASCII-only in most engines), so we use space/start/end anchors instead.
+    // Since all replacements are Cyrillic substrings and the pairs are ordered longest-first,
+    // plain substring replacement with a space-guard is sufficient and avoids per-call
+    // Regex compilation.
     let mut result = words.to_string();
     for (from, to) in replacements {
-        // Word-boundary replacement via simple check: ensure we match whole words.
-        // Build a pattern like `\bfrom\b` but operate on the string directly.
-        // Since Russian words don't overlap in these pairs, simple replace is safe
-        // provided we process in order (longest first).
-        let pat = format!(r"\b{}\b", regex::escape(from));
-        if let Ok(re) = Regex::new(&pat) {
-            result = re.replace_all(&result, *to).into_owned();
+        // Replace only when the pattern appears as a standalone word: preceded and followed
+        // by space, start/end of string, or another non-alpha character.
+        let mut out = String::new();
+        let mut search = result.as_str();
+        let from_len = from.len();
+        while !search.is_empty() {
+            if let Some(pos) = search.find(from) {
+                let before = &search[..pos];
+                let after = &search[pos + from_len..];
+
+                let preceded_ok = before.is_empty()
+                    || before.ends_with(|c: char| !c.is_alphabetic() && c != '\u{0300}');
+                let followed_ok = after.is_empty()
+                    || after.starts_with(|c: char| !c.is_alphabetic() && c != '\u{0300}');
+
+                if preceded_ok && followed_ok {
+                    out.push_str(before);
+                    out.push_str(to);
+                    search = after;
+                } else {
+                    // Not a whole-word match; advance past this occurrence.
+                    out.push_str(before);
+                    out.push_str(from);
+                    search = after;
+                }
+            } else {
+                out.push_str(search);
+                break;
+            }
         }
+        result = out;
     }
     result
 }
@@ -765,8 +794,8 @@ impl NumberNormalizer {
 
     /// Convert range string (e.g. "10-20") to "от X до Y" with genitive case.
     pub fn normalize_range(&self, range_str: &str) -> String {
-        // Split by hyphen, en-dash, or em-dash
-        let re = Regex::new(r"[-–—]").expect("static pattern");
+        static RE_DASH: OnceLock<Regex> = OnceLock::new();
+        let re = RE_DASH.get_or_init(|| Regex::new(r"[-–—]").expect("static pattern"));
         let parts: Vec<&str> = re.splitn(range_str, 2).collect();
         if parts.len() != 2 {
             return range_str.to_string();
@@ -787,7 +816,9 @@ impl NumberNormalizer {
 
     /// Convert size string (e.g. "100MB", "16px") to Russian words.
     pub fn normalize_size(&self, size_str: &str) -> String {
-        let re = Regex::new(r"^([\d.,]+)\s*([a-zA-Zа-яА-Я]+)$").expect("static pattern");
+        static RE_SIZE_PARSE: OnceLock<Regex> = OnceLock::new();
+        let re = RE_SIZE_PARSE
+            .get_or_init(|| Regex::new(r"^([\d.,]+)\s*([a-zA-Zа-яА-Я]+)$").expect("static pattern"));
         let s = size_str.trim();
 
         let caps = match re.captures(s) {
@@ -851,7 +882,9 @@ impl NumberNormalizer {
             tokens.push(("num", current));
         }
 
-        let suffix_re = Regex::new(r"^([a-zA-Z]+)(\d*)$").expect("static pattern");
+        static RE_VERSION_SUFFIX: OnceLock<Regex> = OnceLock::new();
+        let suffix_re = RE_VERSION_SUFFIX
+            .get_or_init(|| Regex::new(r"^([a-zA-Z]+)(\d*)$").expect("static pattern"));
 
         let mut result: Vec<String> = Vec::new();
 

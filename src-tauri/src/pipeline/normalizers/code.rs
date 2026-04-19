@@ -636,14 +636,15 @@ impl CodeIdentifierNormalizer {
     }
 
     fn basic_transliterate(&self, word: &str) -> String {
-        word.chars()
-            .map(|c| {
-                self.translit_map
-                    .get(&c)
-                    .copied()
-                    .unwrap_or_else(|| Box::leak(c.to_string().into_boxed_str()))
-            })
-            .collect()
+        // Accumulate into a String to avoid Box::leak memory leak for unmapped chars.
+        let mut result = String::new();
+        for c in word.chars() {
+            match self.translit_map.get(&c) {
+                Some(s) => result.push_str(s),
+                None => result.push(c),
+            }
+        }
+        result
     }
 }
 
