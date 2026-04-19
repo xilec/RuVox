@@ -10,10 +10,6 @@
 # Usage:
 #   nix-shell          — enter dev shell
 #   nix-shell --run "cmd"  — run a single command
-#
-# cargo-tauri (tauri-cli v2) is NOT in nixpkgs 25.11.
-# Install it separately: cargo install tauri-cli --version "^2"
-# After installation it is available as `cargo tauri`.
 
 { pkgs ? import <nixpkgs> {} }:
 
@@ -26,6 +22,7 @@ pkgs.mkShell {
     cargo
     rustfmt
     clippy
+    cargo-tauri
 
     # ── Node.js LTS (v20) + pnpm ───────────────────────────────────────────
     nodejs_20
@@ -51,9 +48,8 @@ pkgs.mkShell {
     libappindicator-gtk3
     # SVG rendering (Tauri icons)
     librsvg
-    # OpenSSL (reqwest / native-tls); dev output needed for cargo build scripts
+    # OpenSSL (reqwest / native-tls)
     openssl
-    openssl.dev
     # D-Bus
     dbus
 
@@ -150,10 +146,7 @@ pkgs.mkShell {
     echo "  pnpm:   $(pnpm --version)"
     echo "  Python: $(python3 --version)"
     echo "  uv:     $(uv --version)"
-    echo ""
-    echo "Note: cargo-tauri is not in nixpkgs."
-    echo "Install with: cargo install tauri-cli --version '^2'"
-    echo "(one-time, stored in ~/.cargo/bin/cargo-tauri)"
+    echo "  tauri:  $(cargo tauri --version)"
     echo ""
     echo "Commands:"
     echo "  cargo tauri dev          — start Tauri dev server"
