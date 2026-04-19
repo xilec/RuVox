@@ -170,6 +170,64 @@ impl TrackedText {
         self.sub(&pattern, |_| to.to_string());
     }
 
+    /// Replace exactly one byte range `[byte_start, byte_end)` in the current text.
+    ///
+    /// This allows callers to replace a single occurrence without constructing a
+    /// literal string that might match elsewhere. Used by markdown link stripping
+    /// to remove the leading `[` and the trailing `](url)` independently, so that
+    /// the link-text characters retain individual original-position entries and
+    /// can still be normalised by later pipeline phases.
+    pub fn replace_byte_range(&mut self, byte_start: usize, byte_end: usize, to: &str) {
+        let old_text = &self.current[byte_start..byte_end];
+        if old_text == to {
+            return;
+        }
+
+        let char_start = byte_to_char_idx(&self.current, byte_start);
+        let char_end = byte_to_char_idx(&self.current, byte_end);
+
+        // Skip if any codepoint in the match is inside an existing replacement.
+        let already_replaced = (char_start..char_end)
+            .any(|pos| self.is_current_char_pos_inside_replacement(pos));
+        if already_replaced {
+            return;
+        }
+
+        let orig_start = self.current_to_original(char_start);
+        let orig_end = if char_end > char_start {
+            self.current_to_original(char_end - 1) + 1
+        } else {
+            orig_start
+        };
+
+        if self.find_containing_replacement(orig_start, orig_end).is_some() {
+            return;
+        }
+
+        self.replacements.push(Replacement {
+            orig_start,
+            orig_end,
+            new_text: to.to_string(),
+        });
+        self.offset_entries.insert(
+            0,
+            OffsetEntry {
+                current_pos: char_start,
+                orig_start,
+                orig_end,
+                new_len: char_len(to),
+            },
+        );
+        self.sorted_entries_cache = None;
+
+        self.current = format!(
+            "{}{}{}",
+            &self.current[..byte_start],
+            to,
+            &self.current[byte_end..]
+        );
+    }
+
     /// Regex substitution with a callback, tracking positions for `CharMapping`.
     ///
     /// Matches that overlap already-replaced regions are skipped — exactly

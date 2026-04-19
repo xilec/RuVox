@@ -472,32 +472,6 @@ impl TTSPipeline {
         });
     }
 
-    fn normalize_link_text(&self, text: &str) -> String {
-        // Apply code identifier normalization to link text.
-        // Handles CamelCase (GitHub → гит хуб), PascalCase, snake_case, kebab-case.
-        let code = &self.code_normalizer;
-        if re_pascal().is_match(text) {
-            return code.normalize_camel_case(text);
-        }
-        if re_camel_lower().is_match(text) {
-            return code.normalize_camel_case(text);
-        }
-        if text.contains('_') {
-            return code.normalize_snake_case(text);
-        }
-        if text.contains('-') && !text.starts_with('-') {
-            return code.normalize_kebab_case(text);
-        }
-        // Plain word: check IT_TERMS then transliterate.
-        use crate::pipeline::normalizers::english::IT_TERMS;
-        let lower = text.to_lowercase();
-        if let Some(v) = IT_TERMS.get(lower.as_str()) {
-            return v.to_string();
-        }
-        // Plain Cyrillic or unknown — return as-is.
-        text.to_string()
-    }
-
     fn normalize_code_words(&self, code: &str) -> String {
         code.split_whitespace()
             .map(|word| {
@@ -513,25 +487,38 @@ impl TTSPipeline {
     fn process_markdown_tracked(&self, tracked: &mut TrackedText) {
         tracked.sub(re_heading(), |_| String::new());
 
-        // Markdown links: [text](url) → normalized_text.
-        // We pre-normalize the link text (e.g. CamelCase → words) before replacing,
-        // because TrackedText won't re-process replacement regions.
+        // Markdown links: [text](url) → text (link text preserved for further normalization).
+        //
+        // Mirrors legacy Python which strips "[" and "](url)" in two separate passes so that
+        // each link-text character retains its exact original-text position. Replacing the
+        // whole "[text](url)" at once would assign every replacement character to the full
+        // "[text](url)" range, preventing subsequent phases (CamelCase etc.) from processing
+        // those characters (TrackedText skips regions that are already marked as replaced).
         {
             let snapshot = tracked.text().to_string();
-            let matches: Vec<(String, String)> = re_md_link_full()
+            // Collect byte ranges of the "[" prefix and "](url)" suffix for each link,
+            // in reverse document order so splicing later ranges first doesn't shift
+            // the byte offsets of earlier ones.
+            let mut link_ranges: Vec<(usize, usize, usize, usize)> = re_md_link_full()
                 .captures_iter(&snapshot)
                 .map(|caps| {
-                    let full = caps.get(0).unwrap().as_str().to_string();
-                    let link_text = caps.get(1).unwrap().as_str();
-                    // Pre-normalize the link text using code identifier normalizers.
-                    let normalized = self.normalize_link_text(link_text);
-                    (full, normalized)
+                    let full_m = caps.get(0).unwrap();
+                    let text_m = caps.get(1).unwrap();
+                    // "[" is a 1-byte ASCII char.
+                    let bracket_start = full_m.start();
+                    let bracket_end = bracket_start + 1; // just "["
+                    // "](url)" starts right after the link text.
+                    let suffix_start = text_m.end(); // byte after last char of link text
+                    let suffix_end = full_m.end();
+                    (bracket_start, bracket_end, suffix_start, suffix_end)
                 })
                 .collect();
-            for (full, normalized) in matches.into_iter().rev() {
-                if full != normalized {
-                    tracked.replace(&full, &normalized);
-                }
+            link_ranges.reverse();
+            for (bracket_start, bracket_end, suffix_start, suffix_end) in link_ranges {
+                // Remove "](url)" first (higher byte offset, so reverse order is correct).
+                tracked.replace_byte_range(suffix_start, suffix_end, "");
+                // Remove the leading "[" (lower byte offset, now safely independent).
+                tracked.replace_byte_range(bracket_start, bracket_end, "");
             }
         }
 
