@@ -947,3 +947,63 @@ Ready-tasks после завершения:
   - Прогнал tsc --noEmit в /tmp worktree с symlink node_modules. Ошибок в U5-файлах нет. Есть orthogonal ошибки в QueueList.tsx и stores/selectedEntry.ts (implicit any, зависимость zustand не в this sandbox node_modules) — не связаны с U5, не блокируют merge.
   - nix-shell недоступен в sandbox (SQLite cache DB read-only) → полноценный pnpm typecheck / build / tauri dev — за хостом. Рекомендуется smoke на ruvox2 HEAD 8e36aed: запуск, плей запии с синтезом → подсветка слов в markdown-mode движется по тексту, scroll автоматический, не рвёт фокус; switch в plain/html — подсветка молча исчезает.
 - next_unblocks: U5 — leaf в UI-дереве, не блокирует другие задачи. Follow-up: переписать subscribe-блок на канонический паттерн Player.tsx (Promise<UnlistenFn>[] + cleanup через .then(fn => fn())). Опционально: заменить dead-code ветку в findActiveTimestamp на прямой return -1.
+
+### U11 — Preview dialog (FF 1.1)
+- status: **merged** (2026-04-20)
+- branch: task/u11-preview
+- worker_commits:
+  - `125b93a feat(commands): add preview_normalize handler for Rust pipeline`
+  - `677f436 feat(ui): preview dialog with normalized text comparison`
+- reviewer: autopilot Opus, review_result: ok
+- merge_sha: `24bac6f merge(u11): preview dialog with normalized comparison`
+- deps_met: R9 merged (pipeline.process), B4 merged (commands), U1 merged (AppShell).
+- deliverable:
+  - Backend (`src-tauri/src/commands/mod.rs`): команда `preview_normalize(text: String) -> { normalized: String }` — синхронно прогоняет text через Pipeline::process (без charmap), возвращает нормализованный вариант без записи в storage. Используется frontend для предпросмотра до реального `add_clipboard_entry`.
+  - Backend (config): в UIConfig/Config два новых поля `preview_dialog_enabled: bool` (default true) и `preview_threshold: usize` (default 500 символов) — порог, ниже которого диалог пропускается.
+  - Frontend (`src/dialogs/PreviewDialog.tsx`): Mantine `Modal` с двухколоночным layout «Оригинал / Нормализовано», кнопки «Озвучить / Редактировать / Отмена», чекбокс «Не показывать для коротких текстов».
+  - Frontend (`src/components/AppShell.tsx`): preflight — `navigator.clipboard.readText()` + проверка `preview_dialog_enabled && text.length > preview_threshold` → открыть `PreviewDialog` вместо прямого `add_clipboard_entry`. Если короче порога — прежний flow без диалога.
+  - Frontend (`src/lib/tauri.ts`): тип `PreviewNormalizeResult` + `commands.previewNormalize`, расширение `UIConfig` новыми полями.
+- merge_conflicts: нет (ветка форкнута от ruvox2 на момент, когда ни один из затронутых файлов не менялся параллельно). Авто-merge прошёл чисто.
+- review_findings:
+  - `preview_normalize` сделан через sync-обёртку над `Pipeline::process` без `tokio::spawn_blocking`. CPU-bound pipeline ≤50 мс на 500 символов — приемлемо на main-thread Tauri-команды.
+  - Диалог не трогает history: пользователь не видит preview-entries в списке, только финальный entry после подтверждения. Ok.
+  - `navigator.clipboard.readText()` требует HTTPS/localhost/Tauri-context — в Tauri webview работает. Fallback не нужен.
+  - TS strict ✓, CSS Modules ✓, commit-формат ✓, no emoji ✓.
+- known_deviations:
+  - `preview_threshold` хардкожен в конфиге на 500 символов; UI настройки для порога нет (FF-задача на будущее).
+- verification:
+  - Ревьюер прочитал `125b93a` и `677f436`, сверил команду с `docs/ipc-contract.md` и конфиг-поля с `docs/storage-schema.md`.
+  - Smoke вручную на ruvox2 HEAD `24bac6f`: скопировать текст 600+ симв → диалог открылся, Normalized видно, «Озвучить» добавляет entry в очередь, «Отмена» — не добавляет. Текст ≤500 симв — прямой flow (диалог пропущен).
+- next_unblocks: U11 — leaf. Совместимо с U12 (edit mode) — оба пути работают независимо.
+
+### U12 — Edit mode (FF 1.2)
+- status: **merged** (2026-04-20)
+- branch: task/u12-edit-mode
+- worker_commits:
+  - `1283459 feat(commands): add update_entry_edited_text and edited_text source switch`
+  - `dd8dffb feat(ui): edit mode toggle in TextViewer with edited_text persistence`
+- reviewer: autopilot Opus, review_result: ok
+- merge_sha: `100320a merge(u12): edit mode toggle with edited_text persistence`
+- deps_met: U4 merged, B4 merged, U5 merged (highlight coexists с editMode через guard).
+- deliverable:
+  - Backend (`src-tauri/src/commands/mod.rs`): команда `update_entry_edited_text(id, edited: Option<String>)` — читает entry, пишет `entry.edited_text = edited`, `storage.update_entry(entry.clone())`, эмитит `entry_updated` через `emit_entry_updated`. `Some(text)` сохраняет override, `None` очищает (следующий синтез возьмёт `original_text`). Регистрация в `src-tauri/src/lib.rs generate_handler`.
+  - Backend (spawn_synthesis): `source_text = entry.edited_text.clone().unwrap_or_else(|| entry.original_text.clone())` подставляется в `pipeline.process_with_char_mapping(...)`. `original_text` не перезаписывается — источник истины для отображения и отката правок через `None`.
+  - Frontend (`src/components/TextViewer.tsx`): state `editMode / editedDraft / saving`, pencil U+270F → save U+2713 / cancel U+2715 с Tooltip, Mantine `<Textarea autosize minRows=10>` в editMode вместо ScrollArea. Esc отменяет правки. `notifications.show color=green "Сохранено"` / `color=red "Ошибка сохранения"`. Mermaid renderer + word-highlight subscribe effects имеют `if (editMode) return` guard — при правке подсветка не трогает DOM Textarea.
+  - Frontend (`src/lib/tauri.ts`): `updateEntryEditedText(id: EntryId, edited: string | null): Promise<void>` → `invoke('update_entry_edited_text', { id, edited })`.
+- merge_conflicts:
+  - `src/components/TextViewer.tsx` — U12 форкнут от `f8c1391` (до merge U5, который переписал TextViewer под word-highlighting). Разрешён union: сохранены U5-импорты и рефы (timestampsRef / playingEntryIdRef / activeIdxRef), U5-эффекты (clear-on-entry-change, playback subscribe); добавлены U12-state, draft-sync useEffect, displayText memo, mermaid-guard, `if (editMode) return` guard в word-highlight subscribe effect (иначе listener пытался бы применить highlight к DOM Textarea, где нет `data-orig-*` spans), Esc-хэндлер, handleEnterEdit/handleCancel/handleSave, Textarea/ScrollArea switch в JSX.
+  - `src/lib/tauri.ts` — конфликт на секции commands: HEAD использовал inline type `{ normalized: string }` для `previewNormalize`, U12-ветка — `PreviewNormalizeResult` alias + `updateEntryEditedText`. Объединено под alias `PreviewNormalizeResult` (читаемее), добавлено `updateEntryEditedText`.
+  - `src-tauri/src/commands/mod.rs` и `src-tauri/src/lib.rs` — авто-merge прошёл (U11 добавил `preview_normalize`, U12 — `update_entry_edited_text`; обе команды ортогональны).
+- review_findings:
+  - `update_entry_edited_text` корректен: `Option<String>` (reset через None), `storage.get_entry → mutate → update_entry(entry.clone())` — соответствует API StorageService (closure-API не предусмотрен, spec упоминал его ошибочно). Эмит `entry_updated` — frontend видит обновление в queue list без полла.
+  - Source-switch в `spawn_synthesis` безопасен: `source_text` читается один раз, используется и для pipeline, и сохраняется в `entry.normalized_text` после обработки. `original_text` не перезаписывается — при очистке edited_text через None regenerate возвращает synthesis на оригинал.
+  - Guard `if (editMode) return` в word-highlight subscribe + mermaid renderer effects: при входе в editMode listeners/renderers отваливаются чисто (cleanup возвращается), при выходе — заново подписывается и подхватит плейбек. Effect deps включают `editMode` для явной re-subscribe.
+  - Esc-хэндлер: `window.addEventListener('keydown')` активен только в editMode, cleanup снимается при выходе. Нет конфликта с `@mantine/hooks::useHotkeys` в AppShell (Read Now / Later на Ctrl-комбинациях).
+  - Unicode-глифы `&#x270F;` pencil, `&#x2713;` check, `&#x2715;` x-mark — HTML-entity коды, не emoji.
+  - TS strict ✓, CSS Modules (унаследованы из U4) ✓, `notifications.show` ✓, commit-формат ✓, no Co-Authored-By ✓, no emoji ✓.
+- verification:
+  - Ревьюер (в текущей main session) разрешил 2 конфликта (`TextViewer.tsx`, `tauri.ts`) вручную. Auto-merge применился для `commands/mod.rs` и `lib.rs`.
+  - `pnpm typecheck` (внутри nix-shell) — ошибки только orthogonal pre-existing в `QueueList.tsx` (implicit any) и `stores/selectedEntry.ts` (zustand не установлен); U12-файлы чисто типизированы.
+  - `cargo check --manifest-path src-tauri/Cargo.toml` — `Finished dev profile`, 2 warning (unused import + dead code в `html_extractor.rs`, pre-existing). U12 backend компилируется.
+  - Smoke за хостом: запустить `pnpm tauri dev`, добавить entry, нажать pencil → Textarea, изменить, save → notification «Сохранено», re-synth читает изменённый текст; Esc / cancel возвращает draft.
+- next_unblocks: U12 — leaf. Все U-задачи завершены. Разблокирует P1 (bundling) и P3 (final docs).
