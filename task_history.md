@@ -432,5 +432,11 @@ Ready-tasks после завершения:
 - note: агент создал mini-crate `src-tauri/pipeline-core/` для изолированного тестирования. Возможно потенциальный конфликт если R2/R3/R4/R5 тоже создавали mini-crate'ы — ревьюер разрешит.
 - note: опять placeholder иконки для `generate_context!()`.
 
-### R5 — в работе
-R5 (code) — autopilot-sonnet.
+### R5 — CodeNormalizer (Rust)
+- status: **awaiting review**
+- branch: task/r5-code-normalizer
+- worker_commit: `08bff2e feat(pipeline): port CodeNormalizer to Rust`
+- crates: нет новых.
+- tests: **61/61** в основном крейте (camelCase 19, PascalCase 8, snake_case 16, kebab-case 13, SCREAMING_SNAKE_CASE 3 + TestMixedIdentifiers).
+- cross-normalizer: `CodeIdentifierNormalizer::new()` без аргументов. Встроены собственные `number_to_russian()` (0-90 + 64/256) и `spell_abbreviation()`. Будут заменены ссылками на R2/R4 в R9.
+- deferred: CodeBlockHandler — R8.
