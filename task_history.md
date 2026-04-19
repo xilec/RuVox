@@ -330,15 +330,47 @@ Ready-tasks после завершения:
 - unblocks: **B4 (Tauri commands)** — все три core-сервиса (storage=B1, tts=B2, player=B3) готовы после merge B2→B3.
 
 ### B3 — Audio player (tauri-plugin-mpv)
-- status: **awaiting review**
+- status: **merged**
+- branch: task/b3-player
 - worker_commit: `21eb92e feat(player): libmpv wrapper with scaletempo2 and position events`
+- reviewer: autopilot Opus, review_result: ok
+- merge_sha: `dd579de merge(b3): audio player with tauri-plugin-mpv`
 - crate_chosen: **tauri-plugin-mpv v0.5.2** (github.com/nini22P/tauri-plugin-mpv, MPL-2.0). mpv запускается как subprocess с JSON IPC сокетом. Альтернатива `libmpv2 5.0.3` отвергнута в пользу нативной Tauri-интеграции.
 - mpv args: `--no-video --af=scaletempo2 --audio-pitch-correction=no --no-ytdl`.
 - API: `load`, `play`, `pause`, `resume`, `stop`, `seek`, `set_speed`, `set_volume`, `position_sec`, `duration_sec`, `current_entry_id`, `is_playing`.
 - events: `playback_started/paused/stopped/finished/position` (per ipc-contract).
 - `spawn_position_emitter` — tokio-task с 100 ms polling.
-- cargo build: ок (инкрементально 2s). Test: 1 passed, 1 ignored (нужен mpv runtime).
-- known_gaps: EOF detection через polling (порог `position >= duration - 0.05s`) — может пропустить очень короткие (<50ms) файлы. IPC round-trip через Unix socket на каждый `get_property` — приемлемо при 100ms.
+- cargo build: воркер верифицировал (инкрементально 2s) в nix-shell. Test: 1 passed, 1 ignored (нужен mpv runtime).
+- verification_gap: `cargo check` всего крейта в sandbox невозможен (atk / gdk-pixbuf-2.0 pkg-config не подхватываются без nix-shell env). Ревьюер провёл semantic-audit исходников и cross-crate API-проверку через распакованный `tauri-plugin-mpv-0.5.2` из cargo registry.
+- findings (ревью):
+  - Rules compliance: `unwrap()` в prod-путях нет; `thiserror` для `PlayerError` (Init/Op/FileNotFound); `tracing::{debug, warn}` для логов; нет emoji; нет `anyhow`. `.expect()` на `.run()` — идиоматично для Tauri main.
+  - Event payloads совпадают с `docs/ipc-contract.md`: `playback_started {entry_id}`, `playback_paused {entry_id, position_sec}`, `playback_stopped {}`, `playback_finished {entry_id}`, `playback_position {position_sec, entry_id}`. `resume` намеренно не re-emit'ит `playback_started` (согласно спеке — это отдельное событие).
+  - Lock safety: `parking_lot::Mutex<State>` с sync `.lock()` — без `await` внутри критических секций. `Player: Send + Sync` гарантированно.
+  - `Drop for Player`: вызывает `mpv().destroy(WINDOW_LABEL)`. Плагин также перехватывает `CloseRequested` на окне `"main"` и вызывает `destroy()` — двойной destroy вернёт "No running mpv process found", только warn-log. Безопасно.
+  - Socket lifecycle: mpv subprocess менеджится плагином (`MpvInstance`). Каждый `command()` / `read_property_f64()` делает новый IPC round-trip через Unix socket (`ipc::send_command`). Нет persistent socket → нет утечек, но если mpv крашится между вызовами — следующий вызов вернёт `PlayerError::Op`; auto-respawn не реализован (задокументировано ниже как known_gap).
+  - `is_playing` state: обновляется атомарно через `State.is_playing`; emitter-task пропускает tick если `!is_playing`, но сама tokio-task живёт всё время жизни приложения (10 Hz polling, cost minimal).
+  - AppHandle для emit: передаётся через `Player.app: AppHandle<R>` и отдельным clone в `spawn_position_emitter` — корректно.
+- known_gaps (задокументированы в mod.rs комментариях / task_history):
+  - EOF detection через polling (порог `position >= duration - 0.05s`) — может пропустить файлы <50 ms. Acceptable для TTS-кейса (минимальная длительность фраз ~0.3s).
+  - IPC round-trip через Unix socket на каждый `get_property` (time-pos, duration) — приемлемо при 100 ms tick.
+  - Нет auto-respawn при crash mpv-процесса. B4 должен отреагировать на `PlayerError::Op` через UI-ошибку; полноценный supervisor — follow-up.
+  - `spawn_position_emitter` не прерывает tokio task при stop/drop — бежит forever. Minor leak на очень редкие stop-restart-stop циклы; для MVP ок.
+  - capabilities/default.json НЕ включает `mpv:default` — frontend не может вызывать mpv команды через `invoke`, только через наши backend-обёртки. Это намеренно (B3 rust-only API).
+- merge_conflicts:
+  - `src-tauri/src/lib.rs` — add/add по `pub mod`. Резолв: объединение (`pipeline; player; storage; tray; tts;`) + setup-хук с последовательным вызовом `tray::init(...)?` → `Player::new(...)?` → `spawn_position_emitter` → `app.manage(player)`.
+  - `src-tauri/Cargo.toml` — add/add по deps. Резолв: все depеnды, tokio features union (`macros+rt+rt-multi-thread+process+io-util+sync+time`).
+  - `src-tauri/icons/{128x128,128x128@2x,32x32}.png` — add/add binary. Взяты ruvox2-версии (R3 placeholder, 67 байт).
+  - `src-tauri/Cargo.lock` — взят ruvox2; следующий `cargo build` в nix-shell добавит `tauri-plugin-mpv` + зависимости + недостающие tokio features. Ожидается чистая регенерация.
+- merge_decisions:
+  - `src-tauri/tauri.conf.json` — **отказ от worker's изменения**. Воркер заменил `.icns` + `.ico` на одну `icon.png` (Linux-only), что бы сломало cross-platform bundling на macOS/Windows. Возврат к ruvox2-версии с `.icns/.ico` (пустые файлы оставлены с R3-merge, fixup брендинга отложен до P1).
+  - `src-tauri/icons/icon.png` — **отброшен** (был добавлен воркером как часть Linux-only переключения; не нужен при сохранении `.icns/.ico` пути).
+  - `src-tauri/gen/schemas/*.json` — **отброшены** и добавлены в `.gitignore` (`src-tauri/gen/`). Это tauri-build generated артефакты (capability/schema JSON, 2531 строки каждый), не должны трекаться в git — перегенерируются при каждом `cargo build`.
+- unblocks: **B4 (Tauri commands)** — все три core-сервиса (storage=B1, tts=B2, player=B3) merged. B4 может начать реализацию Tauri-команд поверх B3 API.
+- followups (не блокеры):
+  - Auto-respawn mpv при crash (аналогично ttsd-supervisor'у в B2) — v2.
+  - Persistent IPC соединение для reduce round-trip overhead — оптимизация для P1.
+  - EOF detection через mpv `observed_properties: ["idle-active"]` или `playback-time` event — более точно чем polling threshold.
+  - `capabilities/default.json` добавить `mpv:default` если фронт захочет прямой invoke (не требуется для MVP).
 
 ### U10 — Notifications integration
 - status: **awaiting review**
