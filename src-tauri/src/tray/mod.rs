@@ -1,7 +1,7 @@
 use tauri::{
     image::Image,
     menu::{Menu, MenuItem, PredefinedMenuItem},
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, Runtime,
 };
 
@@ -39,6 +39,8 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
+            // TODO(B4): replace emits with direct `add_clipboard_entry` invocations once
+            // Tauri commands are implemented.
             "read_now" => {
                 let _ = app.emit("tray_read_now", ());
             }
@@ -64,9 +66,8 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click {
+            if let TrayIconEvent::DoubleClick {
                 button: MouseButton::Left,
-                button_state: MouseButtonState::Up,
                 ..
             } = event
             {
@@ -82,23 +83,7 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     Ok(())
 }
 
-fn load_tray_icon<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Image<'static>> {
-    // Prefer tray.png from the icons directory.
-    // tray.svg is stored in icons/ as the source, but Tauri's Image API requires
-    // a raster format (PNG/ICO). tray.png is a pre-converted version.
-    // If tray.png is missing, fall back to the default window icon.
-    if let Ok(resource_dir) = app.path().resource_dir() {
-        let png_path = resource_dir.join("icons/tray.png");
-        if png_path.exists() {
-            if let Ok(img) = Image::from_path(&png_path) {
-                return Ok(img);
-            }
-        }
-    }
-
-    // Fallback: use the application's default window icon so the tray always
-    // has something to show even without an explicit tray icon asset.
-    app.default_window_icon()
-        .cloned()
-        .ok_or_else(|| tauri::Error::InvalidWindowHandle)
+fn load_tray_icon<R: Runtime>(_app: &AppHandle<R>) -> tauri::Result<Image<'static>> {
+    // Embed PNG at compile time — no resource_dir dependency.
+    Image::from_bytes(include_bytes!("../../icons/tray.png"))
 }
