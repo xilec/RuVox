@@ -585,3 +585,46 @@ Ready-tasks после завершения:
   - `.expect("valid regex")` на compile-time regex — допустимо.
   - no `unsafe`, no emoji, комментарии WHY-only.
 - **big unblock:** все R1-R8 merged. **R9 (pipeline integration) готов к запуску** — зависит от R1+R2+R3+R4+R5+R6+R7+R8 и F5 (golden fixtures).
+
+### R9 — Pipeline integration (TTSPipeline в Rust)
+- status: **merged**
+- branch: task/r9-pipeline-integration
+- worker_commit: `23a3031 feat(pipeline): integrate TTSPipeline with char mapping`
+- reviewer: autopilot Opus, review_result: ok
+- merge_sha: `84e09b1 merge(r9): TTSPipeline integration with char mapping`
+- deliverable:
+  - `src-tauri/src/pipeline/mod.rs` (968 строк): `TTSPipeline` struct владеющий всеми нормалайзерами (Number/English/Abbreviation/Symbol/CodeBlock/CodeIdentifier). Методы `new()`, `process(&mut self, &str) -> String`, `process_with_char_mapping(&mut self, &str) -> (String, CharMapping)`.
+  - **16-фазный pipeline**, порядок 1:1 с legacy `pipeline.py::process_with_char_mapping`: BOM → code blocks → quotes → dashes → whitespace → inline code → markdown → URLs/emails/IPs/paths → sizes → versions → ranges → percentages → operators → symbols+tilde → code identifiers → English → numbers → postprocess.
+  - 37 golden fixture integration tests (inline в `#[cfg(test)] mod tests` в `pipeline/mod.rs`).
+- tests: **620 passed / 0 failed** в изолированном мини-крейте (cargo 1.95 offline). Reviewer повторил прогон на финальном ruvox2 state после merge — всё зелёное.
+  - **37/37 golden fixtures** (все фикстуры из F5 — number/size/range/version/percentage/url/email/ip/filepath/markdown-{link,header,list,code_block,inline_code,mermaid}/camelCase/PascalCase/snake_case/kebab-case/abbreviation/english_word/greek/math/arrow/operators/mixed_paragraph).
+  - 6 unit-sanity тестов (empty, plain russian, number_inline, mermaid_marker, char_mapping_nonempty, process_vs_char_mapping_consistent).
+  - Плюс унаследованные tracked_text + все normalizers-тесты.
+- follow-ups fixed в этой же задаче:
+  1. **R5 memory leak (критичный)**: `CodeIdentifierNormalizer::basic_transliterate` использовал `Box::leak(c.to_string().into_boxed_str())` для каждого unmapped char — утечка на каждый вызов. Заменено на `String` accumulator с `result.push(c)` / `result.push_str(s)`. ✓
+  2. **R2 Regex::new в горячих путях**: `normalize_range`, `normalize_size`, `normalize_version` компилировали regex на каждый вызов. Заменены на `OnceLock<Regex>` статические инстансы. Также `apply_genitive_replacements` заменил per-call `Regex::new(r"\bfrom\b")` на ручной substring-поиск с char-boundary проверкой. ✓
+  3. **R8 default mode**: `CodeBlockHandler::default` был `Brief`. Legacy `config.py::PipelineConfig.code_block_mode` default = `"full"`. Изменено на `Full`. ✓
+  4. **R8 normalize_token для operators/brackets**: возвращал пустую строку. Теперь вызывает `SymbolNormalizer::normalize(token)` — произносит brackets/operators через общий словарь (как legacy `_normalize_token`). ✓
+  5. **R6 URLPathNormalizer::transliterate_word**: не проверял IT_TERMS перед `transliterate_simple`. Теперь сначала IT_TERMS, затем fallback — `"github"` транслитерируется в `"гитхаб"` а не в посимвольный `"гитхуб"`. ✓
+  6. **Operators: single `=` исключён** из `TRACKED_OPERATOR_KEYS` (соответствует legacy `_TRACKED_OPERATOR_KEYS`). Включение `=` повредило бы math-формулы вида `α = β`. ✓
+- phase-order verification (1:1 с legacy):
+  - BOM removal → code blocks (do NOT move this — должно быть до dash/whitespace norm иначе TrackedText skip matches внутри replacement regions) → quotes (« » " " ' ') → dashes (— –) → `\n{3,}` → `[ \t]+` → inline code → markdown headers/links/lists → URLs → emails → IPs → paths → sizes → versions → ranges → percentages → operators (longest-first) → Greek + math + arrows + `~digit` → CamelCase/PascalCase/snake_case/kebab-case → C++/C# + IT_TERMS/abbreviations/transliterate → standalone integers → postprocess spaces/newlines + trim.
+- code quality:
+  - `unwrap()` только на invariant-guaranteed `caps.get(0)` после `captures_iter`, `next_ch` после `!empty` — идиоматично.
+  - `.expect("valid regex")` на compile-time regex внутри `OnceLock` — допустимо.
+  - no `unsafe`, no emoji, нет `anyhow` в prod.
+  - commit message формат `<type>(<module>): <desc>` ✓.
+- deviations от legacy (задокументированы, не блокеры):
+  1. **`config.read_operators`**: в R9 TTSPipeline::new() нет config-параметра — operators phase запускается всегда. В legacy может быть отключен `PipelineConfig(read_operators=False)`. Legacy default = `True`, так что текущий дефолт R9 совпадает. Добавить config-параметр — follow-up для B4 (если фронт захочет управлять).
+  2. **Не портированы**: `set_code_mode()`, `get_unknown_words()`, `get_warnings()`, `print_warnings()`, `process_with_mapping()` (word-level). `set_code_mode` потребуется для B4 (если пользователь переключает режим из UI). Word-mapping не нужен — char-mapping более точный.
+  3. **Single-use URL/email/IP/path normalizer**: создаётся inline scope `URLPathNormalizer::new(eng, num)` на каждый `process_with_char_mapping` вызов вместо хранения в struct. Это обходит Rust borrow-restrictions (нормалайзер держит &references на english/number). Runtime-cost минимален (структура stateless). Follow-up: рефакторинг в Rc/Arc или `&self`-методы для меньшего surface area.
+- merge_conflicts: **zero**. R9 форкался от ветки с актуальным ruvox2 state — все зависимости уже были merged. Файлы normalizers (code/numbers/urls/code_blocks) R9 редактировал для follow-up fixes; эти файлы не трогались в ruvox2 между merged R5/R6/R8 и HEAD, поэтому merge прошёл чисто стратегией ort.
+- rust-version bump: `1.77 → 1.80`. Обоснование: `std::sync::LazyLock` стабилизирован в 1.80 и используется в `abbreviations.rs` (merged в R4). На хост-машине cargo 1.95 — без проблем.
+- Cargo.lock: R9 branch содержал локальный snapshot с `tokio` dependency в `ruvox-tauri` — в итоговом ruvox2 это добавление уже присутствовало от B1/B2 (tokio там тоже в `[dependencies]`). Ort-стратегия auto-merge корректно объединила.
+- verification_gap: полный `nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml"` на всём крейте в sandbox ревьюера невозможен (gtk/webkit system libs через nix-daemon). Ревьюер верифицировал pipeline как изолированный lib-крейт — компилирует clean на stable Rust + 620/620 тестов зелёные offline. **Live-прогон полного `cargo test` на хосте (с nix-shell) остаётся за пользователем** перед запуском R10 (golden harness integration).
+- **big unblock**: R10 (golden-test harness integration) + B4 (Tauri commands поверх pipeline) теперь разблокированы. U11 также разблокирован, если зависит от R9+B4.
+
+### Следующие действия координатора
+- Запустить **R10** worker (golden harness в `src-tauri/tests/golden.rs` с diff-выводом при несовпадениях).
+- Запустить **B4** worker (Tauri commands `normalize_text`, `synthesize_text`, и т.д. используя `TTSPipeline`). Потребуется B1+B2+B3+R9 — все merged.
+- Hot-spot для хоста: прогнать `nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml -p ruvox-tauri"` на ruvox2 HEAD (`84e09b1`) чтобы поймать возможные edge-cases взаимодействия всего крейта (webkit/gtk system deps нужны).
