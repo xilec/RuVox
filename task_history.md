@@ -29,4 +29,43 @@
 
 ## Wave 1: запуск foundation-агентов
 
-<!-- Записи добавляются ниже по мере событий. -->
+### [2026-04-19] F1 — Nix flake
+- status: in_progress
+- agent: autopilot-sonnet (background)
+- branch: task/f1-nix-flake
+- started: 2026-04-19
+- deps: none
+
+### [2026-04-19] F3 — IPC contract doc
+- status: in_progress
+- agent: autopilot-sonnet (background)
+- branch: task/f3-ipc-contract
+- started: 2026-04-19
+- deps: none
+
+### [2026-04-19] F5 — Golden-test fixtures
+- status: in_progress
+- agent: autopilot-sonnet (background)
+- branch: task/f5-golden-fixtures
+- started: 2026-04-19
+- deps: none
+
+### [2026-04-19] F8 — Update AGENTS.md/CLAUDE.md
+- status: in_progress
+- agent: autopilot-sonnet (background)
+- branch: task/f8-project-instructions
+- started: 2026-04-19
+- deps: none
+
+---
+
+## Ожидание завершения Wave 1
+
+Ready-tasks после завершения:
+- F1 done → разблокирует F2, F6.
+- F2 done → разблокирует F4, B3, B5, U1, R1 (через F4).
+- F3 done → разблокирует B2 (через F7).
+- F5 done → разблокирует R10 (через R9).
+- F8 done → standalone.
+
+Первый kandidат следующей волны — F2 и F6 (зависят от F1).
