@@ -410,5 +410,15 @@ Ready-tasks после завершения:
 - tests: **109/109** в изолированном мини-крейте.
 - логика: точно повторяет Python — `SPECIAL_CASES` → `AS_WORD` → single letter → `spell_out` → `handle_mixed`.
 
-### R3, R5, R7 — в работе
-R3 (english), R5 (code), R7 (symbols) — autopilot-sonnet параллельно.
+### R3 — EnglishNormalizer (Rust)
+- status: **awaiting review**
+- branch: task/r3-english-normalizer
+- worker_commit: `2f3f077 feat(pipeline): port EnglishNormalizer to Rust`
+- crates: `aho-corasick = "1"`, `once_cell = "1"`.
+- tests: **53/53**.
+- реализация: `IT_TERMS` ~130 терминов (HashMap), MULTI_WORD_PHRASES (15 фраз, longest-match), `TRANSLIT_AC` через aho-corasick LeftmostLongest + ascii_case_insensitive (digraph-first), `add_custom_terms`, `get/clear_unknown_words`.
+- deviation: G2P (g2p_en/ARPAbet) не портирован — в Rust нет эквивалента, Python использовал как optional fallback. `transliterate_simple` покрывает основное поведение тестов.
+- note: worker опять добавил placeholder PNG иконки в `src-tauri/icons/` (для `tauri::generate_context!()` в тестах). Может конфликтовать с аналогичными из B2 при merge.
+
+### R5, R7 — в работе
+R5 (code), R7 (symbols) — autopilot-sonnet параллельно.
