@@ -1,6 +1,7 @@
 pub mod pipeline;
 pub mod storage;
 pub mod tray;
+pub mod tts;
 
 pub fn run() {
     tauri::Builder::default()
