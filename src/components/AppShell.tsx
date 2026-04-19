@@ -1,7 +1,12 @@
 import { AppShell as MantineAppShell, Title, Group } from '@mantine/core';
+import { useState } from 'react';
+import type { TextEntry } from '../lib/tauri';
 import { ThemeSwitcher } from './ThemeSwitcher';
+import { TextViewer } from './TextViewer';
 
 export function AppShell() {
+  const [selectedEntry] = useState<TextEntry | null>(null);
+
   return (
     <MantineAppShell
       header={{ height: 56 }}
@@ -23,8 +28,8 @@ export function AppShell() {
       </MantineAppShell.Navbar>
 
       <MantineAppShell.Main>
-        {/* Player placeholder (U3) + TextViewer placeholder (U4) */}
-        <Title order={6} c="dimmed">Просмотр текста появится в U4</Title>
+        {/* Player placeholder (U3) */}
+        <TextViewer entry={selectedEntry} />
       </MantineAppShell.Main>
     </MantineAppShell>
   );
