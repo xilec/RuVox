@@ -417,14 +417,16 @@ Ready-tasks после завершения:
 - логика: точно повторяет Python — `SPECIAL_CASES` → `AS_WORD` → single letter → `spell_out` → `handle_mixed`.
 
 ### R3 — EnglishNormalizer (Rust)
-- status: **awaiting review**
+- status: **merged**
 - branch: task/r3-english-normalizer
 - worker_commit: `2f3f077 feat(pipeline): port EnglishNormalizer to Rust`
+- reviewer: autopilot Opus, review_result: ok
+- merge_sha: `de9bbad merge(r3): EnglishNormalizer port`
 - crates: `aho-corasick = "1"`, `once_cell = "1"`.
 - tests: **53/53**.
-- реализация: `IT_TERMS` ~130 терминов (HashMap), MULTI_WORD_PHRASES (15 фраз, longest-match), `TRANSLIT_AC` через aho-corasick LeftmostLongest + ascii_case_insensitive (digraph-first), `add_custom_terms`, `get/clear_unknown_words`.
-- deviation: G2P (g2p_en/ARPAbet) не портирован — в Rust нет эквивалента, Python использовал как optional fallback. `transliterate_simple` покрывает основное поведение тестов.
-- note: worker опять добавил placeholder PNG иконки в `src-tauri/icons/` (для `tauri::generate_context!()` в тестах). Может конфликтовать с аналогичными из B2 при merge.
+- merge_conflict: `normalizers/mod.rs` add/add — разрешён (обе строки `pub mod english;` + `pub mod numbers;`).
+- deviation: G2P не портирован (нет Rust-эквивалента).
+- **big unblock:** R6 (URLPathNormalizer) запущен — зависел от R1+R2+R3, все merged.
 
 ### R7 — SymbolNormalizer + constants (Rust)
 - status: **awaiting review**
