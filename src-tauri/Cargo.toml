@@ -20,6 +20,12 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-opener = "2"
+# tauri-plugin-mpv: Tauri plugin that controls an mpv subprocess via JSON IPC.
+# Chosen over libmpv2 per project spec ("prefer tauri-plugin-mpv if viable").
+# Viable: supports custom CLI args (--af=scaletempo2, --no-video), arbitrary
+# mpv commands via command(["get_property", "time-pos"]) for position polling,
+# and integrates with the Tauri AppHandle we already hold.
+tauri-plugin-mpv = "0.5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }
@@ -28,7 +34,7 @@ regex = "1"
 aho-corasick = "1"
 once_cell = "1"
 dirs = "6"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "io-util", "sync", "time"] }
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "process", "io-util", "sync", "time"] }
 parking_lot = "0.12"
 thiserror = "1"
 tracing = "0.1"
