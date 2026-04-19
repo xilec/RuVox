@@ -431,6 +431,14 @@ Ready-tasks после завершения:
 - deviation: G2P не портирован (нет Rust-эквивалента).
 - **big unblock:** R6 (URLPathNormalizer) запущен — зависел от R1+R2+R3, все merged.
 
+### R6 — URLPathNormalizer (Rust)
+- status: **awaiting review**
+- branch: task/r6-urls-normalizer
+- worker_commit: `f0aee08 feat(pipeline): port URLPathNormalizer to Rust`
+- crates: нет новых (reuse: regex, aho-corasick, once_cell).
+- tests: **53/53** (+164 из R2/R3 = 217 в mini-crate).
+- deviation: добавлен `new_without_english(numbers)` конструктор — Python-тесты создают `URLPathNormalizer()` без english, ожидая домены НЕ транслитерируются. Основной `new(english, numbers)` сохранён. В R9 ownership модель будет согласована.
+
 ### R7 — SymbolNormalizer + constants (Rust)
 - status: **awaiting review**
 - branch: task/r7-symbols-normalizer
