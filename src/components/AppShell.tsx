@@ -1,12 +1,12 @@
 import { AppShell as MantineAppShell, Title, Group, Stack } from '@mantine/core';
-import { useState } from 'react';
-import type { TextEntry } from '../lib/tauri';
 import { ThemeSwitcher } from './ThemeSwitcher';
 import { TextViewer } from './TextViewer';
 import { Player } from './Player';
+import { QueueList } from './QueueList';
+import { useSelectedEntry } from '../stores/selectedEntry';
 
 export function AppShell() {
-  const [selectedEntry] = useState<TextEntry | null>(null);
+  const { selectedEntry } = useSelectedEntry();
 
   return (
     <MantineAppShell
@@ -27,8 +27,8 @@ export function AppShell() {
       </MantineAppShell.Header>
 
       <MantineAppShell.Navbar p="md">
-        <Title order={6} c="dimmed">Очередь</Title>
-        {/* QueueList placeholder (task U2) */}
+        <Title order={6} c="dimmed" mb="xs">Очередь</Title>
+        <QueueList />
       </MantineAppShell.Navbar>
 
       <MantineAppShell.Main>
