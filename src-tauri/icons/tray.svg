@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <!-- Speech bubble with T for TTS -->
+  <path fill="#4a90d9" d="M20 2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h4l4 4 4-4h4c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
+  <!-- Letter T -->
+  <text x="12" y="13" text-anchor="middle" dominant-baseline="middle" fill="white" font-family="sans-serif" font-size="10" font-weight="bold">Т</text>
+  <!-- Sound waves -->
+  <path fill="none" stroke="#2d5a87" stroke-width="1.5" stroke-linecap="round" d="M17 7c1 1 1 3 0 4M19 5c2 2 2 6 0 8"/>
+</svg>
