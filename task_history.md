@@ -347,9 +347,15 @@ Ready-tasks после завершения:
 - tests: 24/24 в изолированном мини-крейте (15 новых + 9 из F4 schema).
 
 ### R1 — TrackedText + CharMapping (Rust)
-- status: **awaiting review**
+- status: **merged**
 - branch: task/r1-tracked-text
 - worker_commit: `b6279e8 feat(pipeline): TrackedText + CharMapping port from Python`
+- reviewer: autopilot Opus, review_result: ok
+- merge_sha: `d8114a3 merge(r1): TrackedText + CharMapping port`
+- merge_note: ревьюер использовал plumbing (`merge-tree` + `commit-tree` + `update-ref`) потому что main worktree в момент merge был на task/u7-mermaid с чужой work-in-progress.
+- minor_followup: `current_to_original` использует `(i64 - i64) as usize` без underflow guard — добавить `saturating_sub` или `debug_assert` когда будет время.
+- integration-тесты из `test_char_mapping.py` с фикстурой `pipeline` не портированы — будут в R3/R5.
+- **big unblock:** запущены R2, R3, R4, R5, R7 параллельно (5 нормалайзеров).
 - crates added: `regex = "1"`.
 - tests: **35/35 passed** в изолированном мини-крейте (sandbox без nix-shell). Порт из `legacy/tests/tts_pipeline/test_tracked_text.py` + `test_char_mapping.py` + несколько расширенных edge-cases (nested replacement, char_map length после expansion/contraction).
 - architecture: **Unicode codepoint индексы** в `CharMapping.char_map` (не байтовые) — семантически идентично Python `str`. Вспомогательные функции `byte_to_char_idx`/`char_to_byte_idx`/`char_len`. Важно для корректной работы с кириллицей.
