@@ -440,13 +440,17 @@ Ready-tasks после завершения:
 - deviation: добавлен `new_without_english(numbers)` конструктор — Python-тесты создают `URLPathNormalizer()` без english, ожидая домены НЕ транслитерируются. Основной `new(english, numbers)` сохранён. В R9 ownership модель будет согласована.
 
 ### R7 — SymbolNormalizer + constants (Rust)
-- status: **awaiting review**
+- status: **merged**
 - branch: task/r7-symbols-normalizer
 - worker_commit: `89cdc71 feat(pipeline): port SymbolNormalizer + constants to Rust`
-- crates: `once_cell = "1"`.
-- tests: **111/111** в mini-crate (`src-tauri/pipeline-core/`) + **146** в основном крейте. Покрытие test_symbols.py + доп. тесты для MATH_SYMBOLS и ARROW_SYMBOLS (которых в Python не было).
-- note: агент создал mini-crate `src-tauri/pipeline-core/` для изолированного тестирования. Возможно потенциальный конфликт если R2/R3/R4/R5 тоже создавали mini-crate'ы — ревьюер разрешит.
-- note: опять placeholder иконки для `generate_context!()`.
+- reviewer: autopilot Opus, review_result: ok
+- merge_sha: `65b69dc merge(r7): SymbolNormalizer + constants port`
+- crates: `once_cell = "1"` (уже был из R3).
+- tests: **111/111**.
+- merge_conflicts: placeholder-иконки (5) + mod-файлы + Cargo.toml — разрешены ревьюером тривиально. Ветка R7 была форкнута от R1-merge (до R2/R3/R4/B5), но 3-way merge корректно сохранил всё.
+- cleanup: mini-crate `src-tauri/pipeline-core/` **удалён** ревьюером (дублировал main, был нужен только как test staging).
+- content: GREEK_LETTERS (23+23), MATH_SYMBOLS (18), ARROW_SYMBOLS (6), многосимвольные операторы.
+- **potential unblock:** R8 (CodeBlockHandler) — зависит от R1+R5+R7. R5 ещё ждёт ревью; после его merge R8 разблокируется.
 
 ### R5 — CodeNormalizer (Rust)
 - status: **awaiting review**
