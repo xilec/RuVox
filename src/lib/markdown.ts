@@ -37,8 +37,12 @@ md.renderer.rules.fence = (tokens, idx) => {
   if (info === 'mermaid') {
     return `<div class="mermaid">${escapeMermaidCode(token.content)}</div>\n`;
   }
-  const highlighted =
-    md.options.highlight?.(token.content, info, '') ?? escapeHtml(token.content);
+  // The highlight callback returns '' for unknown / missing languages,
+  // so a `??` fallback never fires (empty string is not nullish). Use a
+  // truthiness check and escape the raw content explicitly when no
+  // highlighter result is available.
+  const highlightResult = md.options.highlight?.(token.content, info, '');
+  const highlighted = highlightResult ? highlightResult : escapeHtml(token.content);
   const langClass = info ? ` class="language-${escapeHtml(info)}"` : '';
   return `<pre><code${langClass}>${highlighted}</code></pre>\n`;
 };
