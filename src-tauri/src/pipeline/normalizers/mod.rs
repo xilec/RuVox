@@ -3,3 +3,4 @@ pub mod code;
 pub mod english;
 pub mod numbers;
 pub mod symbols;
+pub mod urls;
