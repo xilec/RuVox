@@ -669,7 +669,39 @@ Ready-tasks после завершения:
   - Integration: HTML-pipeline пока не подключен к `TTSPipeline::process_with_char_mapping` — сейчас `extract_text_for_tts` standalone. Для полноценного "copy HTML → TTS" потребуется: frontend detect `text/html` MIME → backend command `process_html_for_tts(html) -> (String, CharMapping)` внутри которого `extract_text_for_tts` → `TTSPipeline::process_with_char_mapping`. Follow-up для B4.
 - next_unblocks: нет прямых задач. U8 — leaf в дереве enrichment-фичей. Разблокировка через B4 (frontend HTML-pipeline bridge) и U5 (word highlighting в HTML режиме).
 
+### R10 — Golden-test harness
+- status: **merged** (2026-04-20)
+- branch: task/r10-golden-harness
+- worker_commit: `8e1dcda test(pipeline): golden-fixture harness for TTSPipeline`
+- reviewer: autopilot Opus, review_result: ok
+- merge_sha: `e22b559 merge(r10): golden-fixture harness with markdown bugfix`
+- deps_met: R9 merged (`84e09b1`), F5 merged (37 fixtures).
+- deliverable:
+  - `src-tauri/tests/golden.rs` (223 строки): single `#[test] fn golden_fixtures()`, сканирует `tests/fixtures/pipeline/*.input.txt`, прогоняет `TTSPipeline::process_with_char_mapping`, сверяет текст с `*.expected.txt` и char_map с `*.char_map.json`. Diff через `similar::TextDiff::from_lines` для текстовых mismatch; per-entry listing для char_map (first 10 + remaining-count). Поддерживает запуск как из `src-tauri/` так и из workspace root (автодетект `tests/fixtures/pipeline`).
+  - `src-tauri/Cargo.toml` — `similar = "2"` добавлен в `[dev-dependencies]`.
+- tests: **37/37 golden fixtures passed** + **640 unit tests passed / 0 failed** в изолированном мини-крейте ревьюера (cargo 1.95 offline). Golden test сам по себе — `cargo test --test golden` — зелёный.
+- **BONUS bugfix (in-scope, pipeline correctness):** воркер обнаружил что фикстура `markdown_link` падала — `process_markdown_tracked` обрабатывал `[GitHub](https://github.com)` одной операцией `tracked.replace(full_pattern, pre_normalized)`, что помечало все символы link-текста как already-replaced и блокировало последующую CamelCase-нормализацию ("GitHub" → "гит хуб"). Исправление:
+  - `src-tauri/src/pipeline/tracked_text.rs` — добавлен метод `replace_byte_range(byte_start, byte_end, to)` — single-occurrence byte-range replace, повторяет инварианты `sub` (`is_current_char_pos_inside_replacement` + `find_containing_replacement` guards, push Replacement/OffsetEntry, invalidate sorted cache, splice `current`).
+  - `src-tauri/src/pipeline/mod.rs::process_markdown_tracked` — переработан: сначала regex `re_md_link_full` собирает byte-ranges для `[` prefix и `](url)` suffix каждой ссылки, затем применяет `replace_byte_range` в reverse-document-order (сначала suffix на высоком offset, потом bracket на низком). Link-text остаётся нетронутым как original chars и проходит через последующие CamelCase/English phases.
+  - Удалён dead helper `normalize_link_text` (больше не нужен — pre-normalization не требуется).
+  - Совместимо с legacy `pipeline.py::_process_markdown_tracked` (420-426): two separate `tracked.sub(r"\[(?=...)\]", "")` + `tracked.sub(r"\]\([^)]+\)", "")`. Rust-версия использует byte-range вместо второго regex, но эффект семантически идентичен.
+- review_findings:
+  - **`replace_byte_range` invariants:** корректно вычисляет `orig_start`/`orig_end` через `current_to_original` (с учётом что `char_end > char_start` — иначе orig_end = orig_start), проверяет `already_replaced` per-codepoint, гвардит через `find_containing_replacement`, повторяет `insert(0, ...)` pattern для `offset_entries` что совпадает с `sub`. `sorted_entries_cache` инвалидируется. `self.current` пересобирается через string splicing на byte offsets (каллер гарантирует char-boundary — regex match.start()/end() + +1 для ASCII `[`).
+  - **No-op guard:** если `old_text == to`, возвращается сразу без touch state — корректно (соответствует `sub` early-continue).
+  - **Harness quality:** auto-detect fixtures directory покрывает оба способа запуска (`cargo test --manifest-path src-tauri/Cargo.toml --test golden` из root и `cd src-tauri && cargo test --test golden`). `similar::TextDiff` даёт читаемый unified diff. `char_map_diff` с лимитом 10 + "and N more" предотвращает гигантский вывод на крупных расхождениях. Trailing `\n` обрезается из expected/input — совместимо с F5 фикстурами где Python генератор оставляет trailing newline.
+  - **Style:** `.expect(...)` в тестовых helpers — допустимо по правилу (unwrap запрещён только в production-путях). Комментарии WHY присутствуют (секции "Fixture discovery", "Diff helpers", "Main harness"). No emoji, commit message формат `<type>(<module>): <desc>` ✓.
+- merge_conflicts:
+  - `src-tauri/Cargo.lock`, `src-tauri/Cargo.toml`, `src-tauri/src/pipeline/mod.rs` — все auto-merged ort-стратегией. R10 форкался от `07df66c` (после R9), ruvox2 ушёл вперёд на U8 (`6722e02`). Конфликтов требующих ручного резолва — нет.
+  - `similar = "2"` (R10) + `scraper = "0.19"` + `thiserror = "1"` + `tracing = "0.1"` (U8) union-объединились корректно.
+  - `pub mod html_extractor;` (U8) сосуществует с R10 изменениями в `process_markdown_tracked` — разные регионы файла.
+- verification:
+  - Ревьюер собрал мини-крейт `{regex, aho-corasick, once_cell, serde, serde_json, scraper, thiserror, tracing} + dev: similar` (без tauri/tokio/mpv) с копией полного `pipeline/` и `tests/fixtures/` + `tests/golden.rs`. `cargo test --test golden -- --nocapture` → `golden_fixtures: 37/37 passed`. `cargo test --lib` → `640 passed / 0 failed`.
+  - Полный `nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml"` в sandbox ревьюера по-прежнему невозможен (GTK/webkit2gtk system-libs через nix-daemon Unix-socket). Live-прогон остаётся за хостом.
+- known_deviations: none. Bugfix — **улучшение** корректности относительно R9, не регрессия. Legacy Python behavior теперь воспроизводится точно.
+- refactoring_note_for_future: `TrackedText::replace_byte_range` — новый публичный API-метод. Использовать в будущих пайплайновых фазах где нужна single-occurrence замена без риска случайного совпадения с другими текстовыми регионами (например, экранированные символы, HTML-entity substitution, indexed-positional-replaces из парсера). Инварианты: caller должен передавать byte-boundary aligned offsets (обычно из `regex::Match::start()/end()`), и убедиться что range не пересекает character boundaries (`self.current.is_char_boundary(byte_start/byte_end)`).
+- next_unblocks: **все критические задачи R-серии + tests завершены**. После B4 merge готова к запуску вся UI-волна (U2, U3, U5, U6, U9, U11, U12). R10 — последний test-harness в задачах rewrite; дальнейшие golden-fixtures просто добавляются в F5 без изменения harness.
+
 ### Следующие действия координатора
-- Запустить **R10** worker (golden harness в `src-tauri/tests/golden.rs` с diff-выводом при несовпадениях).
-- Запустить **B4** worker (Tauri commands `normalize_text`, `synthesize_text`, и т.д. используя `TTSPipeline`). Потребуется B1+B2+B3+R9 — все merged.
-- Hot-spot для хоста: прогнать `nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml -p ruvox-tauri"` на ruvox2 HEAD (`6722e02` после U8 merge) чтобы поймать возможные edge-cases взаимодействия всего крейта (webkit/gtk system deps нужны). `pnpm install && pnpm typecheck && pnpm build` аналогично — проверить сборку фронта после добавления dompurify.
+- Дождаться merge **B4** worker (Tauri commands `normalize_text`, `synthesize_text`, и т.д. используя `TTSPipeline`). Ветка `task/b4-tauri-commands` активна. Зависимости B1+B2+B3+R9 merged.
+- После B4 merge — запустить UI-волну: **U2, U3, U5, U6, U9, U11, U12** (все разблокированы).
+- Hot-spot для хоста: прогнать `nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml --test golden"` на ruvox2 HEAD (`e22b559` после R10 merge) чтобы подтвердить 37/37 на целевой toolchain. `pnpm install && pnpm typecheck && pnpm build` аналогично.
