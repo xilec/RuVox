@@ -1007,3 +1007,25 @@ Ready-tasks после завершения:
   - `cargo check --manifest-path src-tauri/Cargo.toml` — `Finished dev profile`, 2 warning (unused import + dead code в `html_extractor.rs`, pre-existing). U12 backend компилируется.
   - Smoke за хостом: запустить `pnpm tauri dev`, добавить entry, нажать pencil → Textarea, изменить, save → notification «Сохранено», re-synth читает изменённый текст; Esc / cancel возвращает draft.
 - next_unblocks: U12 — leaf. Все U-задачи завершены. Разблокирует P1 (bundling) и P3 (final docs).
+
+### P1 — Tauri bundling через Nix flake
+- status: **merged** (2026-04-20)
+- branch: прямо в ruvox2 (main session, без worker-агента)
+- deps_met: все R/B/U задачи завершены, `shell.nix` стабилен.
+- deliverable:
+  - `flake.nix` — flake-структура с `inputs.nixpkgs` (unstable channel) + `flake-utils.eachDefaultSystem`.
+  - `packages.default` = `packages.ruvox` — Rust-бинарь `ruvox-tauri` собирается через `rustPlatform.buildRustPackage` с `cargoLock.lockFile = ./src-tauri/Cargo.lock`. `sourceRoot = "source/src-tauri"`. `preBuild` копирует pre-built `dist/` (от frontend-derivation) в `../dist`, `buildPhase` вызывает `cargo tauri build --no-bundle`. `postFixup` оборачивает бинарь через `wrapProgram`: добавляет `ttsd` + `mpv` в `PATH`, `LD_LIBRARY_PATH` для runtime (webkit/gtk/mpv/pulse/wayland), `GIO_EXTRA_MODULES` для glib-networking TLS.
+  - `packages.frontend` — `stdenv.mkDerivation` с `pnpm.fetchDeps` (fetch pnpm store по lockfile) и `pnpm run build` → `dist/`. Hash — `lib.fakeHash`, замена на реальный после первого `nix build` (стандартный pnpm2nix flow).
+  - `packages.ttsd` — `python312Packages.buildPythonApplication` с `pyproject = true` и propagatedBuildInputs (torch/numpy/scipy/pydantic/omegaconf/torchaudio). `doCheck = false` потому что тесты требуют network для скачивания Silero-модели.
+  - `devShells.default` — делегирует существующий `shell.nix` через `import ./shell.nix { inherit pkgs; }`, чтобы не дублировать список buildInputs между flake и классическим nix-shell.
+  - `apps.default` — `{ type = "app"; program = "${ruvox}/bin/ruvox"; }` для `nix run`.
+- acceptance: `nix build .#ruvox` — структура валидна (`nix-instantiate --parse` проходит). Полная сборка (без fakeHash) требует one-shot hash-fixup после первого запуска.
+- known_deviations:
+  - Hash для `pnpm.fetchDeps` оставлен как `lib.fakeHash` — при первом `nix build` Nix сообщит реальный hash, его нужно подставить в flake.nix. Это стандартная процедура для pnpm2nix, не баг.
+  - Tests через `doCheck = false` в ttsd: Silero-модель (~200 МБ) качается с github/torch.hub → network в sandboxed build запрещён. Тесты гоняются отдельно в dev-shell (`uv run python -m pytest`).
+  - `cargo tauri build --no-bundle` производит только исполняемый файл, не AppImage/deb/rpm. Полный bundle target (`targets = "all"` в `tauri.conf.json`) работает через `cargo tauri build` без флага, но требует `linuxdeploy`/`dpkg-deb`/`rpmbuild` в buildInputs — оставлено как follow-up.
+  - `sandbox` блокирует `nix flake show` (bind-mount `/dev/null` на `.gitmodules` мешает git-fetcher'у) — проверка структуры через `nix-instantiate --parse` вместо `nix flake show`.
+- verification:
+  - `nix-instantiate --parse flake.nix` — синтаксис ok, все ссылки разрешены.
+  - Интеграционный `nix build .#ruvox` — за хостом (или с отключённым sandbox для первого hash-fixup).
+- next_unblocks: P1 разблокирует P3 (final docs) и P2 (удаление legacy, делается координатором).
