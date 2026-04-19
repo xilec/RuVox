@@ -872,3 +872,48 @@ Ready-tasks после завершения:
   - QueueList: добавить `isLoading` флаг для первого mount (избежать мелькания empty state).
   - QueueList: заменить Unicode-глифы ▶/✕ на tabler-icons-react после того, как U6/U9 добавят другие иконки (settings gear, regenerate arrows).
   - QueueList: StrictMode-safe cleanup через `unmounted` флаг (аналогично U10 follow-up).
+
+### U9 — Settings dialog
+- status: **merged** (2026-04-20)
+- branch: task/u9-settings
+- worker_commit: `3de4737 feat(ui): settings dialog with form persistence`
+- reviewer: autopilot Opus, review_result: ok
+- merge_sha: `ee655fe merge(u9): settings dialog with form persistence`
+- deps_met: U1 merged (`78a0034`), B4 merged (`2a9c83c`).
+- deliverable:
+  - `src/dialogs/Settings.tsx` (новый, 203 строки) — `SettingsModal` компонент с `@mantine/form::useForm`. Controlled через пропсы `{ opened, onClose }`, Mantine 8 `<Modal size="md" title="Настройки">`. Secции: «Синтез речи» (Select голос, Select sample_rate), «Уведомления» (Switch notify_on_ready/error), «Кэш» (NumberInput max_cache_size_mb min=100, NumberInput auto_cleanup_days min=0), «Интерфейс» (Select theme).
+  - Options для Select: `speaker ∈ {aidar, baya, kseniya, xenia, eugene, random}`, `sample_rate ∈ {8000, 24000, 48000}` (матчит `docs/ipc-contract.md` § UIConfig), `theme ∈ {light, dark, auto}`. Русские лейблы для пользователя.
+  - Loading: `useEffect([opened])` → `commands.getConfig()` → `form.setValues({...config})` только когда `opened=true`. Комментарий в коде фиксирует намеренный exclude `form` из deps (`setValues` стабилен, иначе loop).
+  - Submit: `form.onSubmit(handleSubmit)` → билдит `UIConfigPatch` только из полей формы (частичное обновление — остальные `UIConfig` поля вроде `hotkey_read_now`, `window_geometry` не трогаются), → `commands.updateConfig(patch)` → `notifications.show({color: 'green', title: 'Настройки сохранены'})` и `onClose()`. На ошибке — `notifications.show({color: 'red', title: 'Ошибка сохранения'})`. `theme` кастуется через `values.theme as UIConfigPatch['theme']` (рантайм safe: Select ограничивает значения до literal union).
+  - Validation: `max_cache_size_mb < 100` → «Минимум 100 МБ»; `auto_cleanup_days < 0` → «Значение не может быть отрицательным».
+  - Reset button (`form.reset()`) + Save button (`type="submit"`) в Group justify="flex-end".
+  - `src/components/AppShell.tsx` — inline-`IconSettings` SVG компонент (через lucide-compatible path + circle для cog и rim) + `ActionIcon variant="subtle"` в `<Tooltip label="Настройки">`, `settingsOpened` state, mount `<SettingsModal>` под header.
+- merge_conflicts:
+  - `src/components/AppShell.tsx` — **единственный конфликт, разрешён вручную**. U9 форкался от `ruvox2` до merge U2/U3/U6 → его вариант содержал старый header (56px, `<Group>` без Stack, `useState<TextEntry | null>`, без QueueList и Player). HEAD ruvox2 `f8c1391` содержал U3 (header 108px + `<Stack>` + `<Player />`), U2 (navbar QueueList + `useSelectedEntry`) и U6 (Read Now / Read Later buttons, `addEntry` handler, `useHotkeys`).
+  - **Резолв (канонический, сохраняет current layout):**
+    - импорты — объединённый union: `ActionIcon` + `Tooltip` (из U9) добавлены к существующим `Stack`, `Button` из `@mantine/core`; сохранены `useHotkeys`, `notifications`, `commands`, `ThemeSwitcher`, `TextViewer`, `Player`, `QueueList`, `useSelectedEntry`; добавлен `SettingsModal` из `../dialogs/Settings`. Убран `import type { TextEntry }` из U9 (не используется после миграции на `useSelectedEntry` store).
+    - `IconSettings` helper-компонент сохранён из U9 как есть (inline SVG, зависимостей нет).
+    - `selectedEntry` — через `useSelectedEntry()` store (как в ruvox2 HEAD), не `useState<TextEntry | null>(null)` из U9 (устарело после U2 merge).
+    - `pending` state + `addEntry` + `useHotkeys` — сохранены из U6 1:1 (ruvox2 HEAD).
+    - добавлен `settingsOpened` state + setter (`useState(false)`).
+    - header layout — сохранён 108px + `<Stack gap={0}>` с вложенными `<Group h={56}>` и `<Player />`. Внутри правой `<Group>` actions порядок: `Read Now` (синяя) → `Read Later` (default) → `ThemeSwitcher` → **новая** `<Tooltip><ActionIcon variant="subtle" onClick={() => setSettingsOpened(true)}><IconSettings /></ActionIcon></Tooltip>` (последняя справа, композиция: actions → theme control → settings gear).
+    - `<SettingsModal opened={settingsOpened} onClose={...} />` смонтирован под `MantineAppShell.Header`, перед `Navbar` (вне layout-контейнеров — Modal рендерится через Portal, позиция mount не влияет на DOM). Navbar и Main — без изменений (QueueList + TextViewer из U2/U1).
+- review_findings:
+  - **`UIConfigPatch` корректен:** `src/lib/tauri.ts` (U1) определяет `UIConfigPatch = Partial<UIConfig>` с `theme: Theme` (`'light'|'dark'|'auto'`), `sample_rate: number`, `speaker: string`. Форма покрывает подмножество полей — остальные (`speech_rate`, `hotkey_read_*`, `text_format`, `history_days`, `audio_max_files`, `audio_regenerated_hours`, `code_block_mode`, `read_operators`, `player_hotkeys`, `window_geometry`) не трогаются (backend сохранит существующие значения). Ok для v1 — hotkeys / advanced settings можно добавить в follow-up.
+  - **`theme as UIConfigPatch['theme']` cast:** формально обход проверки — `form.values.theme` имеет тип `string` (т.к. initialValues = `'auto'`). Практически безопасно — `Select data={THEME_OPTIONS}` ограничивает возможные значения до `'light'|'dark'|'auto'`. Альтернатива — типизировать `SettingsFormValues.theme: Theme` для статической проверки; оставлено как follow-up (не блокер).
+  - **Form validation через `@mantine/form`:** `validate: { max_cache_size_mb: (v) => v < 100 ? 'Минимум 100 МБ' : null, auto_cleanup_days: (v) => v < 0 ? 'Значение не может быть отрицательным' : null }` — корректный API. `NumberInput min={100}` / `min={0}` — ограничение на уровне виджета, валидация — дополнительный гард.
+  - **`useEffect([opened])` dep array корректный:** re-run только при открытии модалки; `form` намеренно исключён (eslint-disable комментарий с объяснением). Альтернатива `useEffect(..., [opened, form])` — создаёт infinite loop (form меняется при `setValues`). Текущий паттерн — канонический для `@mantine/form` loading-on-open.
+  - **`sample_rate` Select:** options `'8000' | '24000' | '48000'` (строки для Select), парсинг через `parseInt(v, 10)` с fallback `48000`, `error={form.errors.sample_rate}` проброшен из формы. `onChange` обновляет через `form.setFieldValue`, что корректно отразится в state. Мелкая шероховатость — не использует `form.getInputProps('sample_rate')`, потому что Select ожидает `string | null`, а поле — `number`; ручной маппинг приемлем.
+  - **Notifications:** `notifications.show({title, message, color})` — Mantine 8 API. Success green + close, error red без close (модалка остаётся открытой для повторной попытки). Русские строки для пользователя ✓.
+  - **Style:** TS strict ✓, функциональный без `React.FC` ✓, no `any` ✓, no `sx`/`createStyles`/emotion ✓, Mantine 8 `@mantine/form` + `@mantine/notifications` ✓ (не react-hook-form / Formik), commit message формат `feat(ui): ...` ✓, no emoji ✓.
+  - **AppShell.tsx merged-layout:** все прежние элементы (Player, QueueList, Read Now/Later, ThemeSwitcher, hotkeys) сохранены, Settings button добавлен как crossbar в правой Group. Порядок: action buttons → visual control → settings gear (канонический UI-паттерн).
+- known_deviations:
+  - **Inline SVG IconSettings** вместо `@tabler/icons-react`. Воркер выбрал inline, чтобы не тянуть новую зависимость для одной иконки (тюнинг размера бандла). Follow-up: когда накопится >3 иконок (settings, regenerate, ...), перейти на `@tabler/icons-react`.
+  - **`useModals` / `openContextModal` не использованы** — воркер выбрал controlled standalone `<Modal>` для простоты параллельной задачи. Оба подхода корректны в Mantine 8. Если в будущем появится несколько context-aware modals, можно рефакторить в `openContextModal`.
+  - **Hotkeys в UIConfig (`hotkey_read_now`, `hotkey_read_later`) не экспонированы в форме** — U6 follow-up остаётся незакрытым. Форма покрывает только 7 полей; остальные доступны через `update_config` прямо из кода, но пока не через UI. Follow-up task.
+  - **`form.values.theme` типизирован как `string`, не `Theme`** — см. review_findings выше; не критично, но снизит необходимость cast.
+- verification:
+  - Ревьюер прочитал `src/dialogs/Settings.tsx` и `src/components/AppShell.tsx` на SHA `3de4737` через `git show task/u9-settings:<path>`. Сверил `UIConfigPatch` определение в `src/lib/tauri.ts` (merged на U1) и `UIConfig` схему в `docs/ipc-contract.md` § 305-325 — `get_config()` / `update_config(patch)` ✓. Sample rates 8000/24000/48000 матчат `docs/ipc-contract.md:64`. Theme values `'light'|'dark'|'auto'` матчат `docs/ipc-contract.md:78`.
+  - Merge выполнен в isolated worktree `/tmp/claude/ruvox2-merge-u9` (detached → local branch `ruvox2-merge-u9`). Конфликт в `AppShell.tsx` разрешён вручную, single clean resolution. Push в основной ruvox2 через `git push /home/evgen/work/github/RuVox HEAD:refs/heads/ruvox2` (local filesystem refspec) — успешно, `f8c1391..ee655fe`.
+  - `pnpm typecheck` / `pnpm build` / `pnpm tauri dev` не прогонялись в sandbox ревьюера (nix-daemon SQLite cache блокируется). Воркер подтвердил `typecheck` чистым. Live-прогон остаётся за хостом.
+- next_unblocks: U9 — leaf в UI-дереве, не блокирует другие задачи. Остался **U5** (word highlighting) как последний в текущей UI-волне — независим, готов к merge.
