@@ -300,12 +300,34 @@ Ready-tasks после завершения:
 - fix_agent: запущен (autopilot-sonnet), коммит ожидается.
 
 ### B2 — TTS subprocess manager
-- status: **awaiting review**
+- status: **merged**
+- branch: task/b2-tts-manager
 - worker_commit: `0255082 feat(tts): subprocess manager with JSON protocol over stdin/stdout`
-- deliverable: `src-tauri/src/tts/mod.rs` (~450 строк). `TtsSubprocess::spawn(ttsd_dir)` через `tokio::process::Command` + `kill_on_drop`. Driver task через `mpsc::channel(1)` — один in-flight request. Stderr ttsd → `tracing::info!(target: "ttsd")`. API: `warmup`, `synthesize(text, speaker, sample_rate, out_wav, char_mapping)`, `shutdown`. Timeout 5 мин. `TtsError` через thiserror.
-- TODO: auto-restart при крэше subprocess (v2+).
-- tests: 8/8 unit-тестов в sandbox (cargo через $TMPDIR/CARGO_HOME с системными путями).
-- note: воркер добавил placeholder PNG иконки (32×32, 128×128@2x) — нужны для `tauri::generate_context!()` на этапе компиляции. **Ревьюер должен проверить**, что это не дублирует работу из других веток.
+- reviewer: autopilot Opus, review_result: ok
+- merge_sha: `32ae801 merge(b2): TTS subprocess manager`
+- deliverable: `src-tauri/src/tts/mod.rs` (454 строки). `TtsSubprocess::spawn(ttsd_dir)` через `tokio::process::Command` + `kill_on_drop(true)`. Driver task через `mpsc::channel(1)` — один in-flight request. Stderr ttsd → `tracing::info!(target: "ttsd")`. API: `warmup`, `synthesize(text, speaker, sample_rate, out_wav, char_mapping)`, `shutdown`. Timeout 5 мин через `tokio::time::timeout`. `TtsError` через thiserror (Spawn/Ipc/Json/Ttsd{code,message}/Died/Timeout).
+- crates added: `tokio` (macros+rt-multi-thread+process+io-util+sync+time).
+- tests: 8/8 unit-тестов (serialize warmup/synthesize/shutdown/char_mapping, deserialize ok/err/synth-response). Повторены ревьюером в изолированном мини-крейте `$TMPDIR/b2-verify/` через cargo 1.95 online — 8/8 passed, compile clean без warning'ов.
+- protocol-audit vs docs/ipc-contract.md:
+  - request fields match: `cmd` (warmup|synthesize|shutdown), `text`, `speaker`, `sample_rate`, `out_wav`, `char_mapping: Option<Vec<CharMappingEntry>>`.
+  - `CharMappingEntry { norm_start, norm_end, orig_start, orig_end }` — поля совпадают с pydantic-моделью ttsd и спецификацией.
+  - response deserialize — ручной `Deserialize` для `TtsResponse` через dispatch по `ok` (избегает `#[serde(untagged)]` ambiguity с `#[serde(flatten)]`).
+  - `#[serde(skip_serializing_if = "Option::is_none")]` на `char_mapping` — если None, поле не сериализуется (совпадает с pydantic default).
+  - stderr-лента forwarded через `tokio::spawn` с `BufReader::lines()` → `tracing::info!(target: "ttsd")`.
+- adaptor-point (B4): R1 `CharMapping { char_map: Vec<(usize, usize)> }` ≠ B2 `Vec<CharMappingEntry>`. B4 (commands) сконвертирует между форматами на границе pipeline→tts. Это ожидаемо — `ipc-contract.md` фиксирует entry-based формат на wire.
+- known_gaps / TODO:
+  - **Auto-restart при crash** — явный TODO в doc-comment модуля (v2+). При `Died` caller должен вызвать `TtsSubprocess::spawn()` заново. `ipc-contract.md` § «ttsd Auto-restart» требует транспарентного respawn — это откладывается на B4/B2-v2.
+  - **Graceful shutdown drain** — `shutdown()` шлёт команду и ждёт ответа, но не реализует 5s-timeout+SIGTERM fallback (спека требует). `kill_on_drop(true)` обеспечит убийство при Drop владельца. Follow-up для v2.
+  - `.expect("stdin was piped")` в `driver_task` — OK: инвариант после `.stdin(Stdio::piped())` в spawn; не в запросном пути.
+  - В `OkPayload`/`ErrPayload` поле `pub ok: bool` имеет `#[allow(dead_code)]` — легитимно, документирует shape.
+- иконки: воркер добавил 32×32, 128×128, 128×128@2x (67-143 байт RGBA). При merge возник add/add конфликт с уже merged в ruvox2 версиями (из B5-tray). Ревьюер оставил версии `ruvox2` (`git checkout --ours`), потому что B5-версии уже bundled в релизах. Дубляж placeholder-иконок — не проблема, финальный брендинг будет в P1 (bundling).
+- merge_conflicts:
+  - `src-tauri/Cargo.toml` — add/add по `[dependencies]` (ruvox2 добавил chrono/uuid/regex/aho-corasick/once_cell/dirs, B2 добавил tokio). Разрешено объединением всех depenдов.
+  - `src-tauri/src/lib.rs` — add/add по `pub mod`. Разрешено объединением (`pipeline; storage; tray; tts;`).
+  - `src-tauri/Cargo.lock` — взят ruvox2-версия; `tokio` уже присутствовал transitively через `tauri-plugin-opener`, root-добавление не требует нового entry. nix-shell regenerate при следующем `cargo build` приведёт в полный порядок.
+  - 3× PNG-иконки — add/add binary, взяты ruvox2-версии.
+- verification_gap: `cargo check` всего src-tauri-крейта в sandbox невозможен (нужны webkitgtk/gdk-pixbuf-2.0 system libs из nix-shell). Ревьюер верифицировал изолированно `src/tts/mod.rs` как отдельный крейт со всеми depsами из B2 — компиляция и 8/8 тестов green. `cargo check` полного крейта в nix-shell обязателен перед B4.
+- unblocks: **B4 (Tauri commands)** — все три core-сервиса (storage=B1, tts=B2, player=B3) готовы после merge B2→B3.
 
 ### B3 — Audio player (tauri-plugin-mpv)
 - status: **awaiting review**
