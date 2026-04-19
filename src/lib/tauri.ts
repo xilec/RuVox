@@ -58,6 +58,10 @@ export interface UIConfig {
 
 export type UIConfigPatch = Partial<UIConfig>;
 
+export interface PreviewNormalizeResult {
+  normalized: string;
+}
+
 // --- Commands (frontend → backend) ---
 
 export const commands = {
@@ -115,7 +119,10 @@ export const commands = {
   getCacheStats: (): Promise<{ total_bytes: number; audio_file_count: number }> =>
     tauriInvoke('get_cache_stats'),
 
-  previewNormalize: (text: string): Promise<{ normalized: string }> =>
+  updateEntryEditedText: (id: EntryId, edited: string | null): Promise<void> =>
+    tauriInvoke('update_entry_edited_text', { id, edited }),
+
+  previewNormalize: (text: string): Promise<PreviewNormalizeResult> =>
     tauriInvoke('preview_normalize', { text }),
 };
 
