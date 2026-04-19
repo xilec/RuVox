@@ -102,12 +102,18 @@ Ready-tasks после завершения:
 - schema check: `len(char_map) == len(transformed)` для всех 37 фикстур; содержимое `expected.txt` реально отражает pipeline output (прописные числа, транслит английского, camelCase→слова, mermaid-маркер).
 
 ### F1 — Nix flake
-- status: **awaiting review**
+- status: **needs_fix → fix in progress**
 - branch: task/f1-nix-flake
 - worker_commit: `cb4edb8 build(nix): shell.nix with Rust + Node + Python + Tauri deps`
-- reviewer: запущен, в процессе (live-тест `nix-shell --run ...` может занять 10–20 мин на первой сборке webkitgtk)
-- **deviation (documented):** `cargo-tauri` отсутствует в nixpkgs 25.11 → пользователь ставит через `cargo install tauri-cli --version "^2"`. Задокументировано в комментарии shell.nix.
-- ref: rustc 1.91.1 из стандартного nixpkgs (не `rust-overlay`/`fenix`), rustfmt+clippy+clippy-driver включены. nodejs_20 + pnpm + uv (3.12 python). `webkitgtk_4_1`, `libsoup_3`, `mpv-unwrapped`, pkg-config — включены.
+- reviewer: autopilot (Opus), review_result: **needs_fix**
+- **blocker:** воркер ошибочно решил, что `cargo-tauri` отсутствует в nixpkgs 25.11, и задокументировал workaround через `cargo install tauri-cli`. Ревьюер проверил: `pkgs.cargo-tauri` 2.9.4 **есть** в nixpkgs 25.11 (`pkgs/by-name/ca/cargo-tauri/package.nix`). Воркер, вероятно, искал `tauri-cli`/`tauri` вместо корректного имени.
+- fix_agent: запущен на исправление (autopilot-sonnet). Задача: добавить `cargo-tauri` в `buildInputs`, убрать неверные комментарии и echo из shellHook.
+- other_checks_ok:
+  - Rust 1.91.1 + rustfmt + clippy + clippy-driver — ок.
+  - nodejs_20 + pnpm 10.25.0 + uv 0.9.16 + python312 — ок.
+  - webkitgtk_4_1 2.50.3 + libsoup_3 + mpv-unwrapped 0.40.0 + pkg-config — ок (статическая верификация через `nix-instantiate --eval`; sandbox блокирует live `nix-shell --run`, проверка на хост-машине остаётся за пользователем).
+  - Style: mirror `legacy/shell.nix` pattern. Без Claude-упоминаний.
+- minor: `openssl.dev` указан отдельно от `openssl` — избыточно, но не ошибка. Может быть почищено в fix-коммите.
 
 ---
 
