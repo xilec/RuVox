@@ -365,8 +365,17 @@ impl CodeBlockHandler {
             return self.normalize_simple_word(&lower);
         }
 
-        // Operators / brackets / punctuation — not spoken in TTS output
-        String::new()
+        // Operators, brackets, and punctuation — look up in shared SYMBOLS dictionary.
+        // This mirrors legacy CodeBlockHandler._normalize_token which calls
+        // SymbolNormalizer.SYMBOLS.get(token). Unknown tokens return empty string.
+        use crate::pipeline::normalizers::symbols::SymbolNormalizer;
+        let sym = SymbolNormalizer::new();
+        let spoken = sym.normalize(token);
+        if spoken != token {
+            spoken.to_string()
+        } else {
+            String::new()
+        }
     }
 
     /// Look up a lower-cased word in CODE_WORDS and fall back to basic transliterate.

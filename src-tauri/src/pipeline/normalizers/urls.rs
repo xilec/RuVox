@@ -94,12 +94,15 @@ impl<'a> URLPathNormalizer<'a> {
         match self.english {
             None => word.to_string(),
             Some(_en) => {
-                // Transliterate ASCII alphabetic words; non-ASCII pass through.
-                if word.is_ascii() && word.chars().any(|c| c.is_alphabetic()) {
-                    super::english::transliterate_simple(&word.to_lowercase())
-                } else {
-                    word.to_string()
+                if !word.is_ascii() || !word.chars().any(|c| c.is_alphabetic()) {
+                    return word.to_string();
                 }
+                let lower = word.to_lowercase();
+                // Check IT_TERMS first (e.g. "github" → "гитхаб").
+                if let Some(v) = super::english::IT_TERMS.get(lower.as_str()) {
+                    return v.to_string();
+                }
+                super::english::transliterate_simple(&lower)
             }
         }
     }
