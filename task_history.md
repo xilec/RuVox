@@ -409,12 +409,15 @@ Ready-tasks после завершения:
 - TestOrdinalNumbers пропущен (placeholder `pass`).
 
 ### R4 — AbbreviationNormalizer (Rust)
-- status: **awaiting review**
+- status: **merged**
 - branch: task/r4-abbreviations-normalizer
 - worker_commit: `bebd754 feat(pipeline): port AbbreviationNormalizer to Rust`
-- crates: `std::sync::LazyLock` (Rust 1.80+), `once_cell` не потребовался.
-- tests: **109/109** в изолированном мини-крейте.
-- логика: точно повторяет Python — `SPECIAL_CASES` → `AS_WORD` → single letter → `spell_out` → `handle_mixed`.
+- reviewer: autopilot Opus, review_result: ok
+- merge_sha: `c981079 merge(r4): AbbreviationNormalizer port`
+- crates: `std::sync::LazyLock`, без новых внешних.
+- tests: **109/109**.
+- merge_conflict: `normalizers/mod.rs` резолвом + `pub mod abbreviations;`.
+- followup: `rust-version = 1.77` в Cargo.toml, а LazyLock стабилизирован в 1.80. Поднять rust-version или заменить на `once_cell::Lazy`.
 
 ### R3 — EnglishNormalizer (Rust)
 - status: **merged**
