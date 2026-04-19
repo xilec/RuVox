@@ -55,3 +55,14 @@ Thumbs.db
 *.local
 .env
 tmp/
+
+# Node.js / Frontend
+node_modules/
+dist/
+*.log
+
+# Rust / Tauri
+src-tauri/target/
+
+# pnpm
+.pnpm-debug.log
