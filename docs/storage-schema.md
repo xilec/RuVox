@@ -60,8 +60,8 @@ interface TextEntry {
   normalized_text: string | null;       // Output of the Rust TTS pipeline
   edited_text: string | null;           // User-edited override (RuVox 2.0+, absent in legacy)
   status: EntryStatus;
-  created_at: string;                   // ISO 8601, e.g. "2025-01-01T12:00:00.123456"
-  audio_generated_at: string | null;    // ISO 8601 when WAV was written
+  created_at: string;                   // Naive UTC timestamp, e.g. "2026-02-15T11:46:51.504055" (no TZ suffix)
+  audio_generated_at: string | null;    // Naive UTC timestamp when WAV was written
   audio_path: string | null;            // Filename relative to audio/, e.g. "{uuid}.wav"
   timestamps_path: string | null;       // Filename relative to audio/, e.g. "{uuid}.timestamps.json"
   duration_sec: number | null;          // Audio duration in seconds
@@ -70,11 +70,13 @@ interface TextEntry {
 }
 ```
 
+> **Timestamp format:** `created_at` and `audio_generated_at` are stored as naive UTC timestamps — no timezone suffix (e.g. `"2026-02-15T11:46:51.504055"`). This matches the format written by legacy Python's `datetime.now().isoformat()`. Both legacy and RuVox 2.0 treat these values as UTC.
+
 ### Notes on `status`
 
 `"playing"` is a runtime state only. The storage layer **never persists** an entry with `status: "playing"`. Before writing, any entry in `"playing"` state is saved as `"ready"`.
 
-On load, entries whose `status` is `"processing"` are reset to `"pending"` (the process that was synthesizing them no longer exists).
+On load, entries whose `status` is `"processing"` AND have no `audio_path` are reset to `"pending"` (the process that was synthesizing them no longer exists; matches legacy behavior in `_validate_entry_status`).
 
 Entries with `status: "ready"` whose `audio_path` file is missing are reset to `"pending"`.
 

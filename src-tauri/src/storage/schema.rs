@@ -1,20 +1,18 @@
-use chrono::{DateTime, Utc};
+use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub type EntryId = Uuid;
 
 /// Status of a text entry through the TTS pipeline.
-///
-/// `Playing` is a runtime-only state: it is set in memory when playback
-/// starts, but persisted entries are never written with this status.
-/// On load, any entry with status `Playing` is treated as `Ready`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum EntryStatus {
     Pending,
     Processing,
     Ready,
+    /// Currently playing. Runtime-only — must NOT be persisted to history.json
+    /// (legacy history doesn't know this value; storage layer must normalize Playing -> Ready before save).
     Playing,
     Error,
 }
@@ -35,7 +33,9 @@ pub struct TextEntry {
     #[serde(default)]
     pub edited_text: Option<String>,
     pub status: EntryStatus,
-    pub created_at: DateTime<Utc>,
+    // Legacy writes naive UTC timestamps (no TZ suffix), e.g. "2026-02-15T11:46:51.504055".
+    // We use NaiveDateTime to match that format exactly; callers treat these as UTC.
+    pub created_at: NaiveDateTime,
     #[serde(default)]
     pub audio_path: Option<String>,
     #[serde(default)]
@@ -43,7 +43,7 @@ pub struct TextEntry {
     #[serde(default)]
     pub duration_sec: Option<f64>,
     #[serde(default)]
-    pub audio_generated_at: Option<DateTime<Utc>>,
+    pub audio_generated_at: Option<NaiveDateTime>,
     #[serde(default)]
     pub was_regenerated: bool,
     #[serde(default)]
@@ -114,9 +114,10 @@ pub struct UIConfig {
     pub code_block_mode: String,
     #[serde(default = "UIConfig::default_true")]
     pub read_operators: bool,
+    // theme default "auto" intentionally diverges from legacy "dark_pro" — see RewriteNotes.md §2
     #[serde(default = "UIConfig::default_theme")]
     pub theme: String,
-    #[serde(default)]
+    #[serde(default = "UIConfig::default_player_hotkeys")]
     pub player_hotkeys: std::collections::HashMap<String, String>,
     #[serde(default)]
     pub window_geometry: Option<[i32; 4]>,
@@ -248,8 +249,8 @@ mod tests {
     }
 
     #[test]
-    fn deserialize_legacy_history() {
-        // Matches exactly what legacy TextEntry.to_dict() / storage._save_history() writes.
+    fn deserialize_real_legacy_history() {
+        // Format exactly as legacy/src/ruvox/ui/services/storage.py writes.
         let json = r#"{
             "version": 1,
             "entries": [
@@ -258,24 +259,20 @@ mod tests {
                     "original_text": "Пример",
                     "normalized_text": "Пример",
                     "status": "ready",
-                    "created_at": "2025-01-01T12:00:00+00:00",
+                    "created_at": "2026-02-15T11:46:51.504055",
                     "audio_path": "550e8400-e29b-41d4-a716-446655440000.wav",
                     "timestamps_path": "550e8400-e29b-41d4-a716-446655440000.timestamps.json",
                     "duration_sec": 3.5,
-                    "audio_generated_at": "2025-01-01T12:00:05+00:00",
-                    "was_regenerated": false,
-                    "error_message": null
+                    "audio_generated_at": "2026-02-15T11:46:55.123456"
                 }
             ]
         }"#;
-        let h: HistoryFile = serde_json::from_str(json).unwrap();
-        assert_eq!(h.version, 1);
+        let h: HistoryFile = serde_json::from_str(json).expect("must parse real legacy format");
         assert_eq!(h.entries.len(), 1);
-        let entry = &h.entries[0];
-        assert_eq!(entry.status, EntryStatus::Ready);
-        assert_eq!(entry.original_text, "Пример");
-        assert_eq!(entry.duration_sec, Some(3.5));
-        assert!(entry.audio_path.is_some());
+        assert_eq!(h.entries[0].status, EntryStatus::Ready);
+        assert_eq!(h.entries[0].original_text, "Пример");
+        assert_eq!(h.entries[0].duration_sec, Some(3.5));
+        assert!(h.entries[0].audio_path.is_some());
     }
 
     #[test]
@@ -325,7 +322,7 @@ mod tests {
             "id": "550e8400-e29b-41d4-a716-446655440000",
             "original_text": "Only text",
             "status": "pending",
-            "created_at": "2025-01-01T12:00:00+00:00"
+            "created_at": "2025-01-01T12:00:00.000000"
         }"#;
         let e: TextEntry = serde_json::from_str(json).unwrap();
         assert!(e.audio_path.is_none());
@@ -370,7 +367,7 @@ mod tests {
             "normalized_text": null,
             "edited_text": null,
             "status": "pending",
-            "created_at": "2025-06-01T08:00:00+00:00",
+            "created_at": "2025-06-01T08:00:00.000000",
             "audio_path": null,
             "timestamps_path": null,
             "duration_sec": null,
