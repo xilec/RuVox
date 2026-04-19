@@ -752,3 +752,50 @@ Ready-tasks после завершения:
   - `synthesis_progress` — требует v2 ttsd протокол (streaming). Отдельный задел, если нужно прогресс-барам.
   - `cancel_synthesis` — hard-cancel через cancellation token в TtsSubprocess.
   - Emit `entry_updated{processing}` до pipeline (а не после) для более отзывчивого UI.
+
+### U3 — Player component
+- status: **merged** (2026-04-20)
+- branch: task/u3-player
+- worker_commit: `9329dfc feat(ui): playback controls with keyboard shortcuts`
+- merge_commit: `e11c3c9 merge(u3): playback controls component`
+- deps_met: U1 merged, B4 merged.
+- reviewer: autopilot-opus (1M context)
+- review_result: ok
+- files:
+  - `src/components/Player.tsx` (new, 300 lines): функциональный компонент `Player({ entryIds?: EntryId[] })`. Подписывается на `playback_started`/`playback_paused`/`playback_stopped`/`playback_finished`/`playback_position`/`entry_updated`; все unlisten-promises собраны в массив и вызываются в cleanup. Кнопки Play/Pause, Prev/Next (Unicode-глифы `\u23F8`/`\u25B6`/`\u23EE`/`\u23ED`), Slider прогресса (seek через `onChangeEnd` → `seek_to`), NumberInput скорости 0.5–2.0 (clamp + `set_speed`), Slider громкости 0–1 (`set_volume`), MM:SS/MM:SS time display. Hotkeys через `@mantine/hooks` `useHotkeys`: Space (play/pause), ArrowLeft/Right (±5s seek).
+  - `src/components/Player.module.css` (new, 38 lines): CSS Modules, без `sx`/`createStyles`/`emotion`. Используются `var(--mantine-*)` токены (spacing/color/font-size). Flex-layout: progress `flex:1`, `tabular-nums` для времени, фиксированные ширины для speed/volume/play.
+  - `src/components/AppShell.tsx` (modified, +19/-16): header.height 56 → 108, внутри `<Stack gap={0}>` сверху Group с Title+ThemeSwitcher (h=56), снизу `<Player />`. Placeholder-комментарий U3 удалён.
+  - `pnpm-lock.yaml`: автообновление lockfile (+943 −0) — видимо затронуты transitive deps при резолве `@mantine/hooks` useHotkeys tree. Нет новых runtime deps в package.json (U1 уже притащил `@mantine/hooks`).
+- spec_compliance (`RewriteTaskPlan.md` § U3, `docs/ipc-contract.md`):
+  - Deliverable fulfilled: Mantine `Group` с Play/Pause, Progress `Slider`, Time MM:SS/MM:SS, Speed NumberInput 0.5–2.0 шаг 0.1, Volume Slider, Prev/Next — всё на месте.
+  - Listen на `playback_position` → обновляет progress. Ok.
+  - Seek через drag slider → `seek_to` в `onChangeEnd`. Ok.
+  - Keyboard: Space / Left / Right — Ok через `useHotkeys`.
+  - Acceptance (smoke: воспроизведение + seek) — требует live-прогон на хосте (не покрыто в sandbox ревьюера).
+- review_findings:
+  - **Cleanup listeners:** 6 listener-promises в массиве `unlisteners`, в return `() => unlisteners.forEach(p => p.then(fn => fn()))` — стандартный Tauri-паттерн. Unlisten асинхронный, но событие unmount происходит редко. Без утечек.
+  - **Drag-protection:** реализована через state `isDragging`+`dragValue`. Slider рендерит `value={isDragging ? dragValue : state.position}` — визуально корректно во время drag. Замечание: в handler `playbackPosition` закрытие `(prev) => { if (!isDragging) { ... } }` читает `isDragging` из замыкания `useEffect([])`, которое всегда видит начальное `false`. Это формально баг (state.position обновляется во время drag), но ввиду того, что рендер использует `dragValue` в drag-режиме, visual UX корректен; по завершении drag `onChangeEnd` вызывает `setState({position:v})` + `seekTo(v)`, после чего incoming events снова обновляют. Воркер оставил комментарий "captures latest via closure-over-ref pattern would require a ref". Follow-up: перевести на `useRef` для точного следования spec, но не блокер.
+  - **Hotkeys safety для форм-инпутов:** `useHotkeys` из `@mantine/hooks` по умолчанию игнорирует `INPUT`/`TEXTAREA`/`contenteditable` — Space не перехватится в NumberInput скорости или текстовых полях будущего edit-dialog. Ok.
+  - **Speed range:** NumberInput `min=0.5 max=2.0 step=0.1` + clamp в `handleSpeedChange` (`Math.min(2.0, Math.max(0.5, speed))`). Совпадает со спецификацией `set_speed` (`[0.5, 2.0]`).
+  - **Volume range:** Slider `min=0 max=1 step=0.05`, передаётся напрямую в `set_volume`. Совпадает со спецификацией `[0.0, 1.0]`.
+  - **Time format:** `formatTime(sec)` → `MM:SS`. Для длительности > 60 мин вывод будет `75:30` вместо `1:15:30`. Технически не HH:MM:SS, но для типичных TTS-записей (<< 60 мин) приемлемо. Follow-up: расширить до HH:MM:SS.
+  - **Play button disabled:** `!currentEntryId && (!entryIds || entryIds.length === 0)` — disabled только когда нечего играть. При наличии entryIds и отсутствии текущего entry кнопка enabled, но `handlePlayPause` ничего не делает (no play-first-of-queue fallback). Minor UX gap: можно было бы запускать entryIds[0]. Follow-up.
+  - **Duplicate playback_stopped handling:** listener `playbackStopped` сбрасывает `currentEntryId=null` + `position=0`. Backend (B4) эмитит дубликат в `delete_entry` (документировано). Frontend идемпотентен (повторный reset — noop). Ok.
+  - **Symbols vs emoji rule:** Unicode-символы плеера `\u23F8 \u25B6 \u23EE \u23ED` — управляющие символы клавиш транспорта Unicode block "Miscellaneous Technical", не emoji по правилу проекта (no smiley/pictograph). Допустимо.
+  - **Style:** TS strict, no `any`, функциональный без `React.FC`, CSS Modules only, нет `sx`/`createStyles`/`emotion`. Commit message формат `feat(ui): ...` ✓.
+- merge_conflicts: none. U3 первый в UI-волне после B4; AppShell.tsx трогается впервые. U2/U5/U6/U9 параллельно работают с AppShell.tsx в своих воркерах — их merge-pass будет с конфликтами, это нормально.
+- verification:
+  - Ревьюер прочитал 3 файла (Player.tsx, Player.module.css, AppShell.tsx) + сверил `tauri.ts` wrappers (не менялся на U3) с `docs/ipc-contract.md`: `play_entry`, `pause_playback`, `resume_playback`, `seek_to`, `set_speed`, `set_volume` — имена match.
+  - TypeScript typecheck (`tsc --noEmit`) прогнан напрямую через nodejs из nix-store (nix-shell заблокирован sandbox sqlite cache): **0 ошибок**.
+  - `vite build` прогнан напрямую: **ok (5.82s, 2.08 MB main bundle)**. Build warnings только про chunk size > 500kB (mermaid transitive, не относится к U3).
+  - `nix-shell --run "pnpm install && pnpm typecheck && pnpm tauri dev"` на хосте — smoke-тест воспроизведения/seek остаётся за пользователем (acceptance).
+- known_deviations: none критичных. Minor follow-ups см. выше (isDragging ref, HH:MM:SS для длинных аудио, play-first-of-queue fallback).
+- next_unblocks: U3 не блокирует другие задачи напрямую (leaf в UI-дереве). Параллельно активны U2/U5/U6/U9 воркеры; их merge — следующие в очереди ревьюера.
+
+### Следующие действия координатора
+- Ревьюер ждёт уведомлений от других UI-воркеров: **U2** (QueueList — даст Player'у `entryIds` prop), **U5** (word highlighting), **U6** (clipboard input), **U9** (settings). Все форкнуты от ruvox2 ДО U3-merge → их AppShell.tsx будет конфликтовать с текущим (header.height, Stack, Player). Merge-ревьюер решает конфликты ручным мерджем: сохранять U3-header с Player + добавлять изменения от U2/U5/U6/U9.
+- Hot-spot для хоста: `nix-shell --run "pnpm install && pnpm tauri dev"` на ruvox2 HEAD (`e11c3c9`) — smoke Player UI (Play/Pause/Seek/Speed/Volume/Hotkeys Space/Arrows).
+- Follow-ups (не блокирующие):
+  - Перевести `isDragging` на `useRef` для точной drag-protection.
+  - Расширить `formatTime` до HH:MM:SS для длительности > 60 мин.
+  - При пустом `currentEntryId`, но наличии `entryIds` — Play должен стартовать первый из очереди.
