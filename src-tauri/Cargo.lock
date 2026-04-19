@@ -3036,11 +3036,16 @@ name = "ruvox-tauri"
 version = "0.2.0"
 dependencies = [
  "chrono",
+ "dirs",
+ "parking_lot",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tracing",
  "uuid",
 ]
 
