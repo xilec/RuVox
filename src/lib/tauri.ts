@@ -52,6 +52,8 @@ export interface UIConfig {
   theme: Theme;
   player_hotkeys: Record<string, string>;
   window_geometry: [number, number, number, number] | null;
+  preview_dialog_enabled: boolean;
+  preview_threshold: number;
 }
 
 export type UIConfigPatch = Partial<UIConfig>;
@@ -112,6 +114,9 @@ export const commands = {
 
   getCacheStats: (): Promise<{ total_bytes: number; audio_file_count: number }> =>
     tauriInvoke('get_cache_stats'),
+
+  previewNormalize: (text: string): Promise<{ normalized: string }> =>
+    tauriInvoke('preview_normalize', { text }),
 };
 
 // --- Events (backend → frontend) ---

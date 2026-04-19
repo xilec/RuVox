@@ -1,0 +1,30 @@
+.paneLabel {
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 600;
+  color: var(--mantine-color-dimmed);
+  margin-bottom: var(--mantine-spacing-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.textPane {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: var(--mantine-font-size-sm);
+  line-height: var(--mantine-line-height-md);
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--mantine-color-default);
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-sm);
+  padding: var(--mantine-spacing-sm);
+  min-height: 260px;
+  max-height: 340px;
+  overflow-y: auto;
+  resize: none;
+  width: 100%;
+}
+
+.editTextarea {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: var(--mantine-font-size-sm);
+}

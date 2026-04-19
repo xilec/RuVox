@@ -331,6 +331,34 @@ pub async fn add_clipboard_entry(
     Ok(entry_id.to_string())
 }
 
+/// Run the text normalization pipeline on `text` and return the normalized result.
+///
+/// Used by the preview dialog (FF 1.1) to show original ↔ normalized side-by-side
+/// before the user confirms synthesis.
+#[tauri::command]
+pub async fn preview_normalize(
+    state: State<'_, AppState>,
+    text: String,
+) -> CmdResult<PreviewNormalizeResult> {
+    let pipeline = Arc::clone(&state.pipeline);
+    let result = tokio::task::spawn_blocking(move || {
+        let mut p = pipeline.lock();
+        p.process_with_char_mapping(&text)
+    })
+    .await
+    .map_err(|e| CommandError::Internal {
+        message: format!("pipeline task panicked: {e}"),
+    })?;
+
+    let (normalized, _char_mapping) = result;
+    Ok(PreviewNormalizeResult { normalized })
+}
+
+#[derive(Debug, Serialize)]
+pub struct PreviewNormalizeResult {
+    pub normalized: String,
+}
+
 /// Return all entries sorted by created_at descending.
 #[tauri::command]
 pub async fn get_entries(
@@ -661,4 +689,6 @@ fn apply_config_patch(config: &mut UIConfig, patch: UIConfigPatch) {
     if let Some(v) = patch.theme { config.theme = v; }
     if let Some(v) = patch.player_hotkeys { config.player_hotkeys = v; }
     if let Some(v) = patch.window_geometry { config.window_geometry = v; }
+    if let Some(v) = patch.preview_dialog_enabled { config.preview_dialog_enabled = v; }
+    if let Some(v) = patch.preview_threshold { config.preview_threshold = v; }
 }

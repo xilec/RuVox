@@ -145,6 +145,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             add_clipboard_entry,
+            preview_normalize,
             get_entries,
             get_entry,
             delete_entry,
