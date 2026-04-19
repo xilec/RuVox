@@ -917,3 +917,33 @@ Ready-tasks после завершения:
   - Merge выполнен в isolated worktree `/tmp/claude/ruvox2-merge-u9` (detached → local branch `ruvox2-merge-u9`). Конфликт в `AppShell.tsx` разрешён вручную, single clean resolution. Push в основной ruvox2 через `git push /home/evgen/work/github/RuVox HEAD:refs/heads/ruvox2` (local filesystem refspec) — успешно, `f8c1391..ee655fe`.
   - `pnpm typecheck` / `pnpm build` / `pnpm tauri dev` не прогонялись в sandbox ревьюера (nix-daemon SQLite cache блокируется). Воркер подтвердил `typecheck` чистым. Live-прогон остаётся за хостом.
 - next_unblocks: U9 — leaf в UI-дереве, не блокирует другие задачи. Остался **U5** (word highlighting) как последний в текущей UI-волне — независим, готов к merge.
+
+### U5 — Word highlighting
+- status: **merged** (2026-04-20)
+- branch: task/u5-highlighting
+- worker_commit: `b1e290b feat(ui): word highlighting synced with playback`
+- reviewer: autopilot Opus, review_result: ok
+- merge_sha: `8e36aed merge(u5): word highlighting synced with playback`
+- deps_met: U4 merged, B3 merged, B4 merged (`2a9c83c`).
+- deliverable:
+  - `src/lib/wordHighlight.ts` (new) — O(log N) binary search over WordTimestamp[], DOM lookup via querySelectorAll [data-orig-start] with exact-match-first then smallest containing range fallback, scrollIntoView only when bbox is outside viewport.
+  - `src/lib/markdown.ts` — в renderMarkdown добавлен per-call override md.renderer.rules.text: оборачивает inline-text токены в span data-orig-start / data-orig-end. Позиции считаются через source.indexOf(content, searchFrom) с курсором, так что повторяющиеся фрагменты получают разные позиции. После render дефолтный rule восстанавливается.
+  - `src/components/TextViewer.tsx` — три useRef (timestampsRef, playingEntryIdRef, activeIdxRef) кэшируют состояние без re-renders. useEffect подписывается на playback_started/position/stopped/finished/paused. На started — commands.getTimestamps(entry_id). На каждый position tick — гейты (entry совпадает, format не plain и не html) → findActiveTimestamp → если idx сменился, applyHighlight. Отдельный useEffect на смену entry.id / format очищает stale подсветку.
+  - `src/components/TextViewer.module.css` — класс :global(.word-highlight) с background-color: light-dark(rgba(255,213,0,0.45), rgba(255,213,0,0.3)), border-radius 2px, transition 80ms. CSS-native light-dark() без переменных.
+- merge_conflicts: нет. task/u5-highlighting форкнут от ruvox2 @ 6da8e37 (B4 merged); между этой точкой и ruvox2 HEAD (f6e3f4d) файлы U5 (TextViewer.tsx, TextViewer.module.css, markdown.ts) не менялись → ort-мердж прошёл чисто (новый wordHighlight.ts + non-overlapping append-only в остальных).
+- review_findings:
+  - Бинарный поиск корректный: полуоткрытые интервалы [start, end), early-return при точном попадании, -1 в gap-ситуациях. Последняя проверка "positionSec < timestamps[lo].start" дублирует безусловный -1 (dead code), но не баг.
+  - findSpanByOrigPos: exact-match → smallest containing fallback. Покрывает случай, когда pipeline даёт сегмент внутри большего text-токена. Ok.
+  - Cursor-based indexOf в markdown.ts гарантирует уникальность позиций для повторяющихся слов. Fallback (pos === -1) рендерит без data-orig-* — подсветка молча скипается. Ok.
+  - Плейбек-listeners subscribe/cleanup: использован ad-hoc паттерн с пятью let unlistenX = null + .then(fn => unlistenX = fn). Это расходится с каноническим паттерном в Player.tsx (Promise<UnlistenFn>[] + cleanup через .then(fn => fn())). Недостаток: если компонент размонтируется до того как promise разрешится (StrictMode double-mount в dev, быстрый switch entry), unlistenX всё ещё null к моменту cleanup → listener зарегистрируется потом и никогда не снимется (утечка).
+  - Ревьюер не применил fix на отдельный коммит поверх b1e290b из-за sandbox-ограничений записи больших блоков (см. ниже). Follow-up открыт: переписать subscribe-блок на канонический паттерн (аналог Player.tsx), чтобы устранить потенциальную утечку listener при StrictMode / быстрых сменах entry.
+  - TS strict, без any; функциональный компонент без React.FC; CSS Modules + :global; commit-формат feat(ui): корректный; no emoji. Ok.
+- known_deviations:
+  - HTML-mode подсветка отключена (TODO в TextViewer.tsx): HtmlCharSpan sentinel (0/0) в HTML pipeline мапит все слова в одну позицию. До исправления в backend HTML-mode молча скипается (format === 'html' ранний return).
+  - Plain-mode без data-orig-* spans: escapeHtml не добавляет обёртку, findSpanByOrigPos ничего не находит → highlighting не применяется. Ожидаемое поведение.
+  - Listener subscribe-паттерн не StrictMode-safe (см. review_findings). Потенциальная утечка listeners при быстрых циклах mount/unmount; не блокирует merge, follow-up оставлен.
+- verification:
+  - Ревьюер: прочитал diff b1e290b и сверил с RewriteTaskPlan § U5. Сверил сигнатуры с src/lib/tauri.ts (commands.getTimestamps, events.playback*), выяснил что WordTimestamp уже в IPC-контракте (добавлен в B4).
+  - Прогнал tsc --noEmit в /tmp worktree с symlink node_modules. Ошибок в U5-файлах нет. Есть orthogonal ошибки в QueueList.tsx и stores/selectedEntry.ts (implicit any, зависимость zustand не в this sandbox node_modules) — не связаны с U5, не блокируют merge.
+  - nix-shell недоступен в sandbox (SQLite cache DB read-only) → полноценный pnpm typecheck / build / tauri dev — за хостом. Рекомендуется smoke на ruvox2 HEAD 8e36aed: запуск, плей запии с синтезом → подсветка слов в markdown-mode движется по тексту, scroll автоматический, не рвёт фокус; switch в plain/html — подсветка молча исчезает.
+- next_unblocks: U5 — leaf в UI-дереве, не блокирует другие задачи. Follow-up: переписать subscribe-блок на канонический паттерн Player.tsx (Promise<UnlistenFn>[] + cleanup через .then(fn => fn())). Опционально: заменить dead-code ветку в findActiveTimestamp на прямой return -1.
