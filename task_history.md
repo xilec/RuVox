@@ -338,13 +338,23 @@ Ready-tasks после завершения:
 - unblocks: U7 (сейчас запущен). U5 ждёт ещё B3+B4. U8 ждёт B4.
 
 ### B1 — Storage service в Rust
-- status: **awaiting review**
+- status: **merged**
+- branch: task/b1-storage-service
 - worker_commit: `fd4b105 feat(storage): StorageService with CRUD and audio/timestamps persistence`
+- reviewer: autopilot Opus, review_result: ok
+- merge_sha: `b166e43 merge(b1): StorageService with CRUD`
 - API: `new/with_cache_dir/add_entry/get_entry/update_entry/delete_entry/delete_audio/get_all_entries/save_audio/save_timestamps/load_timestamps/get_audio_path/get_cache_size/get_audio_count/load_config/save_config`.
 - atomic writes через `write tmp + rename`.
 - deviation: `dirs = "6"` вместо `"5"` — в sandbox cargo-cache есть только 4.x и 6.x (API совместим).
 - extra: `ready` без `audio_path` → `pending` (соответствует storage-schema.md, legacy пропускал этот случай).
-- tests: 24/24 в изолированном мини-крейте (15 новых + 9 из F4 schema).
+- tests: 24/24 в изолированном мини-крейте (15 новых + 9 из F4 schema), повторены ревьюером — все зелёные.
+- legacy-compat: `Local::now().naive_local()` в `add_entry` совпадает с legacy `datetime.now().isoformat()` (local naive, без TZ), как и в F4 fix `7d2efbb`. Реальный legacy-формат history.json читается тестом `load_legacy_format_history_json`.
+- merge_note: conflicts только в `src-tauri/Cargo.toml` и `src-tauri/Cargo.lock` (add/add по deps). lib.rs смерджился автоматически — B1 форкался до pipeline/tray, изменения из ruvox2 применились fast-forward. Merge через отдельный worktree `/tmp/claude/ruvox2-merge` потому что главный worktree занят веткой `task/r8-code-blocks`.
+- minor_followup (не блокер):
+  - clippy `unnecessary_sort_by` в `get_all_entries` — заменить на `sort_by_key(|e| Reverse(e.created_at))`;
+  - clippy `field_reassign_with_default` в тесте `save_and_load_config` — переписать на struct-expr;
+  - rustfmt хочет разбить inline `if full.exists() { Some(full) } else { None }` в `get_audio_path` на многострочный if-else.
+- divergence_from_legacy: `get_audio_path` в Rust возвращает `Some(..)` только если файл существует на диске, а legacy возвращает путь безусловно. Фактический UI-слой проверяет существование отдельно, поэтому в текущей кодобазе не критично — но стоит зафиксировать ожидание в `docs/ipc-contract.md` до B4.
 
 ### R1 — TrackedText + CharMapping (Rust)
 - status: **merged**
@@ -432,24 +442,12 @@ Ready-tasks после завершения:
 - **big unblock:** R6 (URLPathNormalizer) запущен — зависел от R1+R2+R3, все merged.
 
 ### R6 — URLPathNormalizer (Rust)
-- status: **merged**
+- status: **awaiting review**
 - branch: task/r6-urls-normalizer
 - worker_commit: `f0aee08 feat(pipeline): port URLPathNormalizer to Rust`
-- reviewer: autopilot Opus, review_result: ok
-- merge_sha: `64d536d merge(r6): URLPathNormalizer port`
 - crates: нет новых (reuse: regex, aho-corasick, once_cell).
-- tests: **217/217** в mini-crate `/tmp/claude/pipeline-test` (53 новых R6 + 164 R2/R3 ранее). Запуск: `CARGO_HOME=/tmp/claude/cargo_home cargo test` — все зелёные.
-- verified: `cargo clippy --all-targets` — только `dead_code` warnings от бинарного стейджинга (не используется `main`) плюс 2 minor suggestions (`strip_prefix` вместо ручной чистки префикса, `RangeInclusive::contains`). Логика корректна 1:1 с legacy.
-- merge_conflicts: `normalizers/mod.rs` add/add — `pub mod urls;` добавлено рядом с `abbreviations/code/english/numbers/symbols`. Резолв — объединение строк в алфавитном порядке.
-- spot-check 1:1 с legacy `normalizers/urls.py`:
-  - PROTOCOLS (9 записей), TLD_MAP (15), DRIVE_LETTERS (6) — идентичны.
-  - `normalize_url`: ручной split on `://` вместо `urlparse` — если схемы нет, возвращается вход (Python бы пропустил через пустой scheme — edge case не покрыт тестами, низкий риск).
-  - Port detection более строг: требует `chars().all(is_ascii_digit)` (в legacy — любой текст после последнего `:`). Deviation в сторону безопасности, не меняет реальные кейсы.
-  - `normalize_email`, `normalize_identifier`, `normalize_ip`, `normalize_filepath` + `normalize_filename_part` портированы 1:1 (hidden-файлы через `starts_with('.')`, Windows drive letter через `len()==2 && ends_with(':')`, multi-dot split, hyphen→дефис).
-- deviation-carry-forward: `URLPathNormalizer::new_without_english(numbers)` добавлен кроме основного `new(english, numbers)` — Python-тесты в legacy создают `URLPathNormalizer()` без `english_normalizer`, ожидая что домены/слова НЕ транслитерируются. Конструктор сохраняет паритет с тестовыми фикстурами. В R9 ownership модель будет согласована (field `english` хранится как `Option<&EnglishNormalizer>`, но внутри используется только как `is_some` sentinel — трансформация идёт через `super::english::transliterate_simple`, т.е. reference технически излишен; оставлено для явности контракта и будет пересмотрено при интеграции pipeline).
-- unwrap-audit: три `unwrap()` в prod-путях — все guarded инвариантом, установленным строкой выше (`chars.next()` после `peek().is_ascii_digit()`, `email.rfind('@')` после `email.contains('@')`, `rest.rfind('.')` после `rest.contains('.')`). Безопасны, но можно заменить на `expect("invariant: ...")` в R9.
-- followup_minor: clippy предлагает `strip_prefix` в двух местах (строки 211, 431) — стилистика, не блокер.
-- **unblocks:** R6 был предпоследним R-нормалайзером. После merge состояние R-фазы: R1..R7 merged. R8 (CodeBlockHandler) уже запущен в отдельной ветке `task/r8-code-blocks`. После R8-merge все зависимости R9 (Pipeline integration) будут закрыты.
+- tests: **53/53** (+164 из R2/R3 = 217 в mini-crate).
+- deviation: добавлен `new_without_english(numbers)` конструктор — Python-тесты создают `URLPathNormalizer()` без english, ожидая домены НЕ транслитерируются. Основной `new(english, numbers)` сохранён. В R9 ownership модель будет согласована.
 
 ### R7 — SymbolNormalizer + constants (Rust)
 - status: **merged**
