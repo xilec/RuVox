@@ -3085,13 +3085,18 @@ version = "0.2.0"
 dependencies = [
  "aho-corasick",
  "chrono",
+ "dirs",
  "once_cell",
+ "parking_lot",
  "regex",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tracing",
  "uuid",
 ]
 
