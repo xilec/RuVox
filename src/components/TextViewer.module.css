@@ -1,0 +1,54 @@
+.content {
+  font-family: var(--mantine-font-family);
+  line-height: 1.6;
+  padding: 1rem;
+}
+
+.content h1,
+.content h2,
+.content h3,
+.content h4,
+.content h5,
+.content h6 {
+  margin-top: 1.2em;
+  margin-bottom: 0.5em;
+}
+
+.content p {
+  margin: 0.5em 0;
+}
+
+.content pre {
+  background: light-dark(#f4f4f4, #1a1a1a);
+  padding: 0.75rem;
+  border-radius: 0.25rem;
+  overflow-x: auto;
+}
+
+.content code {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 0.9em;
+}
+
+.content :not(pre) > code {
+  background: light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.1));
+  padding: 0 0.25em;
+  border-radius: 0.2rem;
+}
+
+.content ul,
+.content ol {
+  padding-left: 1.5rem;
+}
+
+.content a {
+  color: var(--mantine-color-blue-6);
+}
+
+.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--mantine-color-dimmed);
+}
