@@ -102,18 +102,42 @@ Ready-tasks после завершения:
 - schema check: `len(char_map) == len(transformed)` для всех 37 фикстур; содержимое `expected.txt` реально отражает pipeline output (прописные числа, транслит английского, camelCase→слова, mermaid-маркер).
 
 ### F1 — Nix flake
-- status: **needs_fix → fix in progress**
+- status: **merged**
 - branch: task/f1-nix-flake
 - worker_commit: `cb4edb8 build(nix): shell.nix with Rust + Node + Python + Tauri deps`
-- reviewer: autopilot (Opus), review_result: **needs_fix**
-- **blocker:** воркер ошибочно решил, что `cargo-tauri` отсутствует в nixpkgs 25.11, и задокументировал workaround через `cargo install tauri-cli`. Ревьюер проверил: `pkgs.cargo-tauri` 2.9.4 **есть** в nixpkgs 25.11 (`pkgs/by-name/ca/cargo-tauri/package.nix`). Воркер, вероятно, искал `tauri-cli`/`tauri` вместо корректного имени.
-- fix_agent: запущен на исправление (autopilot-sonnet). Задача: добавить `cargo-tauri` в `buildInputs`, убрать неверные комментарии и echo из shellHook.
-- other_checks_ok:
-  - Rust 1.91.1 + rustfmt + clippy + clippy-driver — ок.
-  - nodejs_20 + pnpm 10.25.0 + uv 0.9.16 + python312 — ок.
-  - webkitgtk_4_1 2.50.3 + libsoup_3 + mpv-unwrapped 0.40.0 + pkg-config — ок (статическая верификация через `nix-instantiate --eval`; sandbox блокирует live `nix-shell --run`, проверка на хост-машине остаётся за пользователем).
-  - Style: mirror `legacy/shell.nix` pattern. Без Claude-упоминаний.
-- minor: `openssl.dev` указан отдельно от `openssl` — избыточно, но не ошибка. Может быть почищено в fix-коммите.
+- fix_commit: `12a90fb build(nix): add cargo-tauri from nixpkgs, remove incorrect workaround`
+- reviewer: autopilot (Opus) × 2 (первичный = needs_fix, повторный = ok)
+- merge_sha: `ee67324 merge(f1): shell.nix with Rust + Node + Python + Tauri deps (incl. cargo-tauri)`
+- fix_history:
+  - Первичный ревью → needs_fix: воркер ошибочно решил, что `cargo-tauri` отсутствует в nixpkgs (искал `tauri-cli`/`tauri`, пропустил верное имя). Ревьюер проверил `pkgs/by-name/ca/cargo-tauri/package.nix` в nixpkgs 25.11 — `cargo-tauri` 2.9.4 **есть**.
+  - Fix-агент (autopilot-sonnet) за 1 минуту добавил `cargo-tauri` в buildInputs, удалил workaround-комментарии, echo shellHook'а про `cargo install tauri-cli` заменён на `echo "  tauri: $(cargo tauri --version)"`. Попутно убрал избыточный `openssl.dev` (остался через output'ы `pkgs.openssl`).
+  - Повторный ревью → ok, merge.
+- components ok:
+  - Rust 1.91.1 + rustfmt + clippy + clippy-driver.
+  - nodejs_20 + pnpm 10.25.0 + uv 0.9.16 + python312.
+  - webkitgtk_4_1 2.50.3 + libsoup_3 + mpv-unwrapped 0.40.0 + pkg-config.
+  - cargo-tauri 2.9.4 (без workaround).
+- sandbox note: live `nix-shell --run ...` ни worker, ни reviewer выполнить не могли (sandbox блокирует Unix-socket к nix-daemon). Вся верификация — статическая. **Финальная live-проверка остаётся за пользователем на хост-машине.**
+
+---
+
+## Wave 2 — запуск (unblocked после F1)
+
+### F2 — Tauri 2 init
+- status: in_progress
+- agent: autopilot-sonnet (background)
+- branch: task/f2-tauri-init
+- started: 2026-04-19 (после merge F1)
+- deps: F1 merged.
+- next_unblocks: F4, B3, B5, U1, R1 (через F4).
+
+### F6 — ttsd Python skeleton
+- status: in_progress
+- agent: autopilot-sonnet (background)
+- branch: task/f6-ttsd-skeleton
+- started: 2026-04-19 (после merge F1)
+- deps: F1 merged.
+- next_unblocks: F7.
 
 ---
 
