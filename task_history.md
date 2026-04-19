@@ -423,5 +423,14 @@ Ready-tasks после завершения:
 - deviation: G2P (g2p_en/ARPAbet) не портирован — в Rust нет эквивалента, Python использовал как optional fallback. `transliterate_simple` покрывает основное поведение тестов.
 - note: worker опять добавил placeholder PNG иконки в `src-tauri/icons/` (для `tauri::generate_context!()` в тестах). Может конфликтовать с аналогичными из B2 при merge.
 
-### R5, R7 — в работе
-R5 (code), R7 (symbols) — autopilot-sonnet параллельно.
+### R7 — SymbolNormalizer + constants (Rust)
+- status: **awaiting review**
+- branch: task/r7-symbols-normalizer
+- worker_commit: `89cdc71 feat(pipeline): port SymbolNormalizer + constants to Rust`
+- crates: `once_cell = "1"`.
+- tests: **111/111** в mini-crate (`src-tauri/pipeline-core/`) + **146** в основном крейте. Покрытие test_symbols.py + доп. тесты для MATH_SYMBOLS и ARROW_SYMBOLS (которых в Python не было).
+- note: агент создал mini-crate `src-tauri/pipeline-core/` для изолированного тестирования. Возможно потенциальный конфликт если R2/R3/R4/R5 тоже создавали mini-crate'ы — ревьюер разрешит.
+- note: опять placeholder иконки для `generate_context!()`.
+
+### R5 — в работе
+R5 (code) — autopilot-sonnet.
