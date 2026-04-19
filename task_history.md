@@ -432,12 +432,24 @@ Ready-tasks после завершения:
 - **big unblock:** R6 (URLPathNormalizer) запущен — зависел от R1+R2+R3, все merged.
 
 ### R6 — URLPathNormalizer (Rust)
-- status: **awaiting review**
+- status: **merged**
 - branch: task/r6-urls-normalizer
 - worker_commit: `f0aee08 feat(pipeline): port URLPathNormalizer to Rust`
+- reviewer: autopilot Opus, review_result: ok
+- merge_sha: `64d536d merge(r6): URLPathNormalizer port`
 - crates: нет новых (reuse: regex, aho-corasick, once_cell).
-- tests: **53/53** (+164 из R2/R3 = 217 в mini-crate).
-- deviation: добавлен `new_without_english(numbers)` конструктор — Python-тесты создают `URLPathNormalizer()` без english, ожидая домены НЕ транслитерируются. Основной `new(english, numbers)` сохранён. В R9 ownership модель будет согласована.
+- tests: **217/217** в mini-crate `/tmp/claude/pipeline-test` (53 новых R6 + 164 R2/R3 ранее). Запуск: `CARGO_HOME=/tmp/claude/cargo_home cargo test` — все зелёные.
+- verified: `cargo clippy --all-targets` — только `dead_code` warnings от бинарного стейджинга (не используется `main`) плюс 2 minor suggestions (`strip_prefix` вместо ручной чистки префикса, `RangeInclusive::contains`). Логика корректна 1:1 с legacy.
+- merge_conflicts: `normalizers/mod.rs` add/add — `pub mod urls;` добавлено рядом с `abbreviations/code/english/numbers/symbols`. Резолв — объединение строк в алфавитном порядке.
+- spot-check 1:1 с legacy `normalizers/urls.py`:
+  - PROTOCOLS (9 записей), TLD_MAP (15), DRIVE_LETTERS (6) — идентичны.
+  - `normalize_url`: ручной split on `://` вместо `urlparse` — если схемы нет, возвращается вход (Python бы пропустил через пустой scheme — edge case не покрыт тестами, низкий риск).
+  - Port detection более строг: требует `chars().all(is_ascii_digit)` (в legacy — любой текст после последнего `:`). Deviation в сторону безопасности, не меняет реальные кейсы.
+  - `normalize_email`, `normalize_identifier`, `normalize_ip`, `normalize_filepath` + `normalize_filename_part` портированы 1:1 (hidden-файлы через `starts_with('.')`, Windows drive letter через `len()==2 && ends_with(':')`, multi-dot split, hyphen→дефис).
+- deviation-carry-forward: `URLPathNormalizer::new_without_english(numbers)` добавлен кроме основного `new(english, numbers)` — Python-тесты в legacy создают `URLPathNormalizer()` без `english_normalizer`, ожидая что домены/слова НЕ транслитерируются. Конструктор сохраняет паритет с тестовыми фикстурами. В R9 ownership модель будет согласована (field `english` хранится как `Option<&EnglishNormalizer>`, но внутри используется только как `is_some` sentinel — трансформация идёт через `super::english::transliterate_simple`, т.е. reference технически излишен; оставлено для явности контракта и будет пересмотрено при интеграции pipeline).
+- unwrap-audit: три `unwrap()` в prod-путях — все guarded инвариантом, установленным строкой выше (`chars.next()` после `peek().is_ascii_digit()`, `email.rfind('@')` после `email.contains('@')`, `rest.rfind('.')` после `rest.contains('.')`). Безопасны, но можно заменить на `expect("invariant: ...")` в R9.
+- followup_minor: clippy предлагает `strip_prefix` в двух местах (строки 211, 431) — стилистика, не блокер.
+- **unblocks:** R6 был предпоследним R-нормалайзером. После merge состояние R-фазы: R1..R7 merged. R8 (CodeBlockHandler) уже запущен в отдельной ветке `task/r8-code-blocks`. После R8-merge все зависимости R9 (Pipeline integration) будут закрыты.
 
 ### R7 — SymbolNormalizer + constants (Rust)
 - status: **merged**
