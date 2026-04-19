@@ -2,9 +2,13 @@ import { Box, ScrollArea, SegmentedControl, Stack, Text } from '@mantine/core';
 import { useMemo, useState } from 'react';
 import type { TextEntry } from '../lib/tauri';
 import { renderMarkdown } from '../lib/markdown';
+import { renderHtml } from '../lib/html';
 import classes from './TextViewer.module.css';
 
-type Format = 'plain' | 'markdown';
+// TODO(B1/F4): add `format: 'plain' | 'markdown' | 'html'` to TextEntry schema
+// so that the selected format is persisted alongside the entry.  Until that
+// schema change lands, the format is ephemeral client-side state.
+type Format = 'plain' | 'markdown' | 'html';
 
 interface Props {
   entry: TextEntry | null;
@@ -17,8 +21,15 @@ export function TextViewer({ entry }: Props) {
 
   const content = useMemo(() => {
     if (!entry) return null;
-    if (format === 'plain') return { __html: escapeHtml(text) };
-    return { __html: renderMarkdown(text) };
+    switch (format) {
+      case 'plain':
+        return { __html: escapeHtml(text) };
+      case 'html':
+        return { __html: renderHtml(text) };
+      case 'markdown':
+      default:
+        return { __html: renderMarkdown(text) };
+    }
   }, [entry, text, format]);
 
   if (!entry) {
@@ -38,6 +49,7 @@ export function TextViewer({ entry }: Props) {
         data={[
           { label: 'Plain', value: 'plain' },
           { label: 'Markdown', value: 'markdown' },
+          { label: 'HTML', value: 'html' },
         ]}
       />
       <ScrollArea style={{ flex: 1 }}>
