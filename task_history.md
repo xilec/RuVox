@@ -453,10 +453,21 @@ Ready-tasks после завершения:
 - **potential unblock:** R8 (CodeBlockHandler) — зависит от R1+R5+R7. R5 ещё ждёт ревью; после его merge R8 разблокируется.
 
 ### R5 — CodeNormalizer (Rust)
-- status: **awaiting review**
+- status: **merged**
 - branch: task/r5-code-normalizer
 - worker_commit: `08bff2e feat(pipeline): port CodeNormalizer to Rust`
+- reviewer: autopilot Opus, review_result: ok (с follow-up'ами)
+- merge_sha: `5c861d9 merge(r5): CodeNormalizer port`
 - crates: нет новых.
-- tests: **61/61** в основном крейте (camelCase 19, PascalCase 8, snake_case 16, kebab-case 13, SCREAMING_SNAKE_CASE 3 + TestMixedIdentifiers).
-- cross-normalizer: `CodeIdentifierNormalizer::new()` без аргументов. Встроены собственные `number_to_russian()` (0-90 + 64/256) и `spell_abbreviation()`. Будут заменены ссылками на R2/R4 в R9.
-- deferred: CodeBlockHandler — R8.
+- tests: **61/61** в изолированном мини-крейте `/tmp/claude/r5_test` (cargo 1.95 + rustc 1.95 через nix-store, без nix-shell — sandbox). camelCase 19, PascalCase 8, snake_case 18, kebab-case 13, SCREAMING_SNAKE_CASE 3.
+- verified: `cargo build` ок, `cargo clippy --lib` чисто, `cargo test` — 61 passed, 0 failed.
+- spot-check dictionary: 260+ entries CODE_WORDS сверены с legacy (`get`/`set`/`api`/`html`/`json` и т.д.) — 1:1 соответствие. translit_map (26 Latin → Cyrillic) идентичен legacy.
+- split_camel_case: порт Python-regex `[A-Z]?[a-z]+|[A-Z]+(?=[A-Z][a-z]|\d|$)|[A-Z]+(?![a-z])|\d+` на императивный scanner. Для HTMLParser → HTML+Parser backtrack корректен. Для digit/lower/upper-only run'ов — отдельные ветки.
+- cross-normalizer: `CodeIdentifierNormalizer::new()` без аргументов. Встроены собственные `number_to_russian()` (0-1000 с явными значениями 64/128/256/512 + digit-by-digit fallback) и `spell_abbreviation()` (26 букв, inline HashMap). Будут заменены ссылками на R2/R4 в R9.
+- deferred: CodeBlockHandler — R8 (теперь разблокирован: зависит от R1+R5+R7, все merged).
+- merge_conflicts:
+  - `src-tauri/src/pipeline/normalizers/mod.rs` — add/add с abbreviations/english/numbers/symbols. Резолв: объединение `pub mod` строк в алфавитном порядке.
+  - `src-tauri/src/pipeline/mod.rs` — HEAD имел `pub mod constants;` (из R7), R5-ветка ушла от d8114a3 где constants ещё не было. Резолв: добавить `pub mod constants;` обратно.
+- followup_critical: **`basic_transliterate` строка 644 содержит `Box::leak(c.to_string().into_boxed_str())`** — memory leak на каждый unrecognised char. Срабатывает только для char вне translit_map (26 ascii lowercase) после `to_lowercase()`. Тесты это не триггерят. Follow-up: заменить на возврат `String` из map (или использовать `char::to_string()` и собирать в `String`-аккумулятор вместо итератора `&str`).
+- followup_minor: `spell_abbreviation` создаёт HashMap на каждый вызов (626) — как в legacy. Оптимизация через LazyLock в R9/refactor.
+- test-coverage gap (matches legacy): TestMixedIdentifiers кейсы `sha256Hash` / `base64Encode` / `utf8String` — в legacy они `pass` placeholder, в Rust тоже не покрыты. Не блокер.
