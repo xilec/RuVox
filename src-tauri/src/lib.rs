@@ -1,3 +1,4 @@
+pub mod pipeline;
 pub mod storage;
 
 pub fn run() {
