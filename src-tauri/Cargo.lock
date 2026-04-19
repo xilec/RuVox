@@ -3033,11 +3033,16 @@ checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 name = "ruvox-tauri"
 version = "0.2.0"
 dependencies = [
+ "parking_lot",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
+ "tauri-plugin-mpv",
  "tauri-plugin-opener",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -3749,6 +3754,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "tauri-plugin-mpv"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf8376cbd3bd9010eaede301aba8d8135dd9e8524b385c1afee0bdd66ea5b173"
+dependencies = [
+ "libc",
+ "log",
+ "raw-window-handle",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "tauri-plugin-opener"
 version = "2.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3996,7 +4017,19 @@ dependencies = [
  "mio",
  "pin-project-lite",
  "socket2",
+ "tokio-macros",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "tokio-macros"
+version = "2.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "385a6cb71ab9ab790c5fe8d67f1645e6c450a7ce006a33de03daa956cf70a496"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]
