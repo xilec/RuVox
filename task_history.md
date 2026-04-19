@@ -253,3 +253,126 @@ Ready-tasks после завершения:
 Ручных действий от пользователя **не требуется**. Если хочется ускорить прогресс — проверить на хост-машине `nix-shell --run "cargo build"` и `nix-shell --run "pnpm tauri dev"` на текущем ruvox2 HEAD (`de88622`), чтобы поймать проблемы до merge F4/U1.
 
 Текущее состояние ruvox2 HEAD: `de88622 merge(f7): Silero wrapper and timestamp estimation`.
+
+---
+
+## Wave 4 — после сброса лимита
+
+### F4 — Storage schema (re-review после fix)
+- status: **merged**
+- worker_commits: `3ccb411`, `1c94b43`
+- fix_commit: `7d2efbb fix(storage): naive datetime for legacy compat + real-format test`
+- reviewer: autopilot Opus × 2 (1-й → needs_fix; 2-й → ok после fix)
+- merge_sha: `ea01e9b merge(f4): storage schema doc + Rust types (with naive datetime fix)`
+- issue_fixed: `created_at: DateTime<Utc>` → `NaiveDateTime`. Legacy format `"2026-02-15T11:46:51.504055"` без TZ теперь парсится. Добавлен тест `deserialize_real_legacy_history`. `EntryStatus::Playing` с doc-комментарием runtime-only. `player_hotkeys` через default function. `theme: "auto"` задокументировано как намеренное отклонение от legacy `"dark_pro"`.
+- tests: 9/9 в изолированном storage-крейте (полный cargo build заблокирован sandbox для обоих — worker и reviewer).
+- unblocks: R1, B1.
+
+### U1 — AppShell + theme switcher + typed Tauri bindings
+- status: **merged**
+- worker_commit: `254e8a0 feat(ui): AppShell with theme switcher and typed Tauri bindings`
+- reviewer: autopilot Opus, review_result: ok
+- merge_sha: `78a0034 merge(u1): AppShell + theme switcher + typed Tauri bindings`
+- verified: `pnpm install` (113 пакетов), `pnpm typecheck` чисто, `pnpm build` ok (789 модулей, 1.03s).
+- minor: `.gitignore` получил `!src/lib/` (legacy правило `lib/` Python-dir блокировало `src/lib/`). `src/lib/tauri.ts` 1:1 с `docs/ipc-contract.md` (`TextEntry.was_regenerated`, расширенный UIConfig, `Record<string, never>` для пустых payload).
+- Mantine 8 правила соблюдены: CSS Modules, никакого `sx`/`createStyles`/emotion/`React.FC`.
+- unblocks: U4, U10 (частично — остальные U* ждут B4).
+
+---
+
+## Wave 5 — после merge F4 и U1
+
+### B5 — System tray (first review: needs_fix)
+- status: **fix in progress (v2)**
+- worker_commit: `e23f0e8 feat(tray): system tray icon with menu (show, read-now, read-later, settings, quit)`
+- reviewer: autopilot Opus, review_result: **needs_fix**
+- issues:
+  1. `tray.png` не в `bundle.resources` → runtime `resource_dir().join("icons/tray.png")` не найдёт файл, срабатывает fallback на window icon.
+  2. Single-click handler (`TrayIconEvent::Click`) вместо double-click (спека требует).
+  3. `cargo build` не верифицирован в sandbox.
+  4. `read_now`/`read_later` через `app.emit()`, а не прямой вызов `add_clipboard_entry` (B4 ещё не готов — допустимо, но нужен TODO-комментарий).
+  5. `tray.svg` остался в repo alongside PNG — источник без назначения.
+- fix_spec для sonnet-агента:
+  - Заменить runtime-загрузку на `Image::from_bytes(include_bytes!("../../icons/tray.png"))` — компилируется в бинарь.
+  - `TrayIconEvent::DoubleClick` вместо `Click`.
+  - TODO-комментарий у `tray_read_now`/`tray_read_later` про B4.
+  - `git rm src-tauri/icons/tray.svg`.
+- fix_agent: запущен (autopilot-sonnet), коммит ожидается.
+
+### B2 — TTS subprocess manager
+- status: **awaiting review**
+- worker_commit: `0255082 feat(tts): subprocess manager with JSON protocol over stdin/stdout`
+- deliverable: `src-tauri/src/tts/mod.rs` (~450 строк). `TtsSubprocess::spawn(ttsd_dir)` через `tokio::process::Command` + `kill_on_drop`. Driver task через `mpsc::channel(1)` — один in-flight request. Stderr ttsd → `tracing::info!(target: "ttsd")`. API: `warmup`, `synthesize(text, speaker, sample_rate, out_wav, char_mapping)`, `shutdown`. Timeout 5 мин. `TtsError` через thiserror.
+- TODO: auto-restart при крэше subprocess (v2+).
+- tests: 8/8 unit-тестов в sandbox (cargo через $TMPDIR/CARGO_HOME с системными путями).
+- note: воркер добавил placeholder PNG иконки (32×32, 128×128@2x) — нужны для `tauri::generate_context!()` на этапе компиляции. **Ревьюер должен проверить**, что это не дублирует работу из других веток.
+
+### B3 — Audio player (tauri-plugin-mpv)
+- status: **awaiting review**
+- worker_commit: `21eb92e feat(player): libmpv wrapper with scaletempo2 and position events`
+- crate_chosen: **tauri-plugin-mpv v0.5.2** (github.com/nini22P/tauri-plugin-mpv, MPL-2.0). mpv запускается как subprocess с JSON IPC сокетом. Альтернатива `libmpv2 5.0.3` отвергнута в пользу нативной Tauri-интеграции.
+- mpv args: `--no-video --af=scaletempo2 --audio-pitch-correction=no --no-ytdl`.
+- API: `load`, `play`, `pause`, `resume`, `stop`, `seek`, `set_speed`, `set_volume`, `position_sec`, `duration_sec`, `current_entry_id`, `is_playing`.
+- events: `playback_started/paused/stopped/finished/position` (per ipc-contract).
+- `spawn_position_emitter` — tokio-task с 100 ms polling.
+- cargo build: ок (инкрементально 2s). Test: 1 passed, 1 ignored (нужен mpv runtime).
+- known_gaps: EOF detection через polling (порог `position >= duration - 0.05s`) — может пропустить очень короткие (<50ms) файлы. IPC round-trip через Unix socket на каждый `get_property` — приемлемо при 100ms.
+
+### U10 — Notifications integration
+- status: **awaiting review**
+- worker_commit: `22be80b feat(ui): wire backend events to Mantine notifications`
+- deliverable: `src/lib/notificationBridge.ts` подписывает на 5 событий: `model_loading` (loading spinner), `model_loaded` (зелёная 3s), `model_error` (красная 8s), `tts_error` (красная 5s, id per entry_id), `synthesis_progress` (update с процентом).
+- App.tsx интегрирует bridge через `useEffect` + cleanup.
+- verified: нет (sandbox). Reviewer верифицирует на хосте.
+
+### U4 — Text viewer (plain + markdown)
+- status: **merged**
+- worker_commit: `fe31bb0 feat(ui): text viewer with plain + markdown modes`
+- reviewer: autopilot Opus, review_result: ok
+- merge_sha: `3eae9db merge(u4): text viewer with plain + markdown modes`
+- deliverable: `src/components/TextViewer.tsx`, `TextViewer.module.css` (light-dark() CSS func), `src/lib/markdown.ts` (markdown-it 14.1.1 + highlight.js 11.11.1, `html: false`), `src/vite-env.d.ts`. Обновлены AppShell.tsx, main.tsx, package.json, pnpm-lock.yaml.
+- verified: `pnpm install/typecheck/build` ок (sandbox-workaround прямым node из nix-store).
+- XSS-safe: plain через `escapeHtml()`, markdown через `html: false`.
+- minor: `markdown-it-highlightjs` добавлен в deps, но не используется (highlight через callback inline). Не блокер.
+- deferred: word highlighting (U5), queue selection (U2), mermaid (U7 — теперь запущен), HTML mode (U8).
+- unblocks: U7 (сейчас запущен). U5 ждёт ещё B3+B4. U8 ждёт B4.
+
+### B1 — Storage service в Rust
+- status: **awaiting review**
+- worker_commit: `fd4b105 feat(storage): StorageService with CRUD and audio/timestamps persistence`
+- API: `new/with_cache_dir/add_entry/get_entry/update_entry/delete_entry/delete_audio/get_all_entries/save_audio/save_timestamps/load_timestamps/get_audio_path/get_cache_size/get_audio_count/load_config/save_config`.
+- atomic writes через `write tmp + rename`.
+- deviation: `dirs = "6"` вместо `"5"` — в sandbox cargo-cache есть только 4.x и 6.x (API совместим).
+- extra: `ready` без `audio_path` → `pending` (соответствует storage-schema.md, legacy пропускал этот случай).
+- tests: 24/24 в изолированном мини-крейте (15 новых + 9 из F4 schema).
+
+### R1 — TrackedText + CharMapping (Rust)
+- status: **awaiting review**
+- branch: task/r1-tracked-text
+- worker_commit: `b6279e8 feat(pipeline): TrackedText + CharMapping port from Python`
+- crates added: `regex = "1"`.
+- tests: **35/35 passed** в изолированном мини-крейте (sandbox без nix-shell). Порт из `legacy/tests/tts_pipeline/test_tracked_text.py` + `test_char_mapping.py` + несколько расширенных edge-cases (nested replacement, char_map length после expansion/contraction).
+- architecture: **Unicode codepoint индексы** в `CharMapping.char_map` (не байтовые) — семантически идентично Python `str`. Вспомогательные функции `byte_to_char_idx`/`char_to_byte_idx`/`char_len`. Важно для корректной работы с кириллицей.
+- API: `TrackedText::new/text/replace/sub/build_mapping`, `CharMapping::get_original_range/get_original_word_range`. `TrackedText.original` — публичное поле (как в Python).
+- deviations:
+  - `TrackedText::sub` не поддерживает `count=N` параметр — идиома Rust: счётчик в замыкании.
+- next_unblocks: R2, R3, R4, R5, R7 (4 нормалайзера + код: R6 ждёт ещё R2+R3, R8 ждёт R5+R7).
+
+### B5-fix — после первого ревью (needs_fix)
+- status: **awaiting re-review**
+- branch: task/b5-tray
+- fix_commit: `6874905 fix(tray): embed icon via include_bytes, use double-click, add B4 TODO`
+- changes:
+  - `load_tray_icon` → `Image::from_bytes(include_bytes!("../../icons/tray.png"))`. Зависимость от `resource_dir` удалена.
+  - `TrayIconEvent::DoubleClick` вместо `Click { button_state: Up }`.
+  - TODO-комментарий у `tray_read_now/tray_read_later` про замену на прямой вызов B4.
+  - `git rm src-tauri/icons/tray.svg`.
+- cargo build в sandbox не проверен (registry read-only, nix-shell заблокирован) — на хосте ревьюер.
+
+### Следующие действия координатора
+
+После завершения B5-fix → перезапуск ревьюера для B5.
+После U4-review → merge → разблокирует U5 (ждёт ещё B3/B4), U7, U8 (частично).
+После R1 merge → запуск R2-R7 параллельно (6 воркеров — вплотную к лимиту 7).
+
+---
