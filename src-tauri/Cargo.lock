@@ -3036,6 +3036,7 @@ name = "ruvox-tauri"
 version = "0.2.0"
 dependencies = [
  "chrono",
+ "once_cell",
  "regex",
  "serde",
  "serde_json",
