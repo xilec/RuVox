@@ -825,6 +825,42 @@ Ready-tasks после завершения:
 - known_deviations: `pnpm-lock.yaml` не обновлён в worker-commit — требует `pnpm install` на хосте после merge.
 - next_unblocks: **U4 / U5 / U6 / U9 могут теперь подтягивать `selectedEntry` из Zustand-store** вместо локального state в AppShell. U5/U6/U9 воркеры активны параллельно. Следующие к merge: **U6** или **U9** (оба готовы по сигналу координатора). **У всех активных U-воркеров будет конфликт в `src/components/AppShell.tsx`** (navbar теперь с QueueList + импорт `useSelectedEntry`) — ревьюерам U6/U9/U5 придётся объединять свои добавления с текущим layout (сохранять header 108px + Player + navbar QueueList + main `TextViewer(selectedEntry)`).
 
+### U6 — Clipboard input (Read Now / Read Later)
+- status: **merged** (2026-04-20)
+- branch: task/u6-clipboard-input
+- worker_commit: `180f356 feat(ui): Read Now / Read Later buttons with hotkeys`
+- reviewer: autopilot Opus, review_result: ok
+- merge_sha: `2c2ca28 merge(u6): Read Now / Read Later buttons with hotkeys`
+- deps_met: U1 merged (`78a0034`), B4 merged (`2a9c83c`).
+- deliverable:
+  - `src/components/AppShell.tsx` — добавлены две кнопки в header рядом с `ThemeSwitcher`: **Read Now** (`<Button color="blue">`) и **Read Later** (`<Button variant="default">`). Обе кнопки имеют `loading={pending}` и `disabled={pending}` — защита от повторных кликов пока предыдущий `add_clipboard_entry` ещё в полёте.
+  - `addEntry(playWhenReady: boolean)` — async handler: `setPending(true)` → `commands.addClipboardEntry(playWhenReady)` → `notifications.show({color: 'green'})` с текстом «Текст будет воспроизведён сразу» / «Текст добавлен для прослушивания позже». На ошибке — `notifications.show({color: 'red', title: 'Ошибка'})` с `err.message`. `finally { setPending(false) }` гарантирует сброс состояния.
+  - `useHotkeys([['ctrl+shift+1', ...read-now], ['ctrl+shift+2', ...read-later]])` — глобальные шорткаты через `@mantine/hooks::useHotkeys`. Тот же pending-guard через ранний `if (pending) return`.
+- merge_conflicts:
+  - `src/components/AppShell.tsx` — **единственный конфликт, разрешён вручную**. U6 форкался от `ruvox2` до merge U2/U3 → его вариант файла содержал старый layout (`header: 56px`, `<Group>` без Stack, `<TextEntry | null>` через `useState`, navbar placeholder). HEAD (ruvox2 `2466cbc`) содержал обновления U3 (header 108px, `<Stack>` + `<Player />`) и U2 (`QueueList` в navbar, `useSelectedEntry` из `../stores/selectedEntry`).
+  - **Резолв (канонический, сохраняет current layout):**
+    - импорты — объединённый union: `Stack` + `Button` из `@mantine/core`, `useHotkeys`, `notifications`, `useState`, `commands`, `ThemeSwitcher`, `TextViewer`, `Player`, `QueueList`, `useSelectedEntry`. Убран `import type { TextEntry }` из U6 (не используется после миграции на store).
+    - `selectedEntry` — из `useSelectedEntry()` store (как в ruvox2 HEAD), не `useState<TextEntry | null>` из U6 (устарело после U2 merge).
+    - `pending` state + `addEntry` + `useHotkeys` — сохранены из U6 1:1.
+    - header layout — сохранён 108px + `<Stack gap={0}>` с вложенными `<Group h={56}>` (title + actions) и `<Player />` (из U3/U2). Внутри правой `<Group>` actions кнопки Read Now + Read Later добавлены **перед** `<ThemeSwitcher />` (композиция: синяя основная → default secondary → theme control).
+    - navbar — сохранён `<QueueList />` из U2.
+    - main — `<TextViewer entry={selectedEntry} />` (как в ruvox2 HEAD).
+- review_findings:
+  - **Loading state корректный:** `loading={pending}` + `disabled={pending}` на обеих кнопках; `if (pending) return` в начале `addEntry` — защита от race при быстрых повторных кликах / горячих клавишах. `finally { setPending(false) }` гарантирует сброс даже при exception. Ok.
+  - **Hotkeys через `@mantine/hooks::useHotkeys`:** корректное API, bindings `['ctrl+shift+1', fn]` / `['ctrl+shift+2', fn]`. Mantine автоматически вешает listener на `document` и снимает при unmount. `AppShell` — долгоживущий компонент (верхний уровень), hooks устанавливаются один раз.
+  - **Hotkey values** (`ctrl+shift+1` / `ctrl+shift+2`) — hardcoded. Тем временем в `UIConfig` есть поля `hotkey_read_now: string` и `hotkey_read_later: string` (legacy defaults `Ctrl+Shift+C` / `Ctrl+Shift+V`) — задел для user-configurable shortcuts через Settings dialog (U9). Сейчас используются разумные defaults `Ctrl+Shift+1/2` не пересекающиеся ни с одним system-шорткатом Linux/Windows. Follow-up: подписаться на `get_config()` и пробросить `hotkey_read_now`/`hotkey_read_later` вместо hardcoded значений.
+  - **Notifications через `@mantine/notifications`:** `notifications.show({title, message, color})` — каноничный API Mantine 8. Color `green` для success, `red` для error. Русские тексты для пользовательских сообщений. `NotificationsProvider` установлен в `App.tsx` на U1.
+  - **Error handling:** `err instanceof Error ? err.message : String(err)` — безопасная extract-логика для Tauri `CommandError` (wire-format `{ type, message }` маппится в JS `Error` через `invoke` contract). Message показывается пользователю — допустимо для v1; более полная обработка (распознавание `{ type: 'clipboard_empty' }` / `{ type: 'clipboard_error' }`) может быть добавлена как follow-up.
+  - **Command: `addClipboardEntry`** → backend `add_clipboard_entry(play_when_ready)` → `arboard::Clipboard::get_text()` в `spawn_blocking` → `storage.add_entry` → emit `entry_updated{pending}` → `spawn_synthesis` (pipeline + TTS). `play_when_ready=true` — после `ready` player.load+play. B4 flow точно матчит ожидания U6. Воркер ничего не трогал в backend.
+  - **Style:** TS strict ✓, функциональный без `React.FC` ✓, no `any` ✓, no `sx`/`createStyles`/emotion ✓, Mantine 8 `@mantine/hooks` + `@mantine/notifications` ✓, commit message формат `feat(ui): ...` ✓, no emoji ✓.
+- known_deviations:
+  - **Hotkeys hardcoded** вместо чтения из `UIConfig.hotkey_read_now`/`hotkey_read_later` — follow-up для U9 (settings dialog) или отдельной задачи. Текущие defaults `Ctrl+Shift+1/2` разумны и не пересекаются с legacy дефолтами `Ctrl+Shift+C/V` (последние могут конфликтовать с copy/paste в терминале).
+  - **No debounce на hotkeys** кроме `pending` guard — если пользователь зажмёт `Ctrl+Shift+1` → повторные срабатывания будут отклонены `if (pending) return`, но notification пропадёт только на первой. Ok для v1.
+- verification:
+  - Ревьюер прочитал `AppShell.tsx` на SHA `180f356` и ruvox2 HEAD через `git show`. Сверил `commands.addClipboardEntry` signature с `src/lib/tauri.ts` (merged в U1) и `docs/ipc-contract.md` — `add_clipboard_entry(play_when_ready: bool) -> EntryId` ✓. Проверил, что `@mantine/hooks` и `@mantine/notifications` уже в dependencies (установлены на U1).
+  - `pnpm typecheck` / `pnpm build` / `pnpm tauri dev` не прогонялись в sandbox ревьюера (nix-daemon SQLite cache блокируется). Воркер подтвердил `typecheck` / `build` чистыми. Live-прогон остаётся за хостом.
+- next_unblocks: U6 — leaf в UI-дереве, не блокирует другие задачи напрямую. Следующие к merge по приоритету: **U9** (settings dialog — user-configurable hotkeys закроют follow-up U6 hardcoded shortcuts), **U5** (word highlighting — независимо). Оба готовы по сигналу координатора.
+
 ### Следующие действия координатора
 - Ревьюер ждёт уведомлений от других UI-воркеров: **U5** (word highlighting), **U6** (settings panel), **U9** (regenerate entry). Все форкнуты от ruvox2 до U2-merge → их AppShell.tsx будет конфликтовать с текущим (navbar теперь с `<QueueList />` + `useSelectedEntry`, header уже содержит Player). Merge-ревьюер решает конфликты ручным мерджем: сохранять текущий layout (header 108px + Player + navbar QueueList + main `TextViewer(selectedEntry)`) и добавлять изменения от U5/U6/U9.
 - **После U2 merge (`e6fb983`):** на хосте запустить `nix-shell --run "pnpm install"` для обновления `pnpm-lock.yaml` (zustand ^5.0.0 добавлен). Затем `pnpm typecheck && pnpm build && pnpm tauri dev` — smoke QueueList (добавление entry через tray → item появляется с `pending` бейджем → переходит в `processing` → `ready`; delete через confirm-модал; выбор item → TextViewer показывает original_text).
