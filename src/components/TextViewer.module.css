@@ -82,3 +82,13 @@
   height: 100%;
   color: var(--mantine-color-dimmed);
 }
+
+/* Applied by wordHighlight.ts to the span matching the current playback position */
+:global(.word-highlight) {
+  background-color: light-dark(
+    rgba(255, 213, 0, 0.45),
+    rgba(255, 213, 0, 0.3)
+  );
+  border-radius: 2px;
+  transition: background-color 80ms ease-out;
+}

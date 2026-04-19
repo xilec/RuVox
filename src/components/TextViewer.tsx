@@ -8,10 +8,16 @@ import {
   useComputedColorScheme,
 } from '@mantine/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { TextEntry } from '../lib/tauri';
+import type { TextEntry, WordTimestamp } from '../lib/tauri';
+import { commands, events } from '../lib/tauri';
 import { renderMarkdown } from '../lib/markdown';
 import { renderHtml } from '../lib/html';
 import { renderMermaidIn } from '../lib/mermaid';
+import {
+  findActiveTimestamp,
+  applyHighlight,
+  clearHighlight,
+} from '../lib/wordHighlight';
 import classes from './TextViewer.module.css';
 
 // TODO(B1/F4): add `format: 'plain' | 'markdown' | 'html'` to TextEntry schema
@@ -29,6 +35,15 @@ export function TextViewer({ entry }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const colorScheme = useComputedColorScheme('light');
 
+  // Timestamps for the currently playing entry, cached to avoid re-fetching on
+  // every playback_position event.
+  const timestampsRef = useRef<WordTimestamp[]>([]);
+  // Entry id for which timestamps are cached; used to detect entry change.
+  const playingEntryIdRef = useRef<string | null>(null);
+  // Index of the currently highlighted word, kept in a ref to avoid triggering
+  // re-renders on every position event.
+  const activeIdxRef = useRef<number>(-1);
+
   const text = entry?.edited_text ?? entry?.original_text ?? '';
 
   const content = useMemo(() => {
@@ -43,6 +58,15 @@ export function TextViewer({ entry }: Props) {
         return { __html: renderMarkdown(text) };
     }
   }, [entry, text, format]);
+
+  // Clear highlight state whenever the displayed entry or format changes so
+  // stale highlights do not bleed across navigation.
+  useEffect(() => {
+    activeIdxRef.current = -1;
+    if (containerRef.current) {
+      clearHighlight(containerRef.current);
+    }
+  }, [entry?.id, format]);
 
   useEffect(() => {
     if (format !== 'markdown' || !containerRef.current) return;
@@ -69,6 +93,109 @@ export function TextViewer({ entry }: Props) {
     container.addEventListener('click', handleClick);
     return () => container.removeEventListener('click', handleClick);
   }, []);
+
+  // Subscribe to playback events for word highlighting.
+  useEffect(() => {
+    let unlistenStarted: (() => void) | null = null;
+    let unlistenPosition: (() => void) | null = null;
+    let unlistenStopped: (() => void) | null = null;
+    let unlistenFinished: (() => void) | null = null;
+    let unlistenPaused: (() => void) | null = null;
+
+    function resetHighlight() {
+      activeIdxRef.current = -1;
+      playingEntryIdRef.current = null;
+      timestampsRef.current = [];
+      if (containerRef.current) {
+        clearHighlight(containerRef.current);
+      }
+    }
+
+    events
+      .playbackStarted(async ({ entry_id }) => {
+        // Fetch timestamps for the new entry. If the entry has no timestamps
+        // file yet (synthesis still running), the command returns [].
+        try {
+          const ts = await commands.getTimestamps(entry_id);
+          timestampsRef.current = ts;
+          playingEntryIdRef.current = entry_id;
+          activeIdxRef.current = -1;
+        } catch {
+          // Non-fatal: playback continues without highlighting.
+          timestampsRef.current = [];
+          playingEntryIdRef.current = entry_id;
+          activeIdxRef.current = -1;
+        }
+      })
+      .then((fn) => {
+        unlistenStarted = fn;
+      });
+
+    events
+      .playbackPosition(({ position_sec, entry_id }) => {
+        const container = containerRef.current;
+        if (!container) return;
+
+        // Only highlight when the viewer is showing the playing entry.
+        if (!entry || entry.id !== entry_id) return;
+
+        // If we do not have timestamps for this entry yet, skip silently.
+        if (playingEntryIdRef.current !== entry_id) return;
+
+        const timestamps = timestampsRef.current;
+        if (timestamps.length === 0) return;
+
+        // Plain mode has no data-orig-* spans — highlighting is skipped.
+        if (format === 'plain') return;
+
+        // TODO(U5): HTML mode uses HtmlCharSpan sentinel (0/0) which maps all
+        // words to the same position. Highlighting is disabled for HTML mode
+        // until a proper char-mapping is implemented in the HTML pipeline.
+        if (format === 'html') return;
+
+        const newIdx = findActiveTimestamp(timestamps, position_sec);
+        const prevIdx = activeIdxRef.current;
+
+        if (newIdx === prevIdx) return;
+
+        activeIdxRef.current = newIdx;
+        applyHighlight(container, timestamps, newIdx, prevIdx);
+      })
+      .then((fn) => {
+        unlistenPosition = fn;
+      });
+
+    events
+      .playbackStopped(resetHighlight)
+      .then((fn) => {
+        unlistenStopped = fn;
+      });
+
+    events
+      .playbackFinished(resetHighlight)
+      .then((fn) => {
+        unlistenFinished = fn;
+      });
+
+    events
+      .playbackPaused(() => {
+        // Keep the highlight visible while paused; do not reset.
+      })
+      .then((fn) => {
+        unlistenPaused = fn;
+      });
+
+    return () => {
+      unlistenStarted?.();
+      unlistenPosition?.();
+      unlistenStopped?.();
+      unlistenFinished?.();
+      unlistenPaused?.();
+    };
+  // entry.id and format are intentionally included: if the viewer switches to
+  // a different entry or format we need the position handler to re-evaluate.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entry?.id, format]);
 
   if (!entry) {
     return (
