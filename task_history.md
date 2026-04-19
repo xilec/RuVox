@@ -391,3 +391,24 @@ Ready-tasks после завершения:
 После R1 merge → запуск R2-R7 параллельно (6 воркеров — вплотную к лимиту 7).
 
 ---
+
+## Wave 6 — Rust normalizers (после merge R1)
+
+### R2 — NumberNormalizer (Rust)
+- status: **awaiting review**
+- branch: task/r2-numbers-normalizer
+- worker_commit: `75b954c feat(pipeline): port NumberNormalizer to Rust`
+- crate_choice: manual port (нет готового Rust num2words для русского). Все тестовые строки совпадают с Python.
+- tests: **103/103** в изолированном мини-крейте. Классы: Integers (21), Floats (10), Percentages (11), Ranges (8), SizeUnits (18), Versions (12), Dates (7), Times (12) + остальные.
+- TestOrdinalNumbers пропущен (в оригинале placeholder `pass`).
+
+### R4 — AbbreviationNormalizer (Rust)
+- status: **awaiting review**
+- branch: task/r4-abbreviations-normalizer
+- worker_commit: `bebd754 feat(pipeline): port AbbreviationNormalizer to Rust`
+- crates: `std::sync::LazyLock` (Rust 1.80+), `once_cell` не потребовался.
+- tests: **109/109** в изолированном мини-крейте.
+- логика: точно повторяет Python — `SPECIAL_CASES` → `AS_WORD` → single letter → `spell_out` → `handle_mixed`.
+
+### R3, R5, R7 — в работе
+R3 (english), R5 (code), R7 (symbols) — autopilot-sonnet параллельно.
