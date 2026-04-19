@@ -1,56 +1,75 @@
 import {
+  ActionIcon,
   Box,
+  Group,
   Modal,
   ScrollArea,
   SegmentedControl,
   Stack,
   Text,
+  Textarea,
+  Tooltip,
   useComputedColorScheme,
-} from '@mantine/core';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { TextEntry } from '../lib/tauri';
-import { renderMarkdown } from '../lib/markdown';
-import { renderHtml } from '../lib/html';
-import { renderMermaidIn } from '../lib/mermaid';
-import classes from './TextViewer.module.css';
+} from "@mantine/core";
+import { notifications } from "@mantine/notifications";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { TextEntry } from "../lib/tauri";
+import { commands } from "../lib/tauri";
+import { renderMarkdown } from "../lib/markdown";
+import { renderHtml } from "../lib/html";
+import { renderMermaidIn } from "../lib/mermaid";
+import classes from "./TextViewer.module.css";
 
-// TODO(B1/F4): add `format: 'plain' | 'markdown' | 'html'` to TextEntry schema
+// TODO(B1/F4): add `format: "plain" | "markdown" | "html"` to TextEntry schema
 // so that the selected format is persisted alongside the entry.  Until that
 // schema change lands, the format is ephemeral client-side state.
-type Format = 'plain' | 'markdown' | 'html';
+type Format = "plain" | "markdown" | "html";
 
 interface Props {
   entry: TextEntry | null;
 }
 
 export function TextViewer({ entry }: Props) {
-  const [format, setFormat] = useState<Format>('markdown');
+  const [format, setFormat] = useState<Format>("markdown");
   const [zoomedSvg, setZoomedSvg] = useState<string | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [editedDraft, setEditedDraft] = useState("");
+  const [saving, setSaving] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const colorScheme = useComputedColorScheme('light');
+  const colorScheme = useComputedColorScheme("light");
 
-  const text = entry?.edited_text ?? entry?.original_text ?? '';
+  // Keep draft in sync when entry changes and exit edit mode on selection change.
+  useEffect(() => {
+    if (entry) {
+      setEditedDraft(entry.edited_text ?? entry.original_text);
+    }
+    setEditMode(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entry?.id]);
+
+  const displayText = entry?.edited_text ?? entry?.original_text ?? "";
 
   const content = useMemo(() => {
     if (!entry) return null;
     switch (format) {
-      case 'plain':
-        return { __html: escapeHtml(text) };
-      case 'html':
-        return { __html: renderHtml(text) };
-      case 'markdown':
+      case "plain":
+        return { __html: escapeHtml(displayText) };
+      case "html":
+        return { __html: renderHtml(displayText) };
+      case "markdown":
       default:
-        return { __html: renderMarkdown(text) };
+        return { __html: renderMarkdown(displayText) };
     }
-  }, [entry, text, format]);
+  }, [entry, displayText, format]);
 
   useEffect(() => {
-    if (format !== 'markdown' || !containerRef.current) return;
+    if (editMode) return;
+    if (format !== "markdown" || !containerRef.current) return;
     renderMermaidIn(containerRef.current, colorScheme).catch((e) => {
-      // Bad mermaid syntax — keep the raw <div class="mermaid"> as-is
-      console.error('mermaid render error:', e);
+      // Bad mermaid syntax -- keep the raw <div class="mermaid"> as-is
+      console.error("mermaid render error:", e);
     });
-  }, [content, format, colorScheme]);
+  }, [content, format, colorScheme, editMode]);
 
   // Click-to-zoom: when user clicks a rendered mermaid SVG, show it in a modal.
   useEffect(() => {
@@ -59,16 +78,63 @@ export function TextViewer({ entry }: Props) {
 
     function handleClick(e: MouseEvent) {
       const target = e.target as HTMLElement;
-      const mermaidDiv = target.closest<HTMLElement>('.mermaid');
+      const mermaidDiv = target.closest<HTMLElement>(".mermaid");
       if (!mermaidDiv) return;
-      const svg = mermaidDiv.querySelector('svg');
+      const svg = mermaidDiv.querySelector("svg");
       if (!svg) return;
       setZoomedSvg(svg.outerHTML);
     }
 
-    container.addEventListener('click', handleClick);
-    return () => container.removeEventListener('click', handleClick);
+    container.addEventListener("click", handleClick);
+    return () => container.removeEventListener("click", handleClick);
   }, []);
+
+  // Keyboard: Esc cancels edit mode.
+  useEffect(() => {
+    if (!editMode) return;
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        handleCancel();
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editMode, entry]);
+
+  function handleEnterEdit() {
+    if (!entry) return;
+    setEditedDraft(entry.edited_text ?? entry.original_text);
+    setEditMode(true);
+  }
+
+  function handleCancel() {
+    if (!entry) return;
+    setEditedDraft(entry.edited_text ?? entry.original_text);
+    setEditMode(false);
+  }
+
+  async function handleSave() {
+    if (!entry) return;
+    setSaving(true);
+    try {
+      await commands.updateEntryEditedText(entry.id, editedDraft);
+      notifications.show({
+        color: "green",
+        message: "Сохранено",
+        autoClose: 2000,
+      });
+      setEditMode(false);
+    } catch (err) {
+      notifications.show({
+        color: "red",
+        title: "Ошибка сохранения",
+        message: String(err),
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
 
   if (!entry) {
     return (
@@ -80,35 +146,91 @@ export function TextViewer({ entry }: Props) {
 
   return (
     <Stack gap="sm" h="100%">
-      <SegmentedControl
-        value={format}
-        onChange={(v) => setFormat(v as Format)}
-        size="xs"
-        data={[
-          { label: 'Plain', value: 'plain' },
-          { label: 'Markdown', value: 'markdown' },
-          { label: 'HTML', value: 'html' },
-        ]}
-      />
-      <ScrollArea style={{ flex: 1 }}>
-        <Box
-          ref={containerRef}
-          className={classes.content}
-          dangerouslySetInnerHTML={content ?? { __html: '' }}
+      <Group justify="space-between" wrap="nowrap">
+        <SegmentedControl
+          value={format}
+          onChange={(v) => setFormat(v as Format)}
+          size="xs"
+          disabled={editMode}
+          data={[
+            { label: "Plain", value: "plain" },
+            { label: "Markdown", value: "markdown" },
+            { label: "HTML", value: "html" },
+          ]}
         />
-      </ScrollArea>
+        <Group gap="xs" wrap="nowrap">
+          {editMode ? (
+            <>
+              <Tooltip label="Сохранить">
+                <ActionIcon
+                  variant="filled"
+                  color="green"
+                  size="sm"
+                  loading={saving}
+                  onClick={handleSave}
+                  aria-label="Сохранить правки"
+                >
+                  &#x2713;
+                </ActionIcon>
+              </Tooltip>
+              <Tooltip label="Отмена (Esc)">
+                <ActionIcon
+                  variant="subtle"
+                  color="gray"
+                  size="sm"
+                  onClick={handleCancel}
+                  aria-label="Отменить правки"
+                >
+                  &#x2715;
+                </ActionIcon>
+              </Tooltip>
+            </>
+          ) : (
+            <Tooltip label="Редактировать текст">
+              <ActionIcon
+                variant="subtle"
+                color="gray"
+                size="sm"
+                onClick={handleEnterEdit}
+                aria-label="Редактировать"
+              >
+                &#x270F;
+              </ActionIcon>
+            </Tooltip>
+          )}
+        </Group>
+      </Group>
+
+      {editMode ? (
+        <Textarea
+          value={editedDraft}
+          onChange={(e) => setEditedDraft(e.currentTarget.value)}
+          autosize
+          minRows={10}
+          style={{ flex: 1 }}
+          styles={{ input: { fontFamily: "var(--mantine-font-family)", lineHeight: 1.6 } }}
+        />
+      ) : (
+        <ScrollArea style={{ flex: 1 }}>
+          <Box
+            ref={containerRef}
+            className={classes.content}
+            dangerouslySetInnerHTML={content ?? { __html: "" }}
+          />
+        </ScrollArea>
+      )}
 
       <Modal
         opened={zoomedSvg !== null}
         onClose={() => setZoomedSvg(null)}
         size="xl"
         title="Mermaid diagram"
-        styles={{ body: { overflowX: 'auto' } }}
+        styles={{ body: { overflowX: "auto" } }}
       >
         {zoomedSvg && (
           <Box
             dangerouslySetInnerHTML={{ __html: zoomedSvg }}
-            style={{ display: 'flex', justifyContent: 'center' }}
+            style={{ display: "flex", justifyContent: "center" }}
           />
         )}
       </Modal>
@@ -118,8 +240,8 @@ export function TextViewer({ entry }: Props) {
 
 function escapeHtml(s: string): string {
   return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/\n/g, '<br>');
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\n/g, "<br>");
 }
