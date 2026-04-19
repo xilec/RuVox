@@ -1,0 +1,1 @@
+Переменная user_id теперь nullable.
