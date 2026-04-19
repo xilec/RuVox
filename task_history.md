@@ -373,16 +373,19 @@ Ready-tasks после завершения:
   - `TrackedText::sub` не поддерживает `count=N` параметр — идиома Rust: счётчик в замыкании.
 - next_unblocks: R2, R3, R4, R5, R7 (4 нормалайзера + код: R6 ждёт ещё R2+R3, R8 ждёт R5+R7).
 
-### B5-fix — после первого ревью (needs_fix)
-- status: **awaiting re-review**
+### B5-fix — после первого ревью (needs_fix) → merged
+- status: **merged**
 - branch: task/b5-tray
 - fix_commit: `6874905 fix(tray): embed icon via include_bytes, use double-click, add B4 TODO`
+- reviewer: autopilot Opus (после fix), review_result: ok
+- merge_sha: `abd78aa merge(b5): system tray with menu (fixed)`
 - changes:
-  - `load_tray_icon` → `Image::from_bytes(include_bytes!("../../icons/tray.png"))`. Зависимость от `resource_dir` удалена.
-  - `TrayIconEvent::DoubleClick` вместо `Click { button_state: Up }`.
-  - TODO-комментарий у `tray_read_now/tray_read_later` про замену на прямой вызов B4.
+  - `load_tray_icon` → `Image::from_bytes(include_bytes!("../../icons/tray.png"))`.
+  - `TrayIconEvent::DoubleClick`.
+  - TODO-комментарий у `tray_read_now/tray_read_later` про B4.
   - `git rm src-tauri/icons/tray.svg`.
-- cargo build в sandbox не проверен (registry read-only, nix-shell заблокирован) — на хосте ревьюер.
+- merge note: конфликт в `src-tauri/src/lib.rs` разрешён — добавлен `pub mod tray;` рядом с `pub mod pipeline;` и `pub mod storage;` от R1/B1-F4. Cargo.toml auto-merge (features `tray-icon` и `image-png`).
+- **follow-up (future):** `TrayIconEvent::DoubleClick` помечен как "Windows Only" в Tauri docs — на Linux может не срабатывать. Рекомендация: добавить platform guard + fallback `Click { button_state: Up, .. }` для Linux. Не блокер для MVP.
 
 ### Следующие действия координатора
 
