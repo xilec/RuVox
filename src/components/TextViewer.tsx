@@ -23,6 +23,7 @@ import {
   applyHighlight,
   clearHighlight,
 } from '../lib/wordHighlight';
+import { wrapWordsWithOrigPos } from '../lib/wordSpans';
 import classes from './TextViewer.module.css';
 
 // TODO(B1/F4): add `format: "plain" | "markdown" | "html"` to TextEntry schema
@@ -67,7 +68,9 @@ export function TextViewer({ entry }: Props) {
     if (!entry) return null;
     switch (format) {
       case "plain":
-        return { __html: escapeHtml(displayText) };
+        // Wrap each word in a span with data-orig-* so word-highlighting
+        // works in plain mode (same approach as markdown).
+        return { __html: plainToWordHtml(displayText) };
       case "html":
         return { __html: renderHtml(displayText) };
       case "markdown":
@@ -161,9 +164,9 @@ export function TextViewer({ entry }: Props) {
         const timestamps = timestampsRef.current;
         if (timestamps.length === 0) return;
 
-        if (format === 'plain') return;
-        // TODO(U5): HTML mode uses HtmlCharSpan sentinel (0/0) — highlighting
-        // disabled until HTML pipeline emits a proper char-mapping.
+        // Plain mode now emits data-orig-* word spans, so highlighting works.
+        // HTML mode still uses HtmlCharSpan sentinel (0/0) — disabled below.
+        // TODO(U5): emit a proper char-mapping from the HTML pipeline.
         if (format === 'html') return;
 
         const newIdx = findActiveTimestamp(timestamps, position_sec);
@@ -359,10 +362,17 @@ export function TextViewer({ entry }: Props) {
   );
 }
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\n/g, "<br>");
+function plainToWordHtml(s: string): string {
+  // Split on newlines so we can insert <br> between lines while still
+  // wrapping each word in a data-orig-* span.  Offsets track the position of
+  // each line within the original source text.
+  const lines = s.split('\n');
+  const parts: string[] = [];
+  let offset = 0;
+  for (let i = 0; i < lines.length; i += 1) {
+    parts.push(wrapWordsWithOrigPos(lines[i], offset));
+    offset += lines[i].length + 1; // +1 for the consumed \n
+    if (i < lines.length - 1) parts.push('<br>');
+  }
+  return parts.join('');
 }

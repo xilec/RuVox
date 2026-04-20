@@ -2,17 +2,10 @@ import MarkdownIt from 'markdown-it';
 import type Token from 'markdown-it/lib/token.mjs';
 import type Renderer from 'markdown-it/lib/renderer.mjs';
 import hljs from 'highlight.js';
+import { escapeHtml, wrapWordsWithOrigPos } from './wordSpans';
 
 function escapeMermaidCode(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }
 
 const md = new MarkdownIt({
@@ -80,8 +73,9 @@ export function renderMarkdown(source: string): string {
         : escapeHtml(content);
     }
     searchFrom = pos + content.length;
-    const escaped = escapeHtml(content);
-    return `<span data-orig-start="${pos}" data-orig-end="${pos + content.length}">${escaped}</span>`;
+    // Wrap each word in its own span so that word-highlighting targets a
+    // single word, not the whole text-token (which can be a paragraph).
+    return wrapWordsWithOrigPos(content, pos);
   };
 
   const html = md.render(source);

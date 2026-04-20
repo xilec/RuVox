@@ -96,7 +96,7 @@ function QueueItem({ entry, isSelected, onSelect, onPlay, onDelete }: QueueItemP
           </Group>
         </Stack>
 
-        <Group gap={4} className={classes.actions} wrap="nowrap">
+        <Group gap="xs" className={classes.actions} wrap="nowrap">
           <ActionIcon
             size="sm"
             variant="subtle"
@@ -111,9 +111,12 @@ function QueueItem({ entry, isSelected, onSelect, onPlay, onDelete }: QueueItemP
           >
             &#x25B6;
           </ActionIcon>
+          {/* Spacer + delete — bigger gap + light-weight variant to make
+              an accidental click on delete right after play less likely. */}
+          <div className={classes.actionsSeparator} aria-hidden />
           <ActionIcon
             size="sm"
-            variant="subtle"
+            variant="light"
             color="red"
             title="Удалить"
             onClick={(e) => {
@@ -122,7 +125,7 @@ function QueueItem({ entry, isSelected, onSelect, onPlay, onDelete }: QueueItemP
             }}
             aria-label="Удалить"
           >
-            &#x2715;
+            &#x1F5D1;
           </ActionIcon>
         </Group>
       </Group>

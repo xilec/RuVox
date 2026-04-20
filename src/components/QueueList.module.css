@@ -38,6 +38,15 @@
   opacity: 1;
 }
 
+/* Thin vertical divider between play (safe) and delete (destructive) so
+   the two buttons do not read as a single cluster. */
+.actionsSeparator {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background-color: var(--mantine-color-default-border);
+}
+
 .scrollArea {
   height: 100%;
 }

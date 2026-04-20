@@ -53,8 +53,11 @@ export function Player({ entryIds }: PlayerProps) {
           ...prev,
           isPlaying: true,
           isPaused: false,
-          position: 0,
+          // Preserve position on resume (playback_started now fires on resume
+          // too); only reset when the entry actually changes.
+          position: prev.currentEntryId === p.entry_id ? prev.position : 0,
           currentEntryId: p.entry_id,
+          duration: p.duration_sec ?? prev.duration,
         }));
       }),
     );

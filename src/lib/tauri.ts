@@ -130,7 +130,7 @@ export const commands = {
 
 export interface EntryUpdatedPayload { entry: TextEntry; }
 export interface PlaybackPositionPayload { position_sec: number; entry_id: EntryId; }
-export interface PlaybackStartedPayload { entry_id: EntryId; }
+export interface PlaybackStartedPayload { entry_id: EntryId; duration_sec: number | null; }
 export interface PlaybackPausedPayload { entry_id: EntryId; position_sec: number; }
 export interface PlaybackFinishedPayload { entry_id: EntryId; }
 export interface ModelErrorPayload { message: string; }

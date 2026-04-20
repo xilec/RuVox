@@ -69,12 +69,11 @@ pub struct Player<R: Runtime> {
 impl<R: Runtime> Player<R> {
     /// Create and initialise a new Player.
     ///
-    /// Starts an mpv subprocess with:
-    /// - `--no-video` — audio-only (replaces legacy `video=False`)
-    /// - `--no-ytdl` — skip youtube-dl probing for local WAV files
-    /// - `--af=scaletempo2` — pitch-correct speed scaling (same as legacy)
-    /// - `--audio-pitch-correction=no` — disable the softer built-in pitch
-    ///   correction so scaletempo2 is the sole algorithm
+    /// Starts an mpv subprocess with `--af=scaletempo2` — pitch-correct
+    /// speed scaling — and additionally enforces the audio filter at
+    /// runtime, because tauri-plugin-mpv's arg forwarding has been observed
+    /// to miss the filter chain on some setups, which results in speed
+    /// changes raising pitch.
     pub fn new(app: AppHandle<R>) -> Result<Self> {
         let config = MpvConfig {
             path: "mpv".to_string(),
@@ -82,7 +81,6 @@ impl<R: Runtime> Player<R> {
                 "--no-video".to_string(),
                 "--no-ytdl".to_string(),
                 "--af=scaletempo2".to_string(),
-                "--audio-pitch-correction=no".to_string(),
             ],
             observed_properties: vec![],
             ipc_timeout_ms: 2000,
@@ -93,16 +91,25 @@ impl<R: Runtime> Player<R> {
             .init(config, WINDOW_LABEL)
             .map_err(|e| PlayerError::Init(e.to_string()))?;
 
-        debug!("mpv player initialised (scaletempo2, audio-only)");
-
-        Ok(Self {
+        let this = Self {
             app,
             state: Mutex::new(State {
                 current_entry_id: None,
                 duration_sec: None,
                 is_playing: false,
             }),
-        })
+        };
+
+        // Belt-and-braces: set `af` via IPC too, so scaletempo2 is definitely
+        // in the filter chain regardless of how the args were interpreted at
+        // process init.
+        if let Err(e) = this.mpv_command(json!(["set_property", "af", "scaletempo2"])) {
+            warn!("failed to set runtime af=scaletempo2: {e}");
+        }
+
+        debug!("mpv player initialised (scaletempo2, audio-only)");
+
+        Ok(this)
     }
 
     // -----------------------------------------------------------------------
@@ -143,15 +150,16 @@ impl<R: Runtime> Player<R> {
     /// Start (or resume) playback.
     pub fn play(&self) -> Result<()> {
         self.mpv_command(json!(["set_property", "pause", false]))?;
-        let entry_id = {
+        let (entry_id, duration_sec) = {
             let mut s = self.state.lock();
             s.is_playing = true;
-            s.current_entry_id.clone()
+            (s.current_entry_id.clone(), s.duration_sec)
         };
         if let Some(id) = entry_id {
-            let _ = self
-                .app
-                .emit("playback_started", json!({ "entry_id": id }));
+            let _ = self.app.emit(
+                "playback_started",
+                json!({ "entry_id": id, "duration_sec": duration_sec }),
+            );
         }
         Ok(())
     }
@@ -174,11 +182,22 @@ impl<R: Runtime> Player<R> {
         Ok(())
     }
 
-    /// Resume from a paused state (alias of [`play`] without re-emitting
-    /// started).
+    /// Resume from a paused state.  Emits `playback_started` so that the UI
+    /// flips the play/pause toggle back to "pause" (frontend state is in
+    /// terms of events, not idempotent flags).
     pub fn resume(&self) -> Result<()> {
         self.mpv_command(json!(["set_property", "pause", false]))?;
-        self.state.lock().is_playing = true;
+        let (entry_id, duration_sec) = {
+            let mut s = self.state.lock();
+            s.is_playing = true;
+            (s.current_entry_id.clone(), s.duration_sec)
+        };
+        if let Some(id) = entry_id {
+            let _ = self.app.emit(
+                "playback_started",
+                json!({ "entry_id": id, "duration_sec": duration_sec }),
+            );
+        }
         Ok(())
     }
 

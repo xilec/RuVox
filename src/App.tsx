@@ -13,8 +13,21 @@ export function App() {
     setupNotificationBridge().then((fn) => {
       cleanup = fn;
     });
+
+    // Disable the default webview context menu; editable elements keep their
+    // native menu (cut/copy/paste) so the Edit-mode Textarea still works.
+    const blockContextMenu = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.isContentEditable || target.tagName === 'TEXTAREA' || target.tagName === 'INPUT')) {
+        return;
+      }
+      e.preventDefault();
+    };
+    window.addEventListener('contextmenu', blockContextMenu);
+
     return () => {
       cleanup?.();
+      window.removeEventListener('contextmenu', blockContextMenu);
     };
   }, []);
 
