@@ -309,7 +309,9 @@ pub fn spawn_position_emitter<R: Runtime + 'static>(
     player: Arc<Player<R>>,
     app: AppHandle<R>,
 ) {
-    tokio::spawn(async move {
+    // tauri::async_runtime::spawn works inside the setup hook where the
+    // bare tokio runtime context is not yet active.
+    tauri::async_runtime::spawn(async move {
         let mut ticker = interval(Duration::from_millis(100));
         loop {
             ticker.tick().await;

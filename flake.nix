@@ -161,11 +161,15 @@
             runHook postInstall
           '';
 
-          postFixup = ''
-            wrapProgram $out/bin/ruvox \
-              --prefix PATH : ${lib.makeBinPath [ ttsd pkgs.mpv ]} \
-              --prefix LD_LIBRARY_PATH : ${runtimeLibPath} \
-              --set GIO_EXTRA_MODULES ${pkgs.glib-networking}/lib/gio/modules
+          # wrapGAppsHook3 already wraps the binary with XDG_DATA_DIRS for
+          # GSettings schemas and icon themes; we only add the project-specific
+          # bits (ttsd/mpv path, mpv runtime libs, WebKit Wayland fix).
+          preFixup = ''
+            gappsWrapperArgs+=(
+              --prefix PATH : ${lib.makeBinPath [ ttsd pkgs.mpv ]}
+              --prefix LD_LIBRARY_PATH : ${runtimeLibPath}
+              --set WEBKIT_DISABLE_DMABUF_RENDERER 1
+            )
           '';
 
           PKG_CONFIG_PATH = pkgConfigPaths;

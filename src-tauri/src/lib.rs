@@ -35,27 +35,39 @@ pub fn run() {
             );
 
             // Spawn ttsd subprocess.
-            let ttsd_dir = app
-                .path()
-                .resource_dir()
-                .unwrap_or_else(|_| std::path::PathBuf::from("."))
-                .join("ttsd");
-            let ttsd_dir = if ttsd_dir.exists() {
-                ttsd_dir
-            } else {
-                std::path::PathBuf::from("ttsd")
+            // In production: bundled next to the binary (resource_dir/ttsd).
+            // In `cargo tauri dev`: cwd is src-tauri/, so the project ttsd lives
+            // at ../ttsd; fall back to ./ttsd for ad-hoc runs from the repo root.
+            let ttsd_dir = {
+                let res_dir = app
+                    .path()
+                    .resource_dir()
+                    .unwrap_or_else(|_| std::path::PathBuf::from("."))
+                    .join("ttsd");
+                if res_dir.exists() {
+                    res_dir
+                } else if std::path::Path::new("../ttsd/pyproject.toml").exists() {
+                    std::path::PathBuf::from("../ttsd")
+                } else {
+                    std::path::PathBuf::from("ttsd")
+                }
             };
 
+            // tokio::process::Command::spawn requires an active tokio runtime
+            // context; setup hook runs synchronously, so enter Tauri's runtime
+            // explicitly via block_on (the inner spawn returns instantly).
             let tts = Arc::new(
-                tts::TtsSubprocess::spawn(ttsd_dir)
-                    .expect("не удалось запустить ttsd subprocess"),
+                tauri::async_runtime::block_on(async move {
+                    tts::TtsSubprocess::spawn(ttsd_dir)
+                })
+                .expect("не удалось запустить ttsd subprocess"),
             );
 
             // Warm up Silero model in background; emit model_loading → model_loaded/model_error.
             {
                 let tts_clone = Arc::clone(&tts);
                 let app_handle = app.handle().clone();
-                tokio::spawn(async move {
+                tauri::async_runtime::spawn(async move {
                     let _ = app_handle.emit("model_loading", json!({}));
                     match tts_clone.warmup().await {
                         Ok(()) => {
@@ -83,7 +95,7 @@ pub fn run() {
                 let pipeline_clone = Arc::clone(&pipeline);
                 let app_handle = app.handle().clone();
 
-                tokio::spawn(async move {
+                tauri::async_runtime::spawn(async move {
                     while let Some(cmd) = tray_rx.recv().await {
                         // Read clipboard on a blocking thread (required on Linux).
                         let text_result = tokio::task::spawn_blocking(|| {

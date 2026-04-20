@@ -140,6 +140,14 @@ pkgs.mkShell {
     # Needed by glib-networking (TLS for WebKit)
     export GIO_EXTRA_MODULES="${pkgs.glib-networking}/lib/gio/modules"
 
+    # WebKitGTK 2.52 on Wayland crashes with "Gdk-Message Error 71 (Protocol
+    # error)" unless DMABUF rendering is disabled.  No effect on X11.
+    export WEBKIT_DISABLE_DMABUF_RENDERER=1
+
+    # GSettings schemas + icon theme search path: wrapGAppsHook4 sets these
+    # for the production bundle; in dev we set them manually.
+    export XDG_DATA_DIRS="${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:${pkgs.hicolor-icon-theme}/share:$XDG_DATA_DIRS"
+
     echo "RuVox 2.0 development environment"
     echo "  Rust:   $(rustc --version)"
     echo "  Node:   $(node --version)"
