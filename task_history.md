@@ -1029,3 +1029,15 @@ Ready-tasks после завершения:
   - `nix-instantiate --parse flake.nix` — синтаксис ok, все ссылки разрешены.
   - Интеграционный `nix build .#ruvox` — за хостом (или с отключённым sandbox для первого hash-fixup).
 - next_unblocks: P1 разблокирует P3 (final docs) и P2 (удаление legacy, делается координатором).
+
+### P3 — Финальные тесты + документация
+- status: **merged** (2026-04-20)
+- branch: прямо в ruvox2 (main session, без worker-агента)
+- deps_met: все R/B/U и P1 завершены.
+- deliverable:
+  - `README.md` переписан под Tauri 2 стек: убраны упоминания PyQt6, добавлены разделы «Стек» (таблица), «Возможности», «Dev-окружение» (`nix develop` и `nix-shell`), «Сборка production-бинаря» (`nix build .#ruvox` с pnpm-hash-fixup note), «Тесты» (typecheck/lint/cargo test/pytest), «Документация» (ссылки на AGENTS/RewriteNotes/RewriteTaskPlan/task_history/docs/CHANGELOG).
+  - `CHANGELOG.md` создан с версиями 0.2.0 (rewrite) и 0.1.x (legacy). Секции Added/Changed/Removed/Fixed/Developer notes. Формат Keep a Changelog + SemVer.
+- verification:
+  - Синтаксис Markdown — чистый (no раскрывающиеся мета-блоки, таблицы валидны).
+  - Ссылки на файлы проверены: AGENTS.md, RewriteNotes.md, RewriteTaskPlan.md, task_history.md, docs/ipc-contract.md, docs/storage-schema.md существуют.
+- next_unblocks: после P3 P2 (удаление `legacy/`) — решение пользователя, когда подтвердит фичи-паритет RuVox 2 в ручном smoke. Вся Rewrite Phase завершена.
