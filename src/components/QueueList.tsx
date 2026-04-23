@@ -218,7 +218,7 @@ export function QueueList() {
   return (
     <>
       <ScrollArea className={classes.scrollArea}>
-        <Stack gap="xs">
+        <Stack gap={4}>
           {entries.map((entry) => (
             <QueueItem
               key={entry.id}
