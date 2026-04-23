@@ -238,6 +238,11 @@ export function QueueList() {
         position="bottom-start"
         withinPortal
         closeOnItemClick
+        // Default 'mousedown' closes the menu the instant it opens, because
+        // the right-click mousedown that opened us bubbles to the window
+        // after we've set `opened=true`.  `click` fires on mouseup, not
+        // mousedown, so a right-click no longer self-closes.
+        clickOutsideEvents={['click']}
       >
         <Menu.Target>
           <div

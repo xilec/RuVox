@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { ActionIcon, Group, Slider, Text, NumberInput, Tooltip } from '@mantine/core';
 import { useHotkeys } from '@mantine/hooks';
 import type { UnlistenFn } from '@tauri-apps/api/event';
@@ -39,10 +39,9 @@ interface PlayerProps {
 
 export function Player({ entryIds }: PlayerProps) {
   const [state, setState] = useState<PlayerState>(INITIAL_STATE);
-  // Tracks whether the user is actively dragging the progress slider so we
-  // don't override the drag value with incoming playback_position events.
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragValue, setDragValue] = useState(0);
+  // Ref (not state) because the playback_position listener closes over it
+  // once on mount; a ref avoids resubscribing on every drag.
+  const draggingRef = useRef(false);
 
   useEffect(() => {
     const unlisteners: Promise<UnlistenFn>[] = [];
@@ -100,7 +99,7 @@ export function Player({ entryIds }: PlayerProps) {
       events.playbackPosition((p) => {
         setState((prev) => {
           const next: PlayerState = { ...prev, currentEntryId: p.entry_id };
-          if (!isDragging) {
+          if (!draggingRef.current) {
             next.position = p.position_sec;
           }
           // mpv needs a few ticks to parse the WAV header; duration comes
@@ -131,10 +130,6 @@ export function Player({ entryIds }: PlayerProps) {
     return () => {
       unlisteners.forEach((p) => p.then((fn) => fn()));
     };
-    // isDragging is intentionally excluded: the closure only reads it via
-    // setState callback (captures latest via closure-over-ref pattern would
-    // require a ref; using a state callback avoids stale closure issues).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handlePlayPause = useCallback(async () => {
@@ -200,7 +195,6 @@ export function Player({ entryIds }: PlayerProps) {
     ? '\u23F8' // pause
     : '\u25B6'; // play
 
-  const progressValue = isDragging ? dragValue : state.position;
   const maxProgress = state.duration > 0 ? state.duration : 1;
 
   return (
@@ -248,13 +242,15 @@ export function Player({ entryIds }: PlayerProps) {
         className={classes.progressSlider}
         min={0}
         max={maxProgress}
-        value={progressValue}
+        value={state.position}
         onChange={(v) => {
-          setIsDragging(true);
-          setDragValue(v);
+          // Optimistic update while dragging; playback_position listener
+          // skips overwriting state.position while draggingRef.current=true.
+          draggingRef.current = true;
+          setState((prev) => ({ ...prev, position: v }));
         }}
         onChangeEnd={(v) => {
-          setIsDragging(false);
+          draggingRef.current = false;
           setState((prev) => ({ ...prev, position: v }));
           void handleSeek(v);
         }}
