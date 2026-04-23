@@ -140,22 +140,19 @@ pkgs.mkShell {
     # Needed by glib-networking (TLS for WebKit)
     export GIO_EXTRA_MODULES="${pkgs.glib-networking}/lib/gio/modules"
 
-    # WebKitGTK on Wayland (KDE Plasma 6, fractional scaling) produces broken
-    # window metrics: devicePixelRatio becomes negative, inner{Width,Height}
-    # negative, `computed html font-size` in the millions, and every CSS px/rem
-    # value collapses to the same on-screen size.  Root cause: upstream Tauri
-    # #7354 / #12361 / #5600 — wry/webkit2gtk does not implement Wayland's
-    # fractional-scale protocol, so it reads the compositor's scale as garbage.
-    #
-    # The only working workaround is to force the webview through XWayland and
-    # disable the two WebKit rendering paths that crash on XWayland:
-    #   GDK_BACKEND=x11                    — run everything under X11 (XWayland)
-    #   WEBKIT_DISABLE_DMABUF_RENDERER=1   — DMABUF path crashes with Error 71
-    #   WEBKIT_DISABLE_COMPOSITING_MODE=1  — hw-compositing path has GBM failures
-    # Remove all three the moment fractional scaling works in wry/webkit2gtk.
-    export GDK_BACKEND=x11
+    # WebKitGTK inside Tauri mis-initialises window metrics on Wayland unless
+    # the GSettings schemas for gsettings-desktop-schemas and gtk+3 are visible
+    # via XDG_DATA_DIRS AND glib-networking's gio-modules are discoverable.
+    # Without them devicePixelRatio becomes negative, innerWidth/Height go
+    # negative, computed html font-size blows up to millions of px, and every
+    # CSS value collapses to the same on-screen size.  Root cause: upstream
+    # tauri #7354 — on non-standard distros (NixOS, similar) webkit2gtk asks
+    # GSettings for scaling hints, gets nothing, and garbage is the result.
+    # Fix discovered in the #7354 thread (comments by n3oney / Mange); the
+    # XDG_DATA_DIRS / GIO_EXTRA_MODULES exports below are what makes it work.
+    # DMABUF renderer still crashes with "Gdk-Message Error 71 (Protocol
+    # error)" on KDE Plasma 6 Wayland — disable it explicitly.
     export WEBKIT_DISABLE_DMABUF_RENDERER=1
-    export WEBKIT_DISABLE_COMPOSITING_MODE=1
 
     # GSettings schemas + icon theme search path: wrapGAppsHook4 sets these
     # for the production bundle; in dev we set them manually.
