@@ -10,7 +10,8 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use serde_json::json;
-use tauri::{Emitter, Manager};
+use tauri::{Emitter, Manager, RunEvent};
+use tauri_plugin_mpv::MpvExt;
 
 use commands::*;
 use pipeline::TTSPipeline;
@@ -19,7 +20,40 @@ use state::AppState;
 use storage::service::StorageService;
 use tray::TrayCmd;
 
+/// Kill orphan mpv processes left over from a previous crash of this binary.
+///
+/// tauri-plugin-mpv creates a UNIX socket at
+/// `/tmp/tauri_plugin_mpv_socket_<parent_pid>_<window_label>`.  If the
+/// parent_pid no longer exists, the corresponding mpv is an orphan that
+/// survived a crash/SIGKILL.  Find those mpv PIDs via `/proc/<pid>/cmdline`
+/// search and send SIGTERM.
+fn reap_orphan_mpv() {
+    let Ok(entries) = std::fs::read_dir("/tmp") else { return };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(s) = name.to_str() else { continue };
+        if !s.starts_with("tauri_plugin_mpv_socket_") { continue }
+        let parts: Vec<&str> = s.split('_').collect();
+        let Some(parent_pid_str) = parts.get(4) else { continue };
+        let Ok(parent_pid) = parent_pid_str.parse::<u32>() else { continue };
+        if std::path::Path::new(&format!("/proc/{parent_pid}")).exists() { continue; }
+        // Parent dead → find mpv with this IPC socket arg and kill it.
+        if let Ok(procs) = std::fs::read_dir("/proc") {
+            for p in procs.flatten() {
+                let Ok(pid) = p.file_name().to_string_lossy().parse::<u32>() else { continue };
+                let Ok(cmdline) = std::fs::read_to_string(format!("/proc/{pid}/cmdline")) else { continue };
+                if cmdline.contains(&format!("tauri_plugin_mpv_socket_{parent_pid}_")) {
+                    tracing::warn!("reaping orphan mpv pid={pid} (parent {parent_pid} dead)");
+                    unsafe { libc::kill(pid as i32, libc::SIGTERM); }
+                }
+            }
+        }
+        let _ = std::fs::remove_file(entry.path());
+    }
+}
+
 pub fn run() {
+    reap_orphan_mpv();
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_mpv::init())
@@ -177,6 +211,17 @@ pub fn run() {
             get_cache_stats,
             update_entry_edited_text,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if matches!(event, RunEvent::Exit | RunEvent::ExitRequested { .. }) {
+                // Kill mpv subprocess — tauri-plugin-mpv only auto-destroys on
+                // WindowEvent::CloseRequested, so programmatic exit (tray
+                // quit, SIGTERM handled by Tauri, panic that unwound through
+                // main) leaves mpv running.
+                if let Err(e) = app_handle.mpv().destroy(player::WINDOW_LABEL) {
+                    tracing::warn!("mpv destroy on exit failed: {e}");
+                }
+            }
+        });
 }

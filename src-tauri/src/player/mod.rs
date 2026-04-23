@@ -31,7 +31,7 @@ use tauri_plugin_mpv::{MpvCommand, MpvConfig, MpvExt};
 use tokio::time::{interval, Duration};
 use tracing::{debug, warn};
 
-const WINDOW_LABEL: &str = "main";
+pub const WINDOW_LABEL: &str = "main";
 
 #[derive(Debug, thiserror::Error)]
 pub enum PlayerError {

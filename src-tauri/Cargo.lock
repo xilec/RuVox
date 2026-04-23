@@ -3256,6 +3256,7 @@ dependencies = [
  "arboard",
  "chrono",
  "dirs",
+ "libc",
  "once_cell",
  "parking_lot",
  "regex",
