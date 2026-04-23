@@ -620,9 +620,11 @@ mod tests {
     fn save_and_load_config() {
         let (svc, _dir) = make_service();
 
-        let mut cfg = UIConfig::default();
-        cfg.speaker = "aidar".to_string();
-        cfg.sample_rate = 24000;
+        let cfg = UIConfig {
+            speaker: "aidar".to_string(),
+            sample_rate: 24000,
+            ..UIConfig::default()
+        };
         svc.save_config(&cfg).unwrap();
 
         let loaded = svc.load_config().unwrap();

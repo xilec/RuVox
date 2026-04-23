@@ -415,10 +415,8 @@ impl TrackedText {
                 if entry.orig_start <= orig_start && orig_start < entry.orig_end {
                     return Some(entry);
                 }
-            } else {
-                if orig_start < entry.orig_end && entry.orig_start < orig_end {
-                    return Some(entry);
-                }
+            } else if orig_start < entry.orig_end && entry.orig_start < orig_end {
+                return Some(entry);
             }
         }
         None

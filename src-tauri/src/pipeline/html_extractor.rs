@@ -12,7 +12,6 @@
 
 use scraper::{Html, Node, Selector};
 use thiserror::Error;
-use tracing::warn;
 
 /// Errors produced by the HTML extractor.
 #[derive(Debug, Error)]
@@ -134,8 +133,6 @@ struct ExtractionCtx<'h> {
     spans: Vec<HtmlCharSpan>,
     /// Whether the last character written to `output` was whitespace / newline.
     last_was_space: bool,
-    /// Nesting depth inside excluded subtrees — we skip everything > 0.
-    exclude_depth: usize,
 }
 
 impl<'h> ExtractionCtx<'h> {
@@ -145,7 +142,6 @@ impl<'h> ExtractionCtx<'h> {
             output: String::new(),
             spans: Vec::new(),
             last_was_space: true,
-            exclude_depth: 0,
         }
     }
 

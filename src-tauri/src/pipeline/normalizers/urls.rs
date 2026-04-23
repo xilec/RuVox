@@ -210,8 +210,8 @@ impl<'a> URLPathNormalizer<'a> {
         };
 
         // Separate query from fragment.
-        let (query_str, fragment_str) = if after_path.starts_with('#') {
-            ("", &after_path[1..])
+        let (query_str, fragment_str) = if let Some(stripped) = after_path.strip_prefix('#') {
+            ("", stripped)
         } else if let Some(pos) = after_path.find('#') {
             (&after_path[..pos], &after_path[pos + 1..])
         } else {
@@ -428,10 +428,9 @@ impl<'a> URLPathNormalizer<'a> {
                     parts.push(drive);
                 }
                 parts.push("двоеточие".to_string());
-            } else if segment.starts_with('.') {
+            } else if let Some(rest) = segment.strip_prefix('.') {
                 // Hidden file/directory (starts with .)
                 parts.push("точка".to_string());
-                let rest = &segment[1..];
                 if rest.contains('.') {
                     // Has extension: split on last dot.
                     let dot_pos = rest.rfind('.').unwrap();

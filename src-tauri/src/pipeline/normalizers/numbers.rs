@@ -368,7 +368,7 @@ fn ones_teens(n: i64, gender: Gender) -> String {
 /// Russian declension based on number's last digits.
 /// forms: (singular, genitive_singular, genitive_plural)
 fn get_declension(n: i64, forms: (&str, &str, &str)) -> String {
-    let n = n.unsigned_abs() as u64;
+    let n = n.unsigned_abs();
     let last_two = n % 100;
     let last_one = n % 10;
 
@@ -549,7 +549,7 @@ fn hundreds_word_ordinal_stem(h: i64) -> &'static str {
 ///
 /// For year-range numbers (1000–9999), uses ordinal genitive (same as Python).
 fn to_genitive(n: i64) -> String {
-    if n >= 1000 && n <= 9999 {
+    if (1000..=9999).contains(&n) {
         return year_to_ordinal_genitive(n);
     }
 
@@ -853,7 +853,7 @@ impl NumberNormalizer {
 
     /// Convert version string (e.g. "v1.2.3", "2.0-beta") to Russian words.
     pub fn normalize_version(&self, ver_str: &str) -> String {
-        let s = ver_str.trim_start_matches(|c| c == 'v' || c == 'V');
+        let s = ver_str.trim_start_matches(['v', 'V']);
 
         // Tokenise into (kind, value) pairs
         let mut tokens: Vec<(&str, String)> = Vec::new();
@@ -924,7 +924,7 @@ impl NumberNormalizer {
 
     /// Convert date string (ISO or European) to Russian words.
     pub fn normalize_date(&self, date_str: &str) -> String {
-        let parts: Vec<&str> = date_str.split(|c| c == '-' || c == '/' || c == '.').collect();
+        let parts: Vec<&str> = date_str.split(['-', '/', '.']).collect();
         if parts.len() != 3 {
             return date_str.to_string();
         }
