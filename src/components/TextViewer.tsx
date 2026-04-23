@@ -269,7 +269,7 @@ export function TextViewer({ entry }: Props) {
   }
 
   return (
-    <Stack gap="sm" h="100%">
+    <Stack gap="sm" h="100%" style={{ flex: 1, minHeight: 0 }}>
       <Group justify="space-between" wrap="nowrap">
         <SegmentedControl
           value={format}

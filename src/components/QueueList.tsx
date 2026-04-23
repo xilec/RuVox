@@ -7,6 +7,7 @@ import {
   ActionIcon,
   ScrollArea,
   Loader,
+  Menu,
 } from '@mantine/core';
 import { modals } from '@mantine/modals';
 import { commands, events } from '../lib/tauri';
@@ -63,73 +64,106 @@ function QueueItem({ entry, isSelected, onSelect, onPlay, onDelete }: QueueItemP
   const isProcessing = entry.status === 'processing';
   const canPlay = entry.status === 'ready' || entry.status === 'playing';
 
-  return (
-    <div
-      className={`${classes.item} ${isSelected ? classes.itemSelected : ''}`}
-      onClick={() => onSelect(entry)}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onSelect(entry);
-        }
-      }}
-    >
-      <Group justify="space-between" gap="xs" wrap="nowrap">
-        <Stack gap={2} style={{ minWidth: 0, flex: 1 }}>
-          <Text className={classes.preview} title={entry.original_text}>
-            {preview}
-            {entry.original_text.length > 60 ? '\u2026' : ''}
-          </Text>
-          <Group gap="xs" align="center">
-            <Badge
-              size="xs"
-              color={statusBadgeColor(entry.status)}
-              leftSection={isProcessing ? <Loader size={8} color="blue" /> : null}
-            >
-              {statusLabel(entry.status)}
-            </Badge>
-            {entry.duration_sec != null && (
-              <Text className={classes.meta}>{formatDuration(entry.duration_sec)}</Text>
-            )}
-          </Group>
-        </Stack>
+  // Mantine Menu opens on trigger click; we open it on right-click (contextmenu)
+  // and position it at the cursor.  Controlled state so the trigger is a
+  // dummy anchor sized 0.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
-        <Group gap="xs" className={classes.actions} wrap="nowrap">
-          <ActionIcon
-            size="sm"
-            variant="subtle"
-            color="green"
-            disabled={!canPlay}
-            title="Воспроизвести"
-            onClick={(e) => {
-              e.stopPropagation();
-              onPlay(entry.id);
-            }}
-            aria-label="Воспроизвести"
-          >
-            &#x25B6;
-          </ActionIcon>
-          {/* Spacer + delete — bigger gap + light-weight variant to make
-              an accidental click on delete right after play less likely. */}
-          <div className={classes.actionsSeparator} aria-hidden />
-          <ActionIcon
-            size="sm"
-            variant="light"
-            color="red"
-            title="Удалить"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete(entry.id);
-            }}
-            aria-label="Удалить"
-          >
-            &#x1F5D1;
-          </ActionIcon>
+  return (
+    <>
+      <div
+        className={`${classes.item} ${isSelected ? classes.itemSelected : ''}`}
+        onClick={() => onSelect(entry)}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setMenuPos({ x: e.clientX, y: e.clientY });
+          setMenuOpen(true);
+        }}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onSelect(entry);
+          }
+        }}
+      >
+        <Group justify="space-between" gap="xs" wrap="nowrap">
+          <Stack gap={2} style={{ minWidth: 0, flex: 1 }}>
+            <Text className={classes.preview} title={entry.original_text}>
+              {preview}
+              {entry.original_text.length > 60 ? '\u2026' : ''}
+            </Text>
+            <Group gap="xs" align="center">
+              <Badge
+                size="xs"
+                color={statusBadgeColor(entry.status)}
+                leftSection={isProcessing ? <Loader size={8} color="blue" /> : null}
+              >
+                {statusLabel(entry.status)}
+              </Badge>
+              {entry.duration_sec != null && (
+                <Text className={classes.meta}>{formatDuration(entry.duration_sec)}</Text>
+              )}
+            </Group>
+          </Stack>
+
+          <Group gap="xs" className={classes.actions} wrap="nowrap">
+            <ActionIcon
+              size="sm"
+              variant="subtle"
+              color="green"
+              disabled={!canPlay}
+              title="Воспроизвести"
+              onClick={(e) => {
+                e.stopPropagation();
+                onPlay(entry.id);
+              }}
+              aria-label="Воспроизвести"
+            >
+              &#x25B6;
+            </ActionIcon>
+          </Group>
         </Group>
-      </Group>
-    </div>
+      </div>
+
+      <Menu
+        opened={menuOpen}
+        onChange={setMenuOpen}
+        position="bottom-start"
+        withinPortal
+      >
+        <Menu.Target>
+          <div
+            style={{
+              position: 'fixed',
+              left: menuPos.x,
+              top: menuPos.y,
+              width: 0,
+              height: 0,
+              pointerEvents: 'none',
+            }}
+          />
+        </Menu.Target>
+        <Menu.Dropdown>
+          <Menu.Item
+            disabled={!canPlay}
+            onClick={() => onPlay(entry.id)}
+          >
+            Воспроизвести
+          </Menu.Item>
+          <Menu.Divider />
+          <Menu.Item
+            color="red"
+            onClick={() => onDelete(entry.id)}
+          >
+            Удалить
+          </Menu.Item>
+        </Menu.Dropdown>
+      </Menu>
+    </>
   );
 }
 
