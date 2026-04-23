@@ -36,6 +36,8 @@
 ## Быстрый старт
 
 > **Все команды запускаются через `nix-shell --run "..."`** — `cargo`, `pnpm`, `uv` и прочие инструменты доступны только внутри nix-shell (определён в `shell.nix` в корне).
+>
+> **Не запускай команды из «уже открытой» nix-shell-сессии** после правок `shell.nix`. `shellHook` (в т.ч. `XDG_DATA_DIRS` / `GIO_EXTRA_MODULES` / `WEBKIT_DISABLE_DMABUF_RENDERER` — нужны чтобы WebKit2GTK в Tauri корректно читал GSettings и не выдавал `devicePixelRatio`=negative, см. [tauri #7354](https://github.com/tauri-apps/tauri/issues/7354)) запускается только при входе в shell. Каждый `nix-shell --run "..."` форкает свежий subshell → всегда получает актуальный env. Запуск `pnpm tauri dev` «голым» в текущей сессии ломает шрифты/метрики окна.
 
 ```bash
 nix-shell --run "pnpm install"                                              # фронт-зависимости (после F1+F2)
