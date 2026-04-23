@@ -13,6 +13,7 @@ import { modals } from '@mantine/modals';
 import { commands, events } from '../lib/tauri';
 import type { TextEntry, EntryStatus, UnlistenFn } from '../lib/tauri';
 import { useSelectedEntry } from '../stores/selectedEntry';
+import { IconPlay } from './icons';
 import classes from './QueueList.module.css';
 
 function formatDuration(seconds: number): string {
@@ -115,7 +116,7 @@ function QueueItem({ entry, isSelected, onSelect, onPlay, onContextMenu }: Queue
             }}
             aria-label="Воспроизвести"
           >
-            &#x25B6;
+            <IconPlay />
           </ActionIcon>
         </Group>
       </Group>

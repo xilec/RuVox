@@ -4,6 +4,7 @@ import { useHotkeys } from '@mantine/hooks';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 import { commands, events } from '../lib/tauri';
 import type { EntryId } from '../lib/tauri';
+import { IconPlay, IconPause, IconSkipPrev, IconSkipNext } from './icons';
 import classes from './Player.module.css';
 
 interface PlayerState {
@@ -191,10 +192,6 @@ export function Player({ entryIds }: PlayerProps) {
     ['ArrowRight', (e) => { e.preventDefault(); void handleSeek(Math.min(state.duration || 0, state.position + 5)); }],
   ]);
 
-  const playIcon = state.isPlaying
-    ? '\u23F8' // pause
-    : '\u25B6'; // play
-
   const maxProgress = state.duration > 0 ? state.duration : 1;
 
   return (
@@ -208,7 +205,7 @@ export function Player({ entryIds }: PlayerProps) {
             aria-label="Предыдущий"
             size="sm"
           >
-            &#x23EE;
+            <IconSkipPrev />
           </ActionIcon>
         </Tooltip>
       )}
@@ -221,7 +218,7 @@ export function Player({ entryIds }: PlayerProps) {
         size="md"
         disabled={!state.currentEntryId && (!entryIds || entryIds.length === 0)}
       >
-        {playIcon}
+        {state.isPlaying ? <IconPause /> : <IconPlay />}
       </ActionIcon>
 
       {entryIds && entryIds.length > 0 && (
@@ -233,7 +230,7 @@ export function Player({ entryIds }: PlayerProps) {
             aria-label="Следующий"
             size="sm"
           >
-            &#x23ED;
+            <IconSkipNext />
           </ActionIcon>
         </Tooltip>
       )}
