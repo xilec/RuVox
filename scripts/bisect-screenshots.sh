@@ -1,19 +1,21 @@
 #!/usr/bin/env bash
-# Walk a list of commits, screenshot each ruvox window, compare hashes against
-# a baseline, and produce a manifest table.  On exit, restore the branch that
-# was checked out when the script started.
+# Walk a list of commits SEQUENTIALLY (linear, not git-bisect binary search),
+# build each, screenshot ruvox, hash the PNG, and log the result to a
+# manifest.  On exit restore whichever ref was checked out at start.
 #
 # Usage:
 #   scripts/bisect-screenshots.sh [COMMIT ...]
 #
-# With no arguments it uses a built-in list covering the UI-testing era.
+# No args → use DEFAULT_COMMITS below.  Include only commits that actually
+# run — earlier commits crash on startup (tray.png + async_runtime bugs
+# that 4ccd6ab fixed) and would only produce ERROR rows.
 #
-# The current working tree must be clean (stash anything you need to keep).
-# Screenshot files land in screenshots/bisect/<sha>.png; the manifest at
-# screenshots/bisect/manifest.txt summarises hashes and diff flags.
+# Clean working tree required.  Output:
+#   screenshots/bisect/<sha>.png
+#   screenshots/bisect/manifest.txt  (hashes, groups of identical frames)
 set -euo pipefail
 
-# Default commit list (oldest → newest).  Extend when more commits land.
+# Linear order, oldest → newest.
 DEFAULT_COMMITS=(
     4ccd6ab  # fix(runtime): tauri dev startup (first running build)
     c151632  # fix(ui): smoke-test fixes (word span, seek, pitch, pause, theme)
