@@ -34,16 +34,42 @@ MANIFEST="$OUT_DIR/manifest.txt"
 : > "$MANIFEST"
 
 # The screenshot helper may not exist at older commits; write one in /tmp and
-# reference it by absolute path so it survives `git checkout`.
+# reference it by absolute path so it survives `git checkout`.  The KWin
+# activation JS also goes into /tmp — same reason.
 HELPER=/tmp/bisect-screenshot-helper.sh
-cat > "$HELPER" <<'HELPER_EOF'
+ACTIVATE_JS=/tmp/bisect-kwin-activate-ruvox.js
+
+cat > "$ACTIVATE_JS" <<'JS_EOF'
+var wins = typeof workspace.windowList === 'function'
+    ? workspace.windowList()
+    : workspace.windows;
+for (var i = 0; i < wins.length; i++) {
+    var w = wins[i];
+    var caption = w.caption || '';
+    var resourceClass = w.resourceClass || '';
+    if (caption.indexOf('RuVox') !== -1
+        || resourceClass.toLowerCase().indexOf('ruvox') !== -1) {
+        try { w.minimized = false; } catch (e) {}
+        workspace.activeWindow = w;
+        if (typeof workspace.raiseWindow === 'function') {
+            workspace.raiseWindow(w);
+        }
+        break;
+    }
+}
+JS_EOF
+
+cat > "$HELPER" <<HELPER_EOF
 #!/usr/bin/env bash
 set -eu
-OUT="$1"
-LOG="$(mktemp -t bisect-tauri.log.XXXXXX)"
+OUT="\$1"
+LOG="\$(mktemp -t bisect-tauri.log.XXXXXX)"
+export CARGO_TARGET_DIR="\${CARGO_TARGET_DIR:-/tmp/ruvox-bisect-target}"
+BUILD_TIMEOUT="\${BUILD_TIMEOUT:-180}"
+SETTLE="\${SETTLE:-4}"
 
 cleanup() {
-    [[ -n "${TAURI_PID:-}" ]] && kill "$TAURI_PID" 2>/dev/null || true
+    [[ -n "\${TAURI_PID:-}" ]] && kill "\$TAURI_PID" 2>/dev/null || true
     pkill -f "target/debug/ruvox-tauri" 2>/dev/null || true
     pkill -f "tauri_plugin_mpv_socket_" 2>/dev/null || true
     pkill -f "uv run python -m ttsd" 2>/dev/null || true
@@ -55,24 +81,40 @@ pkill -f "/vite/bin/vite.js" 2>/dev/null || true
 sleep 0.3
 
 export WEBKIT_DISABLE_DMABUF_RENDERER=1
-pnpm tauri dev > "$LOG" 2>&1 &
-TAURI_PID=$!
+pnpm tauri dev > "\$LOG" 2>&1 &
+TAURI_PID=\$!
 
-for _ in $(seq 1 600); do
-    if grep -q "Running .target/debug/ruvox-tauri" "$LOG"; then
-        sleep 2
+deadline=\$(( \$(date +%s) + BUILD_TIMEOUT ))
+while (( \$(date +%s) < deadline )); do
+    if grep -Eq "Running.*ruvox-tauri" "\$LOG"; then
         break
     fi
-    sleep 0.5
+    sleep 0.3
 done
 
-if ! pgrep -f "target/debug/ruvox-tauri" > /dev/null; then
-    echo "ruvox did not start; log:" >&2
-    tail -30 "$LOG" >&2
+if ! grep -Eq "Running.*ruvox-tauri" "\$LOG"; then
+    echo "ruvox did not reach 'Running' within \${BUILD_TIMEOUT}s; log:" >&2
+    tail -30 "\$LOG" >&2
     exit 1
 fi
 
-spectacle -a -b -n -o "$OUT" -d 200
+sleep "\$SETTLE"
+
+if ! pgrep -f "target/debug/ruvox-tauri" > /dev/null; then
+    echo "ruvox-tauri exited before screenshot; log:" >&2
+    tail -30 "\$LOG" >&2
+    exit 1
+fi
+
+# KWin activation so spectacle -a targets RuVox, not the terminal.
+SCRIPT_ID=\$(qdbus org.kde.KWin /Scripting loadScript "$ACTIVATE_JS" 2>/dev/null || echo "")
+if [[ -n "\$SCRIPT_ID" ]]; then
+    qdbus "org.kde.KWin" "/Scripting/Script\${SCRIPT_ID}" "org.kde.kwin.Script.run" >/dev/null 2>&1 || true
+    qdbus "org.kde.KWin" "/Scripting/Script\${SCRIPT_ID}" "org.kde.kwin.Script.stop" >/dev/null 2>&1 || true
+fi
+sleep 0.3
+
+spectacle -a -b -n -o "\$OUT" -d 200
 HELPER_EOF
 chmod +x "$HELPER"
 
