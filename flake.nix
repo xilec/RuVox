@@ -12,58 +12,18 @@
         pkgs = import nixpkgs { inherit system; };
         lib = pkgs.lib;
 
-        # Shared system deps for Tauri 2 + libmpv + audio.
-        systemLibs = with pkgs; [
-          webkitgtk_4_1
-          libsoup_3
-          gtk3
-          glib
-          glib-networking
-          libappindicator-gtk3
-          librsvg
-          openssl
-          dbus
-          mpv-unwrapped
-          wayland
-          wayland-protocols
-          libxkbcommon
-          xorg.libX11
-          xorg.libXcursor
-          xorg.libXrandr
-          xorg.libXi
-          xorg.libxcb
+        # Runtime libs not in buildInputs (and therefore not picked up by
+        # wrapGAppsHook3): mpv audio backends.  webkitgtk_4_1 / glib etc.
+        # come in via buildInputs and the wrapper handles them.
+        extraRuntimeLibs = with pkgs; [
           libpulseaudio
           pipewire
           alsa-lib
-          libGL
-          fontconfig
-          freetype
-          libdrm
-          stdenv.cc.cc.lib
-          zlib
-          zstd
         ];
 
-        pkgConfigPaths = lib.makeSearchPathOutput "dev" "lib/pkgconfig" [
-          pkgs.webkitgtk_4_1
-          pkgs.libsoup_3
-          pkgs.gtk3
-          pkgs.glib
-          pkgs.openssl
-          pkgs.mpv-unwrapped
-          pkgs.libappindicator-gtk3
-          pkgs.librsvg
-          pkgs.wayland
-          pkgs.libxkbcommon
-          pkgs.alsa-lib
-          pkgs.libpulseaudio
-        ];
-
-        runtimeLibPath = lib.makeLibraryPath systemLibs;
+        extraRuntimeLibPath = lib.makeLibraryPath extraRuntimeLibs;
 
         # ttsd — Python subprocess wrapping Silero TTS.
-        # Packaged as a stand-alone Python application; the resulting binary
-        # is placed next to the Tauri bundle as a sidecar.
         ttsd = pkgs.python312Packages.buildPythonApplication {
           pname = "ruvox-ttsd";
           version = "0.1.0";
@@ -90,39 +50,37 @@
           };
         };
 
-        # Frontend assets: pnpm install + pnpm build → dist/.
-        # pnpm.fetchDeps requires pnpm-lock.yaml; fakeHash kicks off the
-        # first build with a hash mismatch that Nix reports as the real one.
-        frontend = pkgs.stdenv.mkDerivation (finalAttrs: {
-          pname = "ruvox-frontend";
-          version = "0.2.0";
-          src = ./.;
-
-          nativeBuildInputs = [
-            pkgs.nodejs_20
-            pkgs.pnpm.configHook
-          ];
-
-          pnpmDeps = pkgs.pnpm.fetchDeps {
-            inherit (finalAttrs) pname version src;
-            hash = lib.fakeHash;
-          };
-
-          buildPhase = ''
-            runHook preBuild
-            pnpm run build
-            runHook postBuild
-          '';
-
-          installPhase = ''
-            runHook preInstall
-            cp -r dist $out
-            runHook postInstall
-          '';
-        });
-
-        # Rust + Tauri binary. Frontend assets are staged from `frontend`.
-        ruvox = pkgs.rustPlatform.buildRustPackage {
+        # ruvox — Tauri binary built via cargo-tauri.hook.
+        #
+        # Front-end is NOT a separate derivation: cargo-tauri.hook calls
+        # `cargo tauri build`, which in turn runs the `beforeBuildCommand`
+        # from tauri.conf.json (`pnpm build`).  pnpmConfigHook prepares an
+        # offline node_modules from pnpmDeps so that `pnpm build` works in
+        # the hermetic Nix sandbox.
+        #
+        # What the hook brings:
+        #   - buildPhase: `cargo tauri build --bundles <tauriBundleType>`
+        #     with CARGO_TARGET_DIR injected into config.toml (workaround
+        #     for tauri#10190, cargo tauri ignores env var).
+        #   - installPhase (Linux): unpacks target/bundle/deb/*/data/usr/*
+        #     into $out, so the binary lands in $out/bin.
+        #   - fixupScript (Linux): extends gappsWrapperArgs with
+        #     WEBKIT_GST_ALLOWED_URI_PROTOCOLS=asset,
+        #     GST_PLUGIN_SYSTEM_PATH_1_0 for tauri asset-protocol,
+        #     and __NV_DISABLE_EXPLICIT_SYNC=1 for NVIDIA+Wayland.
+        #
+        # What wrapGAppsHook3 brings:
+        #   - XDG_DATA_DIRS + GIO_EXTRA_MODULES + GI_TYPELIB_PATH on the
+        #     wrapper, so WebKit can read GSettings schemas on NixOS and
+        #     devicePixelRatio reports a sane value (see issue #2).
+        #
+        # What we add on top:
+        #   - ttsd + mpv binaries in PATH (sidecar + player).
+        #   - mpv audio-backend libs in LD_LIBRARY_PATH (pulse/pipewire/alsa
+        #     are not in buildInputs because Tauri itself doesn't need them).
+        #   - WEBKIT_DISABLE_DMABUF_RENDERER=1 for KDE Plasma 6 Wayland
+        #     (see issue #3).
+        ruvox = pkgs.rustPlatform.buildRustPackage (finalAttrs: {
           pname = "ruvox";
           version = "0.2.0";
           src = ./.;
@@ -131,70 +89,67 @@
             lockFile = ./src-tauri/Cargo.lock;
           };
 
-          sourceRoot = "source/src-tauri";
+          # cargo-tauri.hook uses both to know where the Tauri app lives.
+          cargoRoot = "src-tauri";
+          buildAndTestSubdir = "src-tauri";
+
+          pnpmDeps = pkgs.fetchPnpmDeps {
+            inherit (finalAttrs) pname version src;
+            fetcherVersion = 3;
+            hash = "sha256-/FNFfLZqu/ndlHtg8ee2Qa1tNiarwT7hI8t0m/LsLbo=";
+          };
 
           nativeBuildInputs = with pkgs; [
+            cargo-tauri.hook
+            nodejs_20
+            pnpm
+            pnpmConfigHook
             pkg-config
-            cargo-tauri
             wrapGAppsHook3
           ];
 
-          buildInputs = systemLibs;
+          # Transitive deps (gtk3, glib, libsoup_3, wayland, x11, libGL,
+          # fontconfig, dbus, ...) come in through webkitgtk_4_1 +
+          # wrapGAppsHook3 and are injected into the wrapper automatically.
+          buildInputs = with pkgs; [
+            webkitgtk_4_1
+            glib-networking
+            libayatana-appindicator
+            librsvg
+            openssl
+            mpv-unwrapped
+          ];
 
-          # Stage pre-built frontend so `tauri build` finds ../dist.
-          preBuild = ''
-            cp -r ${frontend} ../dist
-          '';
+          # Single target is enough for Nix — we only want a usable binary,
+          # not an OS-native package.  "deb" is the cheapest Linux bundle.
+          tauriBundleType = "deb";
 
-          # Use `cargo tauri build` to produce the bundle, not plain `cargo
-          # build` — tauri-build copies icons, injects window config.
-          buildPhase = ''
-            runHook preBuild
-            cargo tauri build --no-bundle
-            runHook postBuild
-          '';
-
-          installPhase = ''
-            runHook preInstall
-            install -Dm755 target/release/ruvox-tauri $out/bin/ruvox
-            # Sidecar: ttsd is linked in via wrapper below.
-            runHook postInstall
-          '';
-
-          # wrapGAppsHook3 already wraps the binary with XDG_DATA_DIRS for
-          # GSettings schemas and icon themes; we only add the project-specific
-          # bits (ttsd/mpv path, mpv runtime libs, WebKit Wayland fix).
           preFixup = ''
             gappsWrapperArgs+=(
               --prefix PATH : ${lib.makeBinPath [ ttsd pkgs.mpv ]}
-              --prefix LD_LIBRARY_PATH : ${runtimeLibPath}
-              --set WEBKIT_DISABLE_DMABUF_RENDERER 1
+              --prefix LD_LIBRARY_PATH : ${extraRuntimeLibPath}
+              --set-default WEBKIT_DISABLE_DMABUF_RENDERER 1
             )
           '';
 
-          PKG_CONFIG_PATH = pkgConfigPaths;
-          OPENSSL_DIR = "${pkgs.openssl.dev}";
-          OPENSSL_LIB_DIR = "${pkgs.openssl.out}/lib";
-
           meta = {
             description = "RuVox 2 — desktop app for reading technical texts aloud";
-            mainProgram = "ruvox";
+            mainProgram = "ruvox-tauri";
             platforms = lib.platforms.linux;
           };
-        };
+        });
       in
       {
         packages = {
           default = ruvox;
           inherit ruvox ttsd;
-          frontend = frontend;
         };
 
         devShells.default = import ./shell.nix { inherit pkgs; };
 
         apps.default = {
           type = "app";
-          program = "${ruvox}/bin/ruvox";
+          program = "${ruvox}/bin/ruvox-tauri";
         };
       });
 }

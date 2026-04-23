@@ -44,8 +44,8 @@ pkgs.mkShell {
     gtk3
     glib
     glib-networking
-    # App indicator (system tray)
-    libappindicator-gtk3
+    # App indicator (system tray) — ayatana fork, the one Tauri 2 targets
+    libayatana-appindicator
     # SVG rendering (Tauri icons)
     librsvg
     # OpenSSL (reqwest / native-tls)
