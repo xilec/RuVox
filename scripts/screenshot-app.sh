@@ -11,7 +11,7 @@ set -euo pipefail
 
 OUT="${1:-screenshots/app.png}"
 BUILD_TIMEOUT="${BUILD_TIMEOUT:-120}"
-SETTLE="${SETTLE:-3}"
+SETTLE="${SETTLE:-8}"
 mkdir -p "$(dirname "$OUT")"
 
 LOG="$(mktemp -t tauri-screenshot.log.XXXXXX)"
@@ -31,7 +31,9 @@ pkill -f "target/debug/ruvox-tauri" 2>/dev/null || true
 pkill -f "/vite/bin/vite.js" 2>/dev/null || true
 sleep 0.3
 
+export GDK_BACKEND=x11
 export WEBKIT_DISABLE_DMABUF_RENDERER=1
+export WEBKIT_DISABLE_COMPOSITING_MODE=1
 
 pnpm tauri dev > "$LOG" 2>&1 &
 TAURI_PID=$!

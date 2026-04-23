@@ -140,9 +140,22 @@ pkgs.mkShell {
     # Needed by glib-networking (TLS for WebKit)
     export GIO_EXTRA_MODULES="${pkgs.glib-networking}/lib/gio/modules"
 
-    # WebKitGTK 2.52 on Wayland crashes with "Gdk-Message Error 71 (Protocol
-    # error)" unless DMABUF rendering is disabled.  No effect on X11.
+    # WebKitGTK on Wayland (KDE Plasma 6, fractional scaling) produces broken
+    # window metrics: devicePixelRatio becomes negative, inner{Width,Height}
+    # negative, `computed html font-size` in the millions, and every CSS px/rem
+    # value collapses to the same on-screen size.  Root cause: upstream Tauri
+    # #7354 / #12361 / #5600 — wry/webkit2gtk does not implement Wayland's
+    # fractional-scale protocol, so it reads the compositor's scale as garbage.
+    #
+    # The only working workaround is to force the webview through XWayland and
+    # disable the two WebKit rendering paths that crash on XWayland:
+    #   GDK_BACKEND=x11                    — run everything under X11 (XWayland)
+    #   WEBKIT_DISABLE_DMABUF_RENDERER=1   — DMABUF path crashes with Error 71
+    #   WEBKIT_DISABLE_COMPOSITING_MODE=1  — hw-compositing path has GBM failures
+    # Remove all three the moment fractional scaling works in wry/webkit2gtk.
+    export GDK_BACKEND=x11
     export WEBKIT_DISABLE_DMABUF_RENDERER=1
+    export WEBKIT_DISABLE_COMPOSITING_MODE=1
 
     # GSettings schemas + icon theme search path: wrapGAppsHook4 sets these
     # for the production bundle; in dev we set them manually.

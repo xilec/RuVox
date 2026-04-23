@@ -66,7 +66,7 @@ OUT="\$1"
 LOG="\$(mktemp -t bisect-tauri.log.XXXXXX)"
 export CARGO_TARGET_DIR="\${CARGO_TARGET_DIR:-/tmp/ruvox-bisect-target}"
 BUILD_TIMEOUT="\${BUILD_TIMEOUT:-180}"
-SETTLE="\${SETTLE:-4}"
+SETTLE="\${SETTLE:-8}"
 
 cleanup() {
     [[ -n "\${TAURI_PID:-}" ]] && kill "\$TAURI_PID" 2>/dev/null || true
@@ -80,7 +80,9 @@ pkill -f "target/debug/ruvox-tauri" 2>/dev/null || true
 pkill -f "/vite/bin/vite.js" 2>/dev/null || true
 sleep 0.3
 
+export GDK_BACKEND=x11
 export WEBKIT_DISABLE_DMABUF_RENDERER=1
+export WEBKIT_DISABLE_COMPOSITING_MODE=1
 pnpm tauri dev > "\$LOG" 2>&1 &
 TAURI_PID=\$!
 
