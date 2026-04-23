@@ -99,10 +99,14 @@ export function Player({ entryIds }: PlayerProps) {
     unlisteners.push(
       events.playbackPosition((p) => {
         setState((prev) => {
-          // Keep duration updated from position events when entry changes
           const next: PlayerState = { ...prev, currentEntryId: p.entry_id };
           if (!isDragging) {
             next.position = p.position_sec;
+          }
+          // mpv needs a few ticks to parse the WAV header; duration comes
+          // through here as soon as it is available.
+          if (p.duration_sec != null && prev.duration !== p.duration_sec) {
+            next.duration = p.duration_sec;
           }
           return next;
         });

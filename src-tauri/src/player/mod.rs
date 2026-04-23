@@ -21,7 +21,9 @@
 //! perfectly adequate for word-highlight sync (same approach as the legacy
 //! python-mpv version which polled at 200 ms).
 
+use std::panic::AssertUnwindSafe;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use parking_lot::Mutex;
@@ -64,6 +66,10 @@ struct State {
 pub struct Player<R: Runtime> {
     app: AppHandle<R>,
     state: Mutex<State>,
+    /// False after mpv is destroyed (on exit). All subsequent commands
+    /// short-circuit to avoid tauri-plugin-mpv's internal unwrap() panicking
+    /// when the instance has been removed from its map.
+    mpv_alive: AtomicBool,
 }
 
 impl<R: Runtime> Player<R> {
@@ -98,6 +104,7 @@ impl<R: Runtime> Player<R> {
                 duration_sec: None,
                 is_playing: false,
             }),
+            mpv_alive: AtomicBool::new(true),
         };
 
         // Belt-and-braces: set `af` via IPC too, so scaletempo2 is definitely
@@ -265,7 +272,16 @@ impl<R: Runtime> Player<R> {
     // Helpers
     // -----------------------------------------------------------------------
 
+    /// Mark the player as destroyed so subsequent mpv commands short-circuit
+    /// instead of triggering tauri-plugin-mpv's internal unwrap() panic.
+    pub fn mark_destroyed(&self) {
+        self.mpv_alive.store(false, Ordering::SeqCst);
+    }
+
     fn mpv_command(&self, command: serde_json::Value) -> Result<()> {
+        if !self.mpv_alive.load(Ordering::SeqCst) {
+            return Err(PlayerError::Op("mpv instance destroyed".into()));
+        }
         let cmd = MpvCommand {
             command: command
                 .as_array()
@@ -273,14 +289,22 @@ impl<R: Runtime> Player<R> {
                 .unwrap_or_default(),
             request_id: None,
         };
-        self.app
-            .mpv()
-            .command(cmd, WINDOW_LABEL)
-            .map_err(|e| PlayerError::Op(e.to_string()))?;
+        // tauri-plugin-mpv can panic with `Option::unwrap()` in its command
+        // dispatcher if the instance is being destroyed concurrently; isolate
+        // that so it surfaces as an ordinary error instead of aborting the app.
+        let app = self.app.clone();
+        let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            app.mpv().command(cmd, WINDOW_LABEL)
+        }))
+        .map_err(|_| PlayerError::Op("mpv command panicked (instance gone?)".into()))?;
+        result.map_err(|e| PlayerError::Op(e.to_string()))?;
         Ok(())
     }
 
     fn read_property_f64(&self, property: &str) -> Result<f64> {
+        if !self.mpv_alive.load(Ordering::SeqCst) {
+            return Err(PlayerError::Op("mpv instance destroyed".into()));
+        }
         let cmd = MpvCommand {
             command: vec![
                 json!("get_property"),
@@ -288,10 +312,11 @@ impl<R: Runtime> Player<R> {
             ],
             request_id: Some(1),
         };
-        let response = self
-            .app
-            .mpv()
-            .command(cmd, WINDOW_LABEL)
+        let app = self.app.clone();
+        let response = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            app.mpv().command(cmd, WINDOW_LABEL)
+        }))
+        .map_err(|_| PlayerError::Op("mpv command panicked (instance gone?)".into()))?
             .map_err(|e| PlayerError::Op(e.to_string()))?;
 
         if response.error != "success" {
@@ -344,9 +369,17 @@ pub fn spawn_position_emitter<R: Runtime + 'static>(
                 _ => continue,
             };
 
+            // duration_sec() re-queries mpv when the cached value is None,
+            // so sending it with every position tick auto-populates the
+            // frontend slider as soon as mpv has parsed the file header.
+            let duration_sec = player.duration_sec();
             let _ = app.emit(
                 "playback_position",
-                json!({ "position_sec": pos, "entry_id": entry_id }),
+                json!({
+                    "position_sec": pos,
+                    "entry_id": entry_id,
+                    "duration_sec": duration_sec,
+                }),
             );
 
             // EOF detection: emit finished + stopped when position reaches duration.

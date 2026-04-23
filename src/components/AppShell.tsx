@@ -174,11 +174,13 @@ export function AppShell() {
         <QueueList />
       </MantineAppShell.Navbar>
 
-      {/* display:flex + minH:0 lets TextViewer fill Main reliably under
-          Mantine AppShell, even when the window is maximized on Wayland
-          where the default flex-item min-height can collapse to 0. */}
-      <MantineAppShell.Main style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-        <TextViewer entry={selectedEntry} />
+      <MantineAppShell.Main style={{ position: 'relative', padding: 0 }}>
+        {/* Absolute fill makes TextViewer robust against Mantine's internal
+            layout quirks (observed on Wayland maximize where grid/flex child
+            min-height collapsed to 0). */}
+        <div style={{ position: 'absolute', inset: 0, padding: 'var(--mantine-spacing-md)' }}>
+          <TextViewer entry={selectedEntry} />
+        </div>
       </MantineAppShell.Main>
 
       <PreviewDialog

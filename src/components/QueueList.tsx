@@ -56,120 +56,82 @@ interface QueueItemProps {
   isSelected: boolean;
   onSelect: (entry: TextEntry) => void;
   onPlay: (id: string) => void;
-  onDelete: (id: string) => void;
+  onContextMenu: (entry: TextEntry, x: number, y: number) => void;
 }
 
-function QueueItem({ entry, isSelected, onSelect, onPlay, onDelete }: QueueItemProps) {
+function QueueItem({ entry, isSelected, onSelect, onPlay, onContextMenu }: QueueItemProps) {
   const preview = entry.original_text.slice(0, 60);
   const isProcessing = entry.status === 'processing';
   const canPlay = entry.status === 'ready' || entry.status === 'playing';
 
-  // Mantine Menu opens on trigger click; we open it on right-click (contextmenu)
-  // and position it at the cursor.  Controlled state so the trigger is a
-  // dummy anchor sized 0.
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [menuPos, setMenuPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-
   return (
-    <>
-      <div
-        className={`${classes.item} ${isSelected ? classes.itemSelected : ''}`}
-        onClick={() => onSelect(entry)}
-        onContextMenu={(e) => {
+    <div
+      className={`${classes.item} ${isSelected ? classes.itemSelected : ''}`}
+      onClick={() => onSelect(entry)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onContextMenu(entry, e.clientX, e.clientY);
+      }}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          e.stopPropagation();
-          setMenuPos({ x: e.clientX, y: e.clientY });
-          setMenuOpen(true);
-        }}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            onSelect(entry);
-          }
-        }}
-      >
-        <Group justify="space-between" gap="xs" wrap="nowrap">
-          <Stack gap={2} style={{ minWidth: 0, flex: 1 }}>
-            <Text className={classes.preview} title={entry.original_text}>
-              {preview}
-              {entry.original_text.length > 60 ? '\u2026' : ''}
-            </Text>
-            <Group gap="xs" align="center">
-              <Badge
-                size="xs"
-                color={statusBadgeColor(entry.status)}
-                leftSection={isProcessing ? <Loader size={8} color="blue" /> : null}
-              >
-                {statusLabel(entry.status)}
-              </Badge>
-              {entry.duration_sec != null && (
-                <Text className={classes.meta}>{formatDuration(entry.duration_sec)}</Text>
-              )}
-            </Group>
-          </Stack>
-
-          <Group gap="xs" className={classes.actions} wrap="nowrap">
-            <ActionIcon
-              size="sm"
-              variant="subtle"
-              color="green"
-              disabled={!canPlay}
-              title="Воспроизвести"
-              onClick={(e) => {
-                e.stopPropagation();
-                onPlay(entry.id);
-              }}
-              aria-label="Воспроизвести"
+          onSelect(entry);
+        }
+      }}
+    >
+      <Group justify="space-between" gap="xs" wrap="nowrap">
+        <Stack gap={2} style={{ minWidth: 0, flex: 1 }}>
+          <Text className={classes.preview} title={entry.original_text}>
+            {preview}
+            {entry.original_text.length > 60 ? '\u2026' : ''}
+          </Text>
+          <Group gap="xs" align="center">
+            <Badge
+              size="xs"
+              color={statusBadgeColor(entry.status)}
+              leftSection={isProcessing ? <Loader size={8} color="blue" /> : null}
             >
-              &#x25B6;
-            </ActionIcon>
+              {statusLabel(entry.status)}
+            </Badge>
+            {entry.duration_sec != null && (
+              <Text className={classes.meta}>{formatDuration(entry.duration_sec)}</Text>
+            )}
           </Group>
-        </Group>
-      </div>
+        </Stack>
 
-      <Menu
-        opened={menuOpen}
-        onChange={setMenuOpen}
-        position="bottom-start"
-        withinPortal
-      >
-        <Menu.Target>
-          <div
-            style={{
-              position: 'fixed',
-              left: menuPos.x,
-              top: menuPos.y,
-              width: 0,
-              height: 0,
-              pointerEvents: 'none',
-            }}
-          />
-        </Menu.Target>
-        <Menu.Dropdown>
-          <Menu.Item
+        <Group gap="xs" className={classes.actions} wrap="nowrap">
+          <ActionIcon
+            size="sm"
+            variant="subtle"
+            color="green"
             disabled={!canPlay}
-            onClick={() => onPlay(entry.id)}
+            title="Воспроизвести"
+            onClick={(e) => {
+              e.stopPropagation();
+              onPlay(entry.id);
+            }}
+            aria-label="Воспроизвести"
           >
-            Воспроизвести
-          </Menu.Item>
-          <Menu.Divider />
-          <Menu.Item
-            color="red"
-            onClick={() => onDelete(entry.id)}
-          >
-            Удалить
-          </Menu.Item>
-        </Menu.Dropdown>
-      </Menu>
-    </>
+            &#x25B6;
+          </ActionIcon>
+        </Group>
+      </Group>
+    </div>
   );
 }
 
 export function QueueList() {
   const [entries, setEntries] = useState<TextEntry[]>([]);
   const { selectedId, setSelectedEntry } = useSelectedEntry();
+  // Single Menu instance shared by all queue items — cheaper than one per item
+  // and avoids stacking many hidden Menu portals that can interfere with other
+  // popovers (e.g. the theme dropdown in the header).
+  const [menu, setMenu] = useState<
+    { entry: TextEntry; x: number; y: number } | null
+  >(null);
 
   const loadEntries = useCallback(async () => {
     const result = await commands.getEntries();
@@ -254,19 +216,60 @@ export function QueueList() {
   }
 
   return (
-    <ScrollArea className={classes.scrollArea}>
-      <Stack gap="xs">
-        {entries.map((entry) => (
-          <QueueItem
-            key={entry.id}
-            entry={entry}
-            isSelected={selectedId === entry.id}
-            onSelect={setSelectedEntry}
-            onPlay={handlePlay}
-            onDelete={handleDelete}
+    <>
+      <ScrollArea className={classes.scrollArea}>
+        <Stack gap="xs">
+          {entries.map((entry) => (
+            <QueueItem
+              key={entry.id}
+              entry={entry}
+              isSelected={selectedId === entry.id}
+              onSelect={setSelectedEntry}
+              onPlay={handlePlay}
+              onContextMenu={(e, x, y) => setMenu({ entry: e, x, y })}
+            />
+          ))}
+        </Stack>
+      </ScrollArea>
+
+      <Menu
+        opened={menu !== null}
+        onChange={(open) => { if (!open) setMenu(null); }}
+        position="bottom-start"
+        withinPortal
+        closeOnItemClick
+      >
+        <Menu.Target>
+          <div
+            style={{
+              position: 'fixed',
+              left: menu?.x ?? -9999,
+              top: menu?.y ?? -9999,
+              width: 0,
+              height: 0,
+              pointerEvents: 'none',
+            }}
           />
-        ))}
-      </Stack>
-    </ScrollArea>
+        </Menu.Target>
+        <Menu.Dropdown>
+          <Menu.Item
+            disabled={
+              menu === null ||
+              (menu.entry.status !== 'ready' && menu.entry.status !== 'playing')
+            }
+            onClick={() => menu && handlePlay(menu.entry.id)}
+          >
+            Воспроизвести
+          </Menu.Item>
+          <Menu.Divider />
+          <Menu.Item
+            color="red"
+            onClick={() => menu && handleDelete(menu.entry.id)}
+          >
+            Удалить
+          </Menu.Item>
+        </Menu.Dropdown>
+      </Menu>
+    </>
   );
 }

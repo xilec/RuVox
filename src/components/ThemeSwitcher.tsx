@@ -1,16 +1,15 @@
-import { Select, useMantineColorScheme } from '@mantine/core';
+import { NativeSelect, useMantineColorScheme } from '@mantine/core';
 
 type Scheme = 'light' | 'dark' | 'auto';
 
 export function ThemeSwitcher() {
   const { colorScheme, setColorScheme } = useMantineColorScheme();
   return (
-    <Select
+    <NativeSelect
       value={colorScheme}
-      onChange={(v) => v && setColorScheme(v as Scheme)}
+      onChange={(e) => setColorScheme(e.currentTarget.value as Scheme)}
       size="xs"
-      w={110}
-      allowDeselect={false}
+      w={120}
       aria-label="Переключение темы"
       data={[
         { label: 'Авто', value: 'auto' },

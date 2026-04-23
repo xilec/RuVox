@@ -214,11 +214,14 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
-            if matches!(event, RunEvent::Exit | RunEvent::ExitRequested { .. }) {
-                // Kill mpv subprocess — tauri-plugin-mpv only auto-destroys on
-                // WindowEvent::CloseRequested, so programmatic exit (tray
-                // quit, SIGTERM handled by Tauri, panic that unwound through
-                // main) leaves mpv running.
+            if matches!(event, RunEvent::Exit) {
+                // Mark Player as destroyed *before* calling mpv().destroy() so
+                // any in-flight command (position-emitter tick, tray callback)
+                // short-circuits rather than tripping the plugin's internal
+                // unwrap on an already-removed instance.
+                if let Some(state) = app_handle.try_state::<AppState>() {
+                    state.player.mark_destroyed();
+                }
                 if let Err(e) = app_handle.mpv().destroy(player::WINDOW_LABEL) {
                     tracing::warn!("mpv destroy on exit failed: {e}");
                 }
