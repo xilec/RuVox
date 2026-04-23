@@ -92,7 +92,7 @@ pkgs.mkShell {
     pkgs.glib
     pkgs.openssl
     pkgs.mpv-unwrapped
-    pkgs.libappindicator-gtk3
+    pkgs.libayatana-appindicator
     pkgs.librsvg
     pkgs.wayland
     pkgs.libxkbcommon
@@ -126,7 +126,7 @@ pkgs.mkShell {
     pkgs.pipewire
     pkgs.alsa-lib
     pkgs.libdrm
-    pkgs.libappindicator-gtk3
+    pkgs.libayatana-appindicator
     pkgs.librsvg
   ];
 
