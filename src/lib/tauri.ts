@@ -66,7 +66,7 @@ export interface PreviewNormalizeResult {
 
 export const commands = {
   addClipboardEntry: (play_when_ready: boolean): Promise<EntryId> =>
-    tauriInvoke('add_clipboard_entry', { play_when_ready }),
+    tauriInvoke('add_clipboard_entry', { playWhenReady: play_when_ready }),
 
   getEntries: (): Promise<TextEntry[]> =>
     tauriInvoke('get_entries'),
@@ -96,7 +96,7 @@ export const commands = {
     tauriInvoke('stop_playback'),
 
   seekTo: (position_sec: number): Promise<void> =>
-    tauriInvoke('seek_to', { position_sec }),
+    tauriInvoke('seek_to', { positionSec: position_sec }),
 
   setSpeed: (speed: number): Promise<void> =>
     tauriInvoke('set_speed', { speed }),
