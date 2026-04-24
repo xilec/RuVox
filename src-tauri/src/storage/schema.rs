@@ -121,12 +121,9 @@ pub struct UIConfig {
     pub player_hotkeys: std::collections::HashMap<String, String>,
     #[serde(default)]
     pub window_geometry: Option<[i32; 4]>,
-    /// Show preview dialog before synthesis if text is longer than `preview_threshold` chars.
+    /// Show preview dialog before synthesis.
     #[serde(default = "UIConfig::default_true")]
     pub preview_dialog_enabled: bool,
-    /// Minimum text length (chars) for which the preview dialog is shown.
-    #[serde(default = "UIConfig::default_preview_threshold")]
-    pub preview_threshold: u32,
 }
 
 impl UIConfig {
@@ -173,10 +170,6 @@ impl UIConfig {
         "auto".to_string()
     }
 
-    fn default_preview_threshold() -> u32 {
-        200
-    }
-
     fn default_player_hotkeys() -> std::collections::HashMap<String, String> {
         let mut m = std::collections::HashMap::new();
         m.insert("play_pause".to_string(), "Space".to_string());
@@ -215,7 +208,6 @@ impl Default for UIConfig {
             player_hotkeys: Self::default_player_hotkeys(),
             window_geometry: None,
             preview_dialog_enabled: true,
-            preview_threshold: Self::default_preview_threshold(),
         }
     }
 }
@@ -243,7 +235,6 @@ pub struct UIConfigPatch {
     pub player_hotkeys: Option<std::collections::HashMap<String, String>>,
     pub window_geometry: Option<Option<[i32; 4]>>,
     pub preview_dialog_enabled: Option<bool>,
-    pub preview_threshold: Option<u32>,
 }
 
 #[cfg(test)]

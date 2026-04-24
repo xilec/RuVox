@@ -53,7 +53,6 @@ export interface UIConfig {
   player_hotkeys: Record<string, string>;
   window_geometry: [number, number, number, number] | null;
   preview_dialog_enabled: boolean;
-  preview_threshold: number;
 }
 
 export type UIConfigPatch = Partial<UIConfig>;

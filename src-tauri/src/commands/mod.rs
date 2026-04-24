@@ -750,5 +750,4 @@ fn apply_config_patch(config: &mut UIConfig, patch: UIConfigPatch) {
     if let Some(v) = patch.player_hotkeys { config.player_hotkeys = v; }
     if let Some(v) = patch.window_geometry { config.window_geometry = v; }
     if let Some(v) = patch.preview_dialog_enabled { config.preview_dialog_enabled = v; }
-    if let Some(v) = patch.preview_threshold { config.preview_threshold = v; }
 }
