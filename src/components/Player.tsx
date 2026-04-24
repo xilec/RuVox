@@ -272,6 +272,16 @@ export function Player({ entryIds }: PlayerProps) {
           className={classes.speedInput}
           value={state.speed}
           onChange={(v) => { void handleSpeedChange(v); }}
+          onWheel={(e) => {
+            // Mouse-wheel over the input nudges speed by ±0.1 regardless
+            // of focus (Mantine/HTML inputs otherwise only react to wheel
+            // when focused).  deltaY > 0 = scroll down = slow down.
+            e.preventDefault();
+            const delta = e.deltaY > 0 ? -0.1 : 0.1;
+            void handleSpeedChange(
+              Math.round((state.speed + delta) * 10) / 10,
+            );
+          }}
           min={0.5}
           max={2.0}
           step={0.1}

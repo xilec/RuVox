@@ -20,6 +20,7 @@ interface SettingsFormValues {
   sample_rate: number;
   notify_on_ready: boolean;
   notify_on_error: boolean;
+  preview_dialog_enabled: boolean;
   max_cache_size_mb: number;
   auto_cleanup_days: number;
   theme: string;
@@ -28,6 +29,9 @@ interface SettingsFormValues {
 interface SettingsModalProps {
   opened: boolean;
   onClose: () => void;
+  /** Called after the user saves successfully, so the caller can refresh its
+   * local copy of UIConfig without re-invoking getConfig on every render. */
+  onSaved?: () => void;
 }
 
 const SPEAKER_OPTIONS = [
@@ -51,13 +55,14 @@ const THEME_OPTIONS = [
   { value: 'auto', label: 'Авто' },
 ];
 
-export function SettingsModal({ opened, onClose }: SettingsModalProps) {
+export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) {
   const form = useForm<SettingsFormValues>({
     initialValues: {
       speaker: 'xenia',
       sample_rate: 48000,
       notify_on_ready: true,
       notify_on_error: true,
+      preview_dialog_enabled: true,
       max_cache_size_mb: 500,
       auto_cleanup_days: 30,
       theme: 'auto',
@@ -76,6 +81,7 @@ export function SettingsModal({ opened, onClose }: SettingsModalProps) {
         sample_rate: config.sample_rate,
         notify_on_ready: config.notify_on_ready,
         notify_on_error: config.notify_on_error,
+        preview_dialog_enabled: config.preview_dialog_enabled,
         max_cache_size_mb: config.max_cache_size_mb,
         auto_cleanup_days: config.auto_cleanup_days,
         theme: config.theme,
@@ -91,6 +97,7 @@ export function SettingsModal({ opened, onClose }: SettingsModalProps) {
       sample_rate: values.sample_rate,
       notify_on_ready: values.notify_on_ready,
       notify_on_error: values.notify_on_error,
+      preview_dialog_enabled: values.preview_dialog_enabled,
       max_cache_size_mb: values.max_cache_size_mb,
       auto_cleanup_days: values.auto_cleanup_days,
       theme: values.theme as UIConfigPatch['theme'],
@@ -103,6 +110,7 @@ export function SettingsModal({ opened, onClose }: SettingsModalProps) {
         message: 'Изменения применены.',
         color: 'green',
       });
+      onSaved?.();
       onClose();
     } catch {
       notifications.show({
@@ -154,6 +162,20 @@ export function SettingsModal({ opened, onClose }: SettingsModalProps) {
             label="Уведомлять об ошибках синтеза"
             key={form.key('notify_on_error')}
             {...form.getInputProps('notify_on_error', { type: 'checkbox' })}
+          />
+
+          <Divider />
+
+          <Text size="sm" fw={500} c="dimmed">
+            Предпросмотр
+          </Text>
+
+          <Switch
+            label="Показывать диалог предпросмотра перед синтезом"
+            key={form.key('preview_dialog_enabled')}
+            {...form.getInputProps('preview_dialog_enabled', {
+              type: 'checkbox',
+            })}
           />
 
           <Divider />

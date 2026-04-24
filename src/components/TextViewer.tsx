@@ -15,6 +15,7 @@ import { notifications } from '@mantine/notifications';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { TextEntry, WordTimestamp } from '../lib/tauri';
 import { commands, events } from '../lib/tauri';
+import { formatError } from '../lib/errors';
 import { renderMarkdown } from '../lib/markdown';
 import { renderHtml } from '../lib/html';
 import { renderMermaidIn } from '../lib/mermaid';
@@ -253,7 +254,7 @@ export function TextViewer({ entry }: Props) {
       notifications.show({
         color: 'red',
         title: 'Ошибка сохранения',
-        message: String(err),
+        message: formatError(err),
       });
     } finally {
       setSaving(false);

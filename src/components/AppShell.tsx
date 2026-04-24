@@ -2,8 +2,10 @@ import { AppShell as MantineAppShell, Title, Group, Stack, Button, ActionIcon, T
 import { useHotkeys } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { useState, useEffect, useRef } from 'react';
+import { readText as readClipboardText } from '@tauri-apps/plugin-clipboard-manager';
 import { commands } from '../lib/tauri';
 import type { UIConfig } from '../lib/tauri';
+import { formatError } from '../lib/errors';
 import { ThemeSwitcher } from './ThemeSwitcher';
 import { TextViewer } from './TextViewer';
 import { Player } from './Player';
@@ -54,37 +56,49 @@ export function AppShell() {
     setPending(true);
 
     try {
-      const previewEnabled = config?.preview_dialog_enabled ?? false;
-      const threshold = config?.preview_threshold ?? 200;
-
-      if (previewEnabled) {
-        let clipboardText: string | null = null;
-        try {
-          clipboardText = await navigator.clipboard.readText();
-        } catch {
-          // No clipboard permission in Tauri webview — skip preview
-        }
-
-        if (clipboardText !== null && clipboardText.length > threshold) {
-          setPreviewText(clipboardText);
-          setPendingPlayWhenReady(playWhenReady);
-          setPreviewOpen(true);
-          setPending(false);
-          return;
-        }
+      // Read via tauri-plugin-clipboard-manager: the plugin goes through
+      // the Tauri webview's native clipboard bridge, which handles Wayland
+      // / KDE data reliably — unlike the Rust-side `arboard` crate which
+      // silently fails with `ContentNotAvailable` on KDE Plasma 6, and
+      // unlike `navigator.clipboard.readText` which is gated by WebKit
+      // permission policies in the WKWebView.
+      let clipboardText: string;
+      try {
+        clipboardText = (await readClipboardText()) ?? '';
+      } catch {
+        notifications.show({
+          title: 'Ошибка',
+          message: 'Не удалось прочитать буфер обмена',
+          color: 'red',
+        });
+        setPending(false);
+        return;
       }
 
-      await doAddEntry(playWhenReady);
+      const previewEnabled = config?.preview_dialog_enabled ?? false;
+
+      if (previewEnabled) {
+        setPreviewText(clipboardText);
+        setPendingPlayWhenReady(playWhenReady);
+        setPreviewOpen(true);
+        setPending(false);
+        return;
+      }
+
+      await doAddEntry(clipboardText, playWhenReady);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = formatError(err);
       notifications.show({ title: 'Ошибка', message, color: 'red' });
       setPending(false);
     }
   }
 
-  async function doAddEntry(playWhenReady: boolean) {
+  async function doAddEntry(text: string, playWhenReady: boolean) {
     try {
-      await commands.addClipboardEntry(playWhenReady);
+      const entryId = await commands.addTextEntry(text, playWhenReady);
+      // Select the new entry so TextViewer swaps to its content; entry_updated
+      // events from the backend will populate the full TextEntry shortly.
+      useSelectedEntry.getState().setSelectedId(entryId);
       notifications.show({
         title: 'Добавлено в очередь',
         message: playWhenReady
@@ -93,14 +107,14 @@ export function AppShell() {
         color: 'green',
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = formatError(err);
       notifications.show({ title: 'Ошибка', message, color: 'red' });
     } finally {
       setPending(false);
     }
   }
 
-  function handlePreviewSynthesize(_finalText: string, skipShortTexts: boolean) {
+  function handlePreviewSynthesize(finalText: string, skipShortTexts: boolean) {
     setPreviewOpen(false);
     if (skipShortTexts && config) {
       // Persist user preference: disable preview dialog
@@ -108,7 +122,9 @@ export function AppShell() {
       setConfig({ ...config, preview_dialog_enabled: false });
     }
     setPending(true);
-    doAddEntry(pendingPlayWhenReady);
+    // finalText reflects user edits from the preview dialog; fall back to the
+    // captured clipboard text if the user didn't edit or cleared the field.
+    doAddEntry(finalText || previewText, pendingPlayWhenReady);
   }
 
   function handlePreviewCancel() {
@@ -167,6 +183,9 @@ export function AppShell() {
       <SettingsModal
         opened={settingsOpened}
         onClose={() => setSettingsOpened(false)}
+        onSaved={() => {
+          commands.getConfig().then(setConfig).catch(() => {});
+        }}
       />
 
       <MantineAppShell.Navbar p="md">

@@ -19,6 +19,7 @@
     "@mantine/modals": "^8.0.0",
     "@mantine/notifications": "^8.0.0",
     "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-clipboard-manager": "^2",
     "@tauri-apps/plugin-opener": "^2",
     "dompurify": "^3.4.0",
     "highlight.js": "^11",
@@ -27,6 +28,7 @@
     "mermaid": "^11",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
+    "react-rnd": "^10.5.0",
     "zustand": "^5.0.0"
   },
   "devDependencies": {
