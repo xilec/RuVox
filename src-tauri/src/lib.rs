@@ -56,6 +56,7 @@ pub fn run() {
     reap_orphan_mpv();
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_mpv::init())
         .setup(|app| {
             tray::init(app.handle())?;
@@ -191,6 +192,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             add_clipboard_entry,
+            add_text_entry,
             preview_normalize,
             get_entries,
             get_entry,

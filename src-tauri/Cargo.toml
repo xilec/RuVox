@@ -20,6 +20,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-opener = "2"
+tauri-plugin-clipboard-manager = "2"
 # tauri-plugin-mpv: Tauri plugin that controls an mpv subprocess via JSON IPC.
 # Chosen over libmpv2 per project spec ("prefer tauri-plugin-mpv if viable").
 # Viable: supports custom CLI args (--af=scaletempo2, --no-video), arbitrary

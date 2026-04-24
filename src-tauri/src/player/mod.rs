@@ -395,8 +395,39 @@ pub fn spawn_position_emitter<R: Runtime + 'static>(
                 continue;
             }
 
+            let entry_id = match player.current_entry_id() {
+                Some(id) => id,
+                None => continue,
+            };
+
+            let duration_sec = player.duration_sec();
+
+            // EOF detection runs *before* the seek-suppress window so a file
+            // that reaches its end inside the 300 ms window still triggers
+            // `playback_finished` instead of leaving the UI stuck.  mpv
+            // reports three different "end of file" states and we treat all
+            // as EOF:
+            //   1. `time-pos` is None  — mpv unloaded the file / entered idle,
+            //   2. `time-pos` >= duration − 0.2,
+            //   3. duration known but `time-pos` stopped advancing (covered
+            //      implicitly by #2 since mpv pins time-pos to duration).
+            let pos = player.position_sec();
+            let eof = match (pos, duration_sec) {
+                (None, Some(_)) => true,
+                (Some(p), Some(d)) if d > 0.0 && p >= d - 0.2 => true,
+                _ => false,
+            };
+            if eof {
+                debug!("playback finished: entry_id={entry_id}");
+                let _ = app.emit("playback_finished", json!({ "entry_id": entry_id }));
+                let _ = app.emit("playback_stopped", json!({}));
+                player.state.lock().is_playing = false;
+                continue;
+            }
+
             // Suppress emits while mpv is still catching up to a recent seek
-            // target (see Player::seek for the rationale).
+            // target (see Player::seek for the rationale).  EOF above has
+            // already been handled, so skipping ticks here is safe.
             let suppressed = {
                 let mut s = player.state.lock();
                 match s.seek_suppress_until {
@@ -412,15 +443,14 @@ pub fn spawn_position_emitter<R: Runtime + 'static>(
                 continue;
             }
 
-            let (pos, entry_id) = match (player.position_sec(), player.current_entry_id()) {
-                (Some(p), Some(id)) => (p, id),
-                _ => continue,
+            let pos = match pos {
+                Some(p) => p,
+                None => continue,
             };
 
             // duration_sec() re-queries mpv when the cached value is None,
             // so sending it with every position tick auto-populates the
             // frontend slider as soon as mpv has parsed the file header.
-            let duration_sec = player.duration_sec();
             let _ = app.emit(
                 "playback_position",
                 json!({
@@ -429,16 +459,6 @@ pub fn spawn_position_emitter<R: Runtime + 'static>(
                     "duration_sec": duration_sec,
                 }),
             );
-
-            // EOF detection: emit finished + stopped when position reaches duration.
-            if let Some(dur) = player.duration_sec() {
-                if dur > 0.0 && pos >= dur - 0.05 {
-                    debug!("playback finished: entry_id={entry_id}");
-                    let _ = app.emit("playback_finished", json!({ "entry_id": entry_id }));
-                    let _ = app.emit("playback_stopped", json!({}));
-                    player.state.lock().is_playing = false;
-                }
-            }
         }
     });
 }

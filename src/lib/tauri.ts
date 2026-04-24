@@ -68,6 +68,9 @@ export const commands = {
   addClipboardEntry: (play_when_ready: boolean): Promise<EntryId> =>
     tauriInvoke('add_clipboard_entry', { playWhenReady: play_when_ready }),
 
+  addTextEntry: (text: string, play_when_ready: boolean): Promise<EntryId> =>
+    tauriInvoke('add_text_entry', { text, playWhenReady: play_when_ready }),
+
   getEntries: (): Promise<TextEntry[]> =>
     tauriInvoke('get_entries'),
 

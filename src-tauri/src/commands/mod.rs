@@ -291,38 +291,26 @@ fn set_entry_error<R: Runtime>(
 
 // ── Commands ───────────────────────────────────────────────────────────────────
 
-/// Read text from the system clipboard and add a new entry to the queue.
-/// Triggers TTS synthesis immediately in the background.
-#[tauri::command]
-pub async fn add_clipboard_entry(
+/// Shared implementation for the two "add text to queue" commands below.
+/// Rejects blank input, persists the entry, emits `entry_updated`, and
+/// spawns background synthesis.
+fn ingest_text(
     app: AppHandle<Wry>,
-    state: State<'_, AppState>,
+    state: &AppState,
+    text: String,
     play_when_ready: bool,
 ) -> CmdResult<String> {
-    // Read clipboard (must be on a blocking thread on Linux to avoid deadlock).
-    let text = tokio::task::spawn_blocking(|| {
-        let mut board = arboard::Clipboard::new()
-            .map_err(|e| CommandError::Internal { message: format!("clipboard init: {e}") })?;
-        board
-            .get_text()
-            .map_err(|e| CommandError::Internal { message: format!("clipboard read: {e}") })
-    })
-    .await
-    .map_err(|e| CommandError::Internal { message: format!("clipboard task panicked: {e}") })??;
-
     if text.trim().is_empty() {
         return Err(CommandError::Internal {
-            message: "буфер обмена пуст".to_string(),
+            message: "в буфере обмена нет текста".to_string(),
         });
     }
 
-    // Save entry (status: pending).
     let entry = state.storage.add_entry(text).map_err(CommandError::from)?;
     let entry_id = entry.id;
 
     emit_entry_updated(&app, &entry);
 
-    // Spawn background synthesis.
     spawn_synthesis(
         app,
         Arc::clone(&state.storage),
@@ -334,6 +322,44 @@ pub async fn add_clipboard_entry(
     );
 
     Ok(entry_id.to_string())
+}
+
+/// Add an entry to the queue from text already held by the frontend.
+/// Preferred over `add_clipboard_entry` for UI paths, because WebKit's
+/// Clipboard API is more robust on Wayland than the Rust-side `arboard`
+/// crate (which silently fails with `ContentNotAvailable` for
+/// WebKit-sourced clipboard data on KDE Plasma 6).
+#[tauri::command]
+pub async fn add_text_entry(
+    app: AppHandle<Wry>,
+    state: State<'_, AppState>,
+    text: String,
+    play_when_ready: bool,
+) -> CmdResult<String> {
+    ingest_text(app, &state, text, play_when_ready)
+}
+
+/// Read text from the system clipboard and add a new entry to the queue.
+/// Used by the tray menu, where no webview context is available.
+/// Frontend code should prefer `add_text_entry` (see above).
+#[tauri::command]
+pub async fn add_clipboard_entry(
+    app: AppHandle<Wry>,
+    state: State<'_, AppState>,
+    play_when_ready: bool,
+) -> CmdResult<String> {
+    // Read clipboard on a blocking thread (required on Linux to avoid deadlock).
+    let text = tokio::task::spawn_blocking(|| {
+        let mut board = arboard::Clipboard::new()
+            .map_err(|e| CommandError::Internal { message: format!("clipboard init: {e}") })?;
+        board.get_text().map_err(|_| CommandError::Internal {
+            message: "в буфере обмена нет текста".to_string(),
+        })
+    })
+    .await
+    .map_err(|e| CommandError::Internal { message: format!("clipboard task panicked: {e}") })??;
+
+    ingest_text(app, &state, text, play_when_ready)
 }
 
 /// Run the text normalization pipeline on `text` and return the normalized result.
