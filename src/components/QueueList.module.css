@@ -15,6 +15,14 @@
   border-color: var(--mantine-color-default-border);
 }
 
+.itemPlaying {
+  background-color: var(--mantine-color-teal-light);
+}
+
+.itemPlaying:hover {
+  background-color: var(--mantine-color-teal-light-hover);
+}
+
 .preview {
   font-size: var(--mantine-font-size-sm);
   line-height: var(--mantine-line-height-sm);

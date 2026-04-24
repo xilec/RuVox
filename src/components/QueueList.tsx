@@ -11,7 +11,7 @@ import {
 } from '@mantine/core';
 import { modals } from '@mantine/modals';
 import { commands, events } from '../lib/tauri';
-import type { TextEntry, EntryStatus, UnlistenFn } from '../lib/tauri';
+import type { TextEntry, EntryStatus, EntryId, UnlistenFn } from '../lib/tauri';
 import { useSelectedEntry } from '../stores/selectedEntry';
 import { IconPlay } from './icons';
 import classes from './QueueList.module.css';
@@ -55,19 +55,28 @@ function statusLabel(status: EntryStatus): string {
 interface QueueItemProps {
   entry: TextEntry;
   isSelected: boolean;
+  isPlaying: boolean;
   onSelect: (entry: TextEntry) => void;
   onPlay: (id: string) => void;
   onContextMenu: (entry: TextEntry, x: number, y: number) => void;
 }
 
-function QueueItem({ entry, isSelected, onSelect, onPlay, onContextMenu }: QueueItemProps) {
+function QueueItem({ entry, isSelected, isPlaying, onSelect, onPlay, onContextMenu }: QueueItemProps) {
   const preview = entry.original_text.slice(0, 60);
   const isProcessing = entry.status === 'processing';
   const canPlay = entry.status === 'ready' || entry.status === 'playing';
 
+  const itemClass = [
+    classes.item,
+    isSelected ? classes.itemSelected : '',
+    isPlaying ? classes.itemPlaying : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
     <div
-      className={`${classes.item} ${isSelected ? classes.itemSelected : ''}`}
+      className={itemClass}
       onClick={() => onSelect(entry)}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -126,6 +135,7 @@ function QueueItem({ entry, isSelected, onSelect, onPlay, onContextMenu }: Queue
 
 export function QueueList() {
   const [entries, setEntries] = useState<TextEntry[]>([]);
+  const [playingId, setPlayingId] = useState<EntryId | null>(null);
   const { selectedId, setSelectedEntry } = useSelectedEntry();
   // Single Menu instance shared by all queue items — cheaper than one per item
   // and avoids stacking many hidden Menu portals that can interfere with other
@@ -143,12 +153,12 @@ export function QueueList() {
   }, []);
 
   useEffect(() => {
-    let unlisten: UnlistenFn | undefined;
+    const unlisteners: Promise<UnlistenFn>[] = [];
 
     loadEntries();
 
-    events
-      .entryUpdated((payload) => {
+    unlisteners.push(
+      events.entryUpdated((payload) => {
         setEntries((prev) => {
           const idx = prev.findIndex((e) => e.id === payload.entry.id);
           let next: TextEntry[];
@@ -171,13 +181,17 @@ export function QueueList() {
           }
           return {};
         });
-      })
-      .then((fn) => {
-        unlisten = fn;
-      });
+      }),
+    );
+
+    // Highlight the currently-playing entry.  Paused playback keeps the
+    // highlight (user may resume); only stop/finish clears it.
+    unlisteners.push(events.playbackStarted((p) => setPlayingId(p.entry_id)));
+    unlisteners.push(events.playbackStopped(() => setPlayingId(null)));
+    unlisteners.push(events.playbackFinished(() => setPlayingId(null)));
 
     return () => {
-      unlisten?.();
+      unlisteners.forEach((p) => p.then((fn) => fn()));
     };
   }, [loadEntries]);
 
@@ -225,6 +239,7 @@ export function QueueList() {
               key={entry.id}
               entry={entry}
               isSelected={selectedId === entry.id}
+              isPlaying={playingId === entry.id}
               onSelect={setSelectedEntry}
               onPlay={handlePlay}
               onContextMenu={(e, x, y) => setMenu({ entry: e, x, y })}
