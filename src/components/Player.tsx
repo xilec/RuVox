@@ -247,9 +247,14 @@ export function Player({ entryIds }: PlayerProps) {
           setState((prev) => ({ ...prev, position: v }));
         }}
         onChangeEnd={(v) => {
-          draggingRef.current = false;
+          // Keep draggingRef=true across the seekTo IPC roundtrip so the
+          // next position-emitter tick cannot slip in with the pre-seek
+          // time-pos before Player::seek has set up its own suppress
+          // window on the Rust side.
           setState((prev) => ({ ...prev, position: v }));
-          void handleSeek(v);
+          void handleSeek(v).finally(() => {
+            draggingRef.current = false;
+          });
         }}
         label={formatTime}
         step={0.1}

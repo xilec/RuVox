@@ -25,6 +25,7 @@ use std::panic::AssertUnwindSafe;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 
 use parking_lot::Mutex;
 use serde_json::json;
@@ -57,6 +58,11 @@ struct State {
     duration_sec: Option<f64>,
     /// True while mpv is not paused and not stopped.
     is_playing: bool,
+    /// While `Some(deadline)` and `Instant::now() < deadline`, the position
+    /// emitter skips its periodic `playback_position` emit.  Set by `seek()`
+    /// to mask the race where mpv hasn't processed the seek yet but the
+    /// 100 ms emitter tick would still report the pre-seek `time-pos`.
+    seek_suppress_until: Option<Instant>,
 }
 
 // ---------------------------------------------------------------------------
@@ -103,6 +109,7 @@ impl<R: Runtime> Player<R> {
                 current_entry_id: None,
                 duration_sec: None,
                 is_playing: false,
+                seek_suppress_until: None,
             }),
             mpv_alive: AtomicBool::new(true),
         };
@@ -217,8 +224,32 @@ impl<R: Runtime> Player<R> {
     }
 
     /// Seek to an absolute position (seconds).
+    ///
+    /// mpv executes `seek` asynchronously: the IPC call returns before
+    /// `time-pos` reflects the new position, so the next position-emitter
+    /// tick would otherwise report the pre-seek value and snap the UI
+    /// thumb back.  To avoid that we (a) immediately emit a
+    /// `playback_position` event with the target so the frontend syncs
+    /// without waiting for a tick, and (b) suppress emitter ticks for a
+    /// short window to hide the stale `time-pos` poll.
     pub fn seek(&self, position_sec: f64) -> Result<()> {
         self.mpv_command(json!(["seek", position_sec, "absolute"]))?;
+        let (entry_id, duration_sec) = {
+            let mut s = self.state.lock();
+            s.seek_suppress_until =
+                Some(Instant::now() + Duration::from_millis(300));
+            (s.current_entry_id.clone(), s.duration_sec)
+        };
+        if let Some(id) = entry_id {
+            let _ = self.app.emit(
+                "playback_position",
+                json!({
+                    "position_sec": position_sec,
+                    "entry_id": id,
+                    "duration_sec": duration_sec,
+                }),
+            );
+        }
         Ok(())
     }
 
@@ -361,6 +392,23 @@ pub fn spawn_position_emitter<R: Runtime + 'static>(
             ticker.tick().await;
 
             if !player.is_playing() {
+                continue;
+            }
+
+            // Suppress emits while mpv is still catching up to a recent seek
+            // target (see Player::seek for the rationale).
+            let suppressed = {
+                let mut s = player.state.lock();
+                match s.seek_suppress_until {
+                    Some(deadline) if Instant::now() < deadline => true,
+                    Some(_) => {
+                        s.seek_suppress_until = None;
+                        false
+                    }
+                    None => false,
+                }
+            };
+            if suppressed {
                 continue;
             }
 
