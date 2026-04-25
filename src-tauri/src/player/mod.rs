@@ -87,21 +87,7 @@ impl<R: Runtime> Player<R> {
     /// to miss the filter chain on some setups, which results in speed
     /// changes raising pitch.
     pub fn new(app: AppHandle<R>) -> Result<Self> {
-        let config = MpvConfig {
-            path: "mpv".to_string(),
-            args: vec![
-                "--no-video".to_string(),
-                "--no-ytdl".to_string(),
-                "--af=scaletempo2".to_string(),
-            ],
-            observed_properties: vec![],
-            ipc_timeout_ms: 2000,
-            show_mpv_output: false,
-        };
-
-        app.mpv()
-            .init(config, WINDOW_LABEL)
-            .map_err(|e| PlayerError::Init(e.to_string()))?;
+        Self::init_mpv(&app)?;
 
         let this = Self {
             app,
@@ -114,16 +100,73 @@ impl<R: Runtime> Player<R> {
             mpv_alive: AtomicBool::new(true),
         };
 
-        // Belt-and-braces: set `af` via IPC too, so scaletempo2 is definitely
-        // in the filter chain regardless of how the args were interpreted at
-        // process init.
         if let Err(e) = this.mpv_command(json!(["set_property", "af", "scaletempo2"])) {
             warn!("failed to set runtime af=scaletempo2: {e}");
         }
 
         debug!("mpv player initialised (scaletempo2, audio-only)");
-
         Ok(this)
+    }
+
+    /// Spawn the mpv subprocess with our standard config.  Used by both
+    /// `new()` and `ensure_mpv_alive()` (re-init after the plugin destroys
+    /// mpv on the main window's CloseRequested event).
+    fn init_mpv(app: &AppHandle<R>) -> Result<()> {
+        let config = MpvConfig {
+            path: "mpv".to_string(),
+            args: vec![
+                "--no-video".to_string(),
+                "--no-ytdl".to_string(),
+                "--af=scaletempo2".to_string(),
+            ],
+            observed_properties: vec![],
+            ipc_timeout_ms: 2000,
+            show_mpv_output: false,
+        };
+        app.mpv()
+            .init(config, WINDOW_LABEL)
+            .map_err(|e| PlayerError::Init(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Re-initialise mpv if the subprocess is gone.  tauri-plugin-mpv has its
+    /// own CloseRequested handler that always destroys mpv when the main
+    /// window's close is requested — even if we hide the window instead of
+    /// closing it for the tray-on-close UX.  Calling this method on
+    /// window-show restores playback capability.  Idempotent.
+    pub fn ensure_mpv_alive(&self) -> Result<()> {
+        let alive = self.mpv_alive.load(Ordering::SeqCst);
+        let in_map = self
+            .app
+            .mpv()
+            .instances
+            .lock()
+            .map(|m| m.contains_key(WINDOW_LABEL))
+            .unwrap_or(false);
+        if alive && in_map {
+            return Ok(());
+        }
+
+        // Reset state — the previous file is gone with mpv.
+        {
+            let mut s = self.state.lock();
+            s.current_entry_id = None;
+            s.duration_sec = None;
+            s.is_playing = false;
+            s.seek_suppress_until = None;
+        }
+
+        Self::init_mpv(&self.app)?;
+        self.mpv_alive.store(true, Ordering::SeqCst);
+
+        if let Err(e) = self.mpv_command(json!(["set_property", "af", "scaletempo2"])) {
+            warn!("failed to set af=scaletempo2 after reinit: {e}");
+        }
+
+        // Tell the frontend that any cached player state (current entry,
+        // position, duration) is stale.
+        let _ = self.app.emit("playback_stopped", json!({}));
+        Ok(())
     }
 
     // -----------------------------------------------------------------------
@@ -320,16 +363,22 @@ impl<R: Runtime> Player<R> {
                 .unwrap_or_default(),
             request_id: None,
         };
-        // tauri-plugin-mpv can panic with `Option::unwrap()` in its command
-        // dispatcher if the instance is being destroyed concurrently; isolate
-        // that so it surfaces as an ordinary error instead of aborting the app.
+        // tauri-plugin-mpv panics with `Option::unwrap()` in its command
+        // dispatcher when the instance has been removed from its map (e.g.
+        // its own CloseRequested handler destroyed mpv).  Catch that, mark
+        // mpv as dead so subsequent calls short-circuit, and surface as Err.
         let app = self.app.clone();
         let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
             app.mpv().command(cmd, WINDOW_LABEL)
-        }))
-        .map_err(|_| PlayerError::Op("mpv command panicked (instance gone?)".into()))?;
-        result.map_err(|e| PlayerError::Op(e.to_string()))?;
-        Ok(())
+        }));
+        match result {
+            Err(_) => {
+                self.mpv_alive.store(false, Ordering::SeqCst);
+                Err(PlayerError::Op("mpv command panicked (instance gone?)".into()))
+            }
+            Ok(Err(e)) => Err(PlayerError::Op(e.to_string())),
+            Ok(Ok(_)) => Ok(()),
+        }
     }
 
     fn read_property_f64(&self, property: &str) -> Result<f64> {
@@ -344,11 +393,17 @@ impl<R: Runtime> Player<R> {
             request_id: Some(1),
         };
         let app = self.app.clone();
-        let response = std::panic::catch_unwind(AssertUnwindSafe(|| {
+        let response = match std::panic::catch_unwind(AssertUnwindSafe(|| {
             app.mpv().command(cmd, WINDOW_LABEL)
-        }))
-        .map_err(|_| PlayerError::Op("mpv command panicked (instance gone?)".into()))?
-            .map_err(|e| PlayerError::Op(e.to_string()))?;
+        })) {
+            Err(_) => {
+                self.mpv_alive.store(false, Ordering::SeqCst);
+                return Err(PlayerError::Op(
+                    "mpv command panicked (instance gone?)".into(),
+                ));
+            }
+            Ok(r) => r.map_err(|e| PlayerError::Op(e.to_string()))?,
+        };
 
         if response.error != "success" {
             return Err(PlayerError::Op(format!(

@@ -215,8 +215,29 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|app_handle, event| {
-            if matches!(event, RunEvent::Exit) {
+        .run(|app_handle, event| match event {
+            // Window-close intercept: hide the main window instead of
+            // quitting so the app keeps running in the system tray.  The
+            // tray's "Выход" item is the only path to a real exit.
+            RunEvent::WindowEvent {
+                label,
+                event: tauri::WindowEvent::CloseRequested { api, .. },
+                ..
+            } if label == player::WINDOW_LABEL => {
+                api.prevent_close();
+                if let Some(w) = app_handle.get_webview_window(&label) {
+                    let _ = w.set_skip_taskbar(true);
+                    let _ = w.hide();
+                }
+            }
+            // ExitRequested fires when Tauri thinks the last window is gone
+            // (e.g. user used a window-manager close that we didn't catch
+            // via WindowEvent).  Without prevent_exit() the app would shut
+            // down — which drops AppState, drops Player, calls mpv.destroy().
+            RunEvent::ExitRequested { api, .. } => {
+                api.prevent_exit();
+            }
+            RunEvent::Exit => {
                 // Mark Player as destroyed *before* calling mpv().destroy() so
                 // any in-flight command (position-emitter tick, tray callback)
                 // short-circuits rather than tripping the plugin's internal
@@ -228,5 +249,6 @@ pub fn run() {
                     tracing::warn!("mpv destroy on exit failed: {e}");
                 }
             }
+            _ => {}
         });
 }

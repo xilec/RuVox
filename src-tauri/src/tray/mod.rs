@@ -1,34 +1,32 @@
 use tauri::{
     image::Image,
     menu::{Menu, MenuItem, PredefinedMenuItem},
-    tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, Runtime,
 };
 
+use crate::state::AppState;
+
 pub fn init<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
-    let play = MenuItem::with_id(app, "play", "Воспроизвести", false, None::<&str>)?;
-    let pause = MenuItem::with_id(app, "pause", "Пауза", false, None::<&str>)?;
+    // Order rationale: libayatana-appindicator (Linux/KDE/GNOME) opens the
+    // menu on every tray-icon click — there are no raw click events.  Put
+    // "Открыть окно" at the top so a quick click + first-item-pick is the
+    // shortest path back to the window.
+    let show = MenuItem::with_id(app, "show", "Открыть окно", true, None::<&str>)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
     let read_now = MenuItem::with_id(app, "read_now", "Читать сразу", true, None::<&str>)?;
     let read_later = MenuItem::with_id(app, "read_later", "Читать отложенно", true, None::<&str>)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
-    let settings = MenuItem::with_id(app, "settings", "Настройки...", true, None::<&str>)?;
-    let show = MenuItem::with_id(app, "show", "Открыть окно", true, None::<&str>)?;
-    let sep3 = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Выход", true, None::<&str>)?;
 
     let menu = Menu::with_items(
         app,
         &[
-            &play,
-            &pause,
+            &show,
             &sep1,
             &read_now,
             &read_later,
             &sep2,
-            &settings,
-            &show,
-            &sep3,
             &quit,
         ],
     )?;
@@ -43,40 +41,51 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
             // The closure's `app` is `AppHandle<R>` but at runtime R == Wry.
             "read_now" => invoke_add_clipboard_entry(app, true),
             "read_later" => invoke_add_clipboard_entry(app, false),
-            "settings" => {
-                let _ = app.emit("tray_open_settings", ());
-            }
-            "show" => {
-                if let Some(w) = app.get_webview_window("main") {
-                    let _ = w.show();
-                    let _ = w.set_focus();
-                }
-            }
-            "play" => {
-                let _ = app.emit("tray_play", ());
-            }
-            "pause" => {
-                let _ = app.emit("tray_pause", ());
-            }
+            "show" => show_main_window(app),
             "quit" => app.exit(0),
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::DoubleClick {
-                button: MouseButton::Left,
-                ..
-            } = event
-            {
-                let app = tray.app_handle();
-                if let Some(w) = app.get_webview_window("main") {
-                    let _ = w.show();
-                    let _ = w.set_focus();
+            // libayatana-appindicator (used on KDE) often does not propagate
+            // DoubleClick events, so a single left click on the tray icon is
+            // also wired to show the main window.  Filter on `Up` to fire
+            // exactly once per click.
+            let should_show = matches!(
+                event,
+                TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                } | TrayIconEvent::DoubleClick {
+                    button: MouseButton::Left,
+                    ..
                 }
+            );
+            if should_show {
+                show_main_window(tray.app_handle());
             }
         })
         .build(app)?;
 
     Ok(())
+}
+
+fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.set_skip_taskbar(false);
+        let _ = w.unminimize();
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
+    // tauri-plugin-mpv destroys mpv whenever the main window's
+    // CloseRequested fires (its own RunEvent handler), so the subprocess is
+    // gone after a tray-on-close cycle.  Re-init lazily on every show so
+    // playback works after the user reopens the window.
+    if let Some(state) = app.try_state::<AppState>() {
+        if let Err(e) = state.player.ensure_mpv_alive() {
+            tracing::error!("ensure_mpv_alive failed: {e}");
+        }
+    }
 }
 
 /// Directly invoke add_clipboard_entry logic via AppState.

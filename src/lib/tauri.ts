@@ -178,7 +178,4 @@ export const events = {
 
   trayReadLater: (cb: () => void): Promise<UnlistenFn> =>
     tauriListen<Record<string, never>>('tray_read_later', () => cb()),
-
-  trayOpenSettings: (cb: () => void): Promise<UnlistenFn> =>
-    tauriListen<Record<string, never>>('tray_open_settings', () => cb()),
 };
