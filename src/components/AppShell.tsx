@@ -219,41 +219,53 @@ export function AppShell() {
         }}
       />
 
-      <MantineAppShell.Navbar p="md" style={{ position: 'relative' }}>
-        <Title order={6} c="dimmed" mb="xs">Очередь</Title>
-        <QueueList />
-        {/* Vertical resize handle pinned to the right edge of the navbar.
-            Positioned half-outside so the active hit area straddles the
-            border, and uses pointer-capture so the drag works even if the
-            cursor briefly leaves the element. */}
+      <MantineAppShell.Navbar p="md">
+        {/* Inner relative wrapper for the absolute resize handle.  Anchoring
+            the handle on the Navbar itself (via `position: relative` on
+            Navbar) breaks Mantine's `position: fixed` styling for the
+            overlay, which then takes block-flow space and pushes Main
+            below the viewport.  Keep the wrapper inside the fixed Navbar
+            instead. */}
         <div
-          onPointerDown={onNavResizeDown}
-          onPointerMove={onNavResizeMove}
-          onPointerUp={onNavResizeUp}
-          onPointerCancel={onNavResizeUp}
           style={{
-            position: 'absolute',
-            top: 0,
-            right: -3,
-            bottom: 0,
-            width: 6,
-            cursor: 'col-resize',
-            zIndex: 10,
-            touchAction: 'none',
+            position: 'relative',
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            minHeight: 0,
           }}
-          aria-label="Изменить ширину списка"
-        />
+        >
+          <Title order={6} c="dimmed" mb="xs">Очередь</Title>
+          <QueueList />
+          <div
+            onPointerDown={onNavResizeDown}
+            onPointerMove={onNavResizeMove}
+            onPointerUp={onNavResizeUp}
+            onPointerCancel={onNavResizeUp}
+            style={{
+              position: 'absolute',
+              top: 0,
+              right: 'calc(-1 * var(--mantine-spacing-md) - 3px)',
+              bottom: 0,
+              width: 6,
+              cursor: 'col-resize',
+              zIndex: 10,
+              touchAction: 'none',
+            }}
+            aria-label="Изменить ширину списка"
+          />
+        </div>
       </MantineAppShell.Navbar>
 
       <MantineAppShell.Main
         style={{
-          // Force Main to be a flex column so TextViewer's height:100% works,
-          // and lock minHeight to a concrete viewport expression (Mantine's
-          // default relies on grid min-content which collapsed to 0 on
-          // Wayland maximize in at least one KDE compositor).
+          // Mantine's Main has min-height: 100dvh and a top padding equal
+          // to the fixed header's height, so its content box already maps
+          // to the viewport area below the header.  Just turn it into a
+          // flex column so TextViewer's flex:1 child can fill the
+          // available height.
           display: 'flex',
           flexDirection: 'column',
-          minHeight: 'calc(100vh - var(--app-shell-header-height, 108px))',
         }}
       >
         <TextViewer entry={selectedEntry} />
