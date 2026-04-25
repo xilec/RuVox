@@ -42,6 +42,37 @@ export function AppShell() {
   const [pendingPlayWhenReady, setPendingPlayWhenReady] = useState(false);
   const [config, setConfig] = useState<UIConfig | null>(null);
   const configLoaded = useRef(false);
+  const [navWidth, setNavWidth] = useState(280);
+  const navResizeRef = useRef<{
+    pointerId: number;
+    startX: number;
+    originW: number;
+  } | null>(null);
+
+  function onNavResizeDown(e: React.PointerEvent<HTMLDivElement>) {
+    e.preventDefault();
+    navResizeRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      originW: navWidth,
+    };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
+  function onNavResizeMove(e: React.PointerEvent<HTMLDivElement>) {
+    const s = navResizeRef.current;
+    if (!s || s.pointerId !== e.pointerId) return;
+    const next = Math.min(
+      Math.floor(window.innerWidth * 0.7),
+      Math.max(180, s.originW + (e.clientX - s.startX)),
+    );
+    setNavWidth(next);
+  }
+  function onNavResizeUp(e: React.PointerEvent<HTMLDivElement>) {
+    const s = navResizeRef.current;
+    if (!s || s.pointerId !== e.pointerId) return;
+    navResizeRef.current = null;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  }
 
   useEffect(() => {
     if (configLoaded.current) return;
@@ -140,7 +171,7 @@ export function AppShell() {
   return (
     <MantineAppShell
       header={{ height: 108 }}
-      navbar={{ width: 280, breakpoint: 'sm' }}
+      navbar={{ width: navWidth, breakpoint: 'sm' }}
       padding="md"
     >
       <MantineAppShell.Header>
@@ -188,9 +219,30 @@ export function AppShell() {
         }}
       />
 
-      <MantineAppShell.Navbar p="md">
+      <MantineAppShell.Navbar p="md" style={{ position: 'relative' }}>
         <Title order={6} c="dimmed" mb="xs">Очередь</Title>
         <QueueList />
+        {/* Vertical resize handle pinned to the right edge of the navbar.
+            Positioned half-outside so the active hit area straddles the
+            border, and uses pointer-capture so the drag works even if the
+            cursor briefly leaves the element. */}
+        <div
+          onPointerDown={onNavResizeDown}
+          onPointerMove={onNavResizeMove}
+          onPointerUp={onNavResizeUp}
+          onPointerCancel={onNavResizeUp}
+          style={{
+            position: 'absolute',
+            top: 0,
+            right: -3,
+            bottom: 0,
+            width: 6,
+            cursor: 'col-resize',
+            zIndex: 10,
+            touchAction: 'none',
+          }}
+          aria-label="Изменить ширину списка"
+        />
       </MantineAppShell.Navbar>
 
       <MantineAppShell.Main
