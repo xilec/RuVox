@@ -1,19 +1,15 @@
-# RuVox 2.0
+# RuVox
 
-**RuVox** — desktop-приложение для озвучивания технических текстов на русском языке с использованием Silero TTS.
+**RuVox** — desktop-приложение для озвучивания технических текстов на русском языке через Silero TTS. Нормализует английские термины, аббревиатуры, код, числа, URL до передачи в TTS, чтобы синтезатор корректно читал материал, для которого не предназначен.
 
-## Проблема
+## Проблема → Решение
 
-Silero TTS не умеет корректно читать:
+Silero TTS не умеет корректно произносить:
 - Английские слова и IT-термины (`feature` → молчание или искажение)
 - Аббревиатуры (`API`, `HTTP`, `JSON`)
-- URL, email, IP-адреса
+- URL, email, IP-адреса, пути
 - Идентификаторы кода (`getUserData`, `my_variable`)
 - Спецсимволы и операторы (`->`, `>=`, `!=`)
-
-## Решение
-
-Приложение с desktop UI (Tauri + React) и pipeline нормализации на Rust:
 
 ```
 "Вызови getUserData() через API" → "Вызови гет юзер дата через эй пи ай"
@@ -21,37 +17,48 @@ Silero TTS не умеет корректно читать:
 
 ## Возможности
 
-- **Быстрое чтение** — меню системного трея для мгновенного озвучивания буфера обмена
-- **Очередь чтения** — накопление текстов для последовательного прослушивания
-- **Умная нормализация** — автоматическое преобразование технического текста
-- **Подсветка слов** — отслеживание текущей позиции в тексте при воспроизведении
+- **Кнопка Add** — копируете текст в буфер, нажимаете Add → запись попадает в очередь и синтезируется.
+- **Preview-диалог** — для длинных текстов отдельный floating-window показывает оригинал и нормализованную версию side-by-side; можно отредактировать оригинал перед синтезом.
+- **Edit mode** — правка `original_text` прямо в viewer, изменения сохраняются на entry.
+- **Очередь** — список всех записей с бейджами статуса (`pending` / `processing` / `ready` / `playing` / `error`).
+- **Подсветка слов** — синхронная подсветка читаемого слова в markdown-режиме через бинарный поиск по `WordTimestamp`.
+- **Mermaid** — диаграммы рендерятся в UI; для TTS заменяются маркером «тут мермэйд диаграмма».
+- **Системный трей** — close-to-tray, тёплый mpv re-init при показе окна.
+
+## Стек
+
+| Слой | Технология |
+|------|------------|
+| Shell | [Tauri 2](https://tauri.app/) (Rust + нативный webview) |
+| Frontend | React 18 + TypeScript 5 + [Mantine 8](https://mantine.dev/) |
+| Backend | Rust (pipeline нормализации, storage, TTS-менеджер, обёртка плеера) |
+| TTS | Python 3.12 subprocess `ttsd`, обёртка над [Silero TTS](https://github.com/snakers4/silero-models) |
+| Аудио | [`tauri-plugin-mpv`](https://crates.io/crates/tauri-plugin-mpv) (libmpv с `scaletempo2`) |
+| Сборочное окружение | Nix (`shell.nix` + `flake.nix`) |
 
 ## Документация
 
-### Архитектура и план переписывания
+### Архитектура и история
 
-- [RewriteNotes.md](../RewriteNotes.md) — архитектурные решения, выбор стека ruvox2
-- [RewriteTaskPlan.md](../RewriteTaskPlan.md) — детальный план задач, граф зависимостей
-- [task_history.md](../task_history.md) — журнал исполнения задач
+- [RewriteNotes.md](../RewriteNotes.md) — архитектурные решения и обоснования выбора стека.
+- [RewriteTaskPlan.md](../RewriteTaskPlan.md) — детальный план задач переписывания, граф зависимостей.
+- [task_history.md](../task_history.md) — журнал исполнения задач.
+- [CHANGELOG.md](../CHANGELOG.md) — хронология версий.
 
-### IPC и storage (создаются в процессе переписывания)
+### Справка
 
-- [IPC-контракт](ipc-contract.md) — Tauri-команды, события, протокол ttsd
-- [Storage-схема](storage-schema.md) — схемы history.json, timestamps, config
+- [IPC-контракт](ipc-contract.md) — Tauri-команды, события, JSON-протокол ttsd.
+- [Storage-схема](storage-schema.md) — `history.json`, `config.json`, `{uuid}.timestamps.json`, `{uuid}.wav`.
+- [Pipeline нормализации](pipeline.md) — этапы обработки, нормалайзеры, golden-тесты.
+- [UI-компоненты](ui.md) — структура React-приложения, компоненты, стилизация.
+- [Preview-диалог (FF 1.1)](preview-dialog.md) — поведение, настройки, флоу взаимодействия.
 
-### Legacy (PyQt6, заморожено)
+### Сценарии и разработка
 
-Старая документация по PyQt6-стеку находится в подкаталогах:
-- `ui/` — архитектура PyQt6 UI (исторический референс)
-- `tts-pipeline/` — Python TTS pipeline (используется как референс для port в Rust)
+- [Сценарии использования](use-cases.md) — пользовательские сценарии: добавление текста, plain/markdown-режимы, mermaid, подсветка слов.
+- [Разработка](development.md) — окружение, команды, отладка.
+- [Contributing](contributing.md) — как добавить термин в словарь, правила коммитов и стиля.
 
-## Технологии
+## Лицензия
 
-| Компонент | Технология |
-|-----------|-----------|
-| Shell | Tauri 2 |
-| Frontend | React 18 + TypeScript 5 + Mantine 8 |
-| Backend | Rust (pipeline, storage, tts, player) |
-| TTS-движок | Silero через Python-subprocess (`ttsd`) |
-| Аудио-плеер | tauri-plugin-mpv (libmpv, scaletempo2) |
-| Сборочное окружение | Nix flake |
+GPL-3.0 — см. [LICENSE.md](../LICENSE.md).

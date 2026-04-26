@@ -1,105 +1,80 @@
 # Contributing
 
-Руководство по внесению вклада в проект.
+Руководство по внесению вклада в RuVox.
 
 ## Способы помочь
 
-1. **Добавление IT-терминов** — расширение словаря
-2. **Исправление произношения** — улучшение существующих терминов
-3. **Баг-репорты** — сообщения о проблемах
-4. **Новые функции** — предложения и реализация
-5. **Документация** — улучшение описаний
+1. **Расширение словарей** — добавление IT-терминов, аббревиатур, операторов.
+2. **Исправление произношения** — корректировка существующих транслитераций.
+3. **Баг-репорты** — конкретные неисправности с минимальным воспроизведением.
+4. **Новые функции** — обсуждение через issue, затем PR.
+5. **Документация** — улучшение описаний, актуализация после изменений.
 
-## Добавление IT-терминов
+## Расширение словарей
 
-### 1. Найти файл
+Pipeline нормализации живёт в `src-tauri/src/pipeline/normalizers/`. Каждый нормалайзер — отдельный Rust-файл с собственной таблицей подстановок. При расширении словаря **обязателен** golden-test.
 
-```
-src/ruvox/tts_pipeline/normalizers/english.py
-```
+### Добавление IT-термина
 
-### 2. Добавить термин
+**1. Файл:** `src-tauri/src/pipeline/normalizers/english.rs`
 
-```python
-IT_TERMS = {
-    # ... существующие термины ...
+Найти таблицу `IT_TERMS` и добавить запись (поддерживай алфавитный порядок внутри секции):
 
-    # Добавить в алфавитном порядке
-    "kubernetes": "кубернетис",
-    "terraform": "терраформ",
-}
+```rust
+pub static IT_TERMS: phf::Map<&'static str, &'static str> = phf::phf_map! {
+    // ... существующие термины ...
+    "kubernetes" => "кубернетис",
+    "terraform"  => "терраформ",
+};
 ```
 
-### 3. Добавить тест
-
-```
-tests/tts_pipeline/test_english.py
-```
-
-```python
-def test_new_term():
-    normalizer = EnglishNormalizer()
-    assert normalizer.normalize("kubernetes") == "кубернетис"
-```
-
-### 4. Проверить
+**2. Golden-фикстура:** `src-tauri/tests/fixtures/pipeline/`
 
 ```bash
-uv run pytest tests/tts_pipeline/test_english.py -v
+# Создать вход и эталонный выход
+echo "Используем Kubernetes и Terraform" > src-tauri/tests/fixtures/pipeline/it_kubernetes.input.txt
+echo "Используем кубернетис и терраформ" > src-tauri/tests/fixtures/pipeline/it_kubernetes.expected.txt
+
+# Сгенерировать char_map.json через legacy-pipeline (для регрессии)
+nix-shell --run "PYTHONPATH=legacy/src python3 scripts/generate_golden.py --case it_kubernetes"
 ```
 
-### 5. Создать PR
+**3. Прогон:**
 
 ```bash
-git checkout -b feat/add-kubernetes-term
-git add src/ tests/
-git commit -m "Add kubernetes term to IT dictionary"
-git push -u origin feat/add-kubernetes-term
+nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml --test golden -- it_kubernetes"
 ```
 
-## Добавление аббревиатур
+**4. Коммит:**
 
-### Как слово
-
-```python
-# abbreviations.py
-AS_WORD = {
-    "newabbr": "нью аббр",  # Произносится как слово
-}
+```bash
+git checkout -b feat/it-term-kubernetes
+git add src-tauri/src/pipeline/normalizers/english.rs src-tauri/tests/fixtures/pipeline/it_kubernetes.*
+git commit -m "feat(pipeline): add 'kubernetes' to IT_TERMS dictionary"
 ```
 
-### По буквам
+### Добавление аббревиатуры
 
-Аббревиатуры, не добавленные в AS_WORD, автоматически произносятся по буквам.
+Файл: `src-tauri/src/pipeline/normalizers/abbreviations.rs`.
 
-## Исправление произношения
+- **Как слово** — таблица `AS_WORD` (`"json" → "джейсон"`).
+- **По буквам** — добавлять не нужно: всё, что не в `AS_WORD`, по умолчанию читается побуквенно через `LETTER_MAP`.
 
-### 1. Создать issue
+### Добавление оператора / символа
 
-Опишите:
-- Текущее произношение
-- Ожидаемое произношение
-- Источник (как принято говорить)
+Файл: `src-tauri/src/pipeline/normalizers/symbols.rs` или `src-tauri/src/pipeline/constants.rs` (для GREEK_LETTERS, MATH_SYMBOLS, ARROW_SYMBOLS).
 
-### 2. Или сразу PR
-
-```python
-# Было
-"docker": "докер",
-
-# Стало (например)
-"docker": "докэр",
-```
+Многосимвольные операторы (`===`, `=>`, `>=`) обрабатываются в `pipeline/mod.rs::TRACKED_OPERATOR_KEYS` — порядок «длинный раньше короткого» обязателен.
 
 ## Баг-репорты
 
 ### Что включить
 
-1. **Входной текст** — что обрабатывали
-2. **Ожидаемый результат** — что должно быть
-3. **Фактический результат** — что получилось
-4. **Версия** — `git log -1 --oneline`
-5. **Окружение** — ОС, Python версия
+1. **Входной текст** — что обрабатывали (минимальный пример).
+2. **Ожидаемый результат** — как должно звучать.
+3. **Фактический результат** — что получилось (`normalized_text` из `~/.cache/ruvox/history.json`).
+4. **Версия** — `git log -1 --oneline`.
+5. **Окружение** — ОС, NixOS/Nix-shell или ручная установка.
 
 ### Пример
 
@@ -114,105 +89,64 @@ AS_WORD = {
 "Версия >= два точка ноль"
 
 **Версия:** abc1234
-**Окружение:** NixOS, Python 3.11
+**Окружение:** NixOS 24.11, nix develop
 ```
-
-## Новые функции
-
-### 1. Создать issue
-
-Опишите:
-- Что хотите добавить
-- Зачем это нужно
-- Примеры использования
-
-### 2. Обсудить подход
-
-Дождитесь feedback перед реализацией.
-
-### 3. Реализовать
-
-- Напишите тесты первыми (TDD)
-- Следуйте существующему стилю
-- Добавьте документацию
 
 ## Code Style
 
-### Python
+См. полные правила в [development.md](development.md#правила-кода). Кратко:
 
-```python
-# Type hints для публичных методов
-def normalize(self, word: str) -> str:
-    """Нормализует английское слово.
-
-    Args:
-        word: Английское слово
-
-    Returns:
-        Русская транслитерация
-    """
-    ...
-
-# Константы UPPER_CASE
-IT_TERMS = {...}
-
-# Приватные методы с _
-def _helper(self) -> None:
-    ...
-```
-
-### Тесты
-
-```python
-class TestEnglishNormalizer:
-    """Тесты для EnglishNormalizer."""
-
-    def test_known_term(self):
-        """Тест словарного термина."""
-        normalizer = EnglishNormalizer()
-        assert normalizer.normalize("feature") == "фича"
-
-    def test_unknown_word(self):
-        """Тест fallback транслитерации."""
-        ...
-```
+- Rust: edition 2021, `tracing` + `thiserror`, без `unwrap` в production-путях, `cargo fmt` + `cargo clippy`.
+- TypeScript: `strict: true`, без `React.FC`, без `any`, функциональные компоненты + hooks.
+- Mantine 8: CSS Modules + prop `classNames`. Запрет `sx`, `createStyles`, `emotion`, легаси Mantine 6/7.
+- Python (ttsd): 3.12, uv-managed, `ruff check` чистый, JSON через stdin/stdout, логи на stderr.
 
 ### Коммиты
 
 ```
-feat: Add kubernetes term to IT dictionary
-fix: Correct pronunciation of "queue"
-docs: Update normalizers documentation
-test: Add tests for URL normalization
-refactor: Extract common logic in NumberNormalizer
+feat(pipeline): add 'kubernetes' term to IT_TERMS
+fix(player): mask mpv seek latency to prevent slider snap-back
+docs(ipc-contract): add add_text_entry command
+test(pipeline): golden fixture for size_units
+refactor(commands): extract spawn_synthesis helper
+chore(deps): bump tauri to 2.10
 ```
+
+- Никаких emoji.
+- **Запрещено:** «Co-Authored-By: Claude …».
+- `git push` в `main` — только по явному согласованию (см. CLAUDE.md).
 
 ## Pull Request
 
 ### Чеклист
 
-- [ ] Тесты проходят: `uv run pytest`
-- [ ] Новый код покрыт тестами
-- [ ] Документация обновлена (если нужно)
-- [ ] Коммит сообщения понятные
+- [ ] `nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml"` зелёный.
+- [ ] `nix-shell --run "pnpm typecheck"` зелёный.
+- [ ] `nix-shell --run "pnpm lint"` зелёный.
+- [ ] Если pipeline трогали — golden-фикстура добавлена/обновлена.
+- [ ] Если ttsd трогали — `cd ttsd && uv run python -m pytest` зелёный.
+- [ ] Документация (`docs/`) актуализирована, если поведение изменилось.
+- [ ] Коммит-сообщения в формате `<type>(<module>): <desc>`.
 
 ### Описание PR
 
 ```markdown
 ## Что сделано
 
-Добавлен термин "kubernetes" в словарь IT_TERMS.
+Добавлен термин "kubernetes" в IT_TERMS словарь нормализации английского.
 
 ## Зачем
 
-Kubernetes — популярный инструмент, часто встречается в документации.
+Часто встречается в технической документации; раньше транслитерировался как
+"кьюбернетес" через fallback, что неприемлемо.
 
 ## Тестирование
 
-- Добавлен тест `test_kubernetes_term`
-- Все существующие тесты проходят
+- Добавлен golden-кейс `it_kubernetes`.
+- Все существующие golden-тесты проходят.
+- Smoke в `pnpm tauri dev`: вставить в буфер строку с Kubernetes, синтез корректный.
 ```
 
 ## Вопросы
 
-Если что-то непонятно — создайте issue с вопросом.
+Если что-то непонятно — открой issue с тегом `question`.
