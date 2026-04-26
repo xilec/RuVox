@@ -83,8 +83,7 @@ def estimate_timestamps_chunked(
 def _map_to_original(char_mapping: object, norm_start: int, norm_end: int) -> tuple[int, int]:
     """Map normalized text positions to original text positions via char_mapping.
 
-    Handles multiple mapping shapes that may arrive from the Rust pipeline or
-    from legacy Python code:
+    Accepts three input shapes for forward compatibility with future callers:
       1. List of CharMappingEntry-like objects (attrs: norm_start, norm_end,
          orig_start, orig_end) — direct span lookup.
       2. Dict with key "char_map" containing list[[orig_start, orig_end]] indexed

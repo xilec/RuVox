@@ -181,8 +181,8 @@ fn re_tilde_approx() -> &'static Regex {
 
 /// Operators handled by SymbolNormalizer, processed longest-first to avoid
 /// partial matches (e.g. "===" must be checked before "==").
-/// Mirrors legacy `_TRACKED_OPERATOR_KEYS` — single `=` is intentionally excluded
-/// (it would corrupt math formulas like "α = β").
+/// Single `=` is intentionally excluded — it would corrupt math formulas
+/// like "α = β".
 const TRACKED_OPERATOR_KEYS: &[&str] = &[
     "===", "!==", "->", "=>", ">=", "<=", "!=", "==", "&&", "||",
 ];
@@ -191,8 +191,7 @@ const TRACKED_OPERATOR_KEYS: &[&str] = &[
 
 /// Main pipeline for TTS text preprocessing.
 ///
-/// Owns all normalizer instances. Processing phases follow the exact order
-/// defined in legacy `pipeline.py::process_with_char_mapping`.
+/// Owns all normalizer instances. Phase order matters: see `process_with_char_mapping`.
 pub struct TTSPipeline {
     number_normalizer: NumberNormalizer,
     english_normalizer: EnglishNormalizer,
@@ -225,8 +224,6 @@ impl TTSPipeline {
     }
 
     /// Process text for TTS with precise character-level mapping.
-    ///
-    /// Phase order mirrors legacy pipeline.py::process_with_char_mapping.
     pub fn process_with_char_mapping(&mut self, input: &str) -> (String, CharMapping) {
         if input.is_empty() {
             return (
@@ -344,8 +341,8 @@ impl TTSPipeline {
         }
 
         // ── Phase 12: Operators ───────────────────────────────────────────────
-        // Phase order mirrors legacy pipeline.py: operators before symbols so that
-        // multi-char operators like "==" are matched before single "=".
+        // Operators run before symbols so that multi-char operators like "=="
+        // are matched before single "=".
         for op in TRACKED_OPERATOR_KEYS {
             let replacement = format!(" {} ", self.symbol_normalizer.normalize(op));
             tracked.replace(op, &replacement);
@@ -490,11 +487,10 @@ impl TTSPipeline {
 
         // Markdown links: [text](url) → text (link text preserved for further normalization).
         //
-        // Mirrors legacy Python which strips "[" and "](url)" in two separate passes so that
-        // each link-text character retains its exact original-text position. Replacing the
-        // whole "[text](url)" at once would assign every replacement character to the full
-        // "[text](url)" range, preventing subsequent phases (CamelCase etc.) from processing
-        // those characters (TrackedText skips regions that are already marked as replaced).
+        // Two-pass strip: first "[", then "](url)". Replacing the whole "[text](url)" at once
+        // would assign every link-text character to the full "[text](url)" range, preventing
+        // subsequent phases (CamelCase etc.) from processing those characters — TrackedText
+        // skips regions already marked as replaced.
         {
             let snapshot = tracked.text().to_string();
             // Collect byte ranges of the "[" prefix and "](url)" suffix for each link,
@@ -597,8 +593,9 @@ impl TTSPipeline {
     }
 
     fn process_numbers_tracked(&self, tracked: &mut TrackedText) {
-        // Collect matches with context to replicate legacy `(?<![.\d])(\d+)(?![.\d]|[a-zA-Zа-яА-Я])`.
-        // The regex crate lacks lookbehind/lookahead; we apply context check in the closure.
+        // Effective pattern: `(?<![.\d])(\d+)(?![.\d]|[a-zA-Zа-яА-Я])`.
+        // The regex crate lacks lookbehind/lookahead, so the boundary check is applied
+        // in the closure below after the bare \d+ match.
         let snapshot = tracked.text().to_string();
         let bytes = snapshot.as_bytes();
 

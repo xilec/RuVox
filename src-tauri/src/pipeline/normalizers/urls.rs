@@ -60,10 +60,10 @@ fn lookup_drive(letter: &str) -> Option<&'static str> {
 
 /// Normalizes URLs, emails, IP addresses, and file paths to speakable Russian text.
 ///
-/// When `english` is `None`, alphabetic segments in URLs and paths are kept verbatim
-/// (matching Python behavior when `english_normalizer=None`). When provided, segments
-/// are transliterated via the English normalizer before output. R9 integration will
-/// always pass the normalizer; the `None` path exists only for legacy parity.
+/// When `english` is `None`, alphabetic segments in URLs and paths are kept verbatim.
+/// When provided, segments are transliterated via the English normalizer before output.
+/// In production the pipeline always passes the normalizer; the `None` path is kept
+/// for direct unit testing of this normalizer in isolation.
 pub struct URLPathNormalizer<'a> {
     pub numbers: &'a NumberNormalizer,
     english: Option<&'a EnglishNormalizer>,

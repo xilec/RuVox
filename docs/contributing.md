@@ -34,10 +34,9 @@ pub static IT_TERMS: phf::Map<&'static str, &'static str> = phf::phf_map! {
 # Создать вход и эталонный выход
 echo "Используем Kubernetes и Terraform" > src-tauri/tests/fixtures/pipeline/it_kubernetes.input.txt
 echo "Используем кубернетис и терраформ" > src-tauri/tests/fixtures/pipeline/it_kubernetes.expected.txt
-
-# Сгенерировать char_map.json через legacy-pipeline (для регрессии)
-nix-shell --run "PYTHONPATH=legacy/src python3 scripts/generate_golden.py --case it_kubernetes"
 ```
+
+> Файл `char_map.json` для нового кейса проще всего собрать руками или скопировать структуру с похожего fixture в этом каталоге.
 
 **3. Прогон:**
 

@@ -11,8 +11,7 @@ use crate::pipeline::tracked_text::TrackedText;
 
 /// Maps lowercase language identifiers to Russian pronunciation.
 ///
-/// Covers 19 languages tested in TestLanguageNames plus common extras
-/// ported from legacy CodeBlockHandler.LANGUAGE_NAMES.
+/// Covers 19 commonly-encountered languages plus a handful of frequent extras.
 pub static LANGUAGE_NAMES: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     let mut m = HashMap::new();
     m.insert("python", "пайтон");
@@ -365,9 +364,8 @@ impl CodeBlockHandler {
             return self.normalize_simple_word(&lower);
         }
 
-        // Operators, brackets, and punctuation — look up in shared SYMBOLS dictionary.
-        // This mirrors legacy CodeBlockHandler._normalize_token which calls
-        // SymbolNormalizer.SYMBOLS.get(token). Unknown tokens return empty string.
+        // Operators, brackets, and punctuation — look up in the shared SYMBOLS dictionary
+        // via SymbolNormalizer. Unknown tokens return empty string.
         use crate::pipeline::normalizers::symbols::SymbolNormalizer;
         let sym = SymbolNormalizer::new();
         let spoken = sym.normalize(token);
@@ -650,8 +648,6 @@ mod tests {
 
     #[test]
     fn mode_default_is_brief() {
-        // The Rust default aligns with the task spec (Brief), not legacy default (full).
-        // Legacy default was "full"; we document this deviation.
         let h = CodeBlockHandler::new();
         assert_eq!(h.mode(), CodeBlockMode::Brief);
     }

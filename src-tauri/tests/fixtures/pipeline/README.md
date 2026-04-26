@@ -1,7 +1,8 @@
 # Pipeline Golden Fixtures
 
-Golden test fixtures for the Rust TTS pipeline. Each fixture is a triple of files
-that captures the expected behavior of the legacy Python pipeline for a specific input.
+Golden test fixtures for the Rust TTS pipeline. Each fixture captures the expected
+behavior of the pipeline for a specific input and is treated as the source of truth
+in regression tests.
 
 ## File layout
 
@@ -52,39 +53,19 @@ The fixtures cover all normalizer categories:
 - Markdown structures: headers, numbered lists, inline code, code blocks, Mermaid diagrams, links
 - Mixed content: realistic paragraph combining multiple normalizers
 
-## How to regenerate
-
-Run from the repository root (where `legacy/` and `scripts/` live):
-
-```bash
-nix-shell legacy/shell.nix --run "uv run --project legacy python scripts/generate_golden.py"
-```
-
-If the nix-shell is unavailable, you can run the script directly with any Python 3.11+
-interpreter that has `num2words` installed:
-
-```bash
-PYTHONPATH=legacy/src python scripts/generate_golden.py
-```
-
-The script imports `ruvox.tts_pipeline` from `legacy/src` and writes all fixture files into
-`src-tauri/tests/fixtures/pipeline/`.
-
 ## Adding a new test case
 
-1. Open `scripts/generate_golden.py`.
-2. Add a new entry to `TEST_CASES` dict: `"my_slug": "Input text here."`.
-3. Re-run the generator.
-4. Commit the three new files: `my_slug.input.txt`, `my_slug.expected.txt`, `my_slug.char_map.json`.
+1. Drop three files into this directory: `<slug>.input.txt`, `<slug>.expected.txt`, `<slug>.char_map.json`.
+2. The expected output is whatever the current Rust pipeline produces — run the test once,
+   inspect the diff, and freeze the actual output as the new golden if the behavior is correct.
+3. The simplest way to bootstrap `char_map.json` is to copy the structure from a similar
+   existing fixture and edit it for the new case.
 
 ## Important note on regeneration
 
-If the Rust pipeline output differs from a golden fixture, first determine whether
-the discrepancy is intentional before regenerating:
+If the Rust pipeline output diverges from a golden fixture, decide whether the change
+is intentional before updating the fixture:
 
-- If the Rust behavior is a deliberate improvement or a known acceptable difference,
-  document it in the Rust test (e.g., with a `// known_diff: ...` comment) and
-  update the fixture.
-- If the Rust behavior is a bug, fix the Rust code — do not update the fixture.
-- Only regenerate the golden data when the Python pipeline itself changes or when
-  a discrepancy is explicitly approved by the project maintainer.
+- If the new Rust behavior is a deliberate improvement, update the fixture and note the
+  reason in the commit message (and a `// known_diff: ...` comment in the test if useful).
+- If the new behavior is a bug, fix the Rust code — do not update the fixture.

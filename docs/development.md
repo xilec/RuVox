@@ -16,7 +16,7 @@ nix develop
 pnpm install
 pnpm tauri dev
 
-# Или через shell.nix (legacy-совместимо)
+# Или через классический shell.nix
 nix-shell --run "pnpm install"
 nix-shell --run "pnpm tauri dev"
 ```
@@ -53,13 +53,9 @@ nix-shell --run "pnpm tauri dev"
 │       ├── protocol.py     # Типы request/response
 │       └── main.py         # Главный цикл stdin→stdout JSON
 ├── docs/                   # Документация (этот каталог)
-├── legacy/                 # PyQt6-реализация (заморожена, только для чтения)
-├── scripts/                # Утилиты (generate_golden.py, launch-prod, rebuild_prod)
+├── scripts/                # Утилиты (launch-prod, rebuild_prod)
 ├── shell.nix               # Nix-окружение (Rust + Node + Python + Tauri deps)
-├── flake.nix               # Flake (для nix build .#ruvox и nix develop)
-├── RewriteNotes.md
-├── RewriteTaskPlan.md
-└── task_history.md
+└── flake.nix               # Flake (для nix build .#ruvox и nix develop)
 ```
 
 ## Команды
@@ -77,13 +73,7 @@ nix build .#ruvox && ./result/bin/ruvox     # production-бинарь
 nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml"           # все Rust-тесты
 nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml --test golden"  # только golden-тесты
 nix-shell --run "pnpm typecheck"                                            # TypeScript strict
-nix-shell --run "pnpm lint"                                                 # ESLint
 nix-shell --run "cd ttsd && uv run python -m pytest"                        # Python-subprocess
-```
-
-Для legacy-кода:
-```bash
-nix-shell legacy/shell.nix --run "cd legacy && uv run python -m pytest"
 ```
 
 ### Сборка production
@@ -141,7 +131,7 @@ nix build .#ruvox
 
 ### Python (ttsd)
 
-- Python 3.12, `uv`-managed. Не смешивать с legacy `pyproject.toml`.
+- Python 3.12, `uv`-managed.
 - Логи на stderr, JSON-запросы на stdin, JSON-ответы на stdout.
 - `ruff check` и `pytest` должны быть зелёными.
 
@@ -177,4 +167,4 @@ git commit -m "feat(<module>): <desc>"     # commit
 git push -u origin feat/short-description  # push (по согласованию)
 ```
 
-Задачи переписывания (`task/<slug>` ветки) уже завершены — см. `task_history.md`. Новые фичи и фиксы идут обычным feature-branch-флоу.
+Новые фичи и фиксы идут обычным feature-branch-флоу.

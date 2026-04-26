@@ -1,8 +1,8 @@
 /// Character-level mapping from transformed to original positions.
 ///
-/// All indices in `char_map` are **Unicode codepoint** (char) indices, matching
-/// Python's string indexing semantics. This is important because the legacy Python
-/// `TrackedText` uses Python `str` indices which count codepoints, not bytes.
+/// All indices in `char_map` are **Unicode codepoint** (char) indices, not byte
+/// offsets. This matches the format used by golden fixtures and the on-disk
+/// `timestamps.json` files.
 #[derive(Debug, Clone)]
 pub struct CharMapping {
     pub original: String,
@@ -124,11 +124,8 @@ fn char_len(s: &str) -> usize {
 
 /// Text wrapper that tracks all modifications for precise position mapping.
 ///
-/// Semantically equivalent to the Python `TrackedText` class in
-/// `legacy/src/ruvox/tts_pipeline/tracked_text.py`.
-///
-/// All position tracking uses **Unicode codepoint** indices to match Python's
-/// string indexing, not byte offsets.
+/// All position tracking uses **Unicode codepoint** indices, not byte offsets,
+/// so multi-byte characters (Cyrillic, emoji, etc.) count as one position each.
 pub struct TrackedText {
     pub original: String,
     current: String,

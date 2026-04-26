@@ -16,10 +16,8 @@
 //!   linking on Nix without additional care.
 //!
 //! **Decision: tauri-plugin-mpv.**
-//! The project spec says "prefer tauri-plugin-mpv if viable". It is viable:
-//! position polling via `get_property` IPC round-trips every 100 ms is
-//! perfectly adequate for word-highlight sync (same approach as the legacy
-//! python-mpv version which polled at 200 ms).
+//! Position polling via `get_property` IPC round-trips every 100 ms is
+//! adequate for word-highlight sync.
 
 use std::panic::AssertUnwindSafe;
 use std::path::Path;

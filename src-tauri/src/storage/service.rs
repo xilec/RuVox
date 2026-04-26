@@ -192,7 +192,8 @@ impl StorageService {
 
     /// Add a new entry with an auto-generated UUID. Persists history.
     pub fn add_entry(&self, original_text: String) -> Result<TextEntry> {
-        // Strip BOM to match legacy Qt behaviour (QTextDocument strips BOM on setPlainText).
+        // Strip the UTF-8 BOM if present (matches what the prior Qt-based build did,
+        // keeping cached entries identical between the two implementations).
         let clean_text = original_text
             .strip_prefix('\u{feff}')
             .unwrap_or(&original_text)
@@ -532,13 +533,13 @@ mod tests {
     }
 
     #[test]
-    fn load_legacy_format_history_json() {
+    fn load_history_json_from_disk() {
         let dir = TempDir::new().unwrap();
         let cache = dir.path().to_path_buf();
         fs::create_dir_all(cache.join("audio")).unwrap();
 
-        // Write legacy-format history.json (matches Python's TextEntry.to_dict()).
-        let legacy_json = r#"{
+        // Sample history.json in the on-disk format.
+        let on_disk_json = r#"{
             "version": 1,
             "entries": [
                 {
@@ -556,7 +557,7 @@ mod tests {
                 }
             ]
         }"#;
-        fs::write(cache.join("history.json"), legacy_json).unwrap();
+        fs::write(cache.join("history.json"), on_disk_json).unwrap();
 
         let svc = StorageService::with_cache_dir(cache).unwrap();
         let all = svc.get_all_entries();

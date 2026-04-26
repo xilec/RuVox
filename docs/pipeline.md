@@ -2,7 +2,7 @@
 
 Pipeline превращает технический текст в форму, пригодную для Silero TTS.
 
-**Реализация:** Rust, `src-tauri/src/pipeline/`. Порт legacy Python pipeline (`legacy/src/ruvox/tts_pipeline/`); корректность проверяется golden-фикстурами в `src-tauri/tests/fixtures/pipeline/` (37 кейсов).
+**Реализация:** Rust, `src-tauri/src/pipeline/`. Корректность проверяется golden-фикстурами в `src-tauri/tests/fixtures/pipeline/` (37 кейсов).
 
 ## API
 
@@ -191,10 +191,4 @@ nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml --test golden"
 nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml -- pipeline"
 ```
 
-**Перегенерация при добавлении кейса:**
-
-```bash
-nix-shell --run "PYTHONPATH=legacy/src python3 scripts/generate_golden.py --case <name>"
-```
-
-См. [contributing.md](contributing.md) для подробного процесса.
+**Добавление нового кейса:** см. [contributing.md](contributing.md).

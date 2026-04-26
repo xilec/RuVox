@@ -15,21 +15,16 @@ JSON schemas for all files written by RuVox to its cache directory.
     └── {uuid}.timestamps.json           # Word-level timestamps for the entry
 ```
 
-The cache root defaults to `~/.cache/ruvox/`. It is stored per-user and is **shared** between the legacy PyQt app and the current Tauri-based RuVox — both read and write the same `history.json` format, so switching between the two versions does not require cache migration.
+The cache root defaults to `~/.cache/ruvox/`. It is stored per-user.
 
 ---
 
-## Compatibility with Legacy
+## Backwards compatibility
 
-The legacy Python implementation (frozen in `legacy/`) uses:
+The on-disk format originated in the earlier PyQt implementation of RuVox. Existing users moving to the Tauri build keep their `history.json`/`config.json` without migration — `serde` attributes (`rename_all`, `#[serde(default)]`) cover both directions:
 
-- `legacy/src/ruvox/ui/models/entry.py` — `TextEntry.to_dict()` / `TextEntry.from_dict()`.
-- `legacy/src/ruvox/ui/services/storage.py` — `StorageService._save_history()`.
-- `legacy/src/ruvox/ui/models/config.py` — `UIConfig.to_dict()` / `UIConfig.from_dict()`.
-
-All field names and enum string values in this document match the legacy Python output **exactly**. Rust's `serde` attributes (`rename_all`, `default`) ensure forward and backward compatibility.
-
-New fields added in the Tauri-based RuVox that are absent in legacy entries (e.g., `preview_dialog_enabled` in `UIConfig`) use `#[serde(default)]` so legacy JSON parses cleanly. Conversely, fields present in older `history.json` files that no longer exist in the schema (e.g., a previously-experimental `edited_text` override) are silently ignored on read.
+- New fields added later (e.g., `preview_dialog_enabled` in `UIConfig`) use `#[serde(default)]`, so older JSON parses cleanly.
+- Fields that no longer exist in the current schema (e.g., the experimental `edited_text` override) are silently ignored on read.
 
 ---
 
@@ -69,13 +64,13 @@ interface TextEntry {
 }
 ```
 
-> **Timestamp format:** `created_at` and `audio_generated_at` are stored as naive UTC timestamps — no timezone suffix (e.g. `"2026-02-15T11:46:51.504055"`). This matches the format written by legacy Python's `datetime.now().isoformat()`. Both legacy and the Tauri-based RuVox treat these values as UTC.
+> **Timestamp format:** `created_at` and `audio_generated_at` are stored as naive UTC timestamps — no timezone suffix (e.g. `"2026-02-15T11:46:51.504055"`). All values are treated as UTC.
 
 ### Notes on `status`
 
 `"playing"` is a runtime state only. The storage layer **never persists** an entry with `status: "playing"`. Before writing, any entry in `"playing"` state is saved as `"ready"`.
 
-On load, entries whose `status` is `"processing"` AND have no `audio_path` are reset to `"pending"` (the process that was synthesizing them no longer exists; matches legacy behavior in `_validate_entry_status`).
+On load, entries whose `status` is `"processing"` AND have no `audio_path` are reset to `"pending"` (the process that was synthesizing them no longer exists).
 
 Entries with `status: "ready"` whose `audio_path` file is missing are reset to `"pending"`.
 
@@ -117,11 +112,11 @@ Entries with `status: "ready"` whose `audio_path` file is missing are reset to `
 
 ### Versioning
 
-`history.json` carries a `version` field. Current version is **1** (matching legacy Python's `HISTORY_VERSION = 1`).
+`history.json` carries a `version` field. Current version is **1**.
 
 When the schema changes in a breaking way:
 1. Increment `version`.
-2. Add migration logic in the Rust storage service (equivalent to legacy's `_migrate_history`).
+2. Add migration logic in the Rust storage service.
 3. Document the change here.
 
 ---
@@ -193,13 +188,13 @@ Multiple normalized words may map to the same `original_pos` range (e.g., "getUs
 
 **Path:** `~/.cache/ruvox/config.json`
 
-Stores the application configuration. Written by `UIConfig.save()` (legacy) or the Rust storage service.
+Stores the application configuration. Written by the Rust storage service.
 
 ### Schema
 
 ```typescript
 interface UIConfig {
-  version?: number;             // Config schema version (legacy includes this; Rust reads but does not require it)
+  version?: number;             // Config schema version (read but not required)
   speaker: string;              // Silero speaker name: "xenia" | "aidar" | "baya" | "kseniya" | "eugene"
   sample_rate: number;          // WAV sample rate: 8000 | 24000 | 48000
   speech_rate: number;          // Playback speed multiplier: 0.5–2.0
@@ -222,25 +217,23 @@ interface UIConfig {
 
 ### Default Values
 
-Defaults match `legacy/src/ruvox/ui/models/config.py`:
-
-| Field | Default | Source |
-|-------|---------|--------|
-| `speaker` | `"xenia"` | legacy default |
-| `sample_rate` | `48000` | legacy default |
-| `speech_rate` | `1.0` | legacy default |
-| `notify_on_ready` | `true` | legacy default |
-| `notify_on_error` | `true` | legacy default |
-| `text_format` | `"plain"` | legacy default |
-| `history_days` | `14` | legacy default |
-| `audio_max_files` | `5` | legacy default |
-| `audio_regenerated_hours` | `24` | legacy default |
-| `max_cache_size_mb` | `500` | ruvox addition |
-| `auto_cleanup_days` | `0` | ruvox addition (0 = disabled) |
-| `code_block_mode` | `"read"` | ruvox addition |
-| `read_operators` | `true` | ruvox addition |
-| `theme` | `"auto"` | ruvox (legacy had `"dark_pro"`) |
-| `preview_dialog_enabled` | `true` | ruvox addition (FF 1.1) |
+| Field | Default |
+|-------|---------|
+| `speaker` | `"xenia"` |
+| `sample_rate` | `48000` |
+| `speech_rate` | `1.0` |
+| `notify_on_ready` | `true` |
+| `notify_on_error` | `true` |
+| `text_format` | `"plain"` |
+| `history_days` | `14` |
+| `audio_max_files` | `5` |
+| `audio_regenerated_hours` | `24` |
+| `max_cache_size_mb` | `500` |
+| `auto_cleanup_days` | `0` (disabled) |
+| `code_block_mode` | `"read"` |
+| `read_operators` | `true` |
+| `theme` | `"auto"` |
+| `preview_dialog_enabled` | `true` |
 
 ### Example
 

@@ -11,17 +11,17 @@ pub enum EntryStatus {
     Pending,
     Processing,
     Ready,
-    /// Currently playing. Runtime-only — must NOT be persisted to history.json
-    /// (legacy history doesn't know this value; storage layer must normalize Playing -> Ready before save).
+    /// Currently playing. Runtime-only — must NOT be persisted to history.json;
+    /// the storage layer normalizes Playing -> Ready before save.
     Playing,
     Error,
 }
 
 /// A text entry in the TTS queue.
 ///
-/// Field names are identical to those produced by legacy Python's
-/// `TextEntry.to_dict()` so that existing `history.json` files can be
-/// round-tripped without migration.
+/// Field names match the on-disk `history.json` format that originated in
+/// the earlier PyQt RuVox implementation, so existing files round-trip
+/// without migration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TextEntry {
     pub id: EntryId,
@@ -29,8 +29,8 @@ pub struct TextEntry {
     #[serde(default)]
     pub normalized_text: Option<String>,
     pub status: EntryStatus,
-    // Legacy writes naive UTC timestamps (no TZ suffix), e.g. "2026-02-15T11:46:51.504055".
-    // We use NaiveDateTime to match that format exactly; callers treat these as UTC.
+    // Naive UTC timestamps (no TZ suffix), e.g. "2026-02-15T11:46:51.504055".
+    // Callers treat these values as UTC.
     pub created_at: NaiveDateTime,
     #[serde(default)]
     pub audio_path: Option<String>,
@@ -49,7 +49,7 @@ pub struct TextEntry {
 /// Top-level structure of `~/.cache/ruvox/history.json`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoryFile {
-    /// Schema version.  Starts at 1, matching legacy Python's HISTORY_VERSION.
+    /// Schema version. Starts at 1.
     pub version: u32,
     pub entries: Vec<TextEntry>,
 }
@@ -73,9 +73,6 @@ pub struct Timestamps {
 }
 
 /// Application configuration persisted to `~/.cache/ruvox/config.json`.
-///
-/// Default values are taken from `legacy/src/ruvox/ui/models/config.py`
-/// so that existing config files are forward-compatible.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UIConfig {
     #[serde(default = "UIConfig::default_speaker")]
@@ -100,13 +97,11 @@ pub struct UIConfig {
     pub max_cache_size_mb: u32,
     #[serde(default = "UIConfig::default_auto_cleanup_days")]
     pub auto_cleanup_days: u32,
-    /// How to handle Markdown code blocks: `"skip"` | `"read"`.
-    /// Not present in legacy config — defaults to `"read"` (legacy reads code blocks).
+    /// How to handle Markdown code blocks: `"skip"` | `"read"`. Defaults to `"read"`.
     #[serde(default = "UIConfig::default_code_block_mode")]
     pub code_block_mode: String,
     #[serde(default = "UIConfig::default_true")]
     pub read_operators: bool,
-    // theme default "auto" intentionally diverges from legacy "dark_pro" — see RewriteNotes.md §2
     #[serde(default = "UIConfig::default_theme")]
     pub theme: String,
     #[serde(default = "UIConfig::default_player_hotkeys")]
@@ -236,8 +231,9 @@ mod tests {
     }
 
     #[test]
-    fn deserialize_real_legacy_history() {
-        // Format exactly as legacy/src/ruvox/ui/services/storage.py writes.
+    fn deserialize_real_history_format() {
+        // Format used by the on-disk history.json (carried over from the
+        // earlier PyQt RuVox build; existing user files must keep parsing).
         let json = r#"{
             "version": 1,
             "entries": [
@@ -254,7 +250,7 @@ mod tests {
                 }
             ]
         }"#;
-        let h: HistoryFile = serde_json::from_str(json).expect("must parse real legacy format");
+        let h: HistoryFile = serde_json::from_str(json).expect("must parse on-disk format");
         assert_eq!(h.entries.len(), 1);
         assert_eq!(h.entries[0].status, EntryStatus::Ready);
         assert_eq!(h.entries[0].original_text, "Пример");
@@ -302,7 +298,7 @@ mod tests {
 
     #[test]
     fn entry_missing_optional_fields() {
-        // Must handle older legacy entries that lack optional fields.
+        // Must handle older entries that lack optional fields.
         let json = r#"{
             "id": "550e8400-e29b-41d4-a716-446655440000",
             "original_text": "Only text",

@@ -37,7 +37,7 @@ type EntryStatus =
   | "error";      // Synthesis failed
 
 // A text entry in the TTS queue.
-// Field names map 1:1 to JSON keys in history.json (legacy-compatible).
+// Field names map 1:1 to JSON keys in history.json.
 interface TextEntry {
   id: EntryId;                     // UUID v4
   original_text: string;           // Raw text from clipboard
