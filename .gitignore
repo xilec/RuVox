@@ -57,6 +57,12 @@ Thumbs.db
 .env
 tmp/
 
+# Nix build output symlink
+/result
+
+# Ad-hoc screenshots dir (not part of the repo)
+/screenshots/
+
 # Node.js / Frontend
 node_modules/
 dist/
