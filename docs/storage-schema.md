@@ -203,8 +203,6 @@ interface UIConfig {
   speaker: string;              // Silero speaker name: "xenia" | "aidar" | "baya" | "kseniya" | "eugene"
   sample_rate: number;          // WAV sample rate: 8000 | 24000 | 48000
   speech_rate: number;          // Playback speed multiplier: 0.5–2.0
-  hotkey_read_now: string;      // Global hotkey, e.g. "Control+grave"
-  hotkey_read_later: string;    // Global hotkey, e.g. "Control+Shift+grave"
   notify_on_ready: boolean;     // Show notification when synthesis completes
   notify_on_error: boolean;     // Show notification on synthesis error
   text_format: string;          // Default viewer format: "plain" | "markdown" | "html"
@@ -231,8 +229,6 @@ Defaults match `legacy/src/ruvox/ui/models/config.py`:
 | `speaker` | `"xenia"` | legacy default |
 | `sample_rate` | `48000` | legacy default |
 | `speech_rate` | `1.0` | legacy default |
-| `hotkey_read_now` | `"Control+grave"` | legacy default |
-| `hotkey_read_later` | `"Control+Shift+grave"` | legacy default |
 | `notify_on_ready` | `true` | legacy default |
 | `notify_on_error` | `true` | legacy default |
 | `text_format` | `"plain"` | legacy default |
@@ -254,8 +250,6 @@ Defaults match `legacy/src/ruvox/ui/models/config.py`:
   "speaker": "xenia",
   "sample_rate": 48000,
   "speech_rate": 1.0,
-  "hotkey_read_now": "Control+grave",
-  "hotkey_read_later": "Control+Shift+grave",
   "notify_on_ready": true,
   "notify_on_error": true,
   "text_format": "plain",
@@ -313,8 +307,6 @@ Cross-reference between `docs/ipc-contract.md` types and the JSON fields in each
 | Speaker | `speaker` | — | yes | yes |
 | Sample rate | `sample_rate` | — | yes | yes |
 | Speech rate | `speech_rate` | — | yes | yes |
-| Hotkey read now | `hotkey_read_now` | — | yes | yes |
-| Hotkey read later | `hotkey_read_later` | — | yes | yes |
 | Notify on ready | `notify_on_ready` | — | yes | yes |
 | Notify on error | `notify_on_error` | — | yes | yes |
 | Text format | `text_format` | — | yes | yes |

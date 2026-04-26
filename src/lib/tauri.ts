@@ -36,8 +36,6 @@ export interface UIConfig {
   speaker: string;
   sample_rate: number;
   speech_rate: number;
-  hotkey_read_now: string;
-  hotkey_read_later: string;
   notify_on_ready: boolean;
   notify_on_error: boolean;
   text_format: string;

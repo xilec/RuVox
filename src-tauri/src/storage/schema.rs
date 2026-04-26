@@ -84,10 +84,6 @@ pub struct UIConfig {
     pub sample_rate: u32,
     #[serde(default = "UIConfig::default_speech_rate")]
     pub speech_rate: f64,
-    #[serde(default = "UIConfig::default_hotkey_read_now")]
-    pub hotkey_read_now: String,
-    #[serde(default = "UIConfig::default_hotkey_read_later")]
-    pub hotkey_read_later: String,
     #[serde(default = "UIConfig::default_true")]
     pub notify_on_ready: bool,
     #[serde(default = "UIConfig::default_true")]
@@ -131,12 +127,6 @@ impl UIConfig {
     }
     fn default_speech_rate() -> f64 {
         1.0
-    }
-    fn default_hotkey_read_now() -> String {
-        "Control+grave".to_string()
-    }
-    fn default_hotkey_read_later() -> String {
-        "Control+Shift+grave".to_string()
     }
     fn default_true() -> bool {
         true
@@ -188,8 +178,6 @@ impl Default for UIConfig {
             speaker: Self::default_speaker(),
             sample_rate: Self::default_sample_rate(),
             speech_rate: Self::default_speech_rate(),
-            hotkey_read_now: Self::default_hotkey_read_now(),
-            hotkey_read_later: Self::default_hotkey_read_later(),
             notify_on_ready: true,
             notify_on_error: true,
             text_format: Self::default_text_format(),
@@ -215,8 +203,6 @@ pub struct UIConfigPatch {
     pub speaker: Option<String>,
     pub sample_rate: Option<u32>,
     pub speech_rate: Option<f64>,
-    pub hotkey_read_now: Option<String>,
-    pub hotkey_read_later: Option<String>,
     pub notify_on_ready: Option<bool>,
     pub notify_on_error: Option<bool>,
     pub text_format: Option<String>,
@@ -299,8 +285,6 @@ mod tests {
         assert_eq!(c.speaker, "xenia");
         assert_eq!(c.sample_rate, 48000);
         assert!((c.speech_rate - 1.0).abs() < f64::EPSILON);
-        assert_eq!(c.hotkey_read_now, "Control+grave");
-        assert_eq!(c.hotkey_read_later, "Control+Shift+grave");
         assert!(c.notify_on_ready);
         assert!(c.notify_on_error);
         assert_eq!(c.history_days, 14);
@@ -356,7 +340,6 @@ mod tests {
         let c2: UIConfig = serde_json::from_str(&j).unwrap();
         assert_eq!(c.speaker, c2.speaker);
         assert_eq!(c.sample_rate, c2.sample_rate);
-        assert_eq!(c.hotkey_read_now, c2.hotkey_read_now);
     }
 
     #[test]

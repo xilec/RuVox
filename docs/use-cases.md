@@ -161,6 +161,6 @@ graph TD
 - **Кэш:** `max_cache_size_mb` (минимум 100), `auto_cleanup_days` (0 = выключено).
 - **Интерфейс:** theme (light / dark / auto).
 
-**Глобальных хоткеев в UI нет** — поля `hotkey_read_now` / `hotkey_read_later` в `UIConfig` существуют как наследие, но в текущем UI не используются (см. RewriteNotes.md § 7).
+**Глобальных хоткеев в UI нет** — это сознательное решение (см. RewriteNotes.md § 7). Хоткеи плеера работают только при фокусе окна RuVox.
 
 Изменения сохраняются через `commands.updateConfig(patch)` → `~/.cache/ruvox/config.json`.

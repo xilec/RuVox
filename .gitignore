@@ -74,3 +74,6 @@ src-tauri/gen/
 
 # pnpm
 .pnpm-debug.log
+
+# Claude Code agent worktrees (per-session, never committed)
+.claude/worktrees/

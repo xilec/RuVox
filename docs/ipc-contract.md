@@ -66,8 +66,6 @@ interface UIConfig {
   speaker: string;               // Silero speaker name, e.g. "xenia", "aidar"
   sample_rate: number;           // Audio sample rate: 8000 | 24000 | 48000
   speech_rate: number;           // Playback speed multiplier (0.5–2.0), default 1.0
-  hotkey_read_now: string;       // Global hotkey for "Read Now", e.g. "Control+grave"
-  hotkey_read_later: string;     // Global hotkey for "Read Later", e.g. "Control+Shift+grave"
   notify_on_ready: boolean;      // Show system notification when synthesis completes
   notify_on_error: boolean;      // Show system notification on synthesis error
   text_format: string;           // Default viewer format: "plain" | "markdown" | "html"

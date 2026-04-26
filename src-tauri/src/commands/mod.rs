@@ -696,8 +696,6 @@ fn apply_config_patch(config: &mut UIConfig, patch: UIConfigPatch) {
     if let Some(v) = patch.speaker { config.speaker = v; }
     if let Some(v) = patch.sample_rate { config.sample_rate = v; }
     if let Some(v) = patch.speech_rate { config.speech_rate = v; }
-    if let Some(v) = patch.hotkey_read_now { config.hotkey_read_now = v; }
-    if let Some(v) = patch.hotkey_read_later { config.hotkey_read_later = v; }
     if let Some(v) = patch.notify_on_ready { config.notify_on_ready = v; }
     if let Some(v) = patch.notify_on_error { config.notify_on_error = v; }
     if let Some(v) = patch.text_format { config.text_format = v; }
