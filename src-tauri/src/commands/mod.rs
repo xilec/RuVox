@@ -13,7 +13,9 @@ use tracing::{info, warn};
 
 use crate::pipeline::tracked_text::CharMapping;
 use crate::state::AppState;
-use crate::storage::schema::{EntryId, EntryStatus, TextEntry, UIConfig, UIConfigPatch, WordTimestamp};
+use crate::storage::schema::{
+    EntryId, EntryStatus, TextEntry, UIConfig, UIConfigPatch, WordTimestamp,
+};
 use crate::storage::service::{StorageError, StorageService};
 use crate::tts::{CharMappingEntry, TtsError};
 
@@ -100,7 +102,15 @@ pub fn spawn_synthesis_pub<R: Runtime + 'static>(
     entry_id: EntryId,
     play_when_ready: bool,
 ) {
-    spawn_synthesis(app, storage, tts, player, pipeline, entry_id, play_when_ready);
+    spawn_synthesis(
+        app,
+        storage,
+        tts,
+        player,
+        pipeline,
+        entry_id,
+        play_when_ready,
+    );
 }
 
 /// Run the full synthesis pipeline for `entry_id` in a background task.
@@ -244,10 +254,7 @@ fn spawn_synthesis<R: Runtime + 'static>(
 
                 // Phase 7: auto-play if requested.
                 if play_when_ready {
-                    let path = storage
-                        .cache_dir()
-                        .join("audio")
-                        .join(&wav_filename);
+                    let path = storage.cache_dir().join("audio").join(&wav_filename);
                     if let Err(e) = player.load(&path, entry_id.to_string()) {
                         warn!("auto-play load failed: {e}");
                     } else if let Err(e) = player.play() {
@@ -343,14 +350,17 @@ pub async fn add_clipboard_entry(
 ) -> CmdResult<String> {
     // Read clipboard on a blocking thread (required on Linux to avoid deadlock).
     let text = tokio::task::spawn_blocking(|| {
-        let mut board = arboard::Clipboard::new()
-            .map_err(|e| CommandError::Internal { message: format!("clipboard init: {e}") })?;
+        let mut board = arboard::Clipboard::new().map_err(|e| CommandError::Internal {
+            message: format!("clipboard init: {e}"),
+        })?;
         board.get_text().map_err(|_| CommandError::Internal {
             message: "в буфере обмена нет текста".to_string(),
         })
     })
     .await
-    .map_err(|e| CommandError::Internal { message: format!("clipboard task panicked: {e}") })??;
+    .map_err(|e| CommandError::Internal {
+        message: format!("clipboard task panicked: {e}"),
+    })??;
 
     ingest_text(app, &state, text, play_when_ready)
 }
@@ -385,28 +395,20 @@ pub struct PreviewNormalizeResult {
 
 /// Return all entries sorted by created_at descending.
 #[tauri::command]
-pub async fn get_entries(
-    state: State<'_, AppState>,
-) -> CmdResult<Vec<TextEntry>> {
+pub async fn get_entries(state: State<'_, AppState>) -> CmdResult<Vec<TextEntry>> {
     Ok(state.storage.get_all_entries())
 }
 
 /// Return a single entry by ID, or null if not found.
 #[tauri::command]
-pub async fn get_entry(
-    state: State<'_, AppState>,
-    id: String,
-) -> CmdResult<Option<TextEntry>> {
+pub async fn get_entry(state: State<'_, AppState>, id: String) -> CmdResult<Option<TextEntry>> {
     let uuid = parse_entry_id(&id)?;
     Ok(state.storage.get_entry(&uuid))
 }
 
 /// Delete an entry and its audio + timestamps files.
 #[tauri::command]
-pub async fn delete_entry(
-    state: State<'_, AppState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn delete_entry(state: State<'_, AppState>, id: String) -> CmdResult<()> {
     let uuid = parse_entry_id(&id)?;
 
     // Stop playback if this entry is playing.  Player::stop emits
@@ -415,7 +417,10 @@ pub async fn delete_entry(
         let _ = state.player.stop();
     }
 
-    state.storage.delete_entry(&uuid).map_err(CommandError::from)?;
+    state
+        .storage
+        .delete_entry(&uuid)
+        .map_err(CommandError::from)?;
 
     Ok(())
 }
@@ -428,7 +433,10 @@ pub async fn delete_audio(
     id: String,
 ) -> CmdResult<()> {
     let uuid = parse_entry_id(&id)?;
-    state.storage.delete_audio(&uuid).map_err(CommandError::from)?;
+    state
+        .storage
+        .delete_audio(&uuid)
+        .map_err(CommandError::from)?;
 
     if let Some(entry) = state.storage.get_entry(&uuid) {
         emit_entry_updated(&app, &entry);
@@ -449,25 +457,29 @@ pub async fn cancel_synthesis(
     let mut entry = state
         .storage
         .get_entry(&uuid)
-        .ok_or_else(|| CommandError::NotFound { message: format!("entry not found: {id}") })?;
+        .ok_or_else(|| CommandError::NotFound {
+            message: format!("entry not found: {id}"),
+        })?;
 
     entry.status = EntryStatus::Pending;
-    state.storage.update_entry(entry.clone()).map_err(CommandError::from)?;
+    state
+        .storage
+        .update_entry(entry.clone())
+        .map_err(CommandError::from)?;
     emit_entry_updated(&app, &entry);
     Ok(())
 }
 
 /// Start playback of a ready entry.
 #[tauri::command]
-pub async fn play_entry(
-    state: State<'_, AppState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn play_entry(state: State<'_, AppState>, id: String) -> CmdResult<()> {
     let uuid = parse_entry_id(&id)?;
     let entry = state
         .storage
         .get_entry(&uuid)
-        .ok_or_else(|| CommandError::NotFound { message: format!("entry not found: {id}") })?;
+        .ok_or_else(|| CommandError::NotFound {
+            message: format!("entry not found: {id}"),
+        })?;
 
     if entry.status != EntryStatus::Ready {
         return Err(CommandError::PlaybackError {
@@ -475,19 +487,26 @@ pub async fn play_entry(
         });
     }
 
-    let path = state.storage.get_audio_path(&uuid).ok_or_else(|| {
-        CommandError::PlaybackError { message: format!("audio file missing for entry {id}") }
-    })?;
+    let path = state
+        .storage
+        .get_audio_path(&uuid)
+        .ok_or_else(|| CommandError::PlaybackError {
+            message: format!("audio file missing for entry {id}"),
+        })?;
 
     state
         .player
         .load(&path, id.clone())
-        .map_err(|e| CommandError::PlaybackError { message: e.to_string() })?;
+        .map_err(|e| CommandError::PlaybackError {
+            message: e.to_string(),
+        })?;
 
     state
         .player
         .play()
-        .map_err(|e| CommandError::PlaybackError { message: e.to_string() })?;
+        .map_err(|e| CommandError::PlaybackError {
+            message: e.to_string(),
+        })?;
 
     Ok(())
 }
@@ -498,7 +517,9 @@ pub async fn pause_playback(state: State<'_, AppState>) -> CmdResult<()> {
     state
         .player
         .pause()
-        .map_err(|e| CommandError::PlaybackError { message: e.to_string() })
+        .map_err(|e| CommandError::PlaybackError {
+            message: e.to_string(),
+        })
 }
 
 /// Resume playback from the paused position.
@@ -507,7 +528,9 @@ pub async fn resume_playback(state: State<'_, AppState>) -> CmdResult<()> {
     state
         .player
         .resume()
-        .map_err(|e| CommandError::PlaybackError { message: e.to_string() })
+        .map_err(|e| CommandError::PlaybackError {
+            message: e.to_string(),
+        })
 }
 
 /// Stop playback entirely.
@@ -516,27 +539,25 @@ pub async fn stop_playback(state: State<'_, AppState>) -> CmdResult<()> {
     state
         .player
         .stop()
-        .map_err(|e| CommandError::PlaybackError { message: e.to_string() })
+        .map_err(|e| CommandError::PlaybackError {
+            message: e.to_string(),
+        })
 }
 
 /// Seek to an absolute position in the current audio.
 #[tauri::command]
-pub async fn seek_to(
-    state: State<'_, AppState>,
-    position_sec: f64,
-) -> CmdResult<()> {
+pub async fn seek_to(state: State<'_, AppState>, position_sec: f64) -> CmdResult<()> {
     state
         .player
         .seek(position_sec)
-        .map_err(|e| CommandError::PlaybackError { message: e.to_string() })
+        .map_err(|e| CommandError::PlaybackError {
+            message: e.to_string(),
+        })
 }
 
 /// Set playback speed (0.5–2.0). Persisted to UIConfig.speech_rate.
 #[tauri::command]
-pub async fn set_speed(
-    state: State<'_, AppState>,
-    speed: f32,
-) -> CmdResult<()> {
+pub async fn set_speed(state: State<'_, AppState>, speed: f32) -> CmdResult<()> {
     if !(0.5..=2.0).contains(&speed) {
         return Err(CommandError::ConfigError {
             message: format!("speed {speed} is out of range [0.5, 2.0]"),
@@ -546,7 +567,9 @@ pub async fn set_speed(
     state
         .player
         .set_speed(speed)
-        .map_err(|e| CommandError::PlaybackError { message: e.to_string() })?;
+        .map_err(|e| CommandError::PlaybackError {
+            message: e.to_string(),
+        })?;
 
     // Persist to config.
     let mut config = state.storage.load_config().unwrap_or_default();
@@ -560,10 +583,7 @@ pub async fn set_speed(
 
 /// Set playback volume (0.0–1.0). Not persisted.
 #[tauri::command]
-pub async fn set_volume(
-    state: State<'_, AppState>,
-    volume: f32,
-) -> CmdResult<()> {
+pub async fn set_volume(state: State<'_, AppState>, volume: f32) -> CmdResult<()> {
     if !(0.0..=1.0).contains(&volume) {
         return Err(CommandError::ConfigError {
             message: format!("volume {volume} is out of range [0.0, 1.0]"),
@@ -573,7 +593,9 @@ pub async fn set_volume(
     state
         .player
         .set_volume(volume)
-        .map_err(|e| CommandError::PlaybackError { message: e.to_string() })
+        .map_err(|e| CommandError::PlaybackError {
+            message: e.to_string(),
+        })
 }
 
 /// Return the current application configuration.
@@ -584,13 +606,13 @@ pub async fn get_config(state: State<'_, AppState>) -> CmdResult<UIConfig> {
 
 /// Merge a partial config patch into the current configuration and persist.
 #[tauri::command]
-pub async fn update_config(
-    state: State<'_, AppState>,
-    patch: UIConfigPatch,
-) -> CmdResult<()> {
+pub async fn update_config(state: State<'_, AppState>, patch: UIConfigPatch) -> CmdResult<()> {
     let mut config = state.storage.load_config().unwrap_or_default();
     apply_config_patch(&mut config, patch);
-    state.storage.save_config(&config).map_err(CommandError::from)
+    state
+        .storage
+        .save_config(&config)
+        .map_err(CommandError::from)
 }
 
 /// Load and return word timestamps for an entry.
@@ -603,7 +625,9 @@ pub async fn get_timestamps(
 
     // Verify entry exists.
     if state.storage.get_entry(&uuid).is_none() {
-        return Err(CommandError::NotFound { message: format!("entry not found: {id}") });
+        return Err(CommandError::NotFound {
+            message: format!("entry not found: {id}"),
+        });
     }
 
     let timestamps = state
@@ -659,7 +683,10 @@ pub async fn clear_cache(
         }
     }
 
-    Ok(ClearCacheResult { deleted_files, freed_bytes })
+    Ok(ClearCacheResult {
+        deleted_files,
+        freed_bytes,
+    })
 }
 
 #[derive(Serialize)]
@@ -670,12 +697,16 @@ pub struct ClearCacheResult {
 
 /// Return current cache size information.
 #[tauri::command]
-pub async fn get_cache_stats(
-    state: State<'_, AppState>,
-) -> CmdResult<CacheSizeInfo> {
+pub async fn get_cache_stats(state: State<'_, AppState>) -> CmdResult<CacheSizeInfo> {
     let total_bytes = state.storage.get_cache_size().map_err(CommandError::from)?;
-    let audio_file_count = state.storage.get_audio_count().map_err(CommandError::from)?;
-    Ok(CacheSizeInfo { total_bytes, audio_file_count })
+    let audio_file_count = state
+        .storage
+        .get_audio_count()
+        .map_err(CommandError::from)?;
+    Ok(CacheSizeInfo {
+        total_bytes,
+        audio_file_count,
+    })
 }
 
 #[derive(Serialize)]
@@ -693,21 +724,55 @@ fn parse_entry_id(s: &str) -> CmdResult<EntryId> {
 }
 
 fn apply_config_patch(config: &mut UIConfig, patch: UIConfigPatch) {
-    if let Some(v) = patch.speaker { config.speaker = v; }
-    if let Some(v) = patch.sample_rate { config.sample_rate = v; }
-    if let Some(v) = patch.speech_rate { config.speech_rate = v; }
-    if let Some(v) = patch.notify_on_ready { config.notify_on_ready = v; }
-    if let Some(v) = patch.notify_on_error { config.notify_on_error = v; }
-    if let Some(v) = patch.text_format { config.text_format = v; }
-    if let Some(v) = patch.history_days { config.history_days = v; }
-    if let Some(v) = patch.audio_max_files { config.audio_max_files = v; }
-    if let Some(v) = patch.audio_regenerated_hours { config.audio_regenerated_hours = v; }
-    if let Some(v) = patch.max_cache_size_mb { config.max_cache_size_mb = v; }
-    if let Some(v) = patch.auto_cleanup_days { config.auto_cleanup_days = v; }
-    if let Some(v) = patch.code_block_mode { config.code_block_mode = v; }
-    if let Some(v) = patch.read_operators { config.read_operators = v; }
-    if let Some(v) = patch.theme { config.theme = v; }
-    if let Some(v) = patch.player_hotkeys { config.player_hotkeys = v; }
-    if let Some(v) = patch.window_geometry { config.window_geometry = v; }
-    if let Some(v) = patch.preview_dialog_enabled { config.preview_dialog_enabled = v; }
+    if let Some(v) = patch.speaker {
+        config.speaker = v;
+    }
+    if let Some(v) = patch.sample_rate {
+        config.sample_rate = v;
+    }
+    if let Some(v) = patch.speech_rate {
+        config.speech_rate = v;
+    }
+    if let Some(v) = patch.notify_on_ready {
+        config.notify_on_ready = v;
+    }
+    if let Some(v) = patch.notify_on_error {
+        config.notify_on_error = v;
+    }
+    if let Some(v) = patch.text_format {
+        config.text_format = v;
+    }
+    if let Some(v) = patch.history_days {
+        config.history_days = v;
+    }
+    if let Some(v) = patch.audio_max_files {
+        config.audio_max_files = v;
+    }
+    if let Some(v) = patch.audio_regenerated_hours {
+        config.audio_regenerated_hours = v;
+    }
+    if let Some(v) = patch.max_cache_size_mb {
+        config.max_cache_size_mb = v;
+    }
+    if let Some(v) = patch.auto_cleanup_days {
+        config.auto_cleanup_days = v;
+    }
+    if let Some(v) = patch.code_block_mode {
+        config.code_block_mode = v;
+    }
+    if let Some(v) = patch.read_operators {
+        config.read_operators = v;
+    }
+    if let Some(v) = patch.theme {
+        config.theme = v;
+    }
+    if let Some(v) = patch.player_hotkeys {
+        config.player_hotkeys = v;
+    }
+    if let Some(v) = patch.window_geometry {
+        config.window_geometry = v;
+    }
+    if let Some(v) = patch.preview_dialog_enabled {
+        config.preview_dialog_enabled = v;
+    }
 }

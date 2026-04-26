@@ -45,17 +45,26 @@ const DRIVE_LETTERS: &[(&str, &str)] = &[
 
 fn lookup_tld(tld: &str) -> Option<&'static str> {
     let lower = tld.to_lowercase();
-    TLD_MAP.iter().find(|(k, _)| *k == lower.as_str()).map(|(_, v)| *v)
+    TLD_MAP
+        .iter()
+        .find(|(k, _)| *k == lower.as_str())
+        .map(|(_, v)| *v)
 }
 
 fn lookup_protocol(scheme: &str) -> Option<&'static str> {
     let lower = scheme.to_lowercase();
-    PROTOCOLS.iter().find(|(k, _)| *k == lower.as_str()).map(|(_, v)| *v)
+    PROTOCOLS
+        .iter()
+        .find(|(k, _)| *k == lower.as_str())
+        .map(|(_, v)| *v)
 }
 
 fn lookup_drive(letter: &str) -> Option<&'static str> {
     let lower = letter.to_lowercase();
-    DRIVE_LETTERS.iter().find(|(k, _)| *k == lower.as_str()).map(|(_, v)| *v)
+    DRIVE_LETTERS
+        .iter()
+        .find(|(k, _)| *k == lower.as_str())
+        .map(|(_, v)| *v)
 }
 
 /// Normalizes URLs, emails, IP addresses, and file paths to speakable Russian text.
@@ -82,7 +91,10 @@ impl<'a> URLPathNormalizer<'a> {
     /// Matches Python behavior when `english_normalizer=None` — used in tests and
     /// contexts where downstream processing will handle transliteration separately.
     pub fn new_without_english(numbers: &'a NumberNormalizer) -> Self {
-        Self { numbers, english: None }
+        Self {
+            numbers,
+            english: None,
+        }
     }
 
     fn transliterate_word(&self, word: &str) -> String {
@@ -643,42 +655,54 @@ mod tests {
     fn test_protocol_https() {
         let (_, nn) = mk_normalizer();
         let n = norm_no_en(&nn);
-        assert!(n.normalize_url("https://example.com").starts_with("эйч ти ти пи эс"));
+        assert!(n
+            .normalize_url("https://example.com")
+            .starts_with("эйч ти ти пи эс"));
     }
 
     #[test]
     fn test_protocol_http() {
         let (_, nn) = mk_normalizer();
         let n = norm_no_en(&nn);
-        assert!(n.normalize_url("http://example.com").starts_with("эйч ти ти пи"));
+        assert!(n
+            .normalize_url("http://example.com")
+            .starts_with("эйч ти ти пи"));
     }
 
     #[test]
     fn test_protocol_ftp() {
         let (_, nn) = mk_normalizer();
         let n = norm_no_en(&nn);
-        assert!(n.normalize_url("ftp://files.example.com").starts_with("эф ти пи"));
+        assert!(n
+            .normalize_url("ftp://files.example.com")
+            .starts_with("эф ти пи"));
     }
 
     #[test]
     fn test_protocol_ssh() {
         let (_, nn) = mk_normalizer();
         let n = norm_no_en(&nn);
-        assert!(n.normalize_url("ssh://server.example.com").starts_with("эс эс эйч"));
+        assert!(n
+            .normalize_url("ssh://server.example.com")
+            .starts_with("эс эс эйч"));
     }
 
     #[test]
     fn test_protocol_git() {
         let (_, nn) = mk_normalizer();
         let n = norm_no_en(&nn);
-        assert!(n.normalize_url("git://github.com/repo.git").starts_with("гит"));
+        assert!(n
+            .normalize_url("git://github.com/repo.git")
+            .starts_with("гит"));
     }
 
     #[test]
     fn test_protocol_file() {
         let (_, nn) = mk_normalizer();
         let n = norm_no_en(&nn);
-        assert!(n.normalize_url("file:///home/user/doc.txt").starts_with("файл"));
+        assert!(n
+            .normalize_url("file:///home/user/doc.txt")
+            .starts_with("файл"));
     }
 
     // ---- TestEmailNormalization ----
@@ -1000,12 +1024,7 @@ mod tests {
         let n = norm_no_en(&nn);
         let result = n.normalize_url("https://example.com/search?q=test");
         for part in &["example", "search", "q", "test"] {
-            assert!(
-                result.contains(part),
-                "missing '{}' in '{}'",
-                part,
-                result
-            );
+            assert!(result.contains(part), "missing '{}' in '{}'", part, result);
         }
     }
 

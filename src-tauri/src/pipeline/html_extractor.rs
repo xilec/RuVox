@@ -85,17 +85,46 @@ impl TrackedHtml {
 /// Tags whose entire subtree is excluded from TTS output (navigation, chrome,
 /// non-prose).
 const EXCLUDED_TAGS: &[&str] = &[
-    "nav", "footer", "aside", "script", "style", "head", "noscript", "template",
-    "svg", "math", "button", "select", "option", "optgroup", "datalist",
+    "nav", "footer", "aside", "script", "style", "head", "noscript", "template", "svg", "math",
+    "button", "select", "option", "optgroup", "datalist",
 ];
 
 /// Block-level tags that should be preceded by a newline in the output when
 /// they contain visible text.
 const BLOCK_TAGS: &[&str] = &[
-    "p", "div", "section", "article", "main", "header", "h1", "h2", "h3", "h4",
-    "h5", "h6", "blockquote", "pre", "ul", "ol", "li", "dt", "dd", "dl",
-    "figure", "figcaption", "table", "thead", "tbody", "tfoot", "tr", "th",
-    "td", "details", "summary", "br", "hr",
+    "p",
+    "div",
+    "section",
+    "article",
+    "main",
+    "header",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "blockquote",
+    "pre",
+    "ul",
+    "ol",
+    "li",
+    "dt",
+    "dd",
+    "dl",
+    "figure",
+    "figcaption",
+    "table",
+    "thead",
+    "tbody",
+    "tfoot",
+    "tr",
+    "th",
+    "td",
+    "details",
+    "summary",
+    "br",
+    "hr",
 ];
 
 fn is_excluded(tag: &str) -> bool {
@@ -365,7 +394,10 @@ mod tests {
     fn test_nav_excluded() {
         let html = "<nav><a href='/'>Домой</a></nav><p>Основное содержимое.</p>";
         let out = extract(html);
-        assert!(!out.contains("Домой"), "nav content must be excluded: {out:?}");
+        assert!(
+            !out.contains("Домой"),
+            "nav content must be excluded: {out:?}"
+        );
         assert!(out.contains("Основное содержимое."));
     }
 
@@ -375,7 +407,10 @@ mod tests {
     fn test_footer_excluded() {
         let html = "<p>Тело страницы.</p><footer><p>Копирайт 2026</p></footer>";
         let out = extract(html);
-        assert!(!out.contains("Копирайт"), "footer must be excluded: {out:?}");
+        assert!(
+            !out.contains("Копирайт"),
+            "footer must be excluded: {out:?}"
+        );
         assert!(out.contains("Тело страницы."));
     }
 
@@ -385,7 +420,10 @@ mod tests {
     fn test_aside_excluded() {
         let html = "<p>Главный текст.</p><aside><p>Боковая заметка</p></aside>";
         let out = extract(html);
-        assert!(!out.contains("Боковая заметка"), "aside must be excluded: {out:?}");
+        assert!(
+            !out.contains("Боковая заметка"),
+            "aside must be excluded: {out:?}"
+        );
         assert!(out.contains("Главный текст."));
     }
 
@@ -395,7 +433,10 @@ mod tests {
     fn test_script_style_excluded() {
         let html = r#"<style>body{color:red}</style><script>alert(1)</script><p>Виден</p>"#;
         let out = extract(html);
-        assert!(!out.contains("body{color:red}"), "style content must be excluded");
+        assert!(
+            !out.contains("body{color:red}"),
+            "style content must be excluded"
+        );
         assert!(!out.contains("alert"), "script content must be excluded");
         assert!(out.contains("Виден"));
     }
@@ -427,14 +468,18 @@ mod tests {
     fn test_inline_code() {
         let html = "<p>Вызови функцию <code>getUserData()</code> для получения данных.</p>";
         let out = extract(html);
-        assert!(out.contains("getUserData()"), "code content missing: {out:?}");
+        assert!(
+            out.contains("getUserData()"),
+            "code content missing: {out:?}"
+        );
     }
 
     // ── 12. Pre/code block ───────────────────────────────────────────────────
 
     #[test]
     fn test_pre_code_block() {
-        let html = r#"<pre><code class="language-rust">fn main() { println!("hello"); }</code></pre>"#;
+        let html =
+            r#"<pre><code class="language-rust">fn main() { println!("hello"); }</code></pre>"#;
         let out = extract(html);
         assert!(out.contains("fn main()"), "pre/code block missing: {out:?}");
     }
@@ -477,7 +522,10 @@ mod tests {
         let html = "<p>Текст   с   лишними   пробелами.</p>";
         let out = extract(html);
         // Multiple spaces in HTML source collapse to a single space in text.
-        assert!(!out.contains("   "), "multiple spaces should collapse: {out:?}");
+        assert!(
+            !out.contains("   "),
+            "multiple spaces should collapse: {out:?}"
+        );
         assert!(out.contains("Текст"), "text missing: {out:?}");
     }
 
@@ -489,7 +537,11 @@ mod tests {
         let tracked = extract_text_for_tts(html);
         // Spans must cover the extracted text.
         assert!(!tracked.spans.is_empty(), "spans should not be empty");
-        let total_coverage: usize = tracked.spans.iter().map(|s| s.text_end - s.text_start).sum();
+        let total_coverage: usize = tracked
+            .spans
+            .iter()
+            .map(|s| s.text_end - s.text_start)
+            .sum();
         assert!(
             total_coverage >= tracked.text.trim().len(),
             "spans should cover at least the trimmed text length"
@@ -522,7 +574,10 @@ mod tests {
     fn test_blockquote_preserved() {
         let html = "<blockquote><p>Цитата из источника.</p></blockquote>";
         let out = extract(html);
-        assert!(out.contains("Цитата из источника."), "blockquote missing: {out:?}");
+        assert!(
+            out.contains("Цитата из источника."),
+            "blockquote missing: {out:?}"
+        );
     }
 
     // ── 19. table cells concatenated ─────────────────────────────────────────
@@ -541,6 +596,9 @@ mod tests {
     fn test_empty_html() {
         let tracked = extract_text_for_tts("");
         let out = normalise_extracted(&tracked.text);
-        assert!(out.is_empty(), "empty HTML should yield empty text: {out:?}");
+        assert!(
+            out.is_empty(),
+            "empty HTML should yield empty text: {out:?}"
+        );
     }
 }

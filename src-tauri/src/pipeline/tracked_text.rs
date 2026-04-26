@@ -184,8 +184,8 @@ impl TrackedText {
         let char_end = byte_to_char_idx(&self.current, byte_end);
 
         // Skip if any codepoint in the match is inside an existing replacement.
-        let already_replaced = (char_start..char_end)
-            .any(|pos| self.is_current_char_pos_inside_replacement(pos));
+        let already_replaced =
+            (char_start..char_end).any(|pos| self.is_current_char_pos_inside_replacement(pos));
         if already_replaced {
             return;
         }
@@ -197,7 +197,10 @@ impl TrackedText {
             orig_start
         };
 
-        if self.find_containing_replacement(orig_start, orig_end).is_some() {
+        if self
+            .find_containing_replacement(orig_start, orig_end)
+            .is_some()
+        {
             return;
         }
 
@@ -280,7 +283,10 @@ impl TrackedText {
             };
 
             // Skip if this range overlaps an existing replacement in original coords.
-            if self.find_containing_replacement(orig_start, orig_end).is_some() {
+            if self
+                .find_containing_replacement(orig_start, orig_end)
+                .is_some()
+            {
                 continue;
             }
 
@@ -319,8 +325,7 @@ impl TrackedText {
         let trans_char_len = char_len(&self.current);
 
         if self.replacements.is_empty() {
-            let char_map: Vec<(usize, usize)> =
-                (0..trans_char_len).map(|i| (i, i + 1)).collect();
+            let char_map: Vec<(usize, usize)> = (0..trans_char_len).map(|i| (i, i + 1)).collect();
             return CharMapping {
                 original: self.original,
                 transformed: self.current,
@@ -885,7 +890,11 @@ mod tests {
         assert_eq!(mir_orig_cp, 9);
 
         // In transformed: "Привет мир" → "мир" at codepoint 7
-        let mir_norm_cp = mapping.transformed.find("мир").map(|b| byte_to_char_idx(&mapping.transformed, b)).unwrap();
+        let mir_norm_cp = mapping
+            .transformed
+            .find("мир")
+            .map(|b| byte_to_char_idx(&mapping.transformed, b))
+            .unwrap();
         assert_eq!(mir_norm_cp, 7);
 
         let (orig_start, _orig_end) = mapping.get_original_range(mir_norm_cp, mir_norm_cp + 3);
@@ -921,7 +930,11 @@ mod tests {
         for i in 0..char_len(&mapping.transformed) {
             let (orig_start, orig_end) = mapping.get_original_range(i, i + 1);
             assert!(orig_start < 3 || (orig_start == 0 && orig_end <= 3));
-            assert!(orig_end <= 3, "orig_end {} should be <= 3 (len of 'API')", orig_end);
+            assert!(
+                orig_end <= 3,
+                "orig_end {} should be <= 3 (len of 'API')",
+                orig_end
+            );
         }
     }
 
@@ -961,7 +974,10 @@ mod tests {
 
         // BOM is 1 codepoint; "Привет" starts at codepoint 1 in original
         let bom_cp = 1usize;
-        let privet_norm_cp = byte_to_char_idx(&mapping.transformed, mapping.transformed.find("Привет").unwrap());
+        let privet_norm_cp = byte_to_char_idx(
+            &mapping.transformed,
+            mapping.transformed.find("Привет").unwrap(),
+        );
         assert_eq!(privet_norm_cp, 0);
 
         let (orig_start, _) = mapping.get_original_range(0, 6);

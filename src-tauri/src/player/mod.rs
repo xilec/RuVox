@@ -277,8 +277,7 @@ impl<R: Runtime> Player<R> {
         self.mpv_command(json!(["seek", position_sec, "absolute"]))?;
         let (entry_id, duration_sec) = {
             let mut s = self.state.lock();
-            s.seek_suppress_until =
-                Some(Instant::now() + Duration::from_millis(300));
+            s.seek_suppress_until = Some(Instant::now() + Duration::from_millis(300));
             (s.current_entry_id.clone(), s.duration_sec)
         };
         if let Some(id) = entry_id {
@@ -355,10 +354,7 @@ impl<R: Runtime> Player<R> {
             return Err(PlayerError::Op("mpv instance destroyed".into()));
         }
         let cmd = MpvCommand {
-            command: command
-                .as_array()
-                .cloned()
-                .unwrap_or_default(),
+            command: command.as_array().cloned().unwrap_or_default(),
             request_id: None,
         };
         // tauri-plugin-mpv panics with `Option::unwrap()` in its command
@@ -366,13 +362,14 @@ impl<R: Runtime> Player<R> {
         // its own CloseRequested handler destroyed mpv).  Catch that, mark
         // mpv as dead so subsequent calls short-circuit, and surface as Err.
         let app = self.app.clone();
-        let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
-            app.mpv().command(cmd, WINDOW_LABEL)
-        }));
+        let result =
+            std::panic::catch_unwind(AssertUnwindSafe(|| app.mpv().command(cmd, WINDOW_LABEL)));
         match result {
             Err(_) => {
                 self.mpv_alive.store(false, Ordering::SeqCst);
-                Err(PlayerError::Op("mpv command panicked (instance gone?)".into()))
+                Err(PlayerError::Op(
+                    "mpv command panicked (instance gone?)".into(),
+                ))
             }
             Ok(Err(e)) => Err(PlayerError::Op(e.to_string())),
             Ok(Ok(_)) => Ok(()),
@@ -384,10 +381,7 @@ impl<R: Runtime> Player<R> {
             return Err(PlayerError::Op("mpv instance destroyed".into()));
         }
         let cmd = MpvCommand {
-            command: vec![
-                json!("get_property"),
-                json!(property),
-            ],
+            command: vec![json!("get_property"), json!(property)],
             request_id: Some(1),
         };
         let app = self.app.clone();
@@ -433,10 +427,7 @@ impl<R: Runtime> Drop for Player<R> {
 /// Spawns a Tokio task that emits `playback_position` every 100 ms while
 /// something is playing.  Also detects EOF (position ≥ duration) and emits
 /// `playback_finished` + `playback_stopped`.
-pub fn spawn_position_emitter<R: Runtime + 'static>(
-    player: Arc<Player<R>>,
-    app: AppHandle<R>,
-) {
+pub fn spawn_position_emitter<R: Runtime + 'static>(player: Arc<Player<R>>, app: AppHandle<R>) {
     // tauri::async_runtime::spawn works inside the setup hook where the
     // bare tokio runtime context is not yet active.
     tauri::async_runtime::spawn(async move {

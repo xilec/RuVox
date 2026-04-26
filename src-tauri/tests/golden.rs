@@ -89,11 +89,7 @@ fn text_diff(expected: &str, actual: &str) -> String {
 }
 
 /// Show the first `limit` mismatched char_map entries with context.
-fn char_map_diff(
-    expected: &[[usize; 2]],
-    actual: &[(usize, usize)],
-    limit: usize,
-) -> String {
+fn char_map_diff(expected: &[[usize; 2]], actual: &[(usize, usize)], limit: usize) -> String {
     let mut output = String::new();
     let max_len = expected.len().max(actual.len());
     let mut shown = 0;

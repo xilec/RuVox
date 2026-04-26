@@ -29,23 +29,39 @@ use tray::TrayCmd;
 /// survived a crash/SIGKILL.  Find those mpv PIDs via `/proc/<pid>/cmdline`
 /// search and send SIGTERM.
 fn reap_orphan_mpv() {
-    let Ok(entries) = std::fs::read_dir("/tmp") else { return };
+    let Ok(entries) = std::fs::read_dir("/tmp") else {
+        return;
+    };
     for entry in entries.flatten() {
         let name = entry.file_name();
         let Some(s) = name.to_str() else { continue };
-        if !s.starts_with("tauri_plugin_mpv_socket_") { continue }
+        if !s.starts_with("tauri_plugin_mpv_socket_") {
+            continue;
+        }
         let parts: Vec<&str> = s.split('_').collect();
-        let Some(parent_pid_str) = parts.get(4) else { continue };
-        let Ok(parent_pid) = parent_pid_str.parse::<u32>() else { continue };
-        if std::path::Path::new(&format!("/proc/{parent_pid}")).exists() { continue; }
+        let Some(parent_pid_str) = parts.get(4) else {
+            continue;
+        };
+        let Ok(parent_pid) = parent_pid_str.parse::<u32>() else {
+            continue;
+        };
+        if std::path::Path::new(&format!("/proc/{parent_pid}")).exists() {
+            continue;
+        }
         // Parent dead → find mpv with this IPC socket arg and kill it.
         if let Ok(procs) = std::fs::read_dir("/proc") {
             for p in procs.flatten() {
-                let Ok(pid) = p.file_name().to_string_lossy().parse::<u32>() else { continue };
-                let Ok(cmdline) = std::fs::read_to_string(format!("/proc/{pid}/cmdline")) else { continue };
+                let Ok(pid) = p.file_name().to_string_lossy().parse::<u32>() else {
+                    continue;
+                };
+                let Ok(cmdline) = std::fs::read_to_string(format!("/proc/{pid}/cmdline")) else {
+                    continue;
+                };
                 if cmdline.contains(&format!("tauri_plugin_mpv_socket_{parent_pid}_")) {
                     tracing::warn!("reaping orphan mpv pid={pid} (parent {parent_pid} dead)");
-                    unsafe { libc::kill(pid as i32, libc::SIGTERM); }
+                    unsafe {
+                        libc::kill(pid as i32, libc::SIGTERM);
+                    }
                 }
             }
         }
@@ -70,19 +86,14 @@ pub fn run() {
             // inside the title bar itself — that is a GNOME/KDE chrome
             // decision, not a Tauri limitation.
             if let Some(window) = app.get_webview_window("main") {
-                let icon = tauri::image::Image::from_bytes(
-                    include_bytes!("../icons/128x128.png"),
-                )?;
+                let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/128x128.png"))?;
                 let _ = window.set_icon(icon);
             }
 
             let player = Arc::new(Player::new(app.handle().clone())?);
             player::spawn_position_emitter(player.clone(), app.handle().clone());
 
-            let storage = Arc::new(
-                StorageService::new()
-                    .expect("не удалось открыть хранилище"),
-            );
+            let storage = Arc::new(StorageService::new().expect("не удалось открыть хранилище"));
 
             // Spawn ttsd subprocess.
             // In production: bundled next to the binary (resource_dir/ttsd).
@@ -107,10 +118,8 @@ pub fn run() {
             // context; setup hook runs synchronously, so enter Tauri's runtime
             // explicitly via block_on (the inner spawn returns instantly).
             let tts = Arc::new(
-                tauri::async_runtime::block_on(async move {
-                    tts::TtsSubprocess::spawn(ttsd_dir)
-                })
-                .expect("не удалось запустить ttsd subprocess"),
+                tauri::async_runtime::block_on(async move { tts::TtsSubprocess::spawn(ttsd_dir) })
+                    .expect("не удалось запустить ttsd subprocess"),
             );
 
             // Warm up Silero model in background; emit model_loading → model_loaded/model_error.
@@ -126,7 +135,8 @@ pub fn run() {
                         }
                         Err(e) => {
                             tracing::error!("ttsd warmup failed: {e}");
-                            let _ = app_handle.emit("model_error", json!({ "message": e.to_string() }));
+                            let _ =
+                                app_handle.emit("model_error", json!({ "message": e.to_string() }));
                         }
                     }
                 });
