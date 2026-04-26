@@ -59,26 +59,41 @@ export async function setupNotificationBridge(): Promise<() => void> {
     }),
   );
 
-  // Track synthesis_progress entries that already have a visible toast.
-  // Mantine's notifications.update() is a no-op for unknown ids, so the first
-  // event for an entry must call show() and subsequent ones — update().
+  // Toast lifecycle keyed by entry_id: synth-<id>.
+  // ttsd does not stream chunk-level progress, so the toast just reflects
+  // status transitions: processing → ready/error.
   const synthesisShown = new Set<string>();
+  const truncate = (text: string, max = 60): string =>
+    text.length > max ? `${text.slice(0, max).trimEnd()}…` : text;
 
   unlisteners.push(
-    await events.synthesisProgress((p) => {
-      const id = `synth-${p.entry_id}`;
-      const payload = {
-        id,
-        title: 'Синтез речи',
-        message: `${Math.round(p.progress * 100)}%`,
-        loading: true,
-        autoClose: false,
-      };
-      if (synthesisShown.has(p.entry_id)) {
-        notifications.update(payload);
-      } else {
-        synthesisShown.add(p.entry_id);
-        notifications.show(payload);
+    await events.entryUpdated((p) => {
+      const { id, status, original_text } = p.entry;
+      const toastId = `synth-${id}`;
+
+      if (status === 'processing') {
+        if (synthesisShown.has(id)) return;
+        synthesisShown.add(id);
+        notifications.show({
+          id: toastId,
+          title: 'Синтез речи',
+          message: truncate(original_text),
+          loading: true,
+          autoClose: false,
+        });
+      } else if (status === 'ready' && synthesisShown.has(id)) {
+        synthesisShown.delete(id);
+        notifications.update({
+          id: toastId,
+          title: 'Готово',
+          message: truncate(original_text),
+          color: 'green',
+          loading: false,
+          autoClose: 2000,
+        });
+      } else if (status === 'error' && synthesisShown.has(id)) {
+        synthesisShown.delete(id);
+        notifications.hide(toastId);
       }
     }),
   );
