@@ -1,9 +1,15 @@
 .root {
   width: 100%;
-  padding: var(--mantine-spacing-xs) var(--mantine-spacing-md);
-  border-bottom: 1px solid var(--mantine-color-default-border);
+  /* Top padding is intentionally larger than bottom: Mantine Slider's
+     built-in `label` floats ~30px above the thumb, and a tighter top would
+     push it behind the native title bar (webview cannot paint over OS
+     chrome). Keep this asymmetric to fit the speed/volume label hints.
+     No border-bottom: MantineAppShell.Header draws its own divider, so a
+     local border here would render a second line offset by the bottom
+     padding. */
+  padding: 18px var(--mantine-spacing-md) 8px;
   background: var(--mantine-color-body);
-  min-height: 52px;
+  min-height: 74px;
   align-items: center;
 }
 
@@ -35,4 +41,22 @@
 
 .playButton {
   flex-shrink: 0;
+  align-self: flex-end;
+  /* Align with the brand mark's *visual* baseline — the bottom edge of the
+     book glyph — rather than its bbox bottom. The book's lower line sits
+     at y=52 in a viewBox of 64, so at icon size 48 px the visual baseline
+     is (64-52)/64*48 ≈ 9 px above the bbox bottom. Lift Play by that much. */
+  margin-bottom: 9px;
+}
+
+.appLogo {
+  flex-shrink: 0;
+  align-self: flex-end;
+  margin-bottom: 2px;
+  /* Brand mark uses violet on purpose: blue is reserved for Mantine's
+     interactive affordances (buttons, sliders, etc.), so the logo gets a
+     non-interactive accent that reads as "branding" rather than "click me".
+     light-dark() gives a deeper tint on light backgrounds and a brighter
+     one on dark, matching Mantine's own dark-mode color shifts. */
+  color: light-dark(var(--mantine-color-violet-7), var(--mantine-color-violet-5));
 }

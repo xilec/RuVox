@@ -4,7 +4,7 @@ import { useHotkeys } from '@mantine/hooks';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 import { commands, events } from '../lib/tauri';
 import type { EntryId } from '../lib/tauri';
-import { IconPlay, IconPause } from './icons';
+import { IconPlay, IconPause, IconSettings, IconAppLogo } from './icons';
 import classes from './Player.module.css';
 
 interface PlayerState {
@@ -37,7 +37,11 @@ function formatTime(sec: number): string {
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
-export function Player() {
+interface PlayerProps {
+  onOpenSettings?: () => void;
+}
+
+export function Player({ onOpenSettings }: PlayerProps = {}) {
   const [state, setState] = useState<PlayerState>(INITIAL_STATE);
   // Ref (not state) because the playback_position listener closes over it
   // once on mount; a ref avoids resubscribing on every drag.
@@ -196,6 +200,8 @@ export function Player() {
 
   return (
     <Group className={classes.root} gap="xs" wrap="nowrap">
+      <IconAppLogo size={48} className={classes.appLogo} />
+
       <ActionIcon
         className={classes.playButton}
         variant="filled"
@@ -274,6 +280,18 @@ export function Player() {
           size="sm"
         />
       </Tooltip>
+
+      {onOpenSettings && (
+        <Tooltip label="Настройки">
+          <ActionIcon
+            variant="subtle"
+            aria-label="Открыть настройки"
+            onClick={onOpenSettings}
+          >
+            <IconSettings size={18} />
+          </ActionIcon>
+        </Tooltip>
+      )}
     </Group>
   );
 }
