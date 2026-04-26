@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActionIcon, Button, Checkbox, Group, Loader, Portal, Text, Textarea } from '@mantine/core';
+import { ActionIcon, Button, Checkbox, Group, Loader, Portal, Switch, Text, Textarea } from '@mantine/core';
 import { Rnd } from 'react-rnd';
 import classes from './PreviewDialog.module.css';
 import { commands } from '../lib/tauri';
@@ -13,8 +13,13 @@ export interface PreviewDialogProps {
    * Called when the user confirms synthesis.
    * `finalText` is either the original or the user-edited version.
    * `skipShortTexts` is true when the user checked the "skip for short texts" box.
+   * `playWhenReady` reflects the dialog's "Read Now" toggle state.
    */
-  onSynthesize: (finalText: string, skipShortTexts: boolean) => void;
+  onSynthesize: (
+    finalText: string,
+    skipShortTexts: boolean,
+    playWhenReady: boolean,
+  ) => void;
   /** Called when the user cancels the dialog. */
   onCancel: () => void;
 }
@@ -60,6 +65,7 @@ export function PreviewDialog({
 }: PreviewDialogProps) {
   const [editedText, setEditedText] = useState<string>(text);
   const [skipShortTexts, setSkipShortTexts] = useState(false);
+  const [playWhenReady, setPlayWhenReady] = useState(true);
   const [normalized, setNormalized] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -85,6 +91,7 @@ export function PreviewDialog({
     if (!opened) return;
     setEditMode(false);
     setSkipShortTexts(false);
+    setPlayWhenReady(true);
     setEditedText(text);
     setSize({ width: INITIAL_W, height: INITIAL_H });
     setPosition(centeredPosition(INITIAL_W, INITIAL_H));
@@ -128,7 +135,7 @@ export function PreviewDialog({
 
   function handleSynthesize() {
     const finalText = editMode ? editedText.trim() : text;
-    onSynthesize(finalText || text, skipShortTexts);
+    onSynthesize(finalText || text, skipShortTexts, playWhenReady);
   }
 
   function handleEdit() {
@@ -261,7 +268,12 @@ export function PreviewDialog({
                 />
               </Group>
 
-              <Group gap="sm">
+              <Group gap="sm" align="center">
+                <Switch
+                  label="Read Now"
+                  checked={playWhenReady}
+                  onChange={(e) => setPlayWhenReady(e.currentTarget.checked)}
+                />
                 <Button variant="default" onClick={onCancel}>
                   Отмена
                 </Button>

@@ -1,5 +1,4 @@
 import { AppShell as MantineAppShell, Title, Group, Stack, Button, ActionIcon, Tooltip } from '@mantine/core';
-import { useHotkeys } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { useState, useEffect, useRef } from 'react';
 import { readText as readClipboardText } from '@tauri-apps/plugin-clipboard-manager';
@@ -39,7 +38,6 @@ export function AppShell() {
   const [settingsOpened, setSettingsOpened] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewText, setPreviewText] = useState('');
-  const [pendingPlayWhenReady, setPendingPlayWhenReady] = useState(false);
   const [config, setConfig] = useState<UIConfig | null>(null);
   const configLoaded = useRef(false);
   const [navWidth, setNavWidth] = useState(280);
@@ -82,7 +80,7 @@ export function AppShell() {
     });
   }, []);
 
-  async function addEntry(playWhenReady: boolean) {
+  async function addEntry() {
     if (pending) return;
     setPending(true);
 
@@ -110,13 +108,12 @@ export function AppShell() {
 
       if (previewEnabled) {
         setPreviewText(clipboardText);
-        setPendingPlayWhenReady(playWhenReady);
         setPreviewOpen(true);
         setPending(false);
         return;
       }
 
-      await doAddEntry(clipboardText, playWhenReady);
+      await doAddEntry(clipboardText, true);
     } catch (err) {
       const message = formatError(err);
       notifications.show({ title: 'Ошибка', message, color: 'red' });
@@ -145,7 +142,11 @@ export function AppShell() {
     }
   }
 
-  function handlePreviewSynthesize(finalText: string, skipShortTexts: boolean) {
+  function handlePreviewSynthesize(
+    finalText: string,
+    skipShortTexts: boolean,
+    playWhenReady: boolean,
+  ) {
     setPreviewOpen(false);
     if (skipShortTexts && config) {
       // Persist user preference: disable preview dialog
@@ -155,18 +156,13 @@ export function AppShell() {
     setPending(true);
     // finalText reflects user edits from the preview dialog; fall back to the
     // captured clipboard text if the user didn't edit or cleared the field.
-    doAddEntry(finalText || previewText, pendingPlayWhenReady);
+    doAddEntry(finalText || previewText, playWhenReady);
   }
 
   function handlePreviewCancel() {
     setPreviewOpen(false);
     setPending(false);
   }
-
-  useHotkeys([
-    ['ctrl+shift+1', () => addEntry(true)],
-    ['ctrl+shift+2', () => addEntry(false)],
-  ]);
 
   return (
     <MantineAppShell
@@ -183,17 +179,9 @@ export function AppShell() {
                 color="blue"
                 loading={pending}
                 disabled={pending}
-                onClick={() => addEntry(true)}
+                onClick={() => addEntry()}
               >
-                Read Now
-              </Button>
-              <Button
-                variant="default"
-                loading={pending}
-                disabled={pending}
-                onClick={() => addEntry(false)}
-              >
-                Read Later
+                Add
               </Button>
               <ThemeSwitcher />
               <Tooltip label="Настройки">

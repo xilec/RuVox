@@ -225,7 +225,7 @@ export function QueueList() {
   if (entries.length === 0) {
     return (
       <Text c="dimmed" size="sm" ta="center" mt="md">
-        Скопируйте текст и нажмите Read Now
+        Скопируйте текст и нажмите Add
       </Text>
     );
   }
