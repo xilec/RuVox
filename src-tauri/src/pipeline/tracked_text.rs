@@ -424,20 +424,31 @@ impl TrackedText {
 
     /// Convert a codepoint position in the current text to the corresponding
     /// codepoint position in the original text.
+    ///
+    /// Negative intermediates are saturated to 0: a non-monotone replacement
+    /// chain could in principle produce `cumulative_delta` whose magnitude
+    /// exceeds the position being mapped.  Mapping such cases to 0 keeps the
+    /// result a valid index instead of wrapping into a huge usize.
     fn current_to_original(&mut self, current_pos: usize) -> usize {
         let sorted = self.get_sorted_entries().to_vec();
         let mut cumulative_delta: i64 = 0;
+
+        let saturating_apply = |pos: usize, delta: i64| -> usize {
+            (pos as i64).saturating_sub(delta).max(0) as usize
+        };
 
         for entry in &sorted {
             let old_len = (entry.orig_end - entry.orig_start) as i64;
             let new_len = entry.new_len as i64;
             let delta = new_len - old_len;
 
-            let current_start = (entry.orig_start as i64 + cumulative_delta) as usize;
+            let current_start = (entry.orig_start as i64)
+                .saturating_add(cumulative_delta)
+                .max(0) as usize;
             let current_end = current_start + entry.new_len;
 
             if current_pos < current_start {
-                return (current_pos as i64 - cumulative_delta) as usize;
+                return saturating_apply(current_pos, cumulative_delta);
             } else if current_pos < current_end {
                 return entry.orig_start;
             } else {
@@ -445,7 +456,7 @@ impl TrackedText {
             }
         }
 
-        (current_pos as i64 - cumulative_delta) as usize
+        saturating_apply(current_pos, cumulative_delta)
     }
 }
 
