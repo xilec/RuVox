@@ -1,5 +1,5 @@
 {
-  description = "RuVox 2 — desktop app for reading technical texts aloud";
+  description = "RuVox — desktop app for reading technical texts aloud";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -133,7 +133,7 @@
           '';
 
           meta = {
-            description = "RuVox 2 — desktop app for reading technical texts aloud";
+            description = "RuVox — desktop app for reading technical texts aloud";
             mainProgram = "ruvox-tauri";
             platforms = lib.platforms.linux;
           };
