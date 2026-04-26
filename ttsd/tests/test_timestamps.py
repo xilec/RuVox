@@ -1,7 +1,5 @@
 """Unit tests for timestamps.py — no torch required."""
 
-import pytest
-
 from ttsd.timestamps import estimate_timestamps_chunked, extract_words_with_positions
 
 

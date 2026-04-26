@@ -270,7 +270,7 @@ impl StorageService {
     /// All entries sorted by `created_at`, newest first.
     pub fn get_all_entries(&self) -> Vec<TextEntry> {
         let mut entries: Vec<TextEntry> = self.entries.read().values().cloned().collect();
-        entries.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        entries.sort_by_key(|e| std::cmp::Reverse(e.created_at));
         entries
     }
 

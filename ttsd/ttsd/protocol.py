@@ -9,7 +9,7 @@ The discriminated Request union uses Literal["cmd"] as the discriminator so Pyda
 selects the correct model from a single model_validate_json() call.
 """
 
-from typing import Annotated, Literal, Union
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, TypeAdapter
 
@@ -67,7 +67,7 @@ class ShutdownRequest(BaseModel):
 
 # Discriminated union: Pydantic reads the "cmd" field to pick the right model.
 Request = Annotated[
-    Union[WarmupRequest, SynthesizeRequest, ShutdownRequest],
+    WarmupRequest | SynthesizeRequest | ShutdownRequest,
     Field(discriminator="cmd"),
 ]
 
