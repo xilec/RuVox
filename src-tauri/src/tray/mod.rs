@@ -14,8 +14,7 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     // shortest path back to the window.
     let show = MenuItem::with_id(app, "show", "Открыть окно", true, None::<&str>)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
-    let read_now = MenuItem::with_id(app, "read_now", "Читать сразу", true, None::<&str>)?;
-    let read_later = MenuItem::with_id(app, "read_later", "Читать отложенно", true, None::<&str>)?;
+    let add = MenuItem::with_id(app, "add", "Добавить", true, None::<&str>)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Выход", true, None::<&str>)?;
 
@@ -24,8 +23,7 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         &[
             &show,
             &sep1,
-            &read_now,
-            &read_later,
+            &add,
             &sep2,
             &quit,
         ],
@@ -39,8 +37,7 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         .on_menu_event(|app, event| match event.id.as_ref() {
             // Invoke synthesis directly via AppState to avoid a webview round-trip.
             // The closure's `app` is `AppHandle<R>` but at runtime R == Wry.
-            "read_now" => invoke_add_clipboard_entry(app, true),
-            "read_later" => invoke_add_clipboard_entry(app, false),
+            "add" => invoke_add_clipboard_entry(app, true),
             "show" => show_main_window(app),
             "quit" => app.exit(0),
             _ => {}
