@@ -1,5 +1,4 @@
 import {
-  ActionIcon,
   Box,
   Group,
   Modal,
@@ -7,15 +6,11 @@ import {
   SegmentedControl,
   Stack,
   Text,
-  Textarea,
-  Tooltip,
   useComputedColorScheme,
 } from '@mantine/core';
-import { notifications } from '@mantine/notifications';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { TextEntry, WordTimestamp } from '../lib/tauri';
 import { commands, events } from '../lib/tauri';
-import { formatError } from '../lib/errors';
 import { renderMarkdown } from '../lib/markdown';
 import { renderHtml } from '../lib/html';
 import { renderMermaidIn } from '../lib/mermaid';
@@ -39,9 +34,6 @@ interface Props {
 export function TextViewer({ entry }: Props) {
   const [format, setFormat] = useState<Format>("markdown");
   const [zoomedSvg, setZoomedSvg] = useState<string | null>(null);
-  const [editMode, setEditMode] = useState(false);
-  const [editedDraft, setEditedDraft] = useState("");
-  const [saving, setSaving] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const colorScheme = useComputedColorScheme("light");
 
@@ -54,16 +46,7 @@ export function TextViewer({ entry }: Props) {
   // re-renders on every position event.
   const activeIdxRef = useRef<number>(-1);
 
-  // Keep draft in sync when entry changes and exit edit mode on selection change.
-  useEffect(() => {
-    if (entry) {
-      setEditedDraft(entry.edited_text ?? entry.original_text);
-    }
-    setEditMode(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entry?.id]);
-
-  const displayText = entry?.edited_text ?? entry?.original_text ?? '';
+  const displayText = entry?.original_text ?? '';
 
   const content = useMemo(() => {
     if (!entry) return null;
@@ -90,13 +73,12 @@ export function TextViewer({ entry }: Props) {
   }, [entry?.id, format]);
 
   useEffect(() => {
-    if (editMode) return;
     if (format !== "markdown" || !containerRef.current) return;
     renderMermaidIn(containerRef.current, colorScheme).catch((e) => {
       // Bad mermaid syntax -- keep the raw <div class="mermaid"> as-is
       console.error("mermaid render error:", e);
     });
-  }, [content, format, colorScheme, editMode]);
+  }, [content, format, colorScheme]);
 
   // Click-to-zoom: when user clicks a rendered mermaid SVG, show it in a modal.
   useEffect(() => {
@@ -118,10 +100,6 @@ export function TextViewer({ entry }: Props) {
 
   // Subscribe to playback events for word highlighting.
   useEffect(() => {
-    // editMode swaps rendered DOM for a Textarea — no data-orig-* spans exist,
-    // so highlighting must sit out until the user exits edit mode.
-    if (editMode) return;
-
     let unlistenStarted: (() => void) | null = null;
     let unlistenPosition: (() => void) | null = null;
     let unlistenStopped: (() => void) | null = null;
@@ -209,57 +187,10 @@ export function TextViewer({ entry }: Props) {
       unlistenFinished?.();
       unlistenPaused?.();
     };
-  // entry.id, format and editMode are intentionally included so we re-subscribe
-  // when the viewer switches entry/format, or exits edit mode.
+  // entry.id and format are intentionally included so we re-subscribe when
+  // the viewer switches entry/format.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entry?.id, format, editMode]);
-
-  // Keyboard: Esc cancels edit mode.
-  useEffect(() => {
-    if (!editMode) return;
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        handleCancel();
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editMode, entry]);
-
-  function handleEnterEdit() {
-    if (!entry) return;
-    setEditedDraft(entry.edited_text ?? entry.original_text);
-    setEditMode(true);
-  }
-
-  function handleCancel() {
-    if (!entry) return;
-    setEditedDraft(entry.edited_text ?? entry.original_text);
-    setEditMode(false);
-  }
-
-  async function handleSave() {
-    if (!entry) return;
-    setSaving(true);
-    try {
-      await commands.updateEntryEditedText(entry.id, editedDraft);
-      notifications.show({
-        color: 'green',
-        message: 'Сохранено',
-        autoClose: 2000,
-      });
-      setEditMode(false);
-    } catch (err) {
-      notifications.show({
-        color: 'red',
-        title: 'Ошибка сохранения',
-        message: formatError(err),
-      });
-    } finally {
-      setSaving(false);
-    }
-  }
+  }, [entry?.id, format]);
 
   if (!entry) {
     return (
@@ -276,74 +207,21 @@ export function TextViewer({ entry }: Props) {
           value={format}
           onChange={(v) => setFormat(v as Format)}
           size="xs"
-          disabled={editMode}
           data={[
             { label: "Plain", value: "plain" },
             { label: "Markdown", value: "markdown" },
             { label: "HTML", value: "html" },
           ]}
         />
-        <Group gap="xs" wrap="nowrap">
-          {editMode ? (
-            <>
-              <Tooltip label="Сохранить">
-                <ActionIcon
-                  variant="filled"
-                  color="green"
-                  size="sm"
-                  loading={saving}
-                  onClick={handleSave}
-                  aria-label="Сохранить правки"
-                >
-                  &#x2713;
-                </ActionIcon>
-              </Tooltip>
-              <Tooltip label="Отмена (Esc)">
-                <ActionIcon
-                  variant="subtle"
-                  color="gray"
-                  size="sm"
-                  onClick={handleCancel}
-                  aria-label="Отменить правки"
-                >
-                  &#x2715;
-                </ActionIcon>
-              </Tooltip>
-            </>
-          ) : (
-            <Tooltip label="Редактировать текст">
-              <ActionIcon
-                variant="subtle"
-                color="gray"
-                size="sm"
-                onClick={handleEnterEdit}
-                aria-label="Редактировать"
-              >
-                &#x270F;
-              </ActionIcon>
-            </Tooltip>
-          )}
-        </Group>
       </Group>
 
-      {editMode ? (
-        <Textarea
-          value={editedDraft}
-          onChange={(e) => setEditedDraft(e.currentTarget.value)}
-          autosize
-          minRows={10}
-          style={{ flex: 1 }}
-          styles={{ input: { fontFamily: "var(--mantine-font-family)", lineHeight: 1.6 } }}
+      <ScrollArea style={{ flex: 1 }}>
+        <Box
+          ref={containerRef}
+          className={classes.content}
+          dangerouslySetInnerHTML={content ?? { __html: "" }}
         />
-      ) : (
-        <ScrollArea style={{ flex: 1 }}>
-          <Box
-            ref={containerRef}
-            className={classes.content}
-            dangerouslySetInnerHTML={content ?? { __html: "" }}
-          />
-        </ScrollArea>
-      )}
+      </ScrollArea>
 
       <Modal
         opened={zoomedSvg !== null}

@@ -13,7 +13,6 @@ export interface TextEntry {
   id: EntryId;
   original_text: string;
   normalized_text: string | null;
-  edited_text: string | null;
   status: EntryStatus;
   created_at: string;               // ISO 8601
   audio_generated_at: string | null;
@@ -120,9 +119,6 @@ export const commands = {
 
   getCacheStats: (): Promise<{ total_bytes: number; audio_file_count: number }> =>
     tauriInvoke('get_cache_stats'),
-
-  updateEntryEditedText: (id: EntryId, edited: string | null): Promise<void> =>
-    tauriInvoke('update_entry_edited_text', { id, edited }),
 
   previewNormalize: (text: string): Promise<PreviewNormalizeResult> =>
     tauriInvoke('preview_normalize', { text }),
