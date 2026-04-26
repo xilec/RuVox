@@ -7,20 +7,56 @@ on:
     branches: [main]
 
 jobs:
-  lint:
+  rust:
+    name: Rust (clippy + test)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/ruff-action@v3
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libsoup-3.0-dev libgtk-3-dev \
+            librsvg2-dev libayatana-appindicator3-dev \
+            libmpv-dev pkg-config build-essential
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --no-deps -- -D warnings
+      - run: cargo test --manifest-path src-tauri/Cargo.toml
 
-  test:
+  typescript:
+    name: TypeScript (typecheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+
+  ttsd:
+    name: ttsd (ruff + pytest)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-      - run: uv sync --group dev
-      - run: uv run mypy src/ruvox/tts_pipeline/
-      - run: uv run pytest tests/tts_pipeline/ --cov
+          python-version: "3.12"
+      - working-directory: ttsd
+        run: uv sync --group dev
+      - working-directory: ttsd
+        run: uv run ruff check
+      - working-directory: ttsd
+        run: uv run python -m pytest
