@@ -1,6 +1,6 @@
-# RuVox 2.0 — Storage Schema
+# Storage Schema
 
-This document describes the JSON schemas for all files written by RuVox to its cache directory.
+JSON schemas for all files written by RuVox to its cache directory.
 
 ---
 
@@ -15,7 +15,7 @@ This document describes the JSON schemas for all files written by RuVox to its c
     └── {uuid}.timestamps.json           # Word-level timestamps for the entry
 ```
 
-The cache root defaults to `~/.cache/ruvox/`. It is stored per-user and is **shared** between the legacy PyQt app and RuVox 2.0 — both read and write the same `history.json` format, so switching between the two versions does not require cache migration.
+The cache root defaults to `~/.cache/ruvox/`. It is stored per-user and is **shared** between the legacy PyQt app and the current Tauri-based RuVox — both read and write the same `history.json` format, so switching between the two versions does not require cache migration.
 
 ---
 
@@ -29,7 +29,7 @@ The legacy Python implementation (frozen in `legacy/`) uses:
 
 All field names and enum string values in this document match the legacy Python output **exactly**. Rust's `serde` attributes (`rename_all`, `default`) ensure forward and backward compatibility.
 
-New fields added in RuVox 2.0 that are absent in legacy entries (e.g., `edited_text`) use `#[serde(default)]` so legacy JSON parses cleanly.
+New fields added in the Tauri-based RuVox that are absent in legacy entries (e.g., `edited_text`, `preview_dialog_enabled`) use `#[serde(default)]` so legacy JSON parses cleanly.
 
 ---
 
@@ -58,7 +58,7 @@ interface TextEntry {
   id: EntryId;
   original_text: string;
   normalized_text: string | null;       // Output of the Rust TTS pipeline
-  edited_text: string | null;           // User-edited override (RuVox 2.0+, absent in legacy)
+  edited_text: string | null;           // User-edited override (Tauri-based RuVox; absent in legacy)
   status: EntryStatus;
   created_at: string;                   // Naive UTC timestamp, e.g. "2026-02-15T11:46:51.504055" (no TZ suffix)
   audio_generated_at: string | null;    // Naive UTC timestamp when WAV was written
@@ -70,7 +70,7 @@ interface TextEntry {
 }
 ```
 
-> **Timestamp format:** `created_at` and `audio_generated_at` are stored as naive UTC timestamps — no timezone suffix (e.g. `"2026-02-15T11:46:51.504055"`). This matches the format written by legacy Python's `datetime.now().isoformat()`. Both legacy and RuVox 2.0 treat these values as UTC.
+> **Timestamp format:** `created_at` and `audio_generated_at` are stored as naive UTC timestamps — no timezone suffix (e.g. `"2026-02-15T11:46:51.504055"`). This matches the format written by legacy Python's `datetime.now().isoformat()`. Both legacy and the Tauri-based RuVox treat these values as UTC.
 
 ### Notes on `status`
 
@@ -221,6 +221,7 @@ interface UIConfig {
   theme: string;                // Color scheme: "light" | "dark" | "auto"
   player_hotkeys: Record<string, string>; // Local player hotkeys map
   window_geometry: [number, number, number, number] | null; // [x, y, width, height]
+  preview_dialog_enabled: boolean; // Show FF 1.1 preview dialog before synthesis
 }
 ```
 
@@ -241,11 +242,12 @@ Defaults match `legacy/src/ruvox/ui/models/config.py`:
 | `history_days` | `14` | legacy default |
 | `audio_max_files` | `5` | legacy default |
 | `audio_regenerated_hours` | `24` | legacy default |
-| `max_cache_size_mb` | `500` | ruvox2 addition |
-| `auto_cleanup_days` | `0` | ruvox2 addition (0 = disabled) |
-| `code_block_mode` | `"read"` | ruvox2 addition |
-| `read_operators` | `true` | ruvox2 addition |
-| `theme` | `"auto"` | ruvox2 (legacy had `"dark_pro"`) |
+| `max_cache_size_mb` | `500` | ruvox addition |
+| `auto_cleanup_days` | `0` | ruvox addition (0 = disabled) |
+| `code_block_mode` | `"read"` | ruvox addition |
+| `read_operators` | `true` | ruvox addition |
+| `theme` | `"auto"` | ruvox (legacy had `"dark_pro"`) |
+| `preview_dialog_enabled` | `true` | ruvox addition (FF 1.1) |
 
 ### Example
 
@@ -280,7 +282,8 @@ Defaults match `legacy/src/ruvox/ui/models/config.py`:
     "prev_entry": "p",
     "repeat_sentence": "r"
   },
-  "window_geometry": null
+  "window_geometry": null,
+  "preview_dialog_enabled": true
 }
 ```
 
@@ -329,6 +332,7 @@ Cross-reference between `docs/ipc-contract.md` types and the JSON fields in each
 | Theme | `theme` | — | yes | yes |
 | Player hotkeys | `player_hotkeys` | — | yes | yes |
 | Window geometry | `window_geometry` | — | yes | yes |
+| Preview dialog enabled | `preview_dialog_enabled` | — | yes | yes |
 
 ### WordTimestamp fields
 

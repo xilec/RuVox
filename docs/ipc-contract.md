@@ -1,8 +1,12 @@
-# RuVox 2.0 — IPC Contract
+# IPC Contract
 
-This document is the authoritative specification for all three communication layers in RuVox 2.0.
+Authoritative specification of all three communication layers in RuVox.
 
-**Another agent can implement any layer from this document alone.**
+---
+
+## Parameter casing
+
+Tauri 2 принимает параметры invoke на JS-стороне в **camelCase**, даже если Rust-handler объявлен в snake_case. Документация ниже показывает Rust-имена параметров (snake_case) для соответствия сигнатурам команд; реальный JS-код вызывает `invoke('seek_to', { positionSec: ... })`, не `{ position_sec: ... }`. Типизированные обёртки в `src/lib/tauri.ts` делают преобразование автоматически.
 
 ---
 
@@ -78,6 +82,7 @@ interface UIConfig {
   theme: string;                 // Color scheme: "light" | "dark" | "auto"
   player_hotkeys: Record<string, string>; // Local player hotkeys map, e.g. {"play_pause": "Space"}
   window_geometry: [number, number, number, number] | null; // [x, y, width, height]
+  preview_dialog_enabled: boolean; // FF 1.1: show preview dialog before synthesis
 }
 
 // Partial UIConfig — only the fields that need to be updated.
@@ -110,7 +115,7 @@ On the TypeScript side `invoke()` rejects the promise with this object.
 
 ### `add_clipboard_entry`
 
-Read text from the system clipboard and add a new entry to the queue. Triggers TTS synthesis immediately.
+Read text from the system clipboard and add a new entry to the queue. Triggers TTS synthesis immediately. Used **only by the system tray menu** — there is no webview context there, so the Rust side reads the clipboard via `arboard`.
 
 ```typescript
 invoke("add_clipboard_entry", { play_when_ready: boolean }): Promise<EntryId>
@@ -122,13 +127,56 @@ invoke("add_clipboard_entry", { play_when_ready: boolean }): Promise<EntryId>
 
 **Returns:** `EntryId` of the newly created entry.
 
-**Errors:** `storage_error` if writing to history.json fails; `internal` if clipboard is unavailable.
+**Errors:** `storage_error` if writing to history.json fails; `internal` if clipboard is unavailable. **Note:** `arboard` silently fails with `ContentNotAvailable` on KDE Plasma 6 with Wayland — the frontend should prefer `add_text_entry` (see below).
 
 **Side effects:**
 - Emits `entry_updated` with `status: "pending"` immediately.
 - Emits `entry_updated` with `status: "processing"` when synthesis starts.
 - Emits `entry_updated` with `status: "ready"` or `status: "error"` when synthesis finishes.
 - If `play_when_ready` is true and synthesis succeeds, emits `playback_started`.
+
+---
+
+### `add_text_entry`
+
+Add a new entry with the given text and trigger TTS synthesis. **Preferred command from the frontend** — frontend reads the clipboard via `tauri-plugin-clipboard-manager` (which works reliably on Wayland/KDE) and passes the resulting text here.
+
+```typescript
+invoke("add_text_entry", { text: string, play_when_ready: boolean }): Promise<EntryId>
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `text` | `string` | Raw text to ingest. The pipeline will normalize before synthesis. |
+| `play_when_ready` | `boolean` | If `true`, playback starts automatically when synthesis completes |
+
+**Returns:** `EntryId` of the newly created entry.
+
+**Errors:** `storage_error` if writing to history.json fails.
+
+**Side effects:** Same as `add_clipboard_entry` — emits `entry_updated` lifecycle events and `playback_started` when applicable.
+
+---
+
+### `preview_normalize`
+
+Run the normalization pipeline on the given text and return the normalized result **without** persisting an entry. Used by the FF 1.1 preview dialog to show original ↔ normalized side-by-side before the user confirms synthesis.
+
+```typescript
+invoke("preview_normalize", { text: string }): Promise<{ normalized: string }>
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `text` | `string` | Raw text to normalize. |
+
+**Returns:** `{ normalized: string }` — pipeline output (string only; char-mapping is discarded).
+
+**Errors:** `internal` if the pipeline task panics.
+
+**Side effects:** None — the entry list and storage are not touched.
+
+See [preview-dialog.md](preview-dialog.md) for full preview flow.
 
 ---
 
@@ -337,6 +385,27 @@ invoke("get_timestamps", { id: EntryId }): Promise<WordTimestamp[]>
 **Returns:** Array of `WordTimestamp`. Empty array if entry has no timestamps.
 
 **Errors:** `not_found` if no entry with this ID; `storage_error` if the timestamps file cannot be read.
+
+---
+
+### `update_entry_edited_text`
+
+Set or clear the `edited_text` field on an existing entry (FF 1.2 — edit mode in TextViewer).
+
+```typescript
+invoke("update_entry_edited_text", { id: EntryId, edited: string | null }): Promise<void>
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `id` | `EntryId` | Target entry. |
+| `edited` | `string \| null` | If `string`, store as `entry.edited_text` and use it for any subsequent re-synth. If `null`, clear `edited_text` so the next re-synth falls back to `original_text`. |
+
+**Errors:** `not_found` if no entry with this ID exists; `storage_error` on write failure.
+
+**Side effects:** Emits `entry_updated` so QueueList / TextViewer pick up the change without polling.
+
+> `original_text` is **never** overwritten — it remains the source of truth for display. Setting `edited` to `null` is the only way to roll back edits.
 
 ---
 
