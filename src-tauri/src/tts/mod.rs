@@ -18,7 +18,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
-use tracing::info;
+use tracing::{info, warn};
 
 // ---------------------------------------------------------------------------
 // Error type
@@ -247,9 +247,16 @@ impl TtsSubprocess {
         }
     }
 
-    /// Request graceful shutdown. Waits for ttsd to exit (up to 5 s), then SIGTERM.
+    /// Request graceful shutdown.
+    ///
+    /// Waits up to 5 s for the ttsd response. If the subprocess does not respond
+    /// or does not exit cleanly within that window, the driver task force-kills
+    /// the process (see `driver_task`).
     pub async fn shutdown(&self) -> Result<(), TtsError> {
-        let resp = self.send(TtsRequest::Shutdown).await?;
+        const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
+        let resp = timeout(SHUTDOWN_TIMEOUT, self.send(TtsRequest::Shutdown))
+            .await
+            .map_err(|_| TtsError::Timeout)??;
         match resp {
             TtsResponse::Ok(_) => Ok(()),
             TtsResponse::Err(e) => Err(TtsError::Ttsd { code: e.error, message: e.message }),
@@ -263,7 +270,9 @@ impl TtsSubprocess {
 
 /// Owns the subprocess and its stdin/stdout. Serializes all requests one at a time.
 async fn driver_task(mut child: Child, mut rx: mpsc::Receiver<DriverRequest>) {
-    let mut stdin = child.stdin.take().expect("stdin was piped");
+    // stdin is held in an Option so it can be dropped (closing the pipe / sending EOF)
+    // before we wait on the child during graceful shutdown.
+    let mut stdin = Some(child.stdin.take().expect("stdin was piped"));
     let stdout = child.stdout.take().expect("stdout was piped");
     let stderr = child.stderr.take().expect("stderr was piped");
 
@@ -278,9 +287,31 @@ async fn driver_task(mut child: Child, mut rx: mpsc::Receiver<DriverRequest>) {
     let mut stdout_lines = BufReader::new(stdout).lines();
 
     while let Some(req) = rx.recv().await {
-        let result = handle_one_request(&mut stdin, &mut stdout_lines, req.payload).await;
-        // If the caller dropped the oneshot receiver, ignore the send error.
+        let is_shutdown = matches!(&req.payload, TtsRequest::Shutdown);
+        let result = match stdin.as_mut() {
+            Some(s) => handle_one_request(s, &mut stdout_lines, req.payload).await,
+            None => Err(TtsError::Died),
+        };
         let _ = req.reply.send(result);
+
+        if is_shutdown {
+            // Drop stdin → ttsd reads EOF and can exit cleanly.
+            drop(stdin.take());
+            match timeout(Duration::from_secs(5), child.wait()).await {
+                Ok(Ok(status)) => {
+                    info!(target: "ttsd", "exited cleanly: {status}");
+                }
+                Ok(Err(e)) => {
+                    warn!(target: "ttsd", "wait() failed: {e}");
+                }
+                Err(_) => {
+                    warn!(target: "ttsd", "did not exit within 5 s, sending SIGKILL");
+                    let _ = child.start_kill();
+                    let _ = child.wait().await;
+                }
+            }
+            return;
+        }
     }
 }
 
