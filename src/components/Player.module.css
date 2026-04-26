@@ -21,6 +21,10 @@
   min-width: 80px;
 }
 
+.speedInputWrapper {
+  display: inline-flex;
+}
+
 .speedInput {
   width: 72px;
 }

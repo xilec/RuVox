@@ -43,6 +43,9 @@ export function Player({ entryIds }: PlayerProps) {
   // Ref (not state) because the playback_position listener closes over it
   // once on mount; a ref avoids resubscribing on every drag.
   const draggingRef = useRef(false);
+  const speedWrapperRef = useRef<HTMLDivElement>(null);
+  const speedRef = useRef(state.speed);
+  useEffect(() => { speedRef.current = state.speed; }, [state.speed]);
 
   useEffect(() => {
     const unlisteners: Promise<UnlistenFn>[] = [];
@@ -160,6 +163,24 @@ export function Player({ entryIds }: PlayerProps) {
     await commands.setSpeed(clamped);
   }, []);
 
+  // Native (non-passive) wheel listener: React's synthetic onWheel binds at
+  // the root with passive=true, so e.preventDefault() inside it is a no-op
+  // and the page still scrolls.  addEventListener with passive:false fixes it.
+  useEffect(() => {
+    const el = speedWrapperRef.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const delta = e.deltaY > 0 ? -0.1 : 0.1;
+      void handleSpeedChange(
+        Math.round((speedRef.current + delta) * 10) / 10,
+      );
+    };
+    el.addEventListener('wheel', handler, { passive: false });
+    return () => el.removeEventListener('wheel', handler);
+  }, [handleSpeedChange]);
+
   const handleVolumeChange = useCallback(async (volume: number) => {
     setState((prev) => ({ ...prev, volume }));
     await commands.setVolume(volume);
@@ -268,20 +289,11 @@ export function Player({ entryIds }: PlayerProps) {
       </Text>
 
       <Tooltip label="Скорость (0.5x–2.0x)">
+        <div ref={speedWrapperRef} className={classes.speedInputWrapper}>
         <NumberInput
           className={classes.speedInput}
           value={state.speed}
           onChange={(v) => { void handleSpeedChange(v); }}
-          onWheel={(e) => {
-            // Mouse-wheel over the input nudges speed by ±0.1 regardless
-            // of focus (Mantine/HTML inputs otherwise only react to wheel
-            // when focused).  deltaY > 0 = scroll down = slow down.
-            e.preventDefault();
-            const delta = e.deltaY > 0 ? -0.1 : 0.1;
-            void handleSpeedChange(
-              Math.round((state.speed + delta) * 10) / 10,
-            );
-          }}
           min={0.5}
           max={2.0}
           step={0.1}
@@ -292,6 +304,7 @@ export function Player({ entryIds }: PlayerProps) {
           suffix="x"
           hideControls={false}
         />
+        </div>
       </Tooltip>
 
       <Tooltip label="Громкость">
