@@ -1,3 +1,4 @@
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use parking_lot::Mutex;
@@ -21,4 +22,8 @@ pub struct AppState {
     /// Sender for tray menu commands (read_now / read_later).
     /// `None` before the background loop is started in `setup()`.
     pub tray_cmd_tx: Option<tokio::sync::mpsc::Sender<TrayCmd>>,
+    /// Set to `true` when the user picks "Выход" in the tray menu.  Lets the
+    /// runtime distinguish a real quit from a window-close that should keep
+    /// the app running in the tray.
+    pub user_quit: Arc<AtomicBool>,
 }

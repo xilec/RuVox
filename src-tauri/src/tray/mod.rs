@@ -42,7 +42,12 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
             "read_now" => invoke_add_clipboard_entry(app, true),
             "read_later" => invoke_add_clipboard_entry(app, false),
             "show" => show_main_window(app),
-            "quit" => app.exit(0),
+            "quit" => {
+                if let Some(state) = app.try_state::<AppState>() {
+                    state.user_quit.store(true, std::sync::atomic::Ordering::SeqCst);
+                }
+                app.exit(0);
+            }
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {

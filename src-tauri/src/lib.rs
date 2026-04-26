@@ -6,6 +6,7 @@ pub mod storage;
 pub mod tray;
 pub mod tts;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use parking_lot::Mutex;
@@ -185,6 +186,7 @@ pub fn run() {
                 player,
                 pipeline,
                 tray_cmd_tx: Some(tray_tx),
+                user_quit: Arc::new(AtomicBool::new(false)),
             };
             app.manage(app_state);
 
@@ -217,25 +219,39 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app_handle, event| match event {
             // Window-close intercept: hide the main window instead of
-            // quitting so the app keeps running in the system tray.  The
-            // tray's "Выход" item is the only path to a real exit.
+            // quitting so the app keeps running in the system tray.  Skipped
+            // when the tray's "Выход" item set user_quit — then we let the
+            // window close so app.exit(0) can finish.
             RunEvent::WindowEvent {
                 label,
                 event: tauri::WindowEvent::CloseRequested { api, .. },
                 ..
             } if label == player::WINDOW_LABEL => {
-                api.prevent_close();
-                if let Some(w) = app_handle.get_webview_window(&label) {
-                    let _ = w.set_skip_taskbar(true);
-                    let _ = w.hide();
+                let user_quit = app_handle
+                    .try_state::<AppState>()
+                    .map(|s| s.user_quit.load(Ordering::SeqCst))
+                    .unwrap_or(false);
+                if !user_quit {
+                    api.prevent_close();
+                    if let Some(w) = app_handle.get_webview_window(&label) {
+                        let _ = w.set_skip_taskbar(true);
+                        let _ = w.hide();
+                    }
                 }
             }
             // ExitRequested fires when Tauri thinks the last window is gone
             // (e.g. user used a window-manager close that we didn't catch
-            // via WindowEvent).  Without prevent_exit() the app would shut
-            // down — which drops AppState, drops Player, calls mpv.destroy().
+            // via WindowEvent).  Block the implicit exit so the app keeps
+            // running in the tray; allow it through only when the tray's
+            // "Выход" set user_quit.
             RunEvent::ExitRequested { api, .. } => {
-                api.prevent_exit();
+                let user_quit = app_handle
+                    .try_state::<AppState>()
+                    .map(|s| s.user_quit.load(Ordering::SeqCst))
+                    .unwrap_or(false);
+                if !user_quit {
+                    api.prevent_exit();
+                }
             }
             RunEvent::Exit => {
                 // Mark Player as destroyed *before* calling mpv().destroy() so
