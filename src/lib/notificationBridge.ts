@@ -59,15 +59,27 @@ export async function setupNotificationBridge(): Promise<() => void> {
     }),
   );
 
+  // Track synthesis_progress entries that already have a visible toast.
+  // Mantine's notifications.update() is a no-op for unknown ids, so the first
+  // event for an entry must call show() and subsequent ones — update().
+  const synthesisShown = new Set<string>();
+
   unlisteners.push(
     await events.synthesisProgress((p) => {
-      notifications.update({
-        id: `synth-${p.entry_id}`,
+      const id = `synth-${p.entry_id}`;
+      const payload = {
+        id,
         title: 'Синтез речи',
         message: `${Math.round(p.progress * 100)}%`,
         loading: true,
         autoClose: false,
-      });
+      };
+      if (synthesisShown.has(p.entry_id)) {
+        notifications.update(payload);
+      } else {
+        synthesisShown.add(p.entry_id);
+        notifications.show(payload);
+      }
     }),
   );
 
