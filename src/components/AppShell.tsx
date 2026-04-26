@@ -177,7 +177,7 @@ export function AppShell() {
       <MantineAppShell.Header>
         <Stack gap={0}>
           <Group h={56} px="md" justify="space-between">
-            <Title order={3}>RuVox 2</Title>
+            <Title order={3}>RuVox</Title>
             <Group>
               <Button
                 color="blue"
