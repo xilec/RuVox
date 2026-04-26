@@ -4,7 +4,7 @@ import { useHotkeys } from '@mantine/hooks';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 import { commands, events } from '../lib/tauri';
 import type { EntryId } from '../lib/tauri';
-import { IconPlay, IconPause, IconSkipPrev, IconSkipNext } from './icons';
+import { IconPlay, IconPause } from './icons';
 import classes from './Player.module.css';
 
 interface PlayerState {
@@ -37,12 +37,7 @@ function formatTime(sec: number): string {
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
-interface PlayerProps {
-  // entryIds is provided by U2 QueueList when available; allows Prev/Next navigation.
-  entryIds?: EntryId[];
-}
-
-export function Player({ entryIds }: PlayerProps) {
+export function Player() {
   const [state, setState] = useState<PlayerState>(INITIAL_STATE);
   // Ref (not state) because the playback_position listener closes over it
   // once on mount; a ref avoids resubscribing on every drag.
@@ -190,26 +185,6 @@ export function Player({ entryIds }: PlayerProps) {
     await commands.setVolume(volume);
   }, []);
 
-  const handlePrev = useCallback(async () => {
-    if (!entryIds || entryIds.length === 0) return;
-    const idx = state.currentEntryId ? entryIds.indexOf(state.currentEntryId) : -1;
-    const prevIdx = idx > 0 ? idx - 1 : entryIds.length - 1;
-    const prevId = entryIds[prevIdx];
-    if (prevId) {
-      await commands.playEntry(prevId);
-    }
-  }, [entryIds, state.currentEntryId]);
-
-  const handleNext = useCallback(async () => {
-    if (!entryIds || entryIds.length === 0) return;
-    const idx = state.currentEntryId ? entryIds.indexOf(state.currentEntryId) : -1;
-    const nextIdx = idx >= 0 && idx < entryIds.length - 1 ? idx + 1 : 0;
-    const nextId = entryIds[nextIdx];
-    if (nextId) {
-      await commands.playEntry(nextId);
-    }
-  }, [entryIds, state.currentEntryId]);
-
   // Keyboard shortcuts
   useHotkeys([
     ['Space', (e) => { e.preventDefault(); void handlePlayPause(); }],
@@ -221,44 +196,16 @@ export function Player({ entryIds }: PlayerProps) {
 
   return (
     <Group className={classes.root} gap="xs" wrap="nowrap">
-      {entryIds && entryIds.length > 0 && (
-        <Tooltip label="Предыдущий">
-          <ActionIcon
-            className={classes.navButton}
-            variant="subtle"
-            onClick={() => { void handlePrev(); }}
-            aria-label="Предыдущий"
-            size="sm"
-          >
-            <IconSkipPrev />
-          </ActionIcon>
-        </Tooltip>
-      )}
-
       <ActionIcon
         className={classes.playButton}
         variant="filled"
         onClick={() => { void handlePlayPause(); }}
         aria-label={state.isPlaying ? 'Пауза' : 'Воспроизвести'}
         size="md"
-        disabled={!state.currentEntryId && (!entryIds || entryIds.length === 0)}
+        disabled={!state.currentEntryId}
       >
         {state.isPlaying ? <IconPause /> : <IconPlay />}
       </ActionIcon>
-
-      {entryIds && entryIds.length > 0 && (
-        <Tooltip label="Следующий">
-          <ActionIcon
-            className={classes.navButton}
-            variant="subtle"
-            onClick={() => { void handleNext(); }}
-            aria-label="Следующий"
-            size="sm"
-          >
-            <IconSkipNext />
-          </ActionIcon>
-        </Tooltip>
-      )}
 
       <Slider
         className={classes.progressSlider}

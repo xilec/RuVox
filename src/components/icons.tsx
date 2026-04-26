@@ -36,19 +36,3 @@ export function IconPause({ size = 16, className }: IconProps) {
     </svg>
   );
 }
-
-export function IconSkipPrev({ size = 16, className }: IconProps) {
-  return (
-    <svg {...svgProps(size, className)}>
-      <path d="M6 6h2v12H6zM20 6v12L9 12z" />
-    </svg>
-  );
-}
-
-export function IconSkipNext({ size = 16, className }: IconProps) {
-  return (
-    <svg {...svgProps(size, className)}>
-      <path d="M16 6h2v12h-2zM4 6v12l11-6z" />
-    </svg>
-  );
-}
