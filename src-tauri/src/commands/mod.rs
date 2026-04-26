@@ -411,20 +411,18 @@ pub async fn get_entry(
 /// Delete an entry and its audio + timestamps files.
 #[tauri::command]
 pub async fn delete_entry(
-    app: AppHandle<Wry>,
     state: State<'_, AppState>,
     id: String,
 ) -> CmdResult<()> {
     let uuid = parse_entry_id(&id)?;
 
-    // Stop playback if this entry is playing.
+    // Stop playback if this entry is playing.  Player::stop emits
+    // playback_stopped on its own, so we do not re-emit here.
     if state.player.current_entry_id().as_deref() == Some(&id) {
         let _ = state.player.stop();
     }
 
     state.storage.delete_entry(&uuid).map_err(CommandError::from)?;
-
-    let _ = app.emit("playback_stopped", json!({}));
 
     Ok(())
 }
