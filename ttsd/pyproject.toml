@@ -1,0 +1,35 @@
+[project]
+name = "ruvox-ttsd"
+version = "0.1.0"
+description = "RuVox TTS daemon: Python subprocess wrapping Silero TTS"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "torch>=2.3,<3",
+    "numpy>=1.26,<3",
+    "scipy>=1.13,<2",
+    "pydantic>=2.8,<3",
+    "omegaconf>=2.3,<3",
+    "torchaudio>=2.3,<3",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.6",
+]
+
+[project.scripts]
+ttsd = "ttsd.__main__:main"
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: slow tests (network or heavy ML)",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]

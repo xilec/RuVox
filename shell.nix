@@ -1,173 +1,177 @@
+# RuVox 2.0 development shell
+#
+# Provides:
+#   - Rust stable (rustc, cargo, rustfmt, clippy)
+#   - Node.js 20 LTS + pnpm
+#   - Python 3.12 + uv
+#   - Tauri 2 Linux system deps (webkitgtk_4_1, libsoup_3, ...)
+#   - MPV/libmpv for tauri-plugin-mpv
+#
+# Usage:
+#   nix-shell          — enter dev shell
+#   nix-shell --run "cmd"  — run a single command
+
 { pkgs ? import <nixpkgs> {} }:
 
 pkgs.mkShell {
-  name = "ruvox-dev";
+  name = "ruvox2-dev";
 
   buildInputs = with pkgs; [
-    python311
+    # ── Rust stable toolchain ──────────────────────────────────────────────
+    rustc
+    cargo
+    rustfmt
+    clippy
+    cargo-tauri
+
+    # ── Node.js LTS (v20) + pnpm ───────────────────────────────────────────
+    nodejs_20
+    pnpm
+
+    # ── Python 3.12 + uv (for ttsd subprocess) ────────────────────────────
+    python312
     uv
-    ruff
-    # PyGObject for D-Bus (used by dasbus for global hotkeys)
-    gobject-introspection
-    (python311Packages.pygobject3)
-    # Required for torch
-    stdenv.cc.cc.lib
-    zlib
-    # Required for PyQt6 UI
-    qt6.qtbase
-    qt6.qtmultimedia
-    qt6.qtsvg
-    qt6.qtwayland
-    libxkbcommon
-    libGL
-    fontconfig
-    freetype
+
+    # ── Build tools ────────────────────────────────────────────────────────
+    pkg-config
+
+    # ── Tauri 2 Linux system dependencies ─────────────────────────────────
+    # WebKit with ABI 4.1 (required by Tauri 2; 4.0 was removed)
+    webkitgtk_4_1
+    # libsoup 3 (Tauri 2 requires libsoup 3, not 2)
+    libsoup_3
+    # GTK 3 and related
+    gtk3
     glib
+    glib-networking
+    # App indicator (system tray) — ayatana fork, the one Tauri 2 targets
+    libayatana-appindicator
+    # SVG rendering (Tauri icons)
+    librsvg
+    # OpenSSL (reqwest / native-tls)
+    openssl
+    # D-Bus
     dbus
-    # X11/Wayland libs needed by Qt
+
+    # ── MPV / libmpv (for tauri-plugin-mpv) ────────────────────────────────
+    # mpv-unwrapped provides both the library and pkg-config .pc file
+    mpv-unwrapped
+
+    # ── Wayland + X11 support ──────────────────────────────────────────────
+    wayland
+    wayland-protocols
+    libxkbcommon
     xorg.libX11
     xorg.libXcursor
     xorg.libXrandr
     xorg.libXi
     xorg.libxcb
-    xorg.xcbutilwm
-    xorg.xcbutilimage
-    xorg.xcbutilkeysyms
-    xorg.xcbutilrenderutil
-    xorg.xcbutil
-    xcb-util-cursor
-    wayland
-    wayland-protocols
-    libdecor
-    # Audio libs
+
+    # ── Audio backend ──────────────────────────────────────────────────────
     libpulseaudio
     pipewire
-    # libmpv for audio playback (python-mpv backend)
-    mpv
-    # Required by PyQt6 FFmpeg multimedia plugin
-    xorg.libXext
-    brotli
-    bzip2
-    libdrm
-    # Required by torch
-    zstd
-    krb5
-    # For patching bundled QtWebEngineProcess ELF interpreter
-    patchelf
-    # Required by PyQt6-WebEngine (Chromium runtime dependencies)
-    nss
-    nspr
-    xorg.libXcomposite
-    xorg.libXdamage
-    xorg.libXtst
-    xorg.libXfixes
-    xorg.libXrender
-    xorg.libxshmfence
-    xorg.libxkbfile
-    expat
     alsa-lib
-    libgbm
-    systemdMinimal
-    # For xdg-desktop-portal integration
-    xdg-desktop-portal
-    # For clipboard access on Wayland
-    wl-clipboard
+
+    # ── Additional graphics / display ──────────────────────────────────────
+    libGL
+    fontconfig
+    freetype
+    libdrm
+
+    # ── Torch / Python native extension support ────────────────────────────
+    stdenv.cc.cc.lib
+    zlib
+    zstd
   ];
 
-  # Only include system libs, NOT Qt - let PyQt6 use its bundled Qt
+  # Make pkg-config find the libraries
+  PKG_CONFIG_PATH = pkgs.lib.makeSearchPathOutput "dev" "lib/pkgconfig" [
+    pkgs.webkitgtk_4_1
+    pkgs.libsoup_3
+    pkgs.gtk3
+    pkgs.glib
+    pkgs.openssl
+    pkgs.mpv-unwrapped
+    pkgs.libayatana-appindicator
+    pkgs.librsvg
+    pkgs.wayland
+    pkgs.libxkbcommon
+    pkgs.alsa-lib
+    pkgs.libpulseaudio
+  ];
+
+  # Runtime library path (for Python + Tauri + mpv)
   LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
     pkgs.stdenv.cc.cc.lib
     pkgs.zlib
-    pkgs.libxkbcommon
+    pkgs.zstd
+    pkgs.openssl
     pkgs.libGL
     pkgs.fontconfig
     pkgs.freetype
     pkgs.glib
     pkgs.dbus
+    pkgs.gtk3
+    pkgs.webkitgtk_4_1
+    pkgs.libsoup_3
+    pkgs.mpv-unwrapped
+    pkgs.wayland
+    pkgs.libxkbcommon
     pkgs.xorg.libX11
     pkgs.xorg.libXcursor
     pkgs.xorg.libXrandr
     pkgs.xorg.libXi
     pkgs.xorg.libxcb
-    pkgs.xorg.xcbutilwm
-    pkgs.xorg.xcbutilimage
-    pkgs.xorg.xcbutilkeysyms
-    pkgs.xorg.xcbutilrenderutil
-    pkgs.xorg.xcbutil
-    pkgs.xcb-util-cursor
-    pkgs.wayland
-    pkgs.libdecor
     pkgs.libpulseaudio
     pkgs.pipewire
-    pkgs.mpv
-    pkgs.xorg.libXext
-    pkgs.brotli
-    pkgs.bzip2
-    pkgs.libdrm
-    pkgs.zstd
-    pkgs.krb5
-    pkgs.nss
-    pkgs.nspr
-    pkgs.xorg.libXcomposite
-    pkgs.xorg.libXdamage
-    pkgs.xorg.libXtst
-    pkgs.xorg.libXfixes
-    pkgs.xorg.libXrender
-    pkgs.xorg.libxshmfence
-    pkgs.xorg.libxkbfile
-    pkgs.expat
     pkgs.alsa-lib
-    pkgs.libgbm
-    pkgs.systemdMinimal
+    pkgs.libdrm
+    pkgs.libayatana-appindicator
+    pkgs.librsvg
   ];
 
-  # Let Qt auto-detect platform (wayland or xcb)
-  # User can override with QT_QPA_PLATFORM=xcb if needed
-
-  # nix-ld: allow bundled QtWebEngineProcess (non-NixOS ELF) to run
-  NIX_LD = "${pkgs.glibc}/lib/ld-linux-x86-64.so.2";
+  # Help Rust openssl-sys crate find OpenSSL
+  OPENSSL_DIR = "${pkgs.openssl.dev}";
+  OPENSSL_LIB_DIR = "${pkgs.openssl.out}/lib";
 
   shellHook = ''
     export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:$LD_LIBRARY_PATH"
-    export NIX_LD_LIBRARY_PATH="$LD_LIBRARY_PATH"
 
-    # Unset QT_PLUGIN_PATH to let PyQt6 use its bundled plugins
-    unset QT_PLUGIN_PATH
+    # Needed by glib-networking (TLS for WebKit)
+    export GIO_EXTRA_MODULES="${pkgs.glib-networking}/lib/gio/modules"
 
-    # Patch bundled QtWebEngineProcess so it can run on NixOS
-    _webengine=".venv/lib/python3.11/site-packages/PyQt6/Qt6/libexec/QtWebEngineProcess"
-    if [ -f "$_webengine" ]; then
-      _current_interp=$(patchelf --print-interpreter "$_webengine" 2>/dev/null || true)
-      if [ "$_current_interp" = "/lib64/ld-linux-x86-64.so.2" ]; then
-        chmod +w "$_webengine"
-        patchelf --set-interpreter "$NIX_LD" "$_webengine"
-      fi
-    fi
+    # WebKitGTK inside Tauri mis-initialises window metrics on Wayland unless
+    # the GSettings schemas for gsettings-desktop-schemas and gtk+3 are visible
+    # via XDG_DATA_DIRS AND glib-networking's gio-modules are discoverable.
+    # Without them devicePixelRatio becomes negative, innerWidth/Height go
+    # negative, computed html font-size blows up to millions of px, and every
+    # CSS value collapses to the same on-screen size.  Root cause: upstream
+    # tauri #7354 — on non-standard distros (NixOS, similar) webkit2gtk asks
+    # GSettings for scaling hints, gets nothing, and garbage is the result.
+    # Fix discovered in the #7354 thread (comments by n3oney / Mange); the
+    # XDG_DATA_DIRS / GIO_EXTRA_MODULES exports below are what makes it work.
+    # DMABUF renderer still crashes with "Gdk-Message Error 71 (Protocol
+    # error)" on KDE Plasma 6 Wayland — disable it explicitly.
+    export WEBKIT_DISABLE_DMABUF_RENDERER=1
 
-    echo "RuVox development environment"
-    echo "Python: $(python3 --version)"
-    echo "uv: $(uv --version)"
-    echo ""
+    # GSettings schemas + icon theme search path: wrapGAppsHook4 sets these
+    # for the production bundle; in dev we set them manually.
+    export XDG_DATA_DIRS="${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:${pkgs.hicolor-icon-theme}/share:$XDG_DATA_DIRS"
 
-    # Create venv if not exists
-    if [ ! -d ".venv" ]; then
-      echo "Creating virtual environment..."
-      uv venv
-    fi
-
-    # Activate venv
-    source .venv/bin/activate
-
-    # Sync dependencies
-    echo "Syncing dependencies..."
-    uv sync --all-extras --no-binary-package regex
-
+    echo "RuVox 2.0 development environment"
+    echo "  Rust:   $(rustc --version)"
+    echo "  Node:   $(node --version)"
+    echo "  pnpm:   $(pnpm --version)"
+    echo "  Python: $(python3 --version)"
+    echo "  uv:     $(uv --version)"
+    echo "  tauri:  $(cargo tauri --version)"
     echo ""
     echo "Commands:"
-    echo "  uv run pytest             - run all tests"
-    echo "  uv run pytest -v          - verbose output"
-    echo "  uv run ruvox              - run UI application"
-    echo "  uv run python scripts/tts_generate.py FILE  - generate speech"
+    echo "  cargo tauri dev          — start Tauri dev server"
+    echo "  cargo tauri build        — production build"
+    echo "  pnpm install             — install frontend deps"
+    echo "  pnpm typecheck           — TypeScript typecheck"
+    echo "  uv run python -m ttsd    — run TTS subprocess"
     echo ""
   '';
 }

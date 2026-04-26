@@ -1,0 +1,14 @@
+/* Global overrides applied after Mantine's base styles.
+   Fixes:
+   - Fractional/HiDPI scaling on Wayland+KDE where WebKitGTK (without DMABUF)
+     renders text at native device pixels, so default Mantine sizes look
+     too small.  Bumping the html font-size scales every rem-based Mantine
+     token proportionally.
+*/
+html {
+  font-size: 17px;
+}
+
+body {
+  font-size: var(--mantine-font-size-md);
+}

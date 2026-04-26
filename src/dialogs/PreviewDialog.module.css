@@ -1,0 +1,146 @@
+/* Transparent viewport-sized container.  Rnd's `position: absolute`
+ * references its nearest positioned ancestor; anchoring it inside a
+ * fixed, inset-0 container pins Rnd coordinates to the viewport even if
+ * the app body has document-level scroll (Mantine's Portal lands the
+ * tree at the end of body, whose top is measured against document, not
+ * viewport).  `pointer-events: none` keeps the underlying app clickable;
+ * Rnd itself re-enables with `auto`.  z-index sits above normal app
+ * chrome but below Mantine notifications. */
+.viewportContainer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 300;
+}
+
+.rnd {
+  pointer-events: auto;
+}
+
+.panel {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--mantine-color-body);
+  color: var(--mantine-color-text);
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-md);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.25),
+    0 2px 8px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mantine-spacing-sm);
+  padding: var(--mantine-spacing-sm) var(--mantine-spacing-md);
+  border-bottom: 1px solid var(--mantine-color-default-border);
+  flex: 0 0 auto;
+  background: var(--mantine-color-default);
+}
+
+/* react-rnd treats any descendant with this class as a drag handle. */
+.dragHandle {
+  cursor: grab;
+  user-select: none;
+}
+
+.dragHandle:active {
+  cursor: grabbing;
+}
+
+.title {
+  font-weight: 600;
+  font-size: var(--mantine-font-size-md);
+}
+
+.body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: var(--mantine-spacing-md);
+}
+
+.panes {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--mantine-spacing-md);
+}
+
+.paneCol {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.paneLabel {
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 600;
+  color: var(--mantine-color-dimmed);
+  margin-bottom: var(--mantine-spacing-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex: 0 0 auto;
+}
+
+.textPane {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: var(--mantine-font-size-sm);
+  line-height: var(--mantine-line-height-md);
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--mantine-color-default);
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-sm);
+  padding: var(--mantine-spacing-sm);
+  box-sizing: border-box;
+  margin: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  resize: none;
+  width: 100%;
+}
+
+.editTextareaRoot,
+.editTextareaWrapper {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.editTextareaInput {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: var(--mantine-font-size-sm);
+  line-height: var(--mantine-line-height-md);
+  flex: 1 1 auto;
+  min-height: 0;
+  resize: none;
+}
+
+.loaderPane {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 auto;
+  min-height: 0;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-sm);
+  background: var(--mantine-color-default);
+}
+
+.footer {
+  flex: 0 0 auto;
+  padding-top: var(--mantine-spacing-md);
+}

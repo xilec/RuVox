@@ -1,0 +1,57 @@
+[package]
+name = "ruvox-tauri"
+version = "0.2.0"
+description = "RuVox — desktop app for reading technical texts aloud"
+authors = []
+license = ""
+repository = ""
+edition = "2021"
+rust-version = "1.80"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "ruvox_tauri_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-opener = "2"
+tauri-plugin-clipboard-manager = "2"
+# tauri-plugin-mpv: Tauri plugin that controls an mpv subprocess via JSON IPC.
+# Chosen over libmpv2 per project spec ("prefer tauri-plugin-mpv if viable").
+# Viable: supports custom CLI args (--af=scaletempo2, --no-video), arbitrary
+# mpv commands via command(["get_property", "time-pos"]) for position polling,
+# and integrates with the Tauri AppHandle we already hold.
+tauri-plugin-mpv = "0.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["serde", "v4"] }
+regex = "1"
+aho-corasick = "1"
+once_cell = "1"
+dirs = "6"
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "process", "io-util", "sync", "time"] }
+parking_lot = "0.12"
+scraper = "0.19"
+thiserror = "1"
+tracing = "0.1"
+arboard = "3"
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"
+similar = "2"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+
+[profile.dev]
+incremental = true

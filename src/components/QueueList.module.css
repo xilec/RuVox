@@ -1,0 +1,60 @@
+.item {
+  cursor: pointer;
+  padding: 6px var(--mantine-spacing-sm);
+  border-radius: var(--mantine-radius-sm);
+  border: 1px solid transparent;
+  transition: background-color 80ms ease;
+}
+
+.item:hover {
+  background-color: var(--mantine-color-default-hover);
+}
+
+.itemSelected {
+  background-color: var(--mantine-color-default-hover);
+  border-color: var(--mantine-color-default-border);
+}
+
+.itemPlaying {
+  background-color: var(--mantine-color-teal-light);
+}
+
+.itemPlaying:hover {
+  background-color: var(--mantine-color-teal-light-hover);
+}
+
+.preview {
+  font-size: var(--mantine-font-size-sm);
+  line-height: var(--mantine-line-height-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.meta {
+  font-size: var(--mantine-font-size-xs);
+  color: var(--mantine-color-dimmed);
+}
+
+.actions {
+  opacity: 0;
+  transition: opacity 80ms ease;
+}
+
+.item:hover .actions,
+.itemSelected .actions {
+  opacity: 1;
+}
+
+/* Thin vertical divider between play (safe) and delete (destructive) so
+   the two buttons do not read as a single cluster. */
+.actionsSeparator {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background-color: var(--mantine-color-default-border);
+}
+
+.scrollArea {
+  height: 100%;
+}
