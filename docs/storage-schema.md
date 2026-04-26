@@ -29,7 +29,7 @@ The legacy Python implementation (frozen in `legacy/`) uses:
 
 All field names and enum string values in this document match the legacy Python output **exactly**. Rust's `serde` attributes (`rename_all`, `default`) ensure forward and backward compatibility.
 
-New fields added in the Tauri-based RuVox that are absent in legacy entries (e.g., `edited_text`, `preview_dialog_enabled`) use `#[serde(default)]` so legacy JSON parses cleanly.
+New fields added in the Tauri-based RuVox that are absent in legacy entries (e.g., `preview_dialog_enabled` in `UIConfig`) use `#[serde(default)]` so legacy JSON parses cleanly. Conversely, fields present in older `history.json` files that no longer exist in the schema (e.g., a previously-experimental `edited_text` override) are silently ignored on read.
 
 ---
 
@@ -58,7 +58,6 @@ interface TextEntry {
   id: EntryId;
   original_text: string;
   normalized_text: string | null;       // Output of the Rust TTS pipeline
-  edited_text: string | null;           // User-edited override (Tauri-based RuVox; absent in legacy)
   status: EntryStatus;
   created_at: string;                   // Naive UTC timestamp, e.g. "2026-02-15T11:46:51.504055" (no TZ suffix)
   audio_generated_at: string | null;    // Naive UTC timestamp when WAV was written
@@ -90,7 +89,6 @@ Entries with `status: "ready"` whose `audio_path` file is missing are reset to `
       "id": "550e8400-e29b-41d4-a716-446655440000",
       "original_text": "Вызови getUserData() через API",
       "normalized_text": "Вызови гет юзер дата через эй пи ай",
-      "edited_text": null,
       "status": "ready",
       "created_at": "2025-01-15T10:30:00.123456",
       "audio_generated_at": "2025-01-15T10:30:05.654321",
@@ -104,7 +102,6 @@ Entries with `status: "ready"` whose `audio_path` file is missing are reset to `
       "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
       "original_text": "https://example.com — сломан",
       "normalized_text": null,
-      "edited_text": null,
       "status": "error",
       "created_at": "2025-01-15T11:00:00.000000",
       "audio_generated_at": null,
@@ -300,7 +297,6 @@ Cross-reference between `docs/ipc-contract.md` types and the JSON fields in each
 | Entry ID | `id` | UUID string | yes | yes |
 | Original text | `original_text` | string | yes | yes |
 | Normalized text | `normalized_text` | string or null | yes | yes |
-| Edited text | `edited_text` | string or null | yes (2.0+) | yes |
 | Status | `status` | enum string | yes | yes |
 | Created at | `created_at` | ISO 8601 | yes | yes |
 | Audio generated at | `audio_generated_at` | ISO 8601 or null | yes | yes |

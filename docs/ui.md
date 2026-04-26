@@ -38,7 +38,7 @@ src/
 │   ├── AppShell.tsx              # MantineAppShell + Header/Navbar/Main + preview-флоу
 │   ├── QueueList.tsx             # Список TextEntry (Zustand selectedEntry store)
 │   ├── Player.tsx                # tauri-plugin-mpv обёртка + хоткеи Space/←/→
-│   ├── TextViewer.tsx            # plain/markdown/html + word highlight + edit mode
+│   ├── TextViewer.tsx            # plain/markdown/html + word highlight (read-only)
 │   ├── ThemeSwitcher.tsx         # SegmentedControl (Light/Dark/Auto)
 │   ├── icons.tsx                 # Inline SVG иконки (Play/Pause/Skip)
 │   ├── *.module.css              # CSS Modules per component
@@ -100,13 +100,13 @@ src/
 
 ### TextViewer
 
-`src/components/TextViewer.tsx` — отображение `original_text` / `edited_text`.
+`src/components/TextViewer.tsx` — read-only отображение `original_text`.
 
-- Three режима: plain / markdown / html (`SegmentedControl`).
+- Три режима: plain / markdown / html (`SegmentedControl`).
 - Markdown: `markdown-it` с custom `text` rule — оборачивает inline-токены в `<span data-orig-start data-orig-end>` для подсветки. Mermaid-блоки → `<div class="mermaid">` + `mermaid.run()`.
 - HTML: `DOMPurify.sanitize()` + подсветка кода (highlight.js).
-- Edit mode: переключатель карандаш ✏ → `<Textarea autosize>`. Save → `commands.updateEntryEditedText(id, text)`. Esc → cancel.
-- Word highlight: useEffect подписывается на playback-events, `useRef` (timestamps, playingEntryId, activeIdx) кэшируют без re-renders, бинарный поиск + `applyHighlight` на DOM. Гард `if (editMode) return` отключает highlight в edit-режиме.
+- Word highlight: useEffect подписывается на playback-events, `useRef` (timestamps, playingEntryId, activeIdx) кэшируют без re-renders, бинарный поиск + `applyHighlight` на DOM.
+- Правка текста существующей записи в UI **не предусмотрена** — для коррекции нужно удалить запись и добавить заново через preview-диалог.
 
 ### Settings
 

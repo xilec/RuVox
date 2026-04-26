@@ -42,7 +42,6 @@ interface TextEntry {
   id: EntryId;                     // UUID v4
   original_text: string;           // Raw text from clipboard
   normalized_text: string | null;  // Text after pipeline normalization (what Silero reads)
-  edited_text: string | null;      // User-edited override; if set, Silero uses this instead of normalized_text
   status: EntryStatus;
   created_at: string;              // ISO 8601 datetime, e.g. "2024-01-15T10:30:00.123456"
   audio_generated_at: string | null; // ISO 8601 datetime when WAV was created
@@ -385,27 +384,6 @@ invoke("get_timestamps", { id: EntryId }): Promise<WordTimestamp[]>
 **Returns:** Array of `WordTimestamp`. Empty array if entry has no timestamps.
 
 **Errors:** `not_found` if no entry with this ID; `storage_error` if the timestamps file cannot be read.
-
----
-
-### `update_entry_edited_text`
-
-Set or clear the `edited_text` field on an existing entry (FF 1.2 — edit mode in TextViewer).
-
-```typescript
-invoke("update_entry_edited_text", { id: EntryId, edited: string | null }): Promise<void>
-```
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `id` | `EntryId` | Target entry. |
-| `edited` | `string \| null` | If `string`, store as `entry.edited_text` and use it for any subsequent re-synth. If `null`, clear `edited_text` so the next re-synth falls back to `original_text`. |
-
-**Errors:** `not_found` if no entry with this ID exists; `storage_error` on write failure.
-
-**Side effects:** Emits `entry_updated` so QueueList / TextViewer pick up the change without polling.
-
-> `original_text` is **never** overwritten — it remains the source of truth for display. Setting `edited` to `null` is the only way to roll back edits.
 
 ---
 
