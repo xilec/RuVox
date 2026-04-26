@@ -131,16 +131,9 @@ fn spawn_synthesis<R: Runtime + 'static>(
             }
         };
 
-        // Use edited_text as source if the user has saved an override; fall back
-        // to original_text so the pipeline always receives something meaningful.
-        let source_text = entry
-            .edited_text
-            .clone()
-            .unwrap_or_else(|| entry.original_text.clone());
-
         // Phase 1: run Rust text pipeline (CPU-bound, run in blocking thread).
         let pipeline_clone = Arc::clone(&pipeline);
-        let original_for_pipeline = source_text.clone();
+        let original_for_pipeline = entry.original_text.clone();
         let pipeline_result = tokio::task::spawn_blocking(move || {
             let mut p = pipeline_clone.lock();
             p.process_with_char_mapping(&original_for_pipeline)
@@ -689,35 +682,6 @@ pub async fn get_cache_stats(
 pub struct CacheSizeInfo {
     pub total_bytes: u64,
     pub audio_file_count: u32,
-}
-
-/// Update (or clear) the user-edited text override for an entry.
-///
-/// When `edited` is `Some(text)` the entry's `edited_text` is updated and
-/// persisted.  When `edited` is `None` the override is cleared, causing the
-/// next synthesis to use `normalized_text` / `original_text` again.
-///
-/// The command emits `entry_updated` so that the frontend immediately sees the
-/// change without polling.
-#[tauri::command]
-pub async fn update_entry_edited_text(
-    app: AppHandle<Wry>,
-    state: State<'_, AppState>,
-    id: String,
-    edited: Option<String>,
-) -> CmdResult<()> {
-    let uuid = parse_entry_id(&id)?;
-    let mut entry = state
-        .storage
-        .get_entry(&uuid)
-        .ok_or_else(|| CommandError::NotFound { message: format!("entry not found: {id}") })?;
-
-    entry.edited_text = edited;
-    state.storage.update_entry(entry.clone()).map_err(CommandError::from)?;
-
-    info!("updated edited_text: entry_id={id}, has_override={}", entry.edited_text.is_some());
-    emit_entry_updated(&app, &entry);
-    Ok(())
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────

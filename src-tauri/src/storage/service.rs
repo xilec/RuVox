@@ -202,7 +202,6 @@ impl StorageService {
             id: Uuid::new_v4(),
             original_text: clean_text,
             normalized_text: None,
-            edited_text: None,
             status: EntryStatus::Pending,
             created_at: Local::now().naive_local(),
             audio_path: None,

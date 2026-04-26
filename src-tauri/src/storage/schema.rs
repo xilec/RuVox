@@ -28,10 +28,6 @@ pub struct TextEntry {
     pub original_text: String,
     #[serde(default)]
     pub normalized_text: Option<String>,
-    /// User-edited override; if set, Silero receives this instead of
-    /// `normalized_text`.  Not present in legacy entries — defaults to None.
-    #[serde(default)]
-    pub edited_text: Option<String>,
     pub status: EntryStatus,
     // Legacy writes naive UTC timestamps (no TZ suffix), e.g. "2026-02-15T11:46:51.504055".
     // We use NaiveDateTime to match that format exactly; callers treat these as UTC.
@@ -331,7 +327,6 @@ mod tests {
         }"#;
         let e: TextEntry = serde_json::from_str(json).unwrap();
         assert!(e.audio_path.is_none());
-        assert!(e.edited_text.is_none());
         assert!(e.normalized_text.is_none());
         assert!(!e.was_regenerated);
     }
@@ -370,7 +365,6 @@ mod tests {
             "id": "550e8400-e29b-41d4-a716-446655440001",
             "original_text": "Тест",
             "normalized_text": null,
-            "edited_text": null,
             "status": "pending",
             "created_at": "2025-06-01T08:00:00.000000",
             "audio_path": null,

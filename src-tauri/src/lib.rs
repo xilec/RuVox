@@ -213,7 +213,6 @@ pub fn run() {
             get_timestamps,
             clear_cache,
             get_cache_stats,
-            update_entry_edited_text,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
