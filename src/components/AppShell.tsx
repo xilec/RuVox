@@ -1,4 +1,5 @@
-import { AppShell as MantineAppShell, Title, Group, Button } from '@mantine/core';
+import { AppShell as MantineAppShell, Title, Group, Button, useMantineColorScheme } from '@mantine/core';
+import type { MantineColorScheme } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useState, useEffect, useRef } from 'react';
 import { readText as readClipboardText } from '@tauri-apps/plugin-clipboard-manager';
@@ -14,6 +15,7 @@ import { SettingsModal } from '../dialogs/Settings';
 
 export function AppShell() {
   const { selectedEntry } = useSelectedEntry();
+  const { setColorScheme } = useMantineColorScheme();
   const [pending, setPending] = useState(false);
   const [settingsOpened, setSettingsOpened] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -55,10 +57,16 @@ export function AppShell() {
   useEffect(() => {
     if (configLoaded.current) return;
     configLoaded.current = true;
-    commands.getConfig().then(setConfig).catch(() => {
+    commands.getConfig().then((cfg) => {
+      setConfig(cfg);
+      // Mantine's color-scheme manager is the source of truth for the UI;
+      // sync it to the persisted backend theme on first load so the saved
+      // choice survives across launches.
+      setColorScheme(cfg.theme as MantineColorScheme);
+    }).catch(() => {
       // Config load failure is non-fatal; preview will be skipped
     });
-  }, []);
+  }, [setColorScheme]);
 
   async function addEntry() {
     if (pending) return;
