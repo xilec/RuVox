@@ -77,3 +77,4 @@ src-tauri/gen/
 
 # Claude Code agent worktrees (per-session, never committed)
 .claude/worktrees/
+.claude/*.lock
