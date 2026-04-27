@@ -46,6 +46,7 @@ jobs:
   ttsd:
     name: ttsd (ruff + pytest)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
