@@ -1,4 +1,4 @@
-# <img src="docs/images/logo.svg" width="40" align="absmiddle" alt=""/> RuVox
+# <img src="docs/images/logo.svg" width="40" align="top" alt=""/> RuVox
 
 [![CI](https://github.com/xilec/RuVox/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/xilec/RuVox/actions/workflows/ci.yml)
 ![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-green)
