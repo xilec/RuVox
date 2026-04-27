@@ -7,8 +7,38 @@ on:
     branches: [main]
 
 jobs:
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      typescript: ${{ steps.filter.outputs.typescript }}
+      ttsd: ${{ steps.filter.outputs.ttsd }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            rust:
+              - 'src-tauri/**'
+              - '.github/workflows/ci.yml'
+            typescript:
+              - 'src/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'tsconfig.json'
+              - 'vite.config.ts'
+              - 'index.html'
+              - '.github/workflows/ci.yml'
+            ttsd:
+              - 'ttsd/**'
+              - '.github/workflows/ci.yml'
+
   rust:
     name: Rust (clippy + test)
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,6 +60,8 @@ jobs:
 
   typescript:
     name: TypeScript (typecheck)
+    needs: changes
+    if: needs.changes.outputs.typescript == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -45,6 +77,8 @@ jobs:
 
   ttsd:
     name: ttsd (ruff + pytest)
+    needs: changes
+    if: needs.changes.outputs.ttsd == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
