@@ -1,5 +1,6 @@
 # RuVox
 
+[![CI](https://github.com/xilec/RuVox/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/xilec/RuVox/actions/workflows/ci.yml)
 ![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-green)
 
 Desktop-приложение для озвучивания технических текстов на русском языке.

@@ -236,7 +236,7 @@ static MULTI_WORD_PHRASES: Lazy<Vec<(&'static str, &'static str)>> = Lazy::new(|
         ("edge case", "эдж кейс"),
     ];
     // Sort by descending length for longest-match behaviour
-    phrases.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+    phrases.sort_by_key(|p| std::cmp::Reverse(p.0.len()));
     phrases
 });
 

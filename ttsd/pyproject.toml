@@ -23,6 +23,7 @@ dev = [
 ttsd = "ttsd.__main__:main"
 
 [tool.pytest.ini_options]
+addopts = "-m 'not slow'"
 markers = [
     "slow: slow tests (network or heavy ML)",
 ]
