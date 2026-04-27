@@ -62,6 +62,20 @@ pub fn run() {
         .setup(|app| {
             tray::init(app.handle())?;
 
+            // WindowConfig in tauri.conf.json has no `icon` field, and the
+            // bundle-level icons only get wired up by `cargo tauri build`.
+            // For dev (and as a hardening for release), set the window icon
+            // explicitly so X11 / app switchers / task bars pick it up.
+            // Linux GTK CSD title bars typically don't render this icon
+            // inside the title bar itself — that is a GNOME/KDE chrome
+            // decision, not a Tauri limitation.
+            if let Some(window) = app.get_webview_window("main") {
+                let icon = tauri::image::Image::from_bytes(
+                    include_bytes!("../icons/128x128.png"),
+                )?;
+                let _ = window.set_icon(icon);
+            }
+
             let player = Arc::new(Player::new(app.handle().clone())?);
             player::spawn_position_emitter(player.clone(), app.handle().clone());
 

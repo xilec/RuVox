@@ -80,7 +80,7 @@ nix-shell --run "cd ttsd && uv run python -m pytest"                        # т
 
 - Код (идентификаторы, комментарии) — на английском. Пользовательские строки (UI, уведомления, логи) — на русском.
 - Никаких emoji в коде и коммит-сообщениях.
-- Формат коммитов: `<type>(<module>): <short desc>`, где `type` ∈ `{feat, fix, chore, refactor, docs, test, build}`.
+- Формат коммитов: `<type>(<module>): <short desc>`, где `type` ∈ `{feat, fix, chore, refactor, docs, test, build}`. Сообщения коммитов (subject + body) пишутся **на английском**.
 - **Запрещено:** «Co-Authored-By: Claude …» и любое упоминание Claude в коммите.
 - Комментарии — только если WHY неочевиден (скрытый инвариант, обход известного бага). Не комментировать WHAT.
 

@@ -9,7 +9,9 @@ import {
   Group,
   Text,
   Divider,
+  useMantineColorScheme,
 } from '@mantine/core';
+import type { MantineColorScheme } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
 import { commands } from '../lib/tauri';
@@ -56,6 +58,7 @@ const THEME_OPTIONS = [
 ];
 
 export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) {
+  const { setColorScheme } = useMantineColorScheme();
   const form = useForm<SettingsFormValues>({
     initialValues: {
       speaker: 'xenia',
@@ -105,6 +108,10 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
 
     try {
       await commands.updateConfig(patch);
+      // Mantine doesn't observe backend config; push the new theme into the
+      // color-scheme manager directly so the UI reflects the change without
+      // waiting for a reload.
+      setColorScheme(values.theme as MantineColorScheme);
       notifications.show({
         title: 'Настройки сохранены',
         message: 'Изменения применены.',

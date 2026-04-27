@@ -28,7 +28,7 @@ nix-shell --run "pnpm tauri dev"
 ```
 /
 ├── src/                    # React + TypeScript frontend (Vite + Mantine 8)
-│   ├── components/         # AppShell, QueueList, Player, TextViewer, ThemeSwitcher, icons
+│   ├── components/         # AppShell, QueueList, Player, TextViewer, icons
 │   ├── dialogs/            # PreviewDialog (FF 1.1), Settings
 │   ├── lib/                # tauri.ts (typed wrappers), markdown, html, mermaid, wordHighlight, errors
 │   └── stores/             # Zustand-store selectedEntry
