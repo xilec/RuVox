@@ -218,6 +218,12 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opened]);
 
+  // Reset the nested cleanup modal's visibility when Settings closes, so
+  // reopening Settings does not resurrect a stale nested-open state.
+  useEffect(() => {
+    if (!opened) setCleanupOpen(false);
+  }, [opened]);
+
   const handleOpenCacheDir = async () => {
     if (!cacheDir) return;
     try {
@@ -267,7 +273,16 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
   };
 
   return (
-    <Modal opened={opened} onClose={onClose} title="Настройки" size="md">
+    <Modal
+      opened={opened}
+      onClose={onClose}
+      title="Настройки"
+      size="md"
+      // While the nested cleanup modal is up, let it own Escape and outside-
+      // click handling — otherwise Mantine fires both modals' onClose at once.
+      closeOnEscape={!cleanupOpen}
+      closeOnClickOutside={!cleanupOpen}
+    >
       <form onSubmit={form.onSubmit(handleSubmit)}>
         <Stack gap="sm">
           <Text size="sm" fw={500} c="dimmed">
