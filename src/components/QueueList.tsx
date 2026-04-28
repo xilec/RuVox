@@ -184,6 +184,17 @@ export function QueueList() {
       }),
     );
 
+    unlisteners.push(
+      events.entryRemoved((payload) => {
+        setEntries((prev) => prev.filter((e) => e.id !== payload.id));
+        useSelectedEntry.setState((state) =>
+          state.selectedId === payload.id
+            ? { selectedId: null, selectedEntry: null }
+            : {},
+        );
+      }),
+    );
+
     // Highlight the currently-playing entry.  Paused playback keeps the
     // highlight (user may resume); only stop/finish clears it.
     unlisteners.push(events.playbackStarted((p) => setPlayingId(p.entry_id)));

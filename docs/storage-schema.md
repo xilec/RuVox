@@ -222,8 +222,7 @@ interface UIConfig {
   history_days: number;         // Days to keep entries in history
   audio_max_files: number;      // Maximum number of audio files to keep
   audio_regenerated_hours: number; // Hours to keep manually regenerated audio
-  max_cache_size_mb: number;    // Soft limit on total audio cache size in MB
-  auto_cleanup_days: number;    // Auto-delete entries older than N days (0 = disabled)
+  max_cache_size_mb: number;    // Soft limit on audio cache size in MB; drives startup eviction (0 = disabled)
   code_block_mode: string;      // How to handle Markdown code blocks: "skip" | "read"
   read_operators: boolean;      // Whether to speak mathematical/code operators
   theme: string;                // Color scheme: "light" | "dark" | "auto"
@@ -247,7 +246,6 @@ interface UIConfig {
 | `audio_max_files` | `5` |
 | `audio_regenerated_hours` | `24` |
 | `max_cache_size_mb` | `500` |
-| `auto_cleanup_days` | `0` (disabled) |
 | `code_block_mode` | `"read"` |
 | `read_operators` | `true` |
 | `theme` | `"auto"` |
@@ -268,7 +266,6 @@ interface UIConfig {
   "audio_max_files": 5,
   "audio_regenerated_hours": 24,
   "max_cache_size_mb": 500,
-  "auto_cleanup_days": 0,
   "code_block_mode": "read",
   "read_operators": true,
   "theme": "auto",
@@ -325,7 +322,6 @@ Cross-reference between `docs/ipc-contract.md` types and the JSON fields in each
 | Audio max files | `audio_max_files` | — | yes | yes |
 | Audio regen hours | `audio_regenerated_hours` | — | yes | yes |
 | Max cache MB | `max_cache_size_mb` | — | yes | yes |
-| Auto cleanup days | `auto_cleanup_days` | — | yes | yes |
 | Code block mode | `code_block_mode` | — | yes | yes |
 | Read operators | `read_operators` | — | yes | yes |
 | Theme | `theme` | — | yes | yes |

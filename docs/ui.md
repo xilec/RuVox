@@ -115,7 +115,8 @@ src/
 - `@mantine/form::useForm` with initialValues / validation.
 - Loading: `useEffect([opened])` → `commands.getConfig()` → `form.setValues`.
 - Submit → builds a `UIConfigPatch` (only the form fields; the rest of `UIConfig` is left alone) → `commands.updateConfig(patch)` → notification.
-- Fields: speaker, sample_rate, notify_on_ready/error, max_cache_size_mb, auto_cleanup_days, theme, preview_dialog_enabled.
+- Fields: speaker, sample_rate, notify_on_ready/error, max_cache_size_mb, theme, preview_dialog_enabled.
+- Cache cleanup: a "Очистить кэш…" button opens a sub-modal (`CleanupCacheModal`) with a target-MB input, a "Удалять тексты" checkbox, and a "Очистить полностью" checkbox (which disables the input). Confirms via `commands.clearCache({ mode, delete_texts })`.
 
 ### PreviewDialog
 

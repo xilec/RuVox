@@ -158,7 +158,7 @@ When the close button (`X`) is clicked, the app **hides into the tray** instead 
 
 - **Speech synthesis:** speaker (`xenia` / `aidar` / `baya` / `kseniya` / `eugene` / `random`), sample rate (8000 / 24000 / 48000).
 - **Notifications:** notify_on_ready, notify_on_error.
-- **Cache:** `max_cache_size_mb` (minimum 100), `auto_cleanup_days` (0 = disabled).
+- **Cache:** `max_cache_size_mb` (minimum 100). On startup, an orphan sweep + size-based eviction trims the oldest entries until total audio fits the limit. Settings → "Очистить кэш…" runs the same eviction on demand, with optional `Удалять тексты` (remove entries from history) and `Очистить полностью` (drop everything).
 - **Interface:** theme (light / dark / auto).
 
 **There are no global hotkeys in the UI** — this is an intentional decision (see RewriteNotes.md § 7). The player's hotkeys only work while the RuVox window is focused.

@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tauri::{AppHandle, Emitter, Runtime, State, Wry};
 use tracing::{info, warn};
@@ -659,60 +659,84 @@ pub async fn get_timestamps(
     Ok(timestamps)
 }
 
-/// Delete audio files older than auto_cleanup_days, or all if force=true.
-#[tauri::command]
-pub async fn clear_cache(
-    app: AppHandle<Wry>,
-    state: State<'_, AppState>,
-    force: bool,
-) -> CmdResult<ClearCacheResult> {
-    let config = state.storage.load_config().unwrap_or_default();
-    let mut deleted_files: u32 = 0;
-    let mut freed_bytes: u64 = 0;
+/// What "fits in the cache" means for this clear_cache invocation.
+#[derive(Debug, Deserialize)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+pub enum CleanupMode {
+    /// Trim the oldest entries until the cache fits in `target_mb`.
+    SizeLimit { target_mb: u32 },
+    /// Drop everything: every entry's audio (and texts when `delete_texts` is true).
+    All,
+}
 
-    let entries = state.storage.get_all_entries();
-    for entry in entries {
-        let should_delete = if force {
-            entry.audio_path.is_some()
-        } else if config.auto_cleanup_days > 0 {
-            let cutoff = chrono::Local::now().naive_local()
-                - chrono::Duration::days(config.auto_cleanup_days as i64);
-            entry.created_at < cutoff && entry.audio_path.is_some()
-        } else {
-            false
-        };
-
-        if should_delete {
-            // Measure file size before deletion.
-            if let Some(ref filename) = entry.audio_path {
-                let path = state.storage.cache_dir().join("audio").join(filename);
-                if let Ok(meta) = std::fs::metadata(&path) {
-                    freed_bytes += meta.len();
-                }
-                deleted_files += 1;
-            }
-
-            if let Err(e) = state.storage.delete_audio(&entry.id) {
-                warn!("clear_cache: failed to delete audio for {}: {e}", entry.id);
-                continue;
-            }
-
-            if let Some(updated) = state.storage.get_entry(&entry.id) {
-                emit_entry_updated(&app, &updated);
-            }
-        }
-    }
-
-    Ok(ClearCacheResult {
-        deleted_files,
-        freed_bytes,
-    })
+#[derive(Debug, Deserialize)]
+pub struct ClearCacheArgs {
+    pub mode: CleanupMode,
+    /// `false` → keep entries in history with `audio_path: null`.
+    /// `true`  → remove entries from history entirely.
+    #[serde(default)]
+    pub delete_texts: bool,
 }
 
 #[derive(Serialize)]
 pub struct ClearCacheResult {
     pub deleted_files: u32,
+    pub deleted_entries: u32,
     pub freed_bytes: u64,
+}
+
+/// Sweep orphan files in `audio/`, then evict entries (size-based or wholesale)
+/// according to `args.mode`. With `delete_texts = true`, evicted entries are
+/// removed from `history.json`; otherwise only their audio is dropped.
+/// Always sweeps orphans regardless of `mode` / `delete_texts`.
+#[tauri::command]
+pub async fn clear_cache(
+    app: AppHandle<Wry>,
+    state: State<'_, AppState>,
+    args: ClearCacheArgs,
+) -> CmdResult<ClearCacheResult> {
+    let storage = Arc::clone(&state.storage);
+    let mode = args.mode;
+    let delete_texts = args.delete_texts;
+
+    // File I/O is blocking by nature — keep the async runtime free.
+    let (sweep, evict) = tokio::task::spawn_blocking(move || -> Result<_, StorageError> {
+        let sweep = storage.sweep_orphans()?;
+        let evict = match mode {
+            CleanupMode::SizeLimit { target_mb } => {
+                storage.evict_to_size((target_mb as u64) * 1024 * 1024, delete_texts)?
+            }
+            CleanupMode::All => storage.evict_all(delete_texts)?,
+        };
+        Ok((sweep, evict))
+    })
+    .await
+    .map_err(|e| CommandError::Internal {
+        message: format!("clear_cache task panicked: {e}"),
+    })??;
+
+    for id in &evict.updated_ids {
+        if let Some(entry) = state.storage.get_entry(id) {
+            emit_entry_updated(&app, &entry);
+        }
+    }
+    for id in &evict.removed_ids {
+        let _ = app.emit("entry_removed", json!({ "id": id }));
+    }
+
+    info!(
+        "clear_cache: sweep_files={}, evict_files={}, evict_entries={}, freed={} bytes",
+        sweep.deleted_files,
+        evict.deleted_files,
+        evict.deleted_entries,
+        sweep.freed_bytes + evict.freed_bytes,
+    );
+
+    Ok(ClearCacheResult {
+        deleted_files: sweep.deleted_files + evict.deleted_files,
+        deleted_entries: evict.deleted_entries,
+        freed_bytes: sweep.freed_bytes + evict.freed_bytes,
+    })
 }
 
 /// Return current cache size information.
@@ -733,6 +757,15 @@ pub async fn get_cache_stats(state: State<'_, AppState>) -> CmdResult<CacheSizeI
 pub struct CacheSizeInfo {
     pub total_bytes: u64,
     pub audio_file_count: u32,
+}
+
+/// Absolute path to the on-disk cache directory (`~/.cache/ruvox/` by default,
+/// or wherever `XDG_CACHE_HOME`/`dirs::cache_dir()` resolved to at startup).
+/// The frontend uses this to display the path in Settings and to pass it to
+/// `revealItemInDir` for opening the folder in the OS file manager.
+#[tauri::command]
+pub async fn get_cache_dir(state: State<'_, AppState>) -> CmdResult<String> {
+    Ok(state.storage.cache_dir().to_string_lossy().into_owned())
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -773,9 +806,6 @@ fn apply_config_patch(config: &mut UIConfig, patch: UIConfigPatch) {
     }
     if let Some(v) = patch.max_cache_size_mb {
         config.max_cache_size_mb = v;
-    }
-    if let Some(v) = patch.auto_cleanup_days {
-        config.auto_cleanup_days = v;
     }
     if let Some(v) = patch.code_block_mode {
         config.code_block_mode = v;

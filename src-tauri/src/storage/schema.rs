@@ -95,8 +95,6 @@ pub struct UIConfig {
     pub audio_regenerated_hours: u32,
     #[serde(default = "UIConfig::default_max_cache_size_mb")]
     pub max_cache_size_mb: u32,
-    #[serde(default = "UIConfig::default_auto_cleanup_days")]
-    pub auto_cleanup_days: u32,
     /// How to handle Markdown code blocks: `"skip"` | `"read"`. Defaults to `"read"`.
     #[serde(default = "UIConfig::default_code_block_mode")]
     pub code_block_mode: String,
@@ -141,9 +139,6 @@ impl UIConfig {
     fn default_max_cache_size_mb() -> u32 {
         500
     }
-    fn default_auto_cleanup_days() -> u32 {
-        0
-    }
     fn default_code_block_mode() -> String {
         "read".to_string()
     }
@@ -180,7 +175,6 @@ impl Default for UIConfig {
             audio_max_files: Self::default_audio_max_files(),
             audio_regenerated_hours: Self::default_audio_regenerated_hours(),
             max_cache_size_mb: Self::default_max_cache_size_mb(),
-            auto_cleanup_days: Self::default_auto_cleanup_days(),
             code_block_mode: Self::default_code_block_mode(),
             read_operators: true,
             theme: Self::default_theme(),
@@ -205,7 +199,6 @@ pub struct UIConfigPatch {
     pub audio_max_files: Option<u32>,
     pub audio_regenerated_hours: Option<u32>,
     pub max_cache_size_mb: Option<u32>,
-    pub auto_cleanup_days: Option<u32>,
     pub code_block_mode: Option<String>,
     pub read_operators: Option<bool>,
     pub theme: Option<String>,
