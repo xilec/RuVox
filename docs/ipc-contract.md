@@ -70,9 +70,6 @@ interface UIConfig {
   notify_on_ready: boolean;      // Show system notification when synthesis completes
   notify_on_error: boolean;      // Show system notification on synthesis error
   text_format: string;           // Default viewer format: "plain" | "markdown" | "html"
-  history_days: number;          // Days to keep entries in history (0 = forever)
-  audio_max_files: number;       // Maximum number of audio files to keep in cache
-  audio_regenerated_hours: number; // Hours to keep manually regenerated audio
   max_cache_size_mb: number;     // Soft limit on audio cache size in MB; drives startup eviction (0 = disabled)
   code_block_mode: string;       // How to handle Markdown code blocks: "skip" | "read"
   read_operators: boolean;       // Whether to speak mathematical/code operators

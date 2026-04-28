@@ -87,12 +87,6 @@ pub struct UIConfig {
     pub notify_on_error: bool,
     #[serde(default = "UIConfig::default_text_format")]
     pub text_format: String,
-    #[serde(default = "UIConfig::default_history_days")]
-    pub history_days: u32,
-    #[serde(default = "UIConfig::default_audio_max_files")]
-    pub audio_max_files: u32,
-    #[serde(default = "UIConfig::default_audio_regenerated_hours")]
-    pub audio_regenerated_hours: u32,
     #[serde(default = "UIConfig::default_max_cache_size_mb")]
     pub max_cache_size_mb: u32,
     /// How to handle Markdown code blocks: `"skip"` | `"read"`. Defaults to `"read"`.
@@ -126,15 +120,6 @@ impl UIConfig {
     }
     fn default_text_format() -> String {
         "plain".to_string()
-    }
-    fn default_history_days() -> u32 {
-        14
-    }
-    fn default_audio_max_files() -> u32 {
-        5
-    }
-    fn default_audio_regenerated_hours() -> u32 {
-        24
     }
     fn default_max_cache_size_mb() -> u32 {
         500
@@ -171,9 +156,6 @@ impl Default for UIConfig {
             notify_on_ready: true,
             notify_on_error: true,
             text_format: Self::default_text_format(),
-            history_days: Self::default_history_days(),
-            audio_max_files: Self::default_audio_max_files(),
-            audio_regenerated_hours: Self::default_audio_regenerated_hours(),
             max_cache_size_mb: Self::default_max_cache_size_mb(),
             code_block_mode: Self::default_code_block_mode(),
             read_operators: true,
@@ -195,9 +177,6 @@ pub struct UIConfigPatch {
     pub notify_on_ready: Option<bool>,
     pub notify_on_error: Option<bool>,
     pub text_format: Option<String>,
-    pub history_days: Option<u32>,
-    pub audio_max_files: Option<u32>,
-    pub audio_regenerated_hours: Option<u32>,
     pub max_cache_size_mb: Option<u32>,
     pub code_block_mode: Option<String>,
     pub read_operators: Option<bool>,
@@ -276,8 +255,7 @@ mod tests {
         assert!((c.speech_rate - 1.0).abs() < f64::EPSILON);
         assert!(c.notify_on_ready);
         assert!(c.notify_on_error);
-        assert_eq!(c.history_days, 14);
-        assert_eq!(c.audio_max_files, 5);
+        assert_eq!(c.max_cache_size_mb, 500);
         assert!(!c.speaker.is_empty());
     }
 

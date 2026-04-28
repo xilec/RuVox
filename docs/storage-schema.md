@@ -219,9 +219,6 @@ interface UIConfig {
   notify_on_ready: boolean;     // Show notification when synthesis completes
   notify_on_error: boolean;     // Show notification on synthesis error
   text_format: string;          // Default viewer format: "plain" | "markdown" | "html"
-  history_days: number;         // Days to keep entries in history
-  audio_max_files: number;      // Maximum number of audio files to keep
-  audio_regenerated_hours: number; // Hours to keep manually regenerated audio
   max_cache_size_mb: number;    // Soft limit on audio cache size in MB; drives startup eviction (0 = disabled)
   code_block_mode: string;      // How to handle Markdown code blocks: "skip" | "read"
   read_operators: boolean;      // Whether to speak mathematical/code operators
@@ -242,9 +239,6 @@ interface UIConfig {
 | `notify_on_ready` | `true` |
 | `notify_on_error` | `true` |
 | `text_format` | `"plain"` |
-| `history_days` | `14` |
-| `audio_max_files` | `5` |
-| `audio_regenerated_hours` | `24` |
 | `max_cache_size_mb` | `500` |
 | `code_block_mode` | `"read"` |
 | `read_operators` | `true` |
@@ -262,9 +256,6 @@ interface UIConfig {
   "notify_on_ready": true,
   "notify_on_error": true,
   "text_format": "plain",
-  "history_days": 14,
-  "audio_max_files": 5,
-  "audio_regenerated_hours": 24,
   "max_cache_size_mb": 500,
   "code_block_mode": "read",
   "read_operators": true,
@@ -318,9 +309,6 @@ Cross-reference between `docs/ipc-contract.md` types and the JSON fields in each
 | Notify on ready | `notify_on_ready` | — | yes | yes |
 | Notify on error | `notify_on_error` | — | yes | yes |
 | Text format | `text_format` | — | yes | yes |
-| History days | `history_days` | — | yes | yes |
-| Audio max files | `audio_max_files` | — | yes | yes |
-| Audio regen hours | `audio_regenerated_hours` | — | yes | yes |
 | Max cache MB | `max_cache_size_mb` | — | yes | yes |
 | Code block mode | `code_block_mode` | — | yes | yes |
 | Read operators | `read_operators` | — | yes | yes |
