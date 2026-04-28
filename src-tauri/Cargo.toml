@@ -43,6 +43,15 @@ tracing = "0.1"
 arboard = "3"
 libc = "0.2"
 
+# Opus encoding pipeline (WAV → Ogg-Opus). `opus` is the FFI binding to the
+# C reference libopus 1.x (system dep — see shell.nix / flake.nix). A
+# pure-Rust port (`opus-rs`) was evaluated and is currently ~2× slower on
+# our 32 kbps VOIP profile; tracked in issue #19.
+opus = "0.3"
+ogg = "0.9"
+hound = "3.5"
+byteorder = "1.5"
+
 [dev-dependencies]
 tempfile = "3"
 similar = "2"

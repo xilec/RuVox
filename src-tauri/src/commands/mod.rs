@@ -178,14 +178,11 @@ fn spawn_synthesis<R: Runtime + 'static>(
         }
         emit_entry_updated(&app, &processing_entry);
 
-        // Phase 3: determine output WAV path.
+        // Phase 3: determine output WAV path. ttsd writes WAV; we transcode
+        // to Opus right after (see Phase 5b).
         let wav_filename = format!("{entry_id}.wav");
-        let out_wav = storage
-            .cache_dir()
-            .join("audio")
-            .join(&wav_filename)
-            .to_string_lossy()
-            .into_owned();
+        let out_wav_path = storage.cache_dir().join("audio").join(&wav_filename);
+        let out_wav = out_wav_path.to_string_lossy().into_owned();
 
         // Load config for speaker / sample_rate.
         let config = storage.load_config().unwrap_or_default();
@@ -230,13 +227,36 @@ fn spawn_synthesis<R: Runtime + 'static>(
                     }
                 };
 
+                // Phase 5b: transcode WAV → Opus, then drop the WAV. CPU-
+                // bound, off the async runtime. On failure we log and fall
+                // back to keeping the WAV so playback still works.
+                let wav_path_for_encode = out_wav_path.clone();
+                let encode_result = tokio::task::spawn_blocking(move || {
+                    crate::audio::replace_wav_with_opus(&wav_path_for_encode)
+                })
+                .await;
+                let audio_filename = match encode_result {
+                    Ok(Ok(opus_path)) => opus_path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| wav_filename.clone()),
+                    Ok(Err(e)) => {
+                        warn!("opus encode failed for {entry_id}, keeping wav: {e}");
+                        wav_filename.clone()
+                    }
+                    Err(e) => {
+                        warn!("opus encode task panicked for {entry_id}, keeping wav: {e}");
+                        wav_filename.clone()
+                    }
+                };
+
                 // Phase 6: update entry → ready.
                 let mut ready_entry = match storage.get_entry(&entry_id) {
                     Some(e) => e,
                     None => return,
                 };
                 ready_entry.status = EntryStatus::Ready;
-                ready_entry.audio_path = Some(wav_filename.clone());
+                ready_entry.audio_path = Some(audio_filename.clone());
                 ready_entry.timestamps_path = if ts_filename.is_empty() {
                     None
                 } else {
@@ -254,7 +274,7 @@ fn spawn_synthesis<R: Runtime + 'static>(
 
                 // Phase 7: auto-play if requested.
                 if play_when_ready {
-                    let path = storage.cache_dir().join("audio").join(&wav_filename);
+                    let path = storage.cache_dir().join("audio").join(&audio_filename);
                     if let Err(e) = player.load(&path, entry_id.to_string()) {
                         warn!("auto-play load failed: {e}");
                     } else if let Err(e) = player.play() {

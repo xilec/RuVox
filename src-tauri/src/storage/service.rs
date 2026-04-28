@@ -28,6 +28,19 @@ pub enum StorageError {
 
 pub type Result<T> = std::result::Result<T, StorageError>;
 
+/// Outcome of a [`StorageService::migrate_wav_audio_to_opus`] sweep.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct AudioMigrationStats {
+    /// Entries whose `audio_path` still pointed at a `.wav`.
+    pub considered: usize,
+    /// Successfully transcoded → entry updated → source `.wav` removed.
+    pub migrated: usize,
+    /// Entry pointed at a `.wav` that was no longer on disk.
+    pub skipped_missing: usize,
+    /// Encode or persist step failed; the source `.wav` is left in place.
+    pub failed: usize,
+}
+
 pub struct StorageService {
     cache_dir: PathBuf,
     audio_dir: PathBuf,
@@ -274,11 +287,92 @@ impl StorageService {
         entries
     }
 
+    // ── Migration: legacy `.wav` → Ogg-Opus ────────────────────────────────
+
+    /// Walk every entry whose `audio_path` still points at a `.wav` file and
+    /// transcode it to Ogg-Opus in place: encode → update entry → delete the
+    /// source `.wav`. Idempotent — already-`.opus` and missing files are
+    /// skipped silently. Per-entry failures are logged but do not abort the
+    /// walk; the returned [`AudioMigrationStats`] tells the caller how many
+    /// items fell into each bucket.
+    ///
+    /// Blocking: encoding is CPU-bound — call this from a blocking context
+    /// (e.g. `tokio::task::spawn_blocking`).
+    pub fn migrate_wav_audio_to_opus(&self) -> AudioMigrationStats {
+        let mut stats = AudioMigrationStats::default();
+
+        let candidates: Vec<TextEntry> = self
+            .entries
+            .read()
+            .values()
+            .filter(|e| e.audio_path.as_deref().is_some_and(|p| p.ends_with(".wav")))
+            .cloned()
+            .collect();
+
+        for entry in candidates {
+            stats.considered += 1;
+            let Some(wav_filename) = entry.audio_path.as_deref() else {
+                continue;
+            };
+            let wav_path = self.audio_dir.join(wav_filename);
+            if !wav_path.exists() {
+                tracing::warn!(
+                    "migration: entry {} has audio_path={wav_filename} but file is missing — skipping",
+                    entry.id
+                );
+                stats.skipped_missing += 1;
+                continue;
+            }
+
+            let opus_path = match crate::audio::replace_wav_with_opus(&wav_path) {
+                Ok(p) => p,
+                Err(e) => {
+                    tracing::error!(
+                        "migration: failed to encode {wav_filename} for entry {}: {e}",
+                        entry.id
+                    );
+                    stats.failed += 1;
+                    continue;
+                }
+            };
+
+            let opus_filename = match opus_path.file_name().and_then(|n| n.to_str()) {
+                Some(name) => name.to_string(),
+                None => {
+                    tracing::error!(
+                        "migration: produced opus path {:?} has no usable filename",
+                        opus_path
+                    );
+                    stats.failed += 1;
+                    continue;
+                }
+            };
+
+            let mut updated = entry.clone();
+            updated.audio_path = Some(opus_filename.clone());
+            if let Err(e) = self.update_entry(updated) {
+                tracing::error!(
+                    "migration: failed to persist updated audio_path for {}: {e}",
+                    entry.id
+                );
+                stats.failed += 1;
+                continue;
+            }
+
+            stats.migrated += 1;
+            tracing::info!("migration: {} → {}", wav_filename, opus_filename);
+        }
+
+        stats
+    }
+
     // ── Audio / Timestamps ─────────────────────────────────────────────────
 
-    /// Write raw WAV bytes. Returns the relative filename (for `TextEntry.audio_path`).
+    /// Write raw audio bytes. Returns the relative filename (for `TextEntry.audio_path`).
+    /// On-disk format is Ogg-Opus (transcoded by `crate::audio` before this is called
+    /// in production paths); the extension is fixed to `.opus`.
     pub fn save_audio(&self, id: &EntryId, audio_bytes: &[u8]) -> Result<String> {
-        let filename = format!("{id}.wav");
+        let filename = format!("{id}.opus");
         let path = self.audio_dir.join(&filename);
         fs::write(path, audio_bytes)?;
         Ok(filename)
@@ -346,13 +440,14 @@ impl StorageService {
         Ok(total)
     }
 
-    /// Number of `.wav` files in the audio directory.
+    /// Number of audio files (`.wav` legacy + `.opus`) in the audio directory.
     pub fn get_audio_count(&self) -> Result<u32> {
         let mut count: u32 = 0;
         for entry in fs::read_dir(&self.audio_dir)? {
             let entry = entry?;
-            if entry.path().extension().and_then(|e| e.to_str()) == Some("wav") {
-                count += 1;
+            match entry.path().extension().and_then(|e| e.to_str()) {
+                Some("opus") | Some("wav") => count += 1,
+                _ => {}
             }
         }
         Ok(count)
@@ -491,8 +586,8 @@ mod tests {
         let entry = svc.add_entry("audio test".to_string()).unwrap();
         let id = entry.id;
 
-        let filename = svc.save_audio(&id, b"RIFF fake").unwrap();
-        assert_eq!(filename, format!("{id}.wav"));
+        let filename = svc.save_audio(&id, b"OggS fake").unwrap();
+        assert_eq!(filename, format!("{id}.opus"));
 
         let mut updated = entry.clone();
         updated.audio_path = Some(filename);
@@ -698,5 +793,66 @@ mod tests {
         let size = svc.get_cache_size().unwrap();
         // history.json and timestamps may also be in the audio dir — we only need size > 0.
         assert!(size > 0);
+    }
+
+    /// Create an entry with a real (1 s, 48 kHz mono float) `.wav` on disk,
+    /// run the migration, assert the entry now points at `.opus` and the
+    /// source `.wav` is gone.
+    #[test]
+    fn migrate_wav_audio_to_opus_replaces_wav_in_history() {
+        let (svc, _dir) = make_service();
+        let entry = svc.add_entry("legacy wav".to_string()).unwrap();
+        let id = entry.id;
+
+        // Write a valid 1-second WAV directly to the audio dir under the
+        // legacy `.wav` filename so the migration finds something to encode.
+        let wav_filename = format!("{id}.wav");
+        let wav_path = svc.cache_dir().join("audio").join(&wav_filename);
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 48_000,
+            bits_per_sample: 32,
+            sample_format: hound::SampleFormat::Float,
+        };
+        let mut writer = hound::WavWriter::create(&wav_path, spec).unwrap();
+        for i in 0..48_000usize {
+            let t = i as f32 / 48_000.0;
+            writer
+                .write_sample((2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.2)
+                .unwrap();
+        }
+        writer.finalize().unwrap();
+
+        let mut updated = entry.clone();
+        updated.audio_path = Some(wav_filename.clone());
+        updated.status = EntryStatus::Ready;
+        svc.update_entry(updated).unwrap();
+
+        let stats = svc.migrate_wav_audio_to_opus();
+        assert_eq!(stats.considered, 1);
+        assert_eq!(stats.migrated, 1);
+        assert_eq!(stats.failed, 0);
+
+        let after = svc.get_entry(&id).unwrap();
+        let new_filename = after.audio_path.expect("audio_path must remain set");
+        assert!(new_filename.ends_with(".opus"), "got {new_filename}");
+        assert!(svc.cache_dir().join("audio").join(&new_filename).exists());
+        assert!(!wav_path.exists(), "source .wav should be removed");
+    }
+
+    /// Re-running the migration after everything is already `.opus` must be
+    /// a no-op (no entries considered, no files touched).
+    #[test]
+    fn migrate_wav_audio_to_opus_is_idempotent() {
+        let (svc, _dir) = make_service();
+        let entry = svc.add_entry("already opus".to_string()).unwrap();
+        let id = entry.id;
+        let mut updated = entry.clone();
+        updated.audio_path = Some(format!("{id}.opus"));
+        svc.update_entry(updated).unwrap();
+
+        let stats = svc.migrate_wav_audio_to_opus();
+        assert_eq!(stats.considered, 0);
+        assert_eq!(stats.migrated, 0);
     }
 }
