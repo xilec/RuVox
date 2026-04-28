@@ -1,20 +1,21 @@
-# RuVox - Инструкции для разработки
+# RuVox — Development Guide
 
-> **ВАЖНО:** Всегда отвечай на русском языке.
+> **NOTE:** Always reply in Russian when communicating with the user (assistant
+> instruction; the documentation itself is in English).
 
-## Обзор проекта
+## Project overview
 
-**RuVox 2.0** — desktop-приложение для озвучивания технических текстов на русском языке.
+**RuVox 2.0** is a desktop application for narrating technical Russian-language texts.
 
-**Стек:**
-- **Shell:** Tauri 2 (Rust-based desktop shell с нативным webview)
+**Stack:**
+- **Shell:** Tauri 2 (Rust-based desktop shell with native webview)
 - **Frontend:** React 18 + TypeScript 5 + Mantine 8
-- **Backend:** Rust (pipeline нормализации, storage, subprocess-менеджер TTS, обёртка плеера)
-- **TTS-движок:** Python-subprocess `ttsd`, оборачивающий Silero TTS (запускается как sidecar-процесс)
+- **Backend:** Rust (text normalization pipeline, storage, TTS subprocess manager, player wrapper)
+- **TTS engine:** Python subprocess `ttsd` wrapping Silero TTS (runs as a sidecar process)
 
-**Назначение** не изменилось: нормализовать технический текст (API, URL, идентификаторы кода, числа) перед передачей в Silero TTS, который не умеет читать английский и спецсимволы.
+**Goal** unchanged: normalize technical text (API, URLs, code identifiers, numbers) before passing it to Silero TTS, which cannot read English or special characters.
 
-### Проблема → Решение
+### Problem → Solution
 
 ```
 "Вызови getUserData() через API"
@@ -22,130 +23,136 @@
 "Вызови гет юзер дата через эй пи ай"
 ```
 
-## Документация
+## Documentation
 
-| Файл / Раздел | Описание |
-|---------------|----------|
-| [docs/ipc-contract.md](docs/ipc-contract.md) | IPC-контракт: Tauri-команды, события, протокол ttsd |
-| [docs/storage-schema.md](docs/storage-schema.md) | Схема хранилища: history.json, timestamps, config |
-| [docs/pipeline.md](docs/pipeline.md) | Этапы нормализации текста |
-| [docs/ui.md](docs/ui.md) | Структура фронтенда |
-| [docs/use-cases.md](docs/use-cases.md) | Пользовательские сценарии |
-| [docs/preview-dialog.md](docs/preview-dialog.md) | Preview-диалог нормализации |
+| File / Section | Description |
+|----------------|-------------|
+| [docs/ipc-contract.md](docs/ipc-contract.md) | IPC contract: Tauri commands, events, ttsd protocol |
+| [docs/storage-schema.md](docs/storage-schema.md) | Storage schema: history.json, timestamps, config |
+| [docs/pipeline.md](docs/pipeline.md) | Text normalization stages |
+| [docs/ui.md](docs/ui.md) | Frontend structure |
+| [docs/use-cases.md](docs/use-cases.md) | User scenarios |
+| [docs/preview-dialog.md](docs/preview-dialog.md) | Normalization preview dialog |
 
-## Быстрый старт
+## Quick start
 
-> **Все команды запускаются через `nix-shell --run "..."`** — `cargo`, `pnpm`, `uv` и прочие инструменты доступны только внутри nix-shell (определён в `shell.nix` в корне).
+> **All commands must be run via `nix-shell --run "..."`** — `cargo`, `pnpm`, `uv` and other tooling are only available inside the nix-shell (defined in `shell.nix` at the repo root).
 >
-> **Не запускай команды из «уже открытой» nix-shell-сессии** после правок `shell.nix`. `shellHook` (в т.ч. `XDG_DATA_DIRS` / `GIO_EXTRA_MODULES` / `WEBKIT_DISABLE_DMABUF_RENDERER` — нужны чтобы WebKit2GTK в Tauri корректно читал GSettings и не выдавал `devicePixelRatio`=negative, см. [tauri #7354](https://github.com/tauri-apps/tauri/issues/7354)) запускается только при входе в shell. Каждый `nix-shell --run "..."` форкает свежий subshell → всегда получает актуальный env. Запуск `pnpm tauri dev` «голым» в текущей сессии ломает шрифты/метрики окна.
+> **Do not run commands from an "already open" nix-shell session** after editing `shell.nix`. The `shellHook` (including `XDG_DATA_DIRS` / `GIO_EXTRA_MODULES` / `WEBKIT_DISABLE_DMABUF_RENDERER` — required for WebKit2GTK in Tauri to read GSettings correctly and avoid `devicePixelRatio`=negative, see [tauri #7354](https://github.com/tauri-apps/tauri/issues/7354)) only runs on shell entry. Each `nix-shell --run "..."` forks a fresh subshell and always picks up the up-to-date env. Running `pnpm tauri dev` "bare" in the current session breaks fonts and window metrics.
 
 ```bash
-nix-shell --run "pnpm install"                                              # фронт-зависимости
-nix-shell --run "pnpm tauri dev"                                            # запуск приложения
-nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml"          # Rust-тесты
-nix-shell --run "pnpm typecheck"                                            # проверка типов TS
-nix-shell --run "cd ttsd && uv run python -m pytest"                        # тесты Python-subprocess
+nix-shell --run "pnpm install"                                              # frontend deps
+nix-shell --run "pnpm tauri dev"                                            # run the app
+nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml"          # Rust tests
+nix-shell --run "pnpm typecheck"                                            # TS typecheck
+nix-shell --run "cd ttsd && uv run python -m pytest"                        # Python subprocess tests
 ```
 
-## Структура проекта
+## Project layout
 
 ```
 /
 ├── src/              # React + TypeScript frontend (Vite + Mantine 8)
 ├── src-tauri/        # Rust backend
 │   ├── src/
-│   │   ├── pipeline/ # Нормализация текста (port из legacy Python-pipeline)
-│   │   ├── storage/  # История JSON + аудиофайлы
-│   │   ├── tts/      # Менеджер ttsd-subprocess
-│   │   ├── player/   # Обёртка tauri-plugin-mpv
-│   │   ├── commands/ # Tauri-команды (#[tauri::command])
-│   │   └── tray/     # Системный трей
-│   └── tests/        # Rust integration tests (golden-фикстуры pipeline)
-├── ttsd/             # Python-subprocess (Silero TTS sidecar)
+│   │   ├── pipeline/ # Text normalization (port of legacy Python pipeline)
+│   │   ├── storage/  # JSON history + audio files
+│   │   ├── tts/      # ttsd subprocess manager
+│   │   ├── player/   # tauri-plugin-mpv wrapper
+│   │   ├── commands/ # Tauri commands (#[tauri::command])
+│   │   └── tray/     # System tray
+│   └── tests/        # Rust integration tests (golden pipeline fixtures)
+├── ttsd/             # Python subprocess (Silero TTS sidecar)
 │   ├── pyproject.toml
 │   └── ttsd/
 │       ├── silero.py      # SileroEngine: load, synthesize
-│       ├── timestamps.py  # Оценка временных меток слов
-│       ├── protocol.py    # Типы request/response
-│       └── main.py        # Главный цикл stdin→stdout JSON
-├── docs/             # Проектная документация
-├── scripts/          # Утилитарные скрипты
-├── shell.nix         # Nix-окружение (Rust + Node + Python)
-└── flake.nix         # Production-сборка через nix build .#ruvox
+│       ├── timestamps.py  # Word-level timestamp estimation
+│       ├── protocol.py    # request/response types
+│       └── main.py        # main stdin→stdout JSON loop
+├── docs/             # Project documentation
+├── scripts/          # Utility scripts
+├── shell.nix         # Nix dev environment (Rust + Node + Python)
+└── flake.nix         # Production build via `nix build .#ruvox`
 ```
 
-## Правила разработки
+## Development rules
 
-### Общие
+### General
 
-- Код (идентификаторы, комментарии) — на английском. Пользовательские строки (UI, уведомления, логи) — на русском.
-- Никаких emoji в коде и коммит-сообщениях.
-- Формат коммитов: `<type>(<module>): <short desc>`, где `type` ∈ `{feat, fix, chore, refactor, docs, test, build}`. Сообщения коммитов (subject + body) пишутся **на английском**.
-- **Запрещено:** «Co-Authored-By: Claude …» и любое упоминание Claude в коммите.
-- Комментарии — только если WHY неочевиден (скрытый инвариант, обход известного бага). Не комментировать WHAT.
+- Code (identifiers, comments) is in English. User-facing strings (UI, notifications, logs visible to the user) are in Russian.
+- No emoji in code or commit messages.
+- Commit format: `<type>(<module>): <short desc>`, where `type` ∈ `{feat, fix, chore, refactor, docs, test, build}`. Commit messages (subject + body) must be in **English**.
+- **Forbidden:** "Co-Authored-By: Claude …" or any mention of Claude in commits.
+- Comments only when WHY is non-obvious (hidden invariant, workaround for a known bug). Do not comment WHAT.
+
+### Documentation language
+
+- The primary language for everything in the repo is English: `docs/`, `README.md`, `AGENTS.md`, `CLAUDE.md`, GitHub issues, PR descriptions, code comments.
+- The only translated artifact is `README.ru.md` (Russian localization of `README.md`). Whenever `README.md` changes, `README.ru.md` must be updated in the same PR.
+- User-facing UI strings (notifications, button labels, dialog text) stay in Russian — the product targets a Russian-speaking audience.
 
 ### Rust
 
-- Edition 2021 (или новее, если требует зависимость).
-- `tracing` для логов, `thiserror` для доменных ошибок, `anyhow::Result` — только на границах.
-- Запрещён `unwrap` в production-путях — использовать `?` + типизированные ошибки.
-- `cargo fmt` и `cargo clippy` должны быть чистыми.
+- Edition 2021 (or newer if a dependency requires it).
+- `tracing` for logging, `thiserror` for domain errors, `anyhow::Result` only at boundaries.
+- No `unwrap` in production paths — use `?` + typed errors.
+- `cargo fmt` and `cargo clippy` must be clean.
 
 ### TypeScript / React
 
-- `strict: true` в tsconfig. Без `any` без крайней необходимости.
-- Только функциональные компоненты. Не использовать `React.FC`.
-- Hooks-first. Без class-компонентов.
-- Prettier для форматирования.
+- `strict: true` in tsconfig. Avoid `any` unless absolutely necessary.
+- Function components only. Do not use `React.FC`.
+- Hooks-first. No class components.
+- Prettier for formatting.
 
 ### Mantine 8
 
-- Стилизация через CSS Modules и prop `classNames`.
-- **Запрещено:** `sx`, `createStyles`, emotion, любое легаси из Mantine 6/7.
-- Формы: `@mantine/form` (не react-hook-form, не Formik).
-- Нотификации: `@mantine/notifications`.
-- Хуки: `@mantine/hooks`.
-- Модалки: `@mantine/modals` (`modals.openConfirmModal` и т.п.).
+- Styling via CSS Modules and the `classNames` prop.
+- **Forbidden:** `sx`, `createStyles`, emotion, any legacy from Mantine 6/7.
+- Forms: `@mantine/form` (not react-hook-form, not Formik).
+- Notifications: `@mantine/notifications`.
+- Hooks: `@mantine/hooks`.
+- Modals: `@mantine/modals` (`modals.openConfirmModal` etc.).
 
 ### State
 
-- Без Redux. Для глобального состояния — Zustand или React context. По умолчанию — props + `useState`.
-- React Query не нужен — Tauri-invoke нормально ложится в `useEffect` + `useState`.
+- No Redux. For global state use Zustand or React context. By default — props + `useState`.
+- React Query is not needed — Tauri `invoke` fits naturally into `useEffect` + `useState`.
 
 ### Routing
 
-- Без router на старте. Диалоги через `@mantine/modals`.
+- No router for now. Dialogs go through `@mantine/modals`.
 
 ### Python (ttsd)
 
-- Python 3.12, `uv`-managed.
-- Логи на stderr, JSON-запросы на stdin, JSON-ответы на stdout.
-- `ruff check` и `pytest` должны быть зелёными.
+- Python 3.12, managed by `uv`.
+- Logs to stderr; JSON requests on stdin, JSON responses on stdout.
+- `ruff check` and `pytest` must be green.
 
-## TTS Pipeline: особенности
+## TTS Pipeline: notes
 
-### Mermaid-диаграммы
+### Mermaid diagrams
 
-Mermaid-блоки (` ```mermaid ... ``` `) **не озвучиваются**. Pipeline заменяет их маркером `"Тут мермэйд диаграмма"`, чтобы обозначить наличие диаграммы. Пользователь может приостановить воспроизведение и рассмотреть диаграмму в UI.
+Mermaid blocks (` ```mermaid ... ``` `) **are not narrated**. The pipeline replaces them with the marker `"Тут мермэйд диаграмма"` to indicate that a diagram is present. The user can pause playback and inspect the diagram in the UI.
 
-### Английский текст
+### English text
 
-Silero TTS **не умеет читать английский**. Весь английский текст должен быть транслитерирован в кириллицу до передачи в TTS-движок:
+Silero TTS **cannot read English**. All English text must be transliterated to Cyrillic before being passed to the TTS engine:
 
-- Во всех местах, где может появиться английский (ссылки, код, заголовки и т.д.), обязателен **fallback для транслитерации**.
-- Если обработка текста оставляет английские слова, они должны оставаться доступными для дальнейшей нормализации английским нормализатором.
+- Wherever English may appear (URLs, code, headings, etc.), a **transliteration fallback** is mandatory.
+- If text processing leaves English words behind, they must remain available for further normalization by the English normalizer.
 
-### Реализация pipeline
+### Pipeline implementation
 
-Pipeline реализован в `src-tauri/src/pipeline/` (Rust). Корректность проверяется golden-фикстурами в `src-tauri/tests/fixtures/pipeline/`.
+The pipeline lives in `src-tauri/src/pipeline/` (Rust). Correctness is verified by golden fixtures in `src-tauri/tests/fixtures/pipeline/`.
 
-## Тесты
+## Tests
 
 ```bash
-# Rust (все тесты)
+# Rust (all tests)
 nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml"
 
-# Rust golden-тесты pipeline
+# Rust pipeline golden tests
 nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml --test golden"
 
 # Python subprocess
