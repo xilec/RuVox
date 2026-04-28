@@ -137,18 +137,16 @@ An Ogg-Opus file:
 | Container | Ogg |
 | Codec | Opus (RFC 6716, RFC 7845) |
 | Channels | 1 (mono) |
-| Sample rate | 48 000 Hz |
+| Sample rate | One of 8 / 12 / 16 / 24 / 48 kHz — matches `UIConfig.sample_rate` (default 48 kHz) |
 | Bitrate | 32 000 bps (VBR, VOIP application) |
-| Frame size | 20 ms (960 samples) |
-| Pre-skip | 312 samples |
+| Frame size | 20 ms |
+| Pre-skip | Queried from `libopus`'s `lookahead`, scaled to 48 kHz output ticks |
 
 The filename is the entry's UUID, e.g. `550e8400-e29b-41d4-a716-446655440000.opus`.
 
 `audio_path` in `TextEntry` stores the **filename only** (not the full path). The full path is resolved as `~/.cache/ruvox/audio/{audio_path}`.
 
-Encoding pipeline: `ttsd` writes a 48 kHz mono float WAV to disk; the Rust side immediately transcodes it to Opus via `crate::audio::replace_wav_with_opus` and removes the source WAV. The encoder uses the `opus = "0.3"` crate (FFI to system `libopus` 1.x, see [shell.nix](../shell.nix) / [flake.nix](../flake.nix)). On encode failure the source `.wav` is left in place as a fallback so playback keeps working.
-
-> The encoder currently requires a 48 kHz mono float input. If `UIConfig.sample_rate` is set to anything other than 48000, ttsd will produce a non-48k WAV which the encoder rejects — the entry then falls back to keeping `.wav` on disk. The default is 48 000 and that is the only setting that exercises the Opus pipeline.
+Encoding pipeline: `ttsd` writes a mono 32-bit-float WAV at `UIConfig.sample_rate`; the Rust side immediately transcodes it to Opus via `crate::audio::replace_wav_with_opus` and removes the source WAV. The encoder uses the `opus = "0.3"` crate (FFI to system `libopus` 1.x, see [shell.nix](../shell.nix) / [flake.nix](../flake.nix)). The Opus container records the input sample rate verbatim; decoders (mpv, libopusfile, browsers) handle any-to-48 kHz output internally. On encode failure the source `.wav` is left in place as a fallback so playback keeps working.
 
 ### Migration: WAV → Opus
 
@@ -214,8 +212,9 @@ Stores the application configuration. Written by the Rust storage service.
 interface UIConfig {
   version?: number;             // Config schema version (read but not required)
   speaker: string;              // Silero speaker name: "xenia" | "aidar" | "baya" | "kseniya" | "eugene"
-  sample_rate: number;          // Silero output rate: 8000 | 24000 | 48000. Only 48000 currently
-                                // round-trips through the Opus encoder; other values fall back to .wav.
+  sample_rate: number;          // Silero output rate: 8000 | 24000 | 48000. The Opus encoder
+                                // accepts the same set natively (plus 12/16 kHz) so any of these
+                                // round-trips through the pipeline without resampling.
   speech_rate: number;          // Playback speed multiplier: 0.5–2.0
   notify_on_ready: boolean;     // Show notification when synthesis completes
   notify_on_error: boolean;     // Show notification on synthesis error
