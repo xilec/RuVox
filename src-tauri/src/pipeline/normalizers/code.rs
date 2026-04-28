@@ -666,12 +666,18 @@ mod tests {
 
     #[test]
     fn camel_get_user_data() {
-        assert_eq!(normalizer().normalize_camel_case("getUserData"), "гет юзер дата");
+        assert_eq!(
+            normalizer().normalize_camel_case("getUserData"),
+            "гет юзер дата"
+        );
     }
 
     #[test]
     fn camel_my_variable() {
-        assert_eq!(normalizer().normalize_camel_case("myVariable"), "май вэриабл");
+        assert_eq!(
+            normalizer().normalize_camel_case("myVariable"),
+            "май вэриабл"
+        );
     }
 
     #[test]
@@ -696,7 +702,10 @@ mod tests {
 
     #[test]
     fn camel_handle_submit() {
-        assert_eq!(normalizer().normalize_camel_case("handleSubmit"), "хендл сабмит");
+        assert_eq!(
+            normalizer().normalize_camel_case("handleSubmit"),
+            "хендл сабмит"
+        );
     }
 
     #[test]
@@ -706,7 +715,10 @@ mod tests {
 
     #[test]
     fn camel_parse_json() {
-        assert_eq!(normalizer().normalize_camel_case("parseJSON"), "парс джейсон");
+        assert_eq!(
+            normalizer().normalize_camel_case("parseJSON"),
+            "парс джейсон"
+        );
     }
 
     #[test]
@@ -772,34 +784,52 @@ mod tests {
 
     #[test]
     fn camel_get_user2_data() {
-        assert_eq!(normalizer().normalize_camel_case("getUser2Data"), "гет юзер два дата");
+        assert_eq!(
+            normalizer().normalize_camel_case("getUser2Data"),
+            "гет юзер два дата"
+        );
     }
 
     #[test]
     fn camel_item1_name() {
-        assert_eq!(normalizer().normalize_camel_case("item1Name"), "айтем один нейм");
+        assert_eq!(
+            normalizer().normalize_camel_case("item1Name"),
+            "айтем один нейм"
+        );
     }
 
     // --- PascalCase ---
 
     #[test]
     fn pascal_user_service() {
-        assert_eq!(normalizer().normalize_camel_case("UserService"), "юзер сервис");
+        assert_eq!(
+            normalizer().normalize_camel_case("UserService"),
+            "юзер сервис"
+        );
     }
 
     #[test]
     fn pascal_data_repository() {
-        assert_eq!(normalizer().normalize_camel_case("DataRepository"), "дата репозитори");
+        assert_eq!(
+            normalizer().normalize_camel_case("DataRepository"),
+            "дата репозитори"
+        );
     }
 
     #[test]
     fn pascal_http_client() {
-        assert_eq!(normalizer().normalize_camel_case("HttpClient"), "эйч ти ти пи клиент");
+        assert_eq!(
+            normalizer().normalize_camel_case("HttpClient"),
+            "эйч ти ти пи клиент"
+        );
     }
 
     #[test]
     fn pascal_api_controller() {
-        assert_eq!(normalizer().normalize_camel_case("ApiController"), "эй пи ай контроллер");
+        assert_eq!(
+            normalizer().normalize_camel_case("ApiController"),
+            "эй пи ай контроллер"
+        );
     }
 
     #[test]
@@ -812,29 +842,44 @@ mod tests {
 
     #[test]
     fn pascal_event_handler() {
-        assert_eq!(normalizer().normalize_camel_case("EventHandler"), "ивент хендлер");
+        assert_eq!(
+            normalizer().normalize_camel_case("EventHandler"),
+            "ивент хендлер"
+        );
     }
 
     #[test]
     fn pascal_file_manager() {
-        assert_eq!(normalizer().normalize_camel_case("FileManager"), "файл менеджер");
+        assert_eq!(
+            normalizer().normalize_camel_case("FileManager"),
+            "файл менеджер"
+        );
     }
 
     #[test]
     fn pascal_config_loader() {
-        assert_eq!(normalizer().normalize_camel_case("ConfigLoader"), "конфиг лоудер");
+        assert_eq!(
+            normalizer().normalize_camel_case("ConfigLoader"),
+            "конфиг лоудер"
+        );
     }
 
     // --- SnakeCase ---
 
     #[test]
     fn snake_get_user_data() {
-        assert_eq!(normalizer().normalize_snake_case("get_user_data"), "гет юзер дата");
+        assert_eq!(
+            normalizer().normalize_snake_case("get_user_data"),
+            "гет юзер дата"
+        );
     }
 
     #[test]
     fn snake_my_variable() {
-        assert_eq!(normalizer().normalize_snake_case("my_variable"), "май вэриабл");
+        assert_eq!(
+            normalizer().normalize_snake_case("my_variable"),
+            "май вэриабл"
+        );
     }
 
     #[test]
@@ -854,7 +899,10 @@ mod tests {
 
     #[test]
     fn snake_handle_submit() {
-        assert_eq!(normalizer().normalize_snake_case("handle_submit"), "хендл сабмит");
+        assert_eq!(
+            normalizer().normalize_snake_case("handle_submit"),
+            "хендл сабмит"
+        );
     }
 
     #[test]
@@ -864,7 +912,10 @@ mod tests {
 
     #[test]
     fn snake_parse_json() {
-        assert_eq!(normalizer().normalize_snake_case("parse_json"), "парс джейсон");
+        assert_eq!(
+            normalizer().normalize_snake_case("parse_json"),
+            "парс джейсон"
+        );
     }
 
     #[test]
@@ -885,12 +936,18 @@ mod tests {
 
     #[test]
     fn snake_user_2_data() {
-        assert_eq!(normalizer().normalize_snake_case("user_2_data"), "юзер два дата");
+        assert_eq!(
+            normalizer().normalize_snake_case("user_2_data"),
+            "юзер два дата"
+        );
     }
 
     #[test]
     fn snake_item_1_name() {
-        assert_eq!(normalizer().normalize_snake_case("item_1_name"), "айтем один нейм");
+        assert_eq!(
+            normalizer().normalize_snake_case("item_1_name"),
+            "айтем один нейм"
+        );
     }
 
     #[test]
@@ -915,24 +972,36 @@ mod tests {
 
     #[test]
     fn snake_private_method() {
-        assert_eq!(normalizer().normalize_snake_case("_private_method"), "прайвит метод");
+        assert_eq!(
+            normalizer().normalize_snake_case("_private_method"),
+            "прайвит метод"
+        );
     }
 
     #[test]
     fn snake_private_attr() {
-        assert_eq!(normalizer().normalize_snake_case("__private_attr"), "прайвит аттр");
+        assert_eq!(
+            normalizer().normalize_snake_case("__private_attr"),
+            "прайвит аттр"
+        );
     }
 
     // --- KebabCase ---
 
     #[test]
     fn kebab_my_component() {
-        assert_eq!(normalizer().normalize_kebab_case("my-component"), "май компонент");
+        assert_eq!(
+            normalizer().normalize_kebab_case("my-component"),
+            "май компонент"
+        );
     }
 
     #[test]
     fn kebab_button_primary() {
-        assert_eq!(normalizer().normalize_kebab_case("button-primary"), "баттон праймари");
+        assert_eq!(
+            normalizer().normalize_kebab_case("button-primary"),
+            "баттон праймари"
+        );
     }
 
     #[test]
@@ -947,22 +1016,34 @@ mod tests {
 
     #[test]
     fn kebab_header_logo() {
-        assert_eq!(normalizer().normalize_kebab_case("header-logo"), "хедер лого");
+        assert_eq!(
+            normalizer().normalize_kebab_case("header-logo"),
+            "хедер лого"
+        );
     }
 
     #[test]
     fn kebab_footer_links() {
-        assert_eq!(normalizer().normalize_kebab_case("footer-links"), "футер линкс");
+        assert_eq!(
+            normalizer().normalize_kebab_case("footer-links"),
+            "футер линкс"
+        );
     }
 
     #[test]
     fn kebab_output_dir() {
-        assert_eq!(normalizer().normalize_kebab_case("output-dir"), "аутпут дир");
+        assert_eq!(
+            normalizer().normalize_kebab_case("output-dir"),
+            "аутпут дир"
+        );
     }
 
     #[test]
     fn kebab_config_file() {
-        assert_eq!(normalizer().normalize_kebab_case("config-file"), "конфиг файл");
+        assert_eq!(
+            normalizer().normalize_kebab_case("config-file"),
+            "конфиг файл"
+        );
     }
 
     #[test]
@@ -990,7 +1071,10 @@ mod tests {
 
     #[test]
     fn kebab_vue_router() {
-        assert_eq!(normalizer().normalize_kebab_case("vue-router"), "вью роутер");
+        assert_eq!(
+            normalizer().normalize_kebab_case("vue-router"),
+            "вью роутер"
+        );
     }
 
     // --- SCREAMING_SNAKE_CASE (MixedIdentifiers) ---
@@ -1002,7 +1086,10 @@ mod tests {
 
     #[test]
     fn screaming_default_timeout() {
-        assert_eq!(normalizer().normalize_snake_case("DEFAULT_TIMEOUT"), "дефолт таймаут");
+        assert_eq!(
+            normalizer().normalize_snake_case("DEFAULT_TIMEOUT"),
+            "дефолт таймаут"
+        );
     }
 
     #[test]

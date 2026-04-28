@@ -203,7 +203,10 @@ impl TtsSubprocess {
     async fn send(&self, req: TtsRequest) -> Result<TtsResponse, TtsError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.sender
-            .send(DriverRequest { payload: req, reply: reply_tx })
+            .send(DriverRequest {
+                payload: req,
+                reply: reply_tx,
+            })
             .await
             .map_err(|_| TtsError::Died)?;
 
@@ -215,7 +218,10 @@ impl TtsSubprocess {
         let resp = self.send(TtsRequest::Warmup).await?;
         match resp {
             TtsResponse::Ok(_) => Ok(()),
-            TtsResponse::Err(e) => Err(TtsError::Ttsd { code: e.error, message: e.message }),
+            TtsResponse::Err(e) => Err(TtsError::Ttsd {
+                code: e.error,
+                message: e.message,
+            }),
         }
     }
 
@@ -232,7 +238,13 @@ impl TtsSubprocess {
     ) -> Result<SynthesizeOutput, TtsError> {
         const SYNTHESIZE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
-        let req = TtsRequest::Synthesize { text, speaker, sample_rate, out_wav, char_mapping };
+        let req = TtsRequest::Synthesize {
+            text,
+            speaker,
+            sample_rate,
+            out_wav,
+            char_mapping,
+        };
         let resp = timeout(SYNTHESIZE_TIMEOUT, self.send(req))
             .await
             .map_err(|_| TtsError::Timeout)??;
@@ -243,7 +255,10 @@ impl TtsSubprocess {
                     serde_json::from_value(ok.extra).map_err(TtsError::Json)?;
                 Ok(output)
             }
-            TtsResponse::Err(e) => Err(TtsError::Ttsd { code: e.error, message: e.message }),
+            TtsResponse::Err(e) => Err(TtsError::Ttsd {
+                code: e.error,
+                message: e.message,
+            }),
         }
     }
 
@@ -259,7 +274,10 @@ impl TtsSubprocess {
             .map_err(|_| TtsError::Timeout)??;
         match resp {
             TtsResponse::Ok(_) => Ok(()),
-            TtsResponse::Err(e) => Err(TtsError::Ttsd { code: e.error, message: e.message }),
+            TtsResponse::Err(e) => Err(TtsError::Ttsd {
+                code: e.error,
+                message: e.message,
+            }),
         }
     }
 }
@@ -325,7 +343,10 @@ async fn handle_one_request(
     let mut line = serde_json::to_string(&req).map_err(TtsError::Json)?;
     line.push('\n');
 
-    stdin.write_all(line.as_bytes()).await.map_err(TtsError::Ipc)?;
+    stdin
+        .write_all(line.as_bytes())
+        .await
+        .map_err(TtsError::Ipc)?;
     stdin.flush().await.map_err(TtsError::Ipc)?;
 
     // Read the response line. None means the subprocess closed stdout (i.e. died).
@@ -405,7 +426,9 @@ mod tests {
         let v: Value = serde_json::from_str(&json).unwrap();
 
         assert_eq!(v["cmd"], "synthesize");
-        let cm = v["char_mapping"].as_array().expect("char_mapping should be present");
+        let cm = v["char_mapping"]
+            .as_array()
+            .expect("char_mapping should be present");
         assert_eq!(cm.len(), 1);
         assert_eq!(cm[0]["norm_start"], 0);
         assert_eq!(cm[0]["norm_end"], 6);

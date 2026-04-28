@@ -817,8 +817,9 @@ impl NumberNormalizer {
     /// Convert size string (e.g. "100MB", "16px") to Russian words.
     pub fn normalize_size(&self, size_str: &str) -> String {
         static RE_SIZE_PARSE: OnceLock<Regex> = OnceLock::new();
-        let re = RE_SIZE_PARSE
-            .get_or_init(|| Regex::new(r"^([\d.,]+)\s*([a-zA-Zа-яА-Я]+)$").expect("static pattern"));
+        let re = RE_SIZE_PARSE.get_or_init(|| {
+            Regex::new(r"^([\d.,]+)\s*([a-zA-Zа-яА-Я]+)$").expect("static pattern")
+        });
         let s = size_str.trim();
 
         let caps = match re.captures(s) {
@@ -829,7 +830,9 @@ impl NumberNormalizer {
         let num_str = &caps[1];
         let unit_lower = caps[2].to_lowercase();
 
-        let unit_data = SIZE_UNITS.iter().find(|(key, _)| *key == unit_lower.as_str());
+        let unit_data = SIZE_UNITS
+            .iter()
+            .find(|(key, _)| *key == unit_lower.as_str());
         let unit = match unit_data {
             Some((_, u)) => u,
             None => return size_str.to_string(),
@@ -843,8 +846,7 @@ impl NumberNormalizer {
         match num_str.parse::<i64>() {
             Ok(n) => {
                 let num_words = int_to_words_with_gender(n, unit.gender);
-                let unit_word =
-                    get_declension(n, (unit.nom_sg, unit.gen_sg, unit.gen_pl));
+                let unit_word = get_declension(n, (unit.nom_sg, unit.gen_sg, unit.gen_pl));
                 format!("{} {}", num_words, unit_word)
             }
             Err(_) => size_str.to_string(),
@@ -897,8 +899,9 @@ impl NumberNormalizer {
                         let suffix_name = caps[1].to_lowercase();
                         let suffix_num = &caps[2];
 
-                        if let Some(&(_, word)) =
-                            VERSION_SUFFIXES.iter().find(|(k, _)| *k == suffix_name.as_str())
+                        if let Some(&(_, word)) = VERSION_SUFFIXES
+                            .iter()
+                            .find(|(k, _)| *k == suffix_name.as_str())
                         {
                             result.push(word.to_string());
                             if !suffix_num.is_empty() {
@@ -1119,7 +1122,10 @@ mod tests {
 
     #[test]
     fn test_integer_1234() {
-        assert_eq!(nn().normalize_number("1234"), "одна тысяча двести тридцать четыре");
+        assert_eq!(
+            nn().normalize_number("1234"),
+            "одна тысяча двести тридцать четыре"
+        );
     }
 
     #[test]
@@ -1295,7 +1301,10 @@ mod tests {
 
     #[test]
     fn test_range_en_dash() {
-        assert_eq!(nn().normalize_range("10\u{2013}20"), "от десяти до двадцати");
+        assert_eq!(
+            nn().normalize_range("10\u{2013}20"),
+            "от десяти до двадцати"
+        );
     }
 
     #[test]
@@ -1419,7 +1428,10 @@ mod tests {
 
     #[test]
     fn test_version_1_0_0() {
-        assert_eq!(nn().normalize_version("1.0.0"), "один точка ноль точка ноль");
+        assert_eq!(
+            nn().normalize_version("1.0.0"),
+            "один точка ноль точка ноль"
+        );
     }
 
     #[test]

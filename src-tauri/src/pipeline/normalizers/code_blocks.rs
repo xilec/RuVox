@@ -223,8 +223,8 @@ impl CodeBlockHandler {
 
         // Remove mode-switch directives from the output (they are control markers,
         // not content that should be spoken).
-        let directive_pattern = Regex::new(r"<!--\s*ruvox-code:\s*(?:full|brief)\s*-->")
-            .expect("valid regex");
+        let directive_pattern =
+            Regex::new(r"<!--\s*ruvox-code:\s*(?:full|brief)\s*-->").expect("valid regex");
         tracked.sub(&directive_pattern, |_| String::new());
     }
 
@@ -266,7 +266,11 @@ impl CodeBlockHandler {
             .into_iter()
             .filter_map(|t| {
                 let n = self.normalize_token(t);
-                if n.is_empty() { None } else { Some(n) }
+                if n.is_empty() {
+                    None
+                } else {
+                    Some(n)
+                }
             })
             .collect();
         normalized.join(" ")
@@ -304,10 +308,7 @@ impl CodeBlockHandler {
             Regex::new(&pattern).expect("valid tokeniser regex")
         });
 
-        RE_TOKENS
-            .find_iter(code)
-            .map(|m| m.as_str())
-            .collect()
+        RE_TOKENS.find_iter(code).map(|m| m.as_str()).collect()
     }
 
     fn normalize_token(&self, token: &str) -> String {
@@ -590,7 +591,8 @@ mod tests {
 
     #[test]
     fn full_python_def_hello() {
-        let result = full_handler().process_block("def hello():\n    print('world')", Some("python"));
+        let result =
+            full_handler().process_block("def hello():\n    print('world')", Some("python"));
         let lower = result.to_lowercase();
         for expected in &["деф", "хелло", "принт", "ворлд"] {
             assert!(
@@ -814,8 +816,16 @@ mod tests {
         let h = CodeBlockHandler::with_mode(CodeBlockMode::Brief);
         h.process(&mut tracked);
         let result = tracked.text();
-        assert!(result.contains("далее следует пример кода на пайтон"), "got: {:?}", result);
-        assert!(!result.contains("```"), "backticks should be gone, got: {:?}", result);
+        assert!(
+            result.contains("далее следует пример кода на пайтон"),
+            "got: {:?}",
+            result
+        );
+        assert!(
+            !result.contains("```"),
+            "backticks should be gone, got: {:?}",
+            result
+        );
     }
 
     #[test]
@@ -825,20 +835,31 @@ mod tests {
         let h = CodeBlockHandler::with_mode(CodeBlockMode::Brief);
         h.process(&mut tracked);
         let result = tracked.text();
-        assert!(result.contains("Тут мермэйд диаграмма"), "got: {:?}", result);
+        assert!(
+            result.contains("Тут мермэйд диаграмма"),
+            "got: {:?}",
+            result
+        );
     }
 
     #[test]
     fn process_mode_directive_switches_to_full() {
-        let text =
-            "<!-- ruvox-code: full -->\n```python\nprint('world')\n```";
+        let text = "<!-- ruvox-code: full -->\n```python\nprint('world')\n```";
         let mut tracked = TrackedText::new(text);
         let h = CodeBlockHandler::with_mode(CodeBlockMode::Brief);
         h.process(&mut tracked);
         let result = tracked.text();
         // Full mode should contain "принт" and "ворлд"
-        assert!(result.contains("принт"), "expected full mode, got: {:?}", result);
-        assert!(result.contains("ворлд"), "expected full mode, got: {:?}", result);
+        assert!(
+            result.contains("принт"),
+            "expected full mode, got: {:?}",
+            result
+        );
+        assert!(
+            result.contains("ворлд"),
+            "expected full mode, got: {:?}",
+            result
+        );
     }
 
     #[test]
@@ -852,6 +873,10 @@ mod tests {
         h.process(&mut tracked);
         let result = tracked.text();
         // Second block should be brief
-        assert!(result.contains("далее следует пример кода на пайтон"), "got: {:?}", result);
+        assert!(
+            result.contains("далее следует пример кода на пайтон"),
+            "got: {:?}",
+            result
+        );
     }
 }

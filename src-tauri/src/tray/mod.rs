@@ -18,16 +18,7 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let sep2 = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Выход", true, None::<&str>)?;
 
-    let menu = Menu::with_items(
-        app,
-        &[
-            &show,
-            &sep1,
-            &add,
-            &sep2,
-            &quit,
-        ],
-    )?;
+    let menu = Menu::with_items(app, &[&show, &sep1, &add, &sep2, &quit])?;
 
     let _tray = TrayIconBuilder::with_id("main")
         .tooltip("RuVox")
@@ -41,7 +32,9 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
             "show" => show_main_window(app),
             "quit" => {
                 if let Some(state) = app.try_state::<AppState>() {
-                    state.user_quit.store(true, std::sync::atomic::Ordering::SeqCst);
+                    state
+                        .user_quit
+                        .store(true, std::sync::atomic::Ordering::SeqCst);
                 }
                 app.exit(0);
             }
@@ -122,7 +115,11 @@ fn invoke_add_clipboard_entry<R: Runtime>(app: &AppHandle<R>, play_when_ready: b
         let _ = sender.try_send(TrayCmd { play_when_ready });
     } else {
         // No channel yet — emit an event for the frontend to pick up.
-        let event = if play_when_ready { "tray_read_now" } else { "tray_read_later" };
+        let event = if play_when_ready {
+            "tray_read_now"
+        } else {
+            "tray_read_later"
+        };
         let _ = app.emit(event, ());
     }
 }

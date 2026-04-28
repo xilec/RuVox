@@ -22,8 +22,10 @@ use crate::pipeline::tracked_text::{CharMapping, TrackedText};
 fn re_url() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
-        Regex::new(r#"https?://[^\s<>"'\)]+|ftp://[^\s<>"'\)]+|ssh://[^\s<>"'\)]+|git://[^\s<>"'\)]+"#)
-            .expect("valid regex")
+        Regex::new(
+            r#"https?://[^\s<>"'\)]+|ftp://[^\s<>"'\)]+|ssh://[^\s<>"'\)]+|git://[^\s<>"'\)]+"#,
+        )
+        .expect("valid regex")
     })
 }
 
@@ -36,9 +38,7 @@ fn re_email() -> &'static Regex {
 
 fn re_ip() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| {
-        Regex::new(r"\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b").expect("valid regex")
-    })
+    RE.get_or_init(|| Regex::new(r"\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b").expect("valid regex"))
 }
 
 fn re_path() -> &'static Regex {
@@ -63,10 +63,8 @@ fn re_size() -> &'static Regex {
 fn re_version() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
-        Regex::new(
-            r"(?i)\bv?(\d+\.\d+(?:\.\d+)?(?:-(?:alpha|beta|rc|dev|stable|release)\d*)?)\b",
-        )
-        .expect("valid regex")
+        Regex::new(r"(?i)\bv?(\d+\.\d+(?:\.\d+)?(?:-(?:alpha|beta|rc|dev|stable|release)\d*)?)\b")
+            .expect("valid regex")
     })
 }
 
@@ -87,9 +85,7 @@ fn re_inline_code() -> &'static Regex {
 
 fn re_heading() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| {
-        Regex::new(r"(?m)^#{1,6}\s+").expect("valid regex")
-    })
+    RE.get_or_init(|| Regex::new(r"(?m)^#{1,6}\s+").expect("valid regex"))
 }
 
 fn re_md_link_full() -> &'static Regex {
@@ -183,9 +179,8 @@ fn re_tilde_approx() -> &'static Regex {
 /// partial matches (e.g. "===" must be checked before "==").
 /// Single `=` is intentionally excluded — it would corrupt math formulas
 /// like "α = β".
-const TRACKED_OPERATOR_KEYS: &[&str] = &[
-    "===", "!==", "->", "=>", ">=", "<=", "!=", "==", "&&", "||",
-];
+const TRACKED_OPERATOR_KEYS: &[&str] =
+    &["===", "!==", "->", "=>", ">=", "<=", "!=", "==", "&&", "||"];
 
 // ── TTSPipeline ────────────────────────────────────────────────────────────────
 
@@ -286,7 +281,9 @@ impl TTSPipeline {
             let num = &self.number_normalizer;
             let eng = &self.english_normalizer;
             let url_norm = URLPathNormalizer::new(eng, num);
-            tracked.sub(re_url(), |caps| url_norm.normalize_url(caps.get(0).unwrap().as_str()));
+            tracked.sub(re_url(), |caps| {
+                url_norm.normalize_url(caps.get(0).unwrap().as_str())
+            });
             tracked.sub(re_email(), |caps| {
                 url_norm.normalize_email(caps.get(0).unwrap().as_str())
             });
@@ -504,7 +501,7 @@ impl TTSPipeline {
                     // "[" is a 1-byte ASCII char.
                     let bracket_start = full_m.start();
                     let bracket_end = bracket_start + 1; // just "["
-                    // "](url)" starts right after the link text.
+                                                         // "](url)" starts right after the link text.
                     let suffix_start = text_m.end(); // byte after last char of link text
                     let suffix_end = full_m.end();
                     (bracket_start, bracket_end, suffix_start, suffix_end)
@@ -573,9 +570,8 @@ impl TTSPipeline {
                 } else if crate::pipeline::normalizers::abbreviations::as_word()
                     .contains_key(word_lower.as_str())
                 {
-                    crate::pipeline::normalizers::abbreviations::as_word()
-                        [word_lower.as_str()]
-                    .to_string()
+                    crate::pipeline::normalizers::abbreviations::as_word()[word_lower.as_str()]
+                        .to_string()
                 } else {
                     self.english_normalizer.normalize(word, true)
                 };
@@ -616,7 +612,8 @@ impl TTSPipeline {
                     let next_byte = bytes[end];
                     let next_str = &snapshot[end..];
                     let next_ch = next_str.chars().next().unwrap();
-                    next_byte != b'.' && !next_ch.is_ascii_digit()
+                    next_byte != b'.'
+                        && !next_ch.is_ascii_digit()
                         && !next_ch.is_ascii_alphabetic()
                         && !next_ch.is_alphabetic()
                 };
