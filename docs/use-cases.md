@@ -1,91 +1,91 @@
-# Сценарии использования
+# Use cases
 
-## 1. Добавление текста из буфера обмена
+## 1. Adding text from the clipboard
 
-**Задача:** прослушать скопированный текст.
+**Goal:** listen to copied text.
 
-**Шаги:**
-1. Скопируй текст в буфер обмена (`Ctrl+C` в исходном приложении).
-2. Открой RuVox (или раскрой из системного трея).
-3. Нажми кнопку **Add** в правой части хедера.
+**Steps:**
+1. Copy the text to the clipboard (`Ctrl+C` in the source application).
+2. Open RuVox (or restore it from the system tray).
+3. Press the **Add** button on the right side of the header.
 
-**Что происходит:**
-- Текст читается из буфера через `tauri-plugin-clipboard-manager` (надёжно работает на Wayland/KDE).
-- Если включён preview-диалог (FF 1.1, по умолчанию включён) — открывается floating-окно с оригиналом и нормализованной версией. См. [preview-dialog.md](preview-dialog.md).
-- Иначе текст сразу уходит в pipeline → запись попадает в очередь со статусом `pending` → `processing` → `ready`.
-- Если внутри preview-диалога переключатель **Read Now** включён (по умолчанию) — воспроизведение начинается автоматически после `ready`.
+**What happens:**
+- The text is read from the clipboard via `tauri-plugin-clipboard-manager` (works reliably on Wayland/KDE).
+- If the preview dialog is enabled (FF 1.1, on by default) — a floating window with the original and normalized version opens. See [preview-dialog.md](preview-dialog.md).
+- Otherwise the text goes straight into the pipeline → the entry lands in the queue with status `pending` → `processing` → `ready`.
+- If the **Read Now** switch in the preview dialog is on (default) — playback starts automatically once the entry reaches `ready`.
 
-## 2. Очередь записей
+## 2. Entry queue
 
-Все добавленные записи отображаются в navbar слева. Для каждой записи:
+All added entries are shown in the navbar on the left. For each entry:
 
-- **Preview** — первые 60 символов оригинального текста.
-- **Бейдж статуса** — `pending` / `processing` / `ready` / `playing` / `error` (русские лейблы, цветовая индикация).
-- **Длительность** — `MM:SS` после успешного синтеза.
-- **Кнопки** — Play (воспроизвести) и Delete (удалить с подтверждением).
+- **Preview** — first 60 characters of the original text.
+- **Status badge** — `pending` / `processing` / `ready` / `playing` / `error` (Russian labels, color-coded).
+- **Duration** — `MM:SS` after successful synthesis.
+- **Buttons** — Play and Delete (with confirmation).
 
-**Сортировка:** новые записи сверху (`created_at` desc).
+**Sorting:** newest entries on top (`created_at` desc).
 
-**Изменение ширины очереди:** перетаскивание правой границы navbar (drag-to-resize, минимум 180 px, максимум 70% ширины окна).
+**Resizing the queue:** drag the navbar's right border (drag-to-resize, minimum 180 px, maximum 70% of window width).
 
-## 3. Управление воспроизведением
+## 3. Playback control
 
-Плеер расположен в нижней части хедера (под полосой с кнопкой Add).
+The player sits at the bottom of the header (under the strip with the Add button).
 
-**Хоткеи (фокус в окне приложения):**
+**Hotkeys (with focus in the application window):**
 
-| Клавиша | Действие |
-|---------|----------|
+| Key | Action |
+|-----|--------|
 | `Space` | Play / Pause |
-| `←` | Перемотка −5 секунд |
-| `→` | Перемотка +5 секунд |
+| `←` | Seek −5 seconds |
+| `→` | Seek +5 seconds |
 
-**Управление мышью:**
+**Mouse control:**
 
-- Кнопка Play/Pause.
-- Slider позиции — клик / drag → seek.
-- Поле скорости (0.5x–2.0x) — `NumberInput` с шагом 0.1; колесо мыши над полем меняет скорость.
-- Slider громкости (0–100%).
-- Prev/Next — переключение между записями в очереди (отображаются только если в очереди есть записи).
+- Play/Pause button.
+- Position slider — click / drag → seek.
+- Speed field (0.5x–2.0x) — `NumberInput` with step 0.1; mouse wheel over the field changes speed.
+- Volume slider (0–100%).
+- Prev/Next — switch between entries in the queue (only shown when the queue has entries).
 
-> **Глобальные хоткеи** не реализованы — это сознательное решение (см. RewriteNotes.md § 7). Хоткеи плеера работают, только когда окно RuVox в фокусе.
+> **Global hotkeys** are not implemented — this is an intentional decision (see RewriteNotes.md § 7). The player's hotkeys only work while the RuVox window is focused.
 
-## 4. Plain / Markdown / HTML режимы
+## 4. Plain / Markdown / HTML modes
 
-В правой части `TextViewer` есть `SegmentedControl` для переключения режима отображения.
+The `TextViewer` has a `SegmentedControl` on the right for switching the display mode.
 
 **Plain Text:**
-- Оригинальный текст как есть, моноширинный шрифт.
-- Markdown-разметка видна: `**bold**`, `# Header`.
-- Подсветка читаемого слова работает напрямую по позициям.
+- Original text as-is, in a monospace font.
+- Markdown markup is visible: `**bold**`, `# Header`.
+- Word highlight works directly on positions.
 
 **Markdown:**
-- Рендер через `markdown-it` с подсветкой кода.
-- Каждый inline-text токен оборачивается в `<span data-orig-start data-orig-end>` для подсветки.
-- Поддерживается: заголовки, жирный/курсив, inline-code, блоки кода, ссылки, списки, таблицы, mermaid-блоки.
+- Rendered via `markdown-it` with code highlighting.
+- Each inline-text token is wrapped in `<span data-orig-start data-orig-end>` for highlighting.
+- Supports: headings, bold/italic, inline code, code blocks, links, lists, tables, mermaid blocks.
 
 **HTML:**
-- Sanitize через `DOMPurify`.
-- Используется при копировании HTML из браузера.
-- Подсветка слов в HTML-режиме сейчас не работает (см. follow-up в `task_history.md` U5).
+- Sanitized via `DOMPurify`.
+- Used when copying HTML from the browser.
+- Word highlighting in HTML mode currently doesn't work (see follow-up in `task_history.md` U5).
 
-Переключение между режимами мгновенное; подсветка восстанавливается автоматически.
+Switching between modes is instant; highlighting is restored automatically.
 
-## 5. Подсветка слов при воспроизведении
+## 5. Word highlighting during playback
 
-При старте воспроизведения `TextViewer` загружает `WordTimestamp[]` через `commands.getTimestamps(entry_id)`. На каждый `playback_position`-tick выполняется бинарный поиск активного слова и пометка соответствующего span'а CSS-классом `.word-highlight`.
+When playback starts, `TextViewer` loads `WordTimestamp[]` via `commands.getTimestamps(entry_id)`. On every `playback_position` tick a binary search finds the active word and the corresponding span gets the `.word-highlight` CSS class.
 
-- Подсветка работает в **plain** и **markdown** режимах (HTML — пока нет).
-- Если слово вышло за пределы viewport — `scrollIntoView`.
-- Цвет подсветки — light-dark (`rgba(255,213,0,0.45)` / `rgba(255,213,0,0.3)`), 80 ms transition.
+- Highlighting works in **plain** and **markdown** modes (HTML — not yet).
+- If the word goes out of the viewport — `scrollIntoView`.
+- Highlight color — light-dark (`rgba(255,213,0,0.45)` / `rgba(255,213,0,0.3)`), 80 ms transition.
 
-При переключении режима / смене записи подсветка очищается; новый рендер пере-подписывается на playback-события.
+When the mode is switched / a different entry is selected, highlighting is cleared; the new render re-subscribes to playback events.
 
-## 6. Mermaid-диаграммы
+## 6. Mermaid diagrams
 
-В **markdown**-режиме блоки ` ```mermaid ... ``` ` рендерятся через `mermaid.js` как SVG прямо в тексте. Тема mermaid синхронизирована с текущей цветовой схемой (light/dark).
+In **markdown** mode, ` ```mermaid ... ``` ` blocks are rendered through `mermaid.js` as inline SVG. The mermaid theme is synced with the current color scheme (light/dark).
 
-**В TTS** диаграмма заменяется маркером:
+**In TTS** the diagram is replaced with a marker:
 
 ```markdown
 ## Архитектура
@@ -98,15 +98,15 @@ graph TD
 Клиент обращается к серверу.
 ```
 
-→ озвучка: «Архитектура. Тут мермэйд диаграмма. Клиент обращается к серверу.»
+→ voicing: «Архитектура. Тут мермэйд диаграмма. Клиент обращается к серверу.»
 
-Можно поставить на паузу и рассмотреть диаграмму в UI.
+You can pause and inspect the diagram in the UI.
 
-В **plain**-режиме mermaid-блок отображается как исходный код.
+In **plain** mode the mermaid block is shown as source code.
 
-## 7. Технический текст
+## 7. Technical text
 
-**Пример входа:**
+**Example input:**
 
 ```markdown
 ## Установка
@@ -116,51 +116,51 @@ graph TD
 3. API доступен на https://api.example.com
 ```
 
-**Озвучивается как:**
+**Voiced as:**
 
 > Установка.
 > Первое: Запустите пип инсталл пэкэдж.
 > Второе: Версия должна быть больше или равно два точка ноль точка ноль.
 > Третье: Эй пи ай доступен на эйч ти ти пи эс двоеточие слэш слэш api точка example точка ком.
 
-**Что обработалось:**
+**What got processed:**
 
-- camelCase / snake_case / kebab-case → разделение и транслитерация (`getUserData` → «гет юзер дата»)
-- Аббревиатуры → словарь или побуквенно (`API` → «эй пи ай», `JSON` → «джейсон»)
-- Числа → числительные (`123` → «сто двадцать три», `2.0` → «два точка ноль»)
-- URL → пословное произношение (`https://...` → «эйч ти ти пи эс двоеточие слэш слэш...»)
-- Email → «собака» вместо `@` (`user@mail.com` → «user собака mail точка ком»)
-- Операторы → словесное описание (`>=` → «больше или равно», `->` → «стрелка»)
-- Markdown-ссылки `[text](url)` → читается только текст ссылки, URL опускается
-- Markdown-нумерованные списки `1.`/`2.` → «первое:»/«второе:»
+- camelCase / snake_case / kebab-case → split and transliterated (`getUserData` → «гет юзер дата»)
+- Abbreviations → dictionary or letter by letter (`API` → «эй пи ай», `JSON` → «джейсон»)
+- Numbers → numerals (`123` → «сто двадцать три», `2.0` → «два точка ноль»)
+- URLs → spelled out word by word (`https://...` → «эйч ти ти пи эс двоеточие слэш слэш...»)
+- Email → «собака» instead of `@` (`user@mail.com` → «user собака mail точка ком»)
+- Operators → spoken description (`>=` → «больше или равно», `->` → «стрелка»)
+- Markdown links `[text](url)` → only the link text is read, the URL is dropped
+- Markdown numbered lists `1.`/`2.` → «первое:»/«второе:»
 
-См. [pipeline.md](pipeline.md) для полного описания.
+See [pipeline.md](pipeline.md) for the full description.
 
-## 8. Системный трей
+## 8. System tray
 
-При клике по кнопке закрытия окна (`X`) приложение **скрывается в трей**, а не завершается. Это позволяет фоновому процессу продолжать работать (синтез, проигрывание) и быстро возвращаться к окну.
+When the close button (`X`) is clicked, the app **hides into the tray** instead of exiting. This lets the background process keep working (synthesis, playback) and lets you return to the window quickly.
 
-**Меню трея:**
+**Tray menu:**
 
-| Пункт | Действие |
-|-------|----------|
-| Открыть окно | Показать главное окно + re-init mpv (libmpv пересоздаётся при close, нужно вернуть его при show) |
-| Добавить | Прочитать буфер обмена + поставить запись в очередь |
-| Выход | Реальное завершение приложения |
+| Item | Action |
+|------|--------|
+| Открыть окно | Show the main window + re-init mpv (libmpv is recreated on close, so it has to be brought back on show) |
+| Добавить | Read the clipboard + put the entry in the queue |
+| Выход | Actually exit the application |
 
-**Клик по иконке в трее** (Linux/KDE/GNOME через libayatana-appindicator) — открывает контекстное меню. Двойной клик / single-click также показывает окно (плагин обрабатывает не все клики корректно).
+**Clicking the tray icon** (Linux/KDE/GNOME via libayatana-appindicator) — opens the context menu. A double click / single click also shows the window (the plugin doesn't handle every click correctly).
 
-## 9. Настройки
+## 9. Settings
 
-`Settings` — модальный диалог в углу хедера (иконка шестерёнки).
+`Settings` is a modal dialog in the corner of the header (the cog icon).
 
-**Доступные параметры:**
+**Available options:**
 
-- **Синтез речи:** speaker (`xenia` / `aidar` / `baya` / `kseniya` / `eugene` / `random`), sample rate (8000 / 24000 / 48000).
-- **Уведомления:** notify_on_ready, notify_on_error.
-- **Кэш:** `max_cache_size_mb` (минимум 100), `auto_cleanup_days` (0 = выключено).
-- **Интерфейс:** theme (light / dark / auto).
+- **Speech synthesis:** speaker (`xenia` / `aidar` / `baya` / `kseniya` / `eugene` / `random`), sample rate (8000 / 24000 / 48000).
+- **Notifications:** notify_on_ready, notify_on_error.
+- **Cache:** `max_cache_size_mb` (minimum 100), `auto_cleanup_days` (0 = disabled).
+- **Interface:** theme (light / dark / auto).
 
-**Глобальных хоткеев в UI нет** — это сознательное решение (см. RewriteNotes.md § 7). Хоткеи плеера работают только при фокусе окна RuVox.
+**There are no global hotkeys in the UI** — this is an intentional decision (see RewriteNotes.md § 7). The player's hotkeys only work while the RuVox window is focused.
 
-Изменения сохраняются через `commands.updateConfig(patch)` → `~/.cache/ruvox/config.json`.
+Changes are saved via `commands.updateConfig(patch)` → `~/.cache/ruvox/config.json`.

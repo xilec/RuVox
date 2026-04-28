@@ -1,50 +1,50 @@
 # Contributing
 
-Руководство по внесению вклада в RuVox.
+Guide to contributing to RuVox.
 
-## Способы помочь
+## Ways to help
 
-1. **Расширение словарей** — добавление IT-терминов, аббревиатур, операторов.
-2. **Исправление произношения** — корректировка существующих транслитераций.
-3. **Баг-репорты** — конкретные неисправности с минимальным воспроизведением.
-4. **Новые функции** — обсуждение через issue, затем PR.
-5. **Документация** — улучшение описаний, актуализация после изменений.
+1. **Extending dictionaries** — adding IT terms, abbreviations, operators.
+2. **Fixing pronunciation** — correcting existing transliterations.
+3. **Bug reports** — concrete failures with a minimal reproduction.
+4. **New features** — discuss via an issue first, then send a PR.
+5. **Documentation** — improving descriptions, keeping them up to date after changes.
 
-## Расширение словарей
+## Extending dictionaries
 
-Pipeline нормализации живёт в `src-tauri/src/pipeline/normalizers/`. Каждый нормалайзер — отдельный Rust-файл с собственной таблицей подстановок. При расширении словаря **обязателен** golden-test.
+The normalization pipeline lives in `src-tauri/src/pipeline/normalizers/`. Each normalizer is a separate Rust file with its own substitution table. A golden test is **required** when extending a dictionary.
 
-### Добавление IT-термина
+### Adding an IT term
 
-**1. Файл:** `src-tauri/src/pipeline/normalizers/english.rs`
+**1. File:** `src-tauri/src/pipeline/normalizers/english.rs`
 
-Найти таблицу `IT_TERMS` и добавить запись (поддерживай алфавитный порядок внутри секции):
+Find the `IT_TERMS` table and add an entry (keep alphabetical order within each section):
 
 ```rust
 pub static IT_TERMS: phf::Map<&'static str, &'static str> = phf::phf_map! {
-    // ... существующие термины ...
+    // ... existing terms ...
     "kubernetes" => "кубернетис",
     "terraform"  => "терраформ",
 };
 ```
 
-**2. Golden-фикстура:** `src-tauri/tests/fixtures/pipeline/`
+**2. Golden fixture:** `src-tauri/tests/fixtures/pipeline/`
 
 ```bash
-# Создать вход и эталонный выход
+# Create input and reference output
 echo "Используем Kubernetes и Terraform" > src-tauri/tests/fixtures/pipeline/it_kubernetes.input.txt
 echo "Используем кубернетис и терраформ" > src-tauri/tests/fixtures/pipeline/it_kubernetes.expected.txt
 ```
 
-> Файл `char_map.json` для нового кейса проще всего собрать руками или скопировать структуру с похожего fixture в этом каталоге.
+> The easiest way to produce the `char_map.json` for a new case is to write it by hand or copy the structure from a similar fixture in this directory.
 
-**3. Прогон:**
+**3. Run:**
 
 ```bash
 nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml --test golden -- it_kubernetes"
 ```
 
-**4. Коммит:**
+**4. Commit:**
 
 ```bash
 git checkout -b feat/it-term-kubernetes
@@ -52,55 +52,55 @@ git add src-tauri/src/pipeline/normalizers/english.rs src-tauri/tests/fixtures/p
 git commit -m "feat(pipeline): add 'kubernetes' to IT_TERMS dictionary"
 ```
 
-### Добавление аббревиатуры
+### Adding an abbreviation
 
-Файл: `src-tauri/src/pipeline/normalizers/abbreviations.rs`.
+File: `src-tauri/src/pipeline/normalizers/abbreviations.rs`.
 
-- **Как слово** — таблица `AS_WORD` (`"json" → "джейсон"`).
-- **По буквам** — добавлять не нужно: всё, что не в `AS_WORD`, по умолчанию читается побуквенно через `LETTER_MAP`.
+- **As a word** — the `AS_WORD` table (`"json" → "джейсон"`).
+- **Letter by letter** — no need to add: anything not in `AS_WORD` is read letter by letter via `LETTER_MAP` by default.
 
-### Добавление оператора / символа
+### Adding an operator / symbol
 
-Файл: `src-tauri/src/pipeline/normalizers/symbols.rs` или `src-tauri/src/pipeline/constants.rs` (для GREEK_LETTERS, MATH_SYMBOLS, ARROW_SYMBOLS).
+File: `src-tauri/src/pipeline/normalizers/symbols.rs` or `src-tauri/src/pipeline/constants.rs` (for GREEK_LETTERS, MATH_SYMBOLS, ARROW_SYMBOLS).
 
-Многосимвольные операторы (`===`, `=>`, `>=`) обрабатываются в `pipeline/mod.rs::TRACKED_OPERATOR_KEYS` — порядок «длинный раньше короткого» обязателен.
+Multi-character operators (`===`, `=>`, `>=`) are handled in `pipeline/mod.rs::TRACKED_OPERATOR_KEYS` — the "longest before shortest" order is mandatory.
 
-## Баг-репорты
+## Bug reports
 
-### Что включить
+### What to include
 
-1. **Входной текст** — что обрабатывали (минимальный пример).
-2. **Ожидаемый результат** — как должно звучать.
-3. **Фактический результат** — что получилось (`normalized_text` из `~/.cache/ruvox/history.json`).
-4. **Версия** — `git log -1 --oneline`.
-5. **Окружение** — ОС, NixOS/Nix-shell или ручная установка.
+1. **Input text** — what was being processed (a minimal example).
+2. **Expected result** — how it should sound.
+3. **Actual result** — what came out (`normalized_text` from `~/.cache/ruvox/history.json`).
+4. **Version** — `git log -1 --oneline`.
+5. **Environment** — OS, NixOS/Nix-shell or manual install.
 
-### Пример
+### Example
 
 ```markdown
-**Входной текст:**
+**Input:**
 `Версия >= 2.0`
 
-**Ожидаемый результат:**
+**Expected:**
 "Версия больше или равно два точка ноль"
 
-**Фактический результат:**
+**Actual:**
 "Версия >= два точка ноль"
 
-**Версия:** abc1234
-**Окружение:** NixOS 24.11, nix develop
+**Version:** abc1234
+**Environment:** NixOS 24.11, nix develop
 ```
 
-## Code Style
+## Code style
 
-См. полные правила в [development.md](development.md#правила-кода). Кратко:
+See full rules in [development.md](development.md#code-rules). In short:
 
-- Rust: edition 2021, `tracing` + `thiserror`, без `unwrap` в production-путях, `cargo fmt` + `cargo clippy`.
-- TypeScript: `strict: true`, без `React.FC`, без `any`, функциональные компоненты + hooks.
-- Mantine 8: CSS Modules + prop `classNames`. Запрет `sx`, `createStyles`, `emotion`, легаси Mantine 6/7.
-- Python (ttsd): 3.12, uv-managed, `ruff check` чистый, JSON через stdin/stdout, логи на stderr.
+- Rust: edition 2021, `tracing` + `thiserror`, no `unwrap` in production paths, `cargo fmt` + `cargo clippy`.
+- TypeScript: `strict: true`, no `React.FC`, no `any`, functional components + hooks.
+- Mantine 8: CSS Modules + `classNames` prop. No `sx`, `createStyles`, `emotion`, or Mantine 6/7 legacy.
+- Python (ttsd): 3.12, uv-managed, clean `ruff check`, JSON over stdin/stdout, logs to stderr.
 
-### Коммиты
+### Commits
 
 ```
 feat(pipeline): add 'kubernetes' term to IT_TERMS
@@ -111,41 +111,42 @@ refactor(commands): extract spawn_synthesis helper
 chore(deps): bump tauri to 2.10
 ```
 
-- Никаких emoji.
-- **Запрещено:** «Co-Authored-By: Claude …».
-- `git push` в `main` — только по явному согласованию (см. CLAUDE.md).
+- No emoji.
+- **Forbidden:** "Co-Authored-By: Claude …".
+- `git push` to `main` — only with explicit approval (see CLAUDE.md).
 
-## Pull Request
+## Pull request
 
-### Чеклист
+### Checklist
 
-- [ ] `nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml"` зелёный.
-- [ ] `nix-shell --run "pnpm typecheck"` зелёный.
-- [ ] `nix-shell --run "pnpm lint"` зелёный.
-- [ ] Если pipeline трогали — golden-фикстура добавлена/обновлена.
-- [ ] Если ttsd трогали — `cd ttsd && uv run python -m pytest` зелёный.
-- [ ] Документация (`docs/`) актуализирована, если поведение изменилось.
-- [ ] Коммит-сообщения в формате `<type>(<module>): <desc>`.
+- [ ] `nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml"` is green.
+- [ ] `nix-shell --run "pnpm typecheck"` is green.
+- [ ] `nix-shell --run "pnpm lint"` is green.
+- [ ] If the pipeline was touched — a golden fixture has been added/updated.
+- [ ] If ttsd was touched — `cd ttsd && uv run python -m pytest` is green.
+- [ ] Documentation (`docs/`) is updated if behavior changed.
+- [ ] Commit messages follow the `<type>(<module>): <desc>` format.
 
-### Описание PR
+### PR description
 
 ```markdown
-## Что сделано
+## Summary
 
-Добавлен термин "kubernetes" в IT_TERMS словарь нормализации английского.
+Add the term "kubernetes" to the English-normalization `IT_TERMS` dictionary.
 
-## Зачем
+## Why
 
-Часто встречается в технической документации; раньше транслитерировался как
-"кьюбернетес" через fallback, что неприемлемо.
+It shows up often in technical docs and was previously transliterated as
+«кьюбернетес» via fallback, which is unacceptable.
 
-## Тестирование
+## Test plan
 
-- Добавлен golden-кейс `it_kubernetes`.
-- Все существующие golden-тесты проходят.
-- Smoke в `pnpm tauri dev`: вставить в буфер строку с Kubernetes, синтез корректный.
+- Added a golden case `it_kubernetes`.
+- All existing golden tests pass.
+- Smoke in `pnpm tauri dev`: paste a string with Kubernetes into the clipboard,
+  synthesis is correct.
 ```
 
-## Вопросы
+## Questions
 
-Если что-то непонятно — открой issue с тегом `question`.
+If something is unclear — open an issue with the `question` tag.

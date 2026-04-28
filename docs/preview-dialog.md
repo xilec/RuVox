@@ -1,37 +1,37 @@
-# Preview-диалог (FF 1.1)
+# Preview dialog (FF 1.1)
 
-Floating non-modal окно для предпросмотра нормализованного текста перед синтезом. Реализует FF 1.1 из roadmap'а.
+A floating non-modal window for previewing the normalized text before synthesis. Implements FF 1.1 from the roadmap.
 
-**Источник:** `src/dialogs/PreviewDialog.tsx`, `src/dialogs/PreviewDialog.module.css`. Backend-команда: `preview_normalize` в `src-tauri/src/commands/mod.rs`.
+**Source:** `src/dialogs/PreviewDialog.tsx`, `src/dialogs/PreviewDialog.module.css`. Backend command: `preview_normalize` in `src-tauri/src/commands/mod.rs`.
 
-## Зачем
+## Why
 
-Pipeline нормализации детерминистичен, но иногда даёт результат, который пользователь хочет скорректировать вручную: исправить транслитерацию термина, вырезать лишний код, изменить структуру предложения. Запускать TTS на каждом таком тексте, потом удалять и переcинтезировать — расход батареи и времени.
+The normalization pipeline is deterministic, but sometimes produces a result the user wants to adjust manually: fix the transliteration of a term, cut out extraneous code, change the structure of a sentence. Running TTS on every such text and then deleting and re-synthesizing it wastes battery and time.
 
-Preview-диалог показывает оригинал и нормализованную версию side-by-side, даёт отредактировать оригинал и видеть нормализацию вживую (debounce 1 секунда), и только потом запускает синтез.
+The preview dialog shows the original and normalized version side by side, lets you edit the original and see normalization live (1-second debounce), and only then triggers synthesis.
 
-## Поведение
+## Behavior
 
-### Открытие
+### Opening
 
-Диалог открывается из `AppShell` после нажатия кнопки **Add**:
+The dialog opens from `AppShell` after the **Add** button is pressed:
 
-1. Прочитать буфер обмена (`tauri-plugin-clipboard-manager::readText`).
-2. Прочитать `UIConfig` (один раз на mount).
-3. Если `config.preview_dialog_enabled === true` — открыть `<PreviewDialog>` с `text = clipboardText`.
-4. Если `false` — пропустить диалог, сразу `commands.addTextEntry(text, true)`.
+1. Read the clipboard (`tauri-plugin-clipboard-manager::readText`).
+2. Read `UIConfig` (once per mount).
+3. If `config.preview_dialog_enabled === true` — open `<PreviewDialog>` with `text = clipboardText`.
+4. If `false` — skip the dialog and call `commands.addTextEntry(text, true)` directly.
 
-По умолчанию `preview_dialog_enabled = true` (`storage::schema::UIConfig::default`).
+By default `preview_dialog_enabled = true` (`storage::schema::UIConfig::default`).
 
-### Окно
+### Window
 
-- **Floating, non-modal.** Реализован через `react-rnd` внутри Mantine `Portal`. Не блокирует UI под собой.
-- **Drag** — за header («Предпросмотр нормализации»).
-- **Resize** — за любой край / угол. Минимум `560 × 380`, начальный размер `900 × 620`, центрируется при каждом открытии.
-- **ESC** — закрывает диалог (как Cancel).
-- **Anchor:** `Rnd` положен внутрь viewport-sized fixed-контейнера (`viewportContainer` CSS), чтобы координаты `(x, y)` соответствовали viewport-у независимо от document-scroll.
+- **Floating, non-modal.** Implemented via `react-rnd` inside a Mantine `Portal`. Doesn't block the UI underneath.
+- **Drag** — by the header ("Предпросмотр нормализации").
+- **Resize** — by any edge / corner. Minimum `560 × 380`, initial size `900 × 620`, centered on every open.
+- **ESC** — closes the dialog (acts as Cancel).
+- **Anchor:** `Rnd` is placed inside a viewport-sized fixed container (`viewportContainer` CSS) so that the `(x, y)` coordinates correspond to the viewport regardless of document scroll.
 
-### Содержимое
+### Contents
 
 ```
 ┌─ Header ──────────────────────────────────────────┐
@@ -51,36 +51,36 @@ Preview-диалог показывает оригинал и нормализо
 └────────────────────────────────────────────────────┘
 ```
 
-**Левая панель — Оригинал:**
-- По умолчанию `<pre>` read-only с прокруткой.
-- После клика «Редактировать» — `<Textarea>` с текущим значением (`editedText`).
-- При вводе → перенормализация с debounce 1000 мс.
+**Left panel — Original:**
+- By default a read-only `<pre>` with scrolling.
+- After clicking "Редактировать" — `<Textarea>` with the current value (`editedText`).
+- On input → re-normalization with a 1000 ms debounce.
 
-**Правая панель — После нормализации:**
-- `<pre>` с результатом `commands.previewNormalize(text)`.
-- Во время `loading` — `<Loader>`.
-- На ошибке — текст `"(ошибка нормализации: ...)"`.
+**Right panel — After normalization:**
+- A `<pre>` with the result of `commands.previewNormalize(text)`.
+- During `loading` — a `<Loader>`.
+- On error — the text `"(ошибка нормализации: ...)"`.
 
 ### Footer
 
-| Контрол | Назначение |
-|---------|-----------|
-| **Больше не показывать этот диалог** (Checkbox) | При синтезе сбросит `preview_dialog_enabled` в `false` через `commands.updateConfig`. |
-| **Синхронный скроллинг** (Checkbox) | Зеркальный scroll левой и правой панелей по относительной позиции. Имеет защиту от ping-pong через `syncingRef`. |
-| **Read Now** (Switch, default ON) | Передаётся в `addTextEntry(text, playWhenReady)`. ON — воспроизводить сразу после `ready`. OFF — добавить в очередь, не играть. |
-| **Отмена** | Закрывает диалог, ничего не добавляет. |
-| **Редактировать** | Переключает левую панель в edit-mode (показывается только когда mode = read-only). |
-| **Синтезировать** | Закрывает диалог + `addTextEntry`. |
+| Control | Purpose |
+|---------|---------|
+| **Больше не показывать этот диалог** (Checkbox) | On synthesis, sets `preview_dialog_enabled` to `false` via `commands.updateConfig`. |
+| **Синхронный скроллинг** (Checkbox) | Mirrors the scroll of the left and right panels by relative position. Has ping-pong protection via `syncingRef`. |
+| **Read Now** (Switch, default ON) | Passed to `addTextEntry(text, playWhenReady)`. ON — play immediately after `ready`. OFF — add to the queue, don't play. |
+| **Отмена** | Closes the dialog, adds nothing. |
+| **Редактировать** | Switches the left panel to edit mode (only shown while mode = read-only). |
+| **Синтезировать** | Closes the dialog + `addTextEntry`. |
 
-### Синтез
+### Synthesis
 
-При нажатии **Синтезировать** (`handleSynthesize`):
+When **Синтезировать** is pressed (`handleSynthesize`):
 
-1. Если `editMode` — взять `editedText.trim()`; иначе — исходный `text`.
-2. Если `skipShortTexts` — `commands.updateConfig({ preview_dialog_enabled: false })`.
-3. `addTextEntry(finalText, playWhenReady)` (где `playWhenReady` — состояние Read Now switch).
+1. If `editMode` — take `editedText.trim()`; otherwise — the original `text`.
+2. If `skipShortTexts` — `commands.updateConfig({ preview_dialog_enabled: false })`.
+3. `addTextEntry(finalText, playWhenReady)` (where `playWhenReady` is the state of the Read Now switch).
 
-Имя checkbox'а «Больше не показывать» исторически соответствовало «не показывать для коротких текстов» (порог `preview_threshold` в UIConfig), но фича порога [была удалена](../task_history.md) в `ee90518 chore(config): drop unused preview_threshold` — сейчас checkbox **глобально отключает диалог**, без порога.
+The "Больше не показывать" checkbox name historically corresponded to "don't show for short texts" (the `preview_threshold` field in UIConfig), but the threshold feature [was removed](../task_history.md) in `ee90518 chore(config): drop unused preview_threshold` — currently the checkbox **disables the dialog globally**, with no threshold.
 
 ## Backend: `preview_normalize`
 
@@ -105,25 +105,25 @@ pub async fn preview_normalize(
 }
 ```
 
-Особенности:
+Notes:
 
-- `spawn_blocking` — pipeline CPU-bound, чтобы не блокировать tokio reactor (хотя на 500 символах — ≤ 50 мс, но при больших входах может растянуться).
-- `char_mapping` отбрасывается — preview-диалогу нужен только результат-строка.
-- Storage **не трогается** — preview не создаёт `TextEntry`. Пользователь не видит preview-черновики в очереди.
+- `spawn_blocking` — the pipeline is CPU-bound, so we don't block the tokio reactor (although on 500 characters it's ≤ 50 ms; on large inputs it can stretch).
+- `char_mapping` is discarded — the preview dialog only needs the result string.
+- Storage **is not touched** — preview doesn't create a `TextEntry`. The user doesn't see preview drafts in the queue.
 
-## Конфигурация
+## Configuration
 
-Поле в `UIConfig`:
+Field in `UIConfig`:
 
 ```typescript
 preview_dialog_enabled: boolean   // default true
 ```
 
-- **Установка:** Settings dialog → переключатель «Показывать preview-диалог».
-- **Сброс через checkbox в самом диалоге:** при отметке «Больше не показывать» → `commands.updateConfig({ preview_dialog_enabled: false })`.
-- **Возврат:** через Settings dialog → toggle обратно в `true`.
+- **Setting:** Settings dialog → "Показывать preview-диалог" toggle.
+- **Reset via the in-dialog checkbox:** ticking "Больше не показывать" → `commands.updateConfig({ preview_dialog_enabled: false })`.
+- **Restore:** through the Settings dialog → toggle back to `true`.
 
-## TypeScript типы
+## TypeScript types
 
 ```typescript
 // src/lib/tauri.ts
@@ -134,8 +134,8 @@ export interface PreviewNormalizeResult {
 commands.previewNormalize: (text: string) => Promise<PreviewNormalizeResult>
 ```
 
-## Когда применять правки
+## When to apply edits
 
-Preview-диалог — единственное место в текущем UI, где пользователь может править исходный текст **до** синтеза. После «Синтезировать» текст уходит в `addTextEntry` как готовый и записывается в storage как `original_text`; пере-редактирование уже синтезированной записи не предусмотрено — нужно удалить запись и добавить заново.
+The preview dialog is the only place in the current UI where the user can edit the source text **before** synthesis. After "Синтезировать" the text goes into `addTextEntry` as final and is written to storage as `original_text`; re-editing an already-synthesized entry is not supported — you have to delete the entry and add it again.
 
-> Ранее существовавший edit mode в `TextViewer` (FF 1.2) удалён в этой ветке — фича сохраняла правки в `edited_text`, но re-synth не запускала, поэтому воспроизведение продолжало играть старый WAV. См. соответствующий коммит в `task_history.md`.
+> The previously existing edit mode in `TextViewer` (FF 1.2) was removed in this branch — the feature saved edits to `edited_text` but didn't trigger re-synth, so playback kept playing the old WAV. See the corresponding commit in `task_history.md`.
