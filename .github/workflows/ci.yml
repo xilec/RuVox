@@ -51,10 +51,11 @@ jobs:
             libmpv-dev pkg-config build-essential
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml --no-deps -- -D warnings
       - run: cargo test --manifest-path src-tauri/Cargo.toml
 
