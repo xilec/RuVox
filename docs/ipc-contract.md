@@ -230,6 +230,20 @@ invoke("delete_audio", { id: EntryId }): Promise<void>
 
 ---
 
+### `regenerate_entry`
+
+Re-synthesize an existing entry: drop its current audio + timestamps, reset status to `"pending"` (with `was_regenerated: true`, `error_message: null`), then kick off background synthesis using the current config (`speaker`, `speech_rate`, etc.). If the entry is currently playing, playback is stopped first.
+
+```typescript
+invoke("regenerate_entry", { id: EntryId }): Promise<void>
+```
+
+**Errors:** `not_found` if no entry with this ID exists; `synthesis_error` if the entry is already being synthesized (`status === "processing"`); `storage_error` on file deletion failure.
+
+**Side effects:** Emits `entry_updated` (status `"pending"` → later `"processing"` → `"ready"`); may emit `playback_stopped` if the entry was playing; may emit `tts_error` on synthesis failure.
+
+---
+
 ### `cancel_synthesis`
 
 Cancel an in-progress or queued synthesis job. If the entry is currently being synthesized, the job is aborted. Entry status is set to `"pending"`.
@@ -461,6 +475,7 @@ Emitted whenever a `TextEntry` is created or its fields change (status, audio_pa
 - When synthesis fails (status: `"error"`, error_message set).
 - When playback starts/stops (status: `"playing"` / `"ready"`).
 - After `delete_audio` (status reset to `"pending"`).
+- After `regenerate_entry` (status reset to `"pending"` with `was_regenerated: true`, then advances through `"processing"` → `"ready"`).
 - After `cancel_synthesis`.
 - After `clear_cache` for each entry whose audio was reset (`delete_texts: false`).
 

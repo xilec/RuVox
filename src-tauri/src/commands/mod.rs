@@ -464,6 +464,72 @@ pub async fn delete_audio(
     Ok(())
 }
 
+/// Regenerate audio for an existing entry: drop its current audio + timestamps,
+/// reset status to `Pending`, and re-run the synthesis pipeline. Useful when
+/// the user has changed `speaker`, `speech_rate`, or other normalization
+/// settings and wants the cached audio to reflect them.
+///
+/// Rejects the call if the entry is currently being synthesized — re-entering
+/// `spawn_synthesis` for the same id would race with the in-flight task.
+#[tauri::command]
+pub async fn regenerate_entry(
+    app: AppHandle<Wry>,
+    state: State<'_, AppState>,
+    id: String,
+) -> CmdResult<()> {
+    let uuid = parse_entry_id(&id)?;
+
+    let entry = state
+        .storage
+        .get_entry(&uuid)
+        .ok_or_else(|| CommandError::NotFound {
+            message: format!("entry not found: {id}"),
+        })?;
+
+    if entry.status == EntryStatus::Processing {
+        return Err(CommandError::SynthesisError {
+            message: "запись уже синтезируется".to_string(),
+        });
+    }
+
+    // If this entry is currently playing, stop playback so the about-to-be-
+    // deleted audio file is not held open by the player.
+    if state.player.current_entry_id().as_deref() == Some(&id) {
+        let _ = state.player.stop();
+    }
+
+    state
+        .storage
+        .delete_audio(&uuid)
+        .map_err(CommandError::from)?;
+
+    let mut entry = state
+        .storage
+        .get_entry(&uuid)
+        .ok_or_else(|| CommandError::NotFound {
+            message: format!("entry vanished after delete_audio: {id}"),
+        })?;
+    entry.was_regenerated = true;
+    entry.error_message = None;
+    state
+        .storage
+        .update_entry(entry.clone())
+        .map_err(CommandError::from)?;
+    emit_entry_updated(&app, &entry);
+
+    spawn_synthesis(
+        app,
+        Arc::clone(&state.storage),
+        Arc::clone(&state.tts),
+        Arc::clone(&state.player),
+        Arc::clone(&state.pipeline),
+        uuid,
+        false,
+    );
+
+    Ok(())
+}
+
 /// Cancel an in-progress or queued synthesis job.
 /// Currently marks entry as pending (mid-request abort is not supported since
 /// TtsSubprocess serializes all requests into a single channel).

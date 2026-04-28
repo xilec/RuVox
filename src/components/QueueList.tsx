@@ -10,6 +10,7 @@ import {
   Menu,
 } from '@mantine/core';
 import { modals } from '@mantine/modals';
+import { notifications } from '@mantine/notifications';
 import { commands, events } from '../lib/tauri';
 import type { TextEntry, EntryStatus, EntryId, UnlistenFn } from '../lib/tauri';
 import { useSelectedEntry } from '../stores/selectedEntry';
@@ -210,6 +211,24 @@ export function QueueList() {
     await commands.playEntry(id);
   }, []);
 
+  const handleRegenerate = useCallback(async (id: string) => {
+    try {
+      await commands.regenerateEntry(id);
+      notifications.show({
+        title: 'Перегенерация',
+        message: 'Запущена перегенерация аудио',
+        color: 'blue',
+      });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      notifications.show({
+        title: 'Ошибка',
+        message: `Не удалось запустить перегенерацию: ${message}`,
+        color: 'red',
+      });
+    }
+  }, []);
+
   const handleDelete = useCallback(
     (id: string) => {
       modals.openConfirmModal({
@@ -292,6 +311,12 @@ export function QueueList() {
             onClick={() => menu && handlePlay(menu.entry.id)}
           >
             Воспроизвести
+          </Menu.Item>
+          <Menu.Item
+            disabled={menu === null || menu.entry.status === 'processing'}
+            onClick={() => menu && handleRegenerate(menu.entry.id)}
+          >
+            Перегенерировать аудио
           </Menu.Item>
           <Menu.Divider />
           <Menu.Item

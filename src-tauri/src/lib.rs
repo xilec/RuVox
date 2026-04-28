@@ -285,6 +285,7 @@ pub fn run() {
             get_entry,
             delete_entry,
             delete_audio,
+            regenerate_entry,
             cancel_synthesis,
             play_entry,
             pause_playback,
