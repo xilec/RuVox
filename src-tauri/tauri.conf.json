@@ -15,7 +15,8 @@
         "title": "RuVox",
         "width": 900,
         "height": 600,
-        "resizable": true
+        "resizable": true,
+        "maximized": true
       }
     ],
     "security": {
