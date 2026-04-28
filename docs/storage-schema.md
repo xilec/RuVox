@@ -11,9 +11,13 @@ JSON schemas for all files written by RuVox to its cache directory.
 ├── history.json                         # Versioned list of TextEntry records
 ├── config.json                          # Application configuration (UIConfig)
 └── audio/
-    ├── {uuid}.wav                       # Raw PCM audio (WAV, 1 channel)
+    ├── {uuid}.opus                      # Ogg-Opus audio (32 kbps VOIP, mono)
     └── {uuid}.timestamps.json           # Word-level timestamps for the entry
 ```
+
+> Audio used to be stored as raw 32-bit float WAV. RuVox 0.2.0+ writes Ogg-Opus
+> (≈40× smaller for the same content) and migrates legacy `.wav` files on
+> startup — see [Migration](#migration-wav--opus).
 
 The cache root defaults to `~/.cache/ruvox/`. It is stored per-user.
 
@@ -55,8 +59,9 @@ interface TextEntry {
   normalized_text: string | null;       // Output of the Rust TTS pipeline
   status: EntryStatus;
   created_at: string;                   // Naive UTC timestamp, e.g. "2026-02-15T11:46:51.504055" (no TZ suffix)
-  audio_generated_at: string | null;    // Naive UTC timestamp when WAV was written
-  audio_path: string | null;            // Filename relative to audio/, e.g. "{uuid}.wav"
+  audio_generated_at: string | null;    // Naive UTC timestamp when audio file was written
+  audio_path: string | null;            // Filename relative to audio/, e.g. "{uuid}.opus"
+                                        // (legacy entries may still reference "{uuid}.wav" until migrated)
   timestamps_path: string | null;       // Filename relative to audio/, e.g. "{uuid}.timestamps.json"
   duration_sec: number | null;          // Audio duration in seconds
   was_regenerated: boolean;             // True if audio was re-synthesized at least once
@@ -87,7 +92,7 @@ Entries with `status: "ready"` whose `audio_path` file is missing are reset to `
       "status": "ready",
       "created_at": "2025-01-15T10:30:00.123456",
       "audio_generated_at": "2025-01-15T10:30:05.654321",
-      "audio_path": "550e8400-e29b-41d4-a716-446655440000.wav",
+      "audio_path": "550e8400-e29b-41d4-a716-446655440000.opus",
       "timestamps_path": "550e8400-e29b-41d4-a716-446655440000.timestamps.json",
       "duration_sec": 3.7,
       "was_regenerated": false,
@@ -121,22 +126,35 @@ When the schema changes in a breaking way:
 
 ---
 
-## `audio/{uuid}.wav`
+## `audio/{uuid}.opus`
 
-**Path:** `~/.cache/ruvox/audio/{uuid}.wav`
+**Path:** `~/.cache/ruvox/audio/{uuid}.opus`
 
-A standard PCM WAV file with:
+An Ogg-Opus file:
 
 | Property | Value |
 |----------|-------|
+| Container | Ogg |
+| Codec | Opus (RFC 6716, RFC 7845) |
 | Channels | 1 (mono) |
-| Bit depth | 16-bit signed PCM |
-| Sample rate | As configured (`sample_rate` in `UIConfig`): 8000, 24000, or 48000 Hz |
-| Encoding | Little-endian |
+| Sample rate | 48 000 Hz |
+| Bitrate | 32 000 bps (VBR, VOIP application) |
+| Frame size | 20 ms (960 samples) |
+| Pre-skip | 312 samples |
 
-The filename is the entry's UUID, e.g. `550e8400-e29b-41d4-a716-446655440000.wav`.
+The filename is the entry's UUID, e.g. `550e8400-e29b-41d4-a716-446655440000.opus`.
 
 `audio_path` in `TextEntry` stores the **filename only** (not the full path). The full path is resolved as `~/.cache/ruvox/audio/{audio_path}`.
+
+Encoding pipeline: `ttsd` writes a 48 kHz mono float WAV to disk; the Rust side immediately transcodes it to Opus via `crate::audio::replace_wav_with_opus` and removes the source WAV. The encoder uses the `opus = "0.3"` crate (FFI to system `libopus` 1.x, see [shell.nix](../shell.nix) / [flake.nix](../flake.nix)). On encode failure the source `.wav` is left in place as a fallback so playback keeps working.
+
+> The encoder currently requires a 48 kHz mono float input. If `UIConfig.sample_rate` is set to anything other than 48000, ttsd will produce a non-48k WAV which the encoder rejects — the entry then falls back to keeping `.wav` on disk. The default is 48 000 and that is the only setting that exercises the Opus pipeline.
+
+### Migration: WAV → Opus
+
+On every app launch RuVox runs a one-shot migration sweep over `history.json`: any entry whose `audio_path` still ends in `.wav` is transcoded to `.opus` (in place, idempotent) and the source `.wav` is removed. Per-entry failures are logged and do not abort the sweep; the app keeps starting normally regardless. See `StorageService::migrate_wav_audio_to_opus` in `src-tauri/src/storage/service.rs`.
+
+The legacy `.wav` field value continues to parse from `history.json` indefinitely (see `schema::tests::deserialize_real_history_format`), so a downgrade to a pre-Opus build remains possible until the migration runs.
 
 ---
 
@@ -196,13 +214,14 @@ Stores the application configuration. Written by the Rust storage service.
 interface UIConfig {
   version?: number;             // Config schema version (read but not required)
   speaker: string;              // Silero speaker name: "xenia" | "aidar" | "baya" | "kseniya" | "eugene"
-  sample_rate: number;          // WAV sample rate: 8000 | 24000 | 48000
+  sample_rate: number;          // Silero output rate: 8000 | 24000 | 48000. Only 48000 currently
+                                // round-trips through the Opus encoder; other values fall back to .wav.
   speech_rate: number;          // Playback speed multiplier: 0.5–2.0
   notify_on_ready: boolean;     // Show notification when synthesis completes
   notify_on_error: boolean;     // Show notification on synthesis error
   text_format: string;          // Default viewer format: "plain" | "markdown" | "html"
   history_days: number;         // Days to keep entries in history
-  audio_max_files: number;      // Maximum number of WAV files to keep
+  audio_max_files: number;      // Maximum number of audio files to keep
   audio_regenerated_hours: number; // Hours to keep manually regenerated audio
   max_cache_size_mb: number;    // Soft limit on total audio cache size in MB
   auto_cleanup_days: number;    // Auto-delete entries older than N days (0 = disabled)

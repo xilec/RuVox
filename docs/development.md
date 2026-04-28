@@ -151,7 +151,7 @@ In debug builds Tauri's webview enables DevTools. For prod builds you have to ei
 
 The storage cache lives in `~/.cache/ruvox/`:
 - `history.json` — list of `TextEntry`. You can open it manually.
-- `audio/{uuid}.wav` — audio. Plays in any player.
+- `audio/{uuid}.opus` — Ogg-Opus audio (32 kbps VOIP, mono). Plays in any modern player (mpv, VLC, browsers, ...).
 - `audio/{uuid}.timestamps.json` — word timings.
 - `config.json` — `UIConfig`.
 

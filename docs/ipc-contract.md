@@ -44,8 +44,9 @@ interface TextEntry {
   normalized_text: string | null;  // Text after pipeline normalization (what Silero reads)
   status: EntryStatus;
   created_at: string;              // ISO 8601 datetime, e.g. "2024-01-15T10:30:00.123456"
-  audio_generated_at: string | null; // ISO 8601 datetime when WAV was created
-  audio_path: string | null;       // Filename relative to ~/.cache/ruvox/audio/, e.g. "<uuid>.wav"
+  audio_generated_at: string | null; // ISO 8601 datetime when audio file was created
+  audio_path: string | null;       // Filename relative to ~/.cache/ruvox/audio/, e.g. "<uuid>.opus"
+                                   // (legacy entries may still reference "<uuid>.wav" until migrated on next launch)
   timestamps_path: string | null;  // Filename relative to ~/.cache/ruvox/audio/, e.g. "<uuid>.timestamps.json"
   duration_sec: number | null;     // Total audio duration in seconds
   was_regenerated: boolean;        // True if audio was manually re-synthesized at least once
@@ -70,7 +71,7 @@ interface UIConfig {
   notify_on_error: boolean;      // Show system notification on synthesis error
   text_format: string;           // Default viewer format: "plain" | "markdown" | "html"
   history_days: number;          // Days to keep entries in history (0 = forever)
-  audio_max_files: number;       // Maximum number of WAV files to keep in cache
+  audio_max_files: number;       // Maximum number of audio files to keep in cache
   audio_regenerated_hours: number; // Hours to keep manually regenerated audio
   max_cache_size_mb: number;     // Soft limit on total audio cache size in MB
   auto_cleanup_days: number;     // Auto-delete entries older than N days (0 = disabled)
@@ -255,7 +256,7 @@ Start playback of a ready entry. If another entry is playing, it is stopped firs
 invoke("play_entry", { id: EntryId }): Promise<void>
 ```
 
-**Errors:** `not_found` if entry does not exist; `playback_error` if entry status is not `"ready"`; `playback_error` if the WAV file is missing or unreadable.
+**Errors:** `not_found` if entry does not exist; `playback_error` if entry status is not `"ready"`; `playback_error` if the audio file is missing or unreadable.
 
 **Side effects:** Emits `playback_started`; emits `playback_stopped` for the previously playing entry if any.
 
@@ -795,8 +796,10 @@ Frontend                    Rust Backend                  ttsd
     │                            │   "duration_sec":3.7}    │
     │                            │                          │
     │                            │ Save timestamps file     │
+    │                            │ Transcode WAV → Opus,    │
+    │                            │ delete source .wav       │
     │                            │ entry.status = "ready"   │
-    │                            │ entry.audio_path = "abc-123.wav"
+    │                            │ entry.audio_path = "abc-123.opus"
     │                            │ entry.duration_sec = 3.7 │
     │<─ entry_updated({entry: {id:"abc-123", status:"ready", duration_sec:3.7, ...}})
     │                            │                          │

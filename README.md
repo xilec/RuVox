@@ -34,7 +34,7 @@ Normalizes English terms, abbreviations, code, numbers, and URLs, then pipes the
 
 - **OS:** Linux (X11 or Wayland).
 - **Nix:** recommended — the entire toolchain (Rust, Node, Python, Tauri deps) is built from `shell.nix` / `flake.nix`.
-- **Without Nix:** install Rust stable + Node 20 + Python 3.12 + Tauri 2 system deps (webkitgtk 4.1, libsoup 3, gtk3, libmpv, pipewire/pulseaudio) manually — see `buildInputs` in `shell.nix`.
+- **Without Nix:** install Rust stable + Node 20 + Python 3.12 + Tauri 2 system deps (webkitgtk 4.1, libsoup 3, gtk3, libmpv, libopus, pipewire/pulseaudio) manually — see `buildInputs` in `shell.nix`.
 
 ## Dev environment
 
