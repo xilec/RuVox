@@ -1,64 +1,64 @@
 # RuVox
 
-**RuVox** — desktop-приложение для озвучивания технических текстов на русском языке через Silero TTS. Нормализует английские термины, аббревиатуры, код, числа, URL до передачи в TTS, чтобы синтезатор корректно читал материал, для которого не предназначен.
+**RuVox** is a desktop application for voicing technical Russian texts via Silero TTS. It normalizes English terms, abbreviations, code, numbers, and URLs before passing them to the TTS engine, so the synthesizer can correctly read material it wasn't designed for.
 
-## Проблема → Решение
+## Problem → Solution
 
-Silero TTS не умеет корректно произносить:
-- Английские слова и IT-термины (`feature` → молчание или искажение)
-- Аббревиатуры (`API`, `HTTP`, `JSON`)
-- URL, email, IP-адреса, пути
-- Идентификаторы кода (`getUserData`, `my_variable`)
-- Спецсимволы и операторы (`->`, `>=`, `!=`)
+Silero TTS cannot correctly pronounce:
+- English words and IT terms (`feature` → silence or distortion)
+- Abbreviations (`API`, `HTTP`, `JSON`)
+- URLs, emails, IP addresses, paths
+- Code identifiers (`getUserData`, `my_variable`)
+- Special characters and operators (`->`, `>=`, `!=`)
 
 ```
 "Вызови getUserData() через API" → "Вызови гет юзер дата через эй пи ай"
 ```
 
-## Возможности
+## Features
 
-- **Кнопка Add** — копируете текст в буфер, нажимаете Add → запись попадает в очередь и синтезируется.
-- **Preview-диалог** — для длинных текстов отдельный floating-window показывает оригинал и нормализованную версию side-by-side; можно отредактировать оригинал перед синтезом.
-- **Edit mode** — правка `original_text` прямо в viewer, изменения сохраняются на entry.
-- **Очередь** — список всех записей с бейджами статуса (`pending` / `processing` / `ready` / `playing` / `error`).
-- **Подсветка слов** — синхронная подсветка читаемого слова в markdown-режиме через бинарный поиск по `WordTimestamp`.
-- **Mermaid** — диаграммы рендерятся в UI; для TTS заменяются маркером «тут мермэйд диаграмма».
-- **Системный трей** — close-to-tray, тёплый mpv re-init при показе окна.
+- **Add button** — copy text to the clipboard, press Add → the entry lands in the queue and gets synthesized.
+- **Preview dialog** — for long texts a separate floating window shows the original and normalized version side-by-side; you can edit the original before synthesis.
+- **Edit mode** — edit `original_text` directly in the viewer; changes are saved on the entry.
+- **Queue** — list of all entries with status badges (`pending` / `processing` / `ready` / `playing` / `error`).
+- **Word highlight** — synchronized highlighting of the word being read in markdown mode, via binary search over `WordTimestamp`.
+- **Mermaid** — diagrams render in the UI; for TTS they are replaced with the marker "тут мермэйд диаграмма".
+- **System tray** — close-to-tray, warm mpv re-init when the window is shown.
 
-## Стек
+## Stack
 
-| Слой | Технология |
+| Layer | Technology |
 |------|------------|
-| Shell | [Tauri 2](https://tauri.app/) (Rust + нативный webview) |
+| Shell | [Tauri 2](https://tauri.app/) (Rust + native webview) |
 | Frontend | React 18 + TypeScript 5 + [Mantine 8](https://mantine.dev/) |
-| Backend | Rust (pipeline нормализации, storage, TTS-менеджер, обёртка плеера) |
-| TTS | Python 3.12 subprocess `ttsd`, обёртка над [Silero TTS](https://github.com/snakers4/silero-models) |
-| Аудио | [`tauri-plugin-mpv`](https://crates.io/crates/tauri-plugin-mpv) (libmpv с `scaletempo2`) |
-| Сборочное окружение | Nix (`shell.nix` + `flake.nix`) |
+| Backend | Rust (normalization pipeline, storage, TTS manager, player wrapper) |
+| TTS | Python 3.12 subprocess `ttsd`, a wrapper around [Silero TTS](https://github.com/snakers4/silero-models) |
+| Audio | [`tauri-plugin-mpv`](https://crates.io/crates/tauri-plugin-mpv) (libmpv with `scaletempo2`) |
+| Build environment | Nix (`shell.nix` + `flake.nix`) |
 
-## Документация
+## Documentation
 
-### Архитектура и история
+### Architecture and history
 
-- [RewriteNotes.md](../RewriteNotes.md) — архитектурные решения и обоснования выбора стека.
-- [RewriteTaskPlan.md](../RewriteTaskPlan.md) — детальный план задач переписывания, граф зависимостей.
-- [task_history.md](../task_history.md) — журнал исполнения задач.
-- [CHANGELOG.md](../CHANGELOG.md) — хронология версий.
+- [RewriteNotes.md](../RewriteNotes.md) — architectural decisions and the rationale behind the stack choice.
+- [RewriteTaskPlan.md](../RewriteTaskPlan.md) — detailed rewrite task plan, dependency graph.
+- [task_history.md](../task_history.md) — task execution log.
+- [CHANGELOG.md](../CHANGELOG.md) — version chronology.
 
-### Справка
+### Reference
 
-- [IPC-контракт](ipc-contract.md) — Tauri-команды, события, JSON-протокол ttsd.
-- [Storage-схема](storage-schema.md) — `history.json`, `config.json`, `{uuid}.timestamps.json`, `{uuid}.wav`.
-- [Pipeline нормализации](pipeline.md) — этапы обработки, нормалайзеры, golden-тесты.
-- [UI-компоненты](ui.md) — структура React-приложения, компоненты, стилизация.
-- [Preview-диалог (FF 1.1)](preview-dialog.md) — поведение, настройки, флоу взаимодействия.
+- [IPC contract](ipc-contract.md) — Tauri commands, events, ttsd JSON protocol.
+- [Storage schema](storage-schema.md) — `history.json`, `config.json`, `{uuid}.timestamps.json`, `{uuid}.wav`.
+- [Normalization pipeline](pipeline.md) — processing stages, normalizers, golden tests.
+- [UI components](ui.md) — React app structure, components, styling.
+- [Preview dialog (FF 1.1)](preview-dialog.md) — behavior, settings, interaction flow.
 
-### Сценарии и разработка
+### Use cases and development
 
-- [Сценарии использования](use-cases.md) — пользовательские сценарии: добавление текста, plain/markdown-режимы, mermaid, подсветка слов.
-- [Разработка](development.md) — окружение, команды, отладка.
-- [Contributing](contributing.md) — как добавить термин в словарь, правила коммитов и стиля.
+- [Use cases](use-cases.md) — user scenarios: adding text, plain/markdown modes, mermaid, word highlight.
+- [Development](development.md) — environment, commands, debugging.
+- [Contributing](contributing.md) — how to add a term to the dictionary, commit and style rules.
 
-## Лицензия
+## License
 
-GPL-3.0 — см. [LICENSE.md](../LICENSE.md).
+GPL-3.0 — see [LICENSE.md](../LICENSE.md).

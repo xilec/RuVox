@@ -1,29 +1,29 @@
-# Разработка
+# Development
 
-Руководство по настройке окружения и работе над RuVox.
+Guide to setting up the environment and working on RuVox.
 
-## Требования
+## Requirements
 
-- **Linux** (X11 или Wayland). macOS/Windows — не поддерживаются.
-- **Nix** (рекомендуется) — даёт воспроизводимое окружение целиком: Rust toolchain, Node, pnpm, Python 3.12, uv, libmpv, webkit2gtk и системные библиотеки Tauri.
-- **Без Nix** — придётся вручную установить Rust stable + Node 20 + Python 3.12 + системные deps (см. `buildInputs` в `shell.nix`: `webkitgtk_4_1`, `libsoup_3`, `gtk3`, `libmpv`, `pipewire`/`pulseaudio`, `libappindicator-gtk3`, `librsvg`, `pkg-config`).
+- **Linux** (X11 or Wayland). macOS/Windows are not supported.
+- **Nix** (recommended) — provides a fully reproducible environment: Rust toolchain, Node, pnpm, Python 3.12, uv, libmpv, webkit2gtk, and Tauri's system libraries.
+- **Without Nix** — you'll have to manually install Rust stable + Node 20 + Python 3.12 + system deps (see `buildInputs` in `shell.nix`: `webkitgtk_4_1`, `libsoup_3`, `gtk3`, `libmpv`, `pipewire`/`pulseaudio`, `libappindicator-gtk3`, `librsvg`, `pkg-config`).
 
-## Окружение
+## Environment
 
 ```bash
-# Через flake (рекомендуется)
+# Via flake (recommended)
 nix develop
 pnpm install
 pnpm tauri dev
 
-# Или через классический shell.nix
+# Or via the classic shell.nix
 nix-shell --run "pnpm install"
 nix-shell --run "pnpm tauri dev"
 ```
 
-> **Важно:** все команды (`cargo`, `pnpm`, `uv`, `tauri`, `ruff`, `pytest`) доступны только внутри `nix develop` / `nix-shell`. Не запускай команды из «уже открытой» nix-shell-сессии после правок `shell.nix` — `shellHook` (в т.ч. `XDG_DATA_DIRS`, `GIO_EXTRA_MODULES`, `WEBKIT_DISABLE_DMABUF_RENDERER`) выполняется только при входе в shell. Каждый `nix-shell --run "..."` форкает свежий subshell и получает актуальный env.
+> **Important:** all commands (`cargo`, `pnpm`, `uv`, `tauri`, `ruff`, `pytest`) are only available inside `nix develop` / `nix-shell`. Don't run commands from an "already open" nix-shell session after editing `shell.nix` — `shellHook` (including `XDG_DATA_DIRS`, `GIO_EXTRA_MODULES`, `WEBKIT_DISABLE_DMABUF_RENDERER`) is only executed when entering the shell. Each `nix-shell --run "..."` forks a fresh subshell and gets the up-to-date env.
 
-## Структура проекта
+## Project structure
 
 ```
 /
@@ -31,140 +31,140 @@ nix-shell --run "pnpm tauri dev"
 │   ├── components/         # AppShell, QueueList, Player, TextViewer, icons
 │   ├── dialogs/            # PreviewDialog (FF 1.1), Settings
 │   ├── lib/                # tauri.ts (typed wrappers), markdown, html, mermaid, wordHighlight, errors
-│   └── stores/             # Zustand-store selectedEntry
+│   └── stores/             # Zustand store selectedEntry
 ├── src-tauri/              # Rust backend
 │   ├── src/
-│   │   ├── pipeline/       # Нормализация: tracked_text, normalizers/, html_extractor, constants
-│   │   ├── storage/        # JSON-история + аудиофайлы (схема в storage/schema.rs)
-│   │   ├── tts/            # Менеджер ttsd-subprocess
-│   │   ├── player/         # Обёртка tauri-plugin-mpv (ensure_mpv_alive, seek-suppress)
-│   │   ├── commands/       # Tauri-команды (#[tauri::command])
-│   │   ├── tray/           # Системный трей (close-to-tray, "Выход")
+│   │   ├── pipeline/       # Normalization: tracked_text, normalizers/, html_extractor, constants
+│   │   ├── storage/        # JSON history + audio files (schema in storage/schema.rs)
+│   │   ├── tts/            # ttsd subprocess manager
+│   │   ├── player/         # tauri-plugin-mpv wrapper (ensure_mpv_alive, seek-suppress)
+│   │   ├── commands/       # Tauri commands (#[tauri::command])
+│   │   ├── tray/           # System tray (close-to-tray, "Выход")
 │   │   ├── state.rs        # AppState
-│   │   └── lib.rs          # Точка входа Tauri::Builder
+│   │   └── lib.rs          # Tauri::Builder entry point
 │   └── tests/
-│       ├── fixtures/pipeline/  # Golden-фикстуры (37 кейсов × 3 файла)
-│       └── golden.rs           # Интеграционный golden-тест
-├── ttsd/                   # Python-subprocess (Silero TTS sidecar)
+│       ├── fixtures/pipeline/  # Golden fixtures (37 cases × 3 files)
+│       └── golden.rs           # Golden integration test
+├── ttsd/                   # Python subprocess (Silero TTS sidecar)
 │   ├── pyproject.toml
 │   └── ttsd/
 │       ├── silero.py       # SileroEngine: load, synthesize
-│       ├── timestamps.py   # Оценка временных меток слов
-│       ├── protocol.py     # Типы request/response
-│       └── main.py         # Главный цикл stdin→stdout JSON
-├── docs/                   # Документация (этот каталог)
-├── scripts/                # Утилиты (launch-prod, rebuild_prod)
-├── shell.nix               # Nix-окружение (Rust + Node + Python + Tauri deps)
-└── flake.nix               # Flake (для nix build .#ruvox и nix develop)
+│       ├── timestamps.py   # Word timestamp estimation
+│       ├── protocol.py     # Request/response types
+│       └── main.py         # Main stdin→stdout JSON loop
+├── docs/                   # Documentation (this directory)
+├── scripts/                # Utilities (launch-prod, rebuild_prod)
+├── shell.nix               # Nix environment (Rust + Node + Python + Tauri deps)
+└── flake.nix               # Flake (for nix build .#ruvox and nix develop)
 ```
 
-## Команды
+## Commands
 
-### Запуск
+### Run
 
 ```bash
-nix-shell --run "pnpm tauri dev"            # dev-режим с hot-reload
-nix build .#ruvox && ./result/bin/ruvox     # production-бинарь
+nix-shell --run "pnpm tauri dev"            # dev mode with hot reload
+nix build .#ruvox && ./result/bin/ruvox     # production binary
 ```
 
-### Тесты
+### Tests
 
 ```bash
-nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml"           # все Rust-тесты
-nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml --test golden"  # только golden-тесты
+nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml"           # all Rust tests
+nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml --test golden"  # golden tests only
 nix-shell --run "pnpm typecheck"                                            # TypeScript strict
-nix-shell --run "cd ttsd && uv run python -m pytest"                        # Python-subprocess
+nix-shell --run "cd ttsd && uv run python -m pytest"                        # Python subprocess
 ```
 
-### Сборка production
+### Production build
 
 ```bash
 nix build .#ruvox
 ./result/bin/ruvox
 ```
 
-`.#ruvox` собирает release-бинарь Tauri, оборачивает через `wrapProgram` (runtime `LD_LIBRARY_PATH` + `GIO_EXTRA_MODULES`), линкует `ttsd` (Silero-subprocess) и `mpv` в `PATH`.
+`.#ruvox` builds the Tauri release binary, wraps it via `wrapProgram` (runtime `LD_LIBRARY_PATH` + `GIO_EXTRA_MODULES`), and links `ttsd` (the Silero subprocess) and `mpv` into `PATH`.
 
-> **Первый запуск `nix build`:** derivation `frontend` использует `pnpm.fetchDeps` с `lib.fakeHash` — Nix упадёт с hash mismatch и напишет реальный hash; его нужно подставить в `flake.nix` и повторить build. Это стандартная процедура pnpm2nix.
+> **First `nix build` run:** the `frontend` derivation uses `pnpm.fetchDeps` with `lib.fakeHash` — Nix will fail with a hash mismatch and print the real hash; substitute it into `flake.nix` and rerun the build. This is the standard pnpm2nix procedure.
 
-## Правила кода
+## Code rules
 
-### Общие
+### General
 
-- Идентификаторы и комментарии — на английском. Пользовательские строки (UI, нотификации) — на русском.
-- Никаких emoji в коде и коммит-сообщениях.
-- Формат коммитов: `<type>(<module>): <short desc>`, `type ∈ {feat, fix, chore, refactor, docs, test, build}`.
-- **Запрещено:** «Co-Authored-By: Claude …» и любое упоминание Claude в коммите.
-- Комментарии — только если **WHY** неочевиден (скрытый инвариант, обход известного бага). Не комментировать **WHAT**.
+- Identifiers and comments are in English. User-facing strings (UI, notifications) are in Russian.
+- No emoji in code or commit messages.
+- Commit format: `<type>(<module>): <short desc>`, `type ∈ {feat, fix, chore, refactor, docs, test, build}`.
+- **Forbidden:** "Co-Authored-By: Claude …" or any mention of Claude in a commit.
+- Comments only when **WHY** is non-obvious (a hidden invariant, a workaround for a known bug). Don't comment **WHAT**.
 
 ### Rust
 
-- Edition 2021 (или новее, если требует зависимость).
-- `tracing` для логов, `thiserror` для доменных ошибок, `anyhow::Result` — только на границах.
-- Запрещён `unwrap` в production-путях — использовать `?` + типизированные ошибки.
-- `cargo fmt` и `cargo clippy` должны быть чистыми.
+- Edition 2021 (or newer if a dependency requires it).
+- `tracing` for logs, `thiserror` for domain errors, `anyhow::Result` only at boundaries.
+- `unwrap` is forbidden in production paths — use `?` + typed errors.
+- `cargo fmt` and `cargo clippy` must be clean.
 
 ### TypeScript / React
 
-- `strict: true` в tsconfig. Без `any` без крайней необходимости.
-- Только функциональные компоненты. Не использовать `React.FC`.
-- Hooks-first. Без class-компонентов.
-- Prettier для форматирования.
+- `strict: true` in tsconfig. No `any` unless absolutely necessary.
+- Functional components only. Don't use `React.FC`.
+- Hooks-first. No class components.
+- Prettier for formatting.
 
 ### Mantine 8
 
-- Стилизация через **CSS Modules** и prop `classNames`.
-- **Запрещено:** `sx`, `createStyles`, `emotion`, любое легаси из Mantine 6/7.
-- Формы: `@mantine/form` (не react-hook-form, не Formik).
-- Нотификации: `@mantine/notifications`.
-- Хуки: `@mantine/hooks`.
-- Модалки: `@mantine/modals` (`modals.openConfirmModal` и т. п.).
+- Styling via **CSS Modules** and the `classNames` prop.
+- **Forbidden:** `sx`, `createStyles`, `emotion`, any Mantine 6/7 legacy.
+- Forms: `@mantine/form` (not react-hook-form, not Formik).
+- Notifications: `@mantine/notifications`.
+- Hooks: `@mantine/hooks`.
+- Modals: `@mantine/modals` (`modals.openConfirmModal`, etc.).
 
 ### State
 
-- Без Redux. Глобальное состояние — Zustand или React context. По умолчанию — props + `useState`.
-- React Query не нужен — Tauri-invoke ложится в `useEffect` + `useState`.
+- No Redux. Global state — Zustand or React context. By default — props + `useState`.
+- React Query is not needed — Tauri invoke fits well with `useEffect` + `useState`.
 
 ### Routing
 
-- Без router. Диалоги через `@mantine/modals` или non-modal floating windows (`react-rnd`, см. PreviewDialog).
+- No router. Dialogs go through `@mantine/modals` or non-modal floating windows (`react-rnd`, see PreviewDialog).
 
 ### Python (ttsd)
 
 - Python 3.12, `uv`-managed.
-- Логи на stderr, JSON-запросы на stdin, JSON-ответы на stdout.
-- `ruff check` и `pytest` должны быть зелёными.
+- Logs to stderr, JSON requests on stdin, JSON responses on stdout.
+- `ruff check` and `pytest` must be green.
 
-## Отладка
+## Debugging
 
-### Логи
+### Logs
 
-- **Tauri (Rust)** — через `tracing` на stderr процесса. В dev-режиме видны в терминале, где запущен `pnpm tauri dev`.
-- **ttsd** — Python-логи на stderr → Rust проксирует в `tracing::info!("ttsd: ...")`.
-- **Frontend** — DevTools webview (правый клик → Inspect Element в окне приложения).
+- **Tauri (Rust)** — via `tracing` to the process's stderr. In dev mode they're visible in the terminal where `pnpm tauri dev` is running.
+- **ttsd** — Python logs go to stderr → Rust proxies them to `tracing::info!("ttsd: ...")`.
+- **Frontend** — webview DevTools (right click → Inspect Element in the application window).
 
 ### Webview DevTools
 
-В debug-сборках Tauri webview включает DevTools. Для prod-сборки нужно явно разрешить в `tauri.conf.json` или собирать с feature `devtools`.
+In debug builds Tauri's webview enables DevTools. For prod builds you have to either explicitly allow them in `tauri.conf.json` or build with the `devtools` feature.
 
-### Чтение `~/.cache/ruvox/`
+### Reading `~/.cache/ruvox/`
 
-Storage-кеш живёт в `~/.cache/ruvox/`:
-- `history.json` — список `TextEntry`. Можно открыть руками.
-- `audio/{uuid}.wav` — аудио. Открывается любым плеером.
-- `audio/{uuid}.timestamps.json` — тайминги слов.
+The storage cache lives in `~/.cache/ruvox/`:
+- `history.json` — list of `TextEntry`. You can open it manually.
+- `audio/{uuid}.wav` — audio. Plays in any player.
+- `audio/{uuid}.timestamps.json` — word timings.
 - `config.json` — `UIConfig`.
 
-См. [Storage-схема](storage-schema.md) для деталей.
+See [Storage schema](storage-schema.md) for details.
 
 ## Workflow
 
 ```bash
-git checkout -b feat/short-description     # отдельная ветка
-# ... правки ...
-nix-shell --run "cargo test ..."           # прогон тестов
+git checkout -b feat/short-description     # separate branch
+# ... edits ...
+nix-shell --run "cargo test ..."           # run tests
 git commit -m "feat(<module>): <desc>"     # commit
-git push -u origin feat/short-description  # push (по согласованию)
+git push -u origin feat/short-description  # push (after approval)
 ```
 
-Новые фичи и фиксы идут обычным feature-branch-флоу.
+New features and fixes follow the standard feature-branch flow.

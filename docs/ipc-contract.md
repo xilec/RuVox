@@ -6,7 +6,7 @@ Authoritative specification of all three communication layers in RuVox.
 
 ## Parameter casing
 
-Tauri 2 принимает параметры invoke на JS-стороне в **camelCase**, даже если Rust-handler объявлен в snake_case. Документация ниже показывает Rust-имена параметров (snake_case) для соответствия сигнатурам команд; реальный JS-код вызывает `invoke('seek_to', { positionSec: ... })`, не `{ position_sec: ... }`. Типизированные обёртки в `src/lib/tauri.ts` делают преобразование автоматически.
+Tauri 2 accepts invoke parameters on the JS side in **camelCase**, even when the Rust handler is declared in snake_case. The documentation below shows Rust parameter names (snake_case) to match the command signatures; the actual JS code calls `invoke('seek_to', { positionSec: ... })`, not `{ position_sec: ... }`. The typed wrappers in `src/lib/tauri.ts` perform the conversion automatically.
 
 ---
 
