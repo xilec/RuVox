@@ -1,3 +1,4 @@
+pub mod audio;
 pub mod commands;
 pub mod pipeline;
 pub mod player;
@@ -94,6 +95,34 @@ pub fn run() {
             player::spawn_position_emitter(player.clone(), app.handle().clone());
 
             let storage = Arc::new(StorageService::new().expect("failed to open storage"));
+
+            // One-shot migration: any pre-Opus `.wav` audio in history gets
+            // transcoded to `.opus` in the background. Runs blocking on a
+            // dedicated thread so app startup is not delayed; per-entry
+            // errors are logged inside the migration routine.
+            {
+                let storage_for_migration = Arc::clone(&storage);
+                tauri::async_runtime::spawn(async move {
+                    let stats = tokio::task::spawn_blocking(move || {
+                        storage_for_migration.migrate_wav_audio_to_opus()
+                    })
+                    .await;
+                    match stats {
+                        Ok(s) if s.considered == 0 => {
+                            tracing::debug!("audio migration: nothing to do");
+                        }
+                        Ok(s) => {
+                            tracing::info!(
+                                "audio migration: considered={}, migrated={}, skipped_missing={}, failed={}",
+                                s.considered, s.migrated, s.skipped_missing, s.failed
+                            );
+                        }
+                        Err(e) => {
+                            tracing::error!("audio migration task panicked: {e}");
+                        }
+                    }
+                });
+            }
 
             // Spawn ttsd subprocess.
             // In production: bundled next to the binary (resource_dir/ttsd).

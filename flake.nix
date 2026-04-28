@@ -118,6 +118,11 @@
             librsvg
             openssl
             mpv-unwrapped
+            # libopus: storage::audio encodes WAV → Ogg-Opus via the
+            # `opus = "0.3"` FFI crate, which links against C libopus 1.x.
+            # buildInputs is enough — wrapGAppsHook3 picks it up for the
+            # runtime LD_LIBRARY_PATH automatically.
+            libopus
           ];
 
           # Single target is enough for Nix — we only want a usable binary,

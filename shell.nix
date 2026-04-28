@@ -57,6 +57,11 @@ pkgs.mkShell {
     # mpv-unwrapped provides both the library and pkg-config .pc file
     mpv-unwrapped
 
+    # ── libopus (Opus encoder for storage::audio) ─────────────────────────
+    # The `opus = "0.3"` Rust crate is an FFI binding to libopus 1.x; needs
+    # the C library at link time and at runtime.
+    libopus
+
     # ── Wayland + X11 support ──────────────────────────────────────────────
     wayland
     wayland-protocols
@@ -98,6 +103,7 @@ pkgs.mkShell {
     pkgs.libxkbcommon
     pkgs.alsa-lib
     pkgs.libpulseaudio
+    pkgs.libopus
   ];
 
   # Runtime library path (for Python + Tauri + mpv)
@@ -128,6 +134,7 @@ pkgs.mkShell {
     pkgs.libdrm
     pkgs.libayatana-appindicator
     pkgs.librsvg
+    pkgs.libopus
   ];
 
   # Help Rust openssl-sys crate find OpenSSL
