@@ -100,9 +100,16 @@ pub fn run() {
             // transcoded to `.opus` in the background. Runs blocking on a
             // dedicated thread so app startup is not delayed; per-entry
             // errors are logged inside the migration routine.
+            //
+            // Once migration finishes the same task runs cache cleanup
+            // (orphan sweep + size-based eviction down to
+            // `max_cache_size_mb`). Keeping the order serialised guarantees
+            // the freshly-renamed `.opus` files are already linked to
+            // their entries before the orphan sweep walks the directory.
             {
                 let storage_for_migration = Arc::clone(&storage);
                 tauri::async_runtime::spawn(async move {
+                    let storage_for_cleanup = Arc::clone(&storage_for_migration);
                     let stats = tokio::task::spawn_blocking(move || {
                         storage_for_migration.migrate_wav_audio_to_opus()
                     })
@@ -119,6 +126,31 @@ pub fn run() {
                         }
                         Err(e) => {
                             tracing::error!("audio migration task panicked: {e}");
+                        }
+                    }
+
+                    let cleanup_result = tokio::task::spawn_blocking(move || {
+                        let cfg = storage_for_cleanup.load_config().unwrap_or_default();
+                        let target_bytes = (cfg.max_cache_size_mb as u64) * 1024 * 1024;
+                        storage_for_cleanup
+                            .run_startup_cleanup(target_bytes)
+                            .map_err(|e| e.to_string())
+                    })
+                    .await;
+                    match cleanup_result {
+                        Ok(Ok(s)) => {
+                            tracing::info!(
+                                "startup cleanup: orphans={}, evicted_files={}, freed={} bytes",
+                                s.sweep.deleted_files,
+                                s.evict.deleted_files,
+                                s.sweep.freed_bytes + s.evict.freed_bytes,
+                            );
+                        }
+                        Ok(Err(e)) => {
+                            tracing::warn!("startup cleanup failed: {e}");
+                        }
+                        Err(e) => {
+                            tracing::error!("startup cleanup task panicked: {e}");
                         }
                     }
                 });
@@ -266,6 +298,7 @@ pub fn run() {
             get_timestamps,
             clear_cache,
             get_cache_stats,
+            get_cache_dir,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -73,8 +73,7 @@ interface UIConfig {
   history_days: number;          // Days to keep entries in history (0 = forever)
   audio_max_files: number;       // Maximum number of audio files to keep in cache
   audio_regenerated_hours: number; // Hours to keep manually regenerated audio
-  max_cache_size_mb: number;     // Soft limit on total audio cache size in MB
-  auto_cleanup_days: number;     // Auto-delete entries older than N days (0 = disabled)
+  max_cache_size_mb: number;     // Soft limit on audio cache size in MB; drives startup eviction (0 = disabled)
   code_block_mode: string;       // How to handle Markdown code blocks: "skip" | "read"
   read_operators: boolean;       // Whether to speak mathematical/code operators
   theme: string;                 // Color scheme: "light" | "dark" | "auto"
@@ -388,19 +387,38 @@ invoke("get_timestamps", { id: EntryId }): Promise<WordTimestamp[]>
 
 ### `clear_cache`
 
-Delete all audio files older than the configured `auto_cleanup_days`, or forcibly delete all audio files if `force` is true.
+Sweep orphan files in the audio directory, then evict entries (size-based or wholesale) according to `args.mode`. With `delete_texts: true`, evicted entries are removed from `history.json`; otherwise only their audio is dropped and entries are reset to `"pending"`.
 
 ```typescript
-invoke("clear_cache", { force: boolean }): Promise<{ deleted_files: number; freed_bytes: number }>
+type CleanupMode =
+  | { mode: "size_limit"; target_mb: number }
+  | { mode: "all" };
+
+invoke("clear_cache", {
+  args: {
+    mode: CleanupMode;
+    delete_texts: boolean;
+  }
+}): Promise<{
+  deleted_files: number;
+  deleted_entries: number;
+  freed_bytes: number;
+}>
 ```
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `force` | `boolean` | If `true`, delete all audio regardless of age. Entries are kept but reset to `"pending"`. |
+| Field | Type | Description |
+|-------|------|-------------|
+| `mode.size_limit.target_mb` | `number` | Trim oldest entries (by `created_at`) until cache fits in this many MB. `0` is treated as "no limit" — no eviction (orphan sweep still runs). |
+| `mode.all` | — | Drop every entry's audio (and the entries themselves when `delete_texts: true`). |
+| `delete_texts` | `boolean` | `false` keeps entries with `audio_path: null`; `true` removes them from history. |
+
+`processing` entries are skipped — eviction does not interrupt in-flight synthesis. Files in the audio directory modified within the last ~60 seconds are also preserved by the orphan sweep, to avoid racing with synthesis writes that have not yet been recorded in history.
 
 **Errors:** `storage_error` on file system failures.
 
-**Side effects:** Emits `entry_updated` for each entry whose audio was deleted.
+**Side effects:**
+- Emits `entry_updated` for each entry whose audio was reset (`delete_texts: false`).
+- Emits `entry_removed` (`{ id }`) for each entry removed from history (`delete_texts: true`).
 
 ---
 
@@ -410,6 +428,16 @@ Return current cache size information.
 
 ```typescript
 invoke("get_cache_stats"): Promise<{ total_bytes: number; audio_file_count: number }>
+```
+
+---
+
+### `get_cache_dir`
+
+Return the absolute path to the on-disk cache directory (resolved from `dirs::cache_dir()` at startup, typically `~/.cache/ruvox/`). The frontend uses this to display the path in Settings and to feed `revealItemInDir` for opening the folder in the OS file manager.
+
+```typescript
+invoke("get_cache_dir"): Promise<string>
 ```
 
 ---
@@ -437,6 +465,20 @@ Emitted whenever a `TextEntry` is created or its fields change (status, audio_pa
 - When playback starts/stops (status: `"playing"` / `"ready"`).
 - After `delete_audio` (status reset to `"pending"`).
 - After `cancel_synthesis`.
+- After `clear_cache` for each entry whose audio was reset (`delete_texts: false`).
+
+---
+
+### `entry_removed`
+
+Emitted when an entry is removed from `history.json` by a bulk operation (currently `clear_cache` with `delete_texts: true`).
+
+```typescript
+// Payload
+{ id: EntryId }
+```
+
+The frontend should drop the entry from local state — no `entry_updated` follow-up will arrive.
 
 ---
 

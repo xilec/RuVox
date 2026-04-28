@@ -43,7 +43,6 @@ export interface UIConfig {
   audio_max_files: number;
   audio_regenerated_hours: number;
   max_cache_size_mb: number;
-  auto_cleanup_days: number;
   code_block_mode: string;
   read_operators: boolean;
   theme: Theme;
@@ -56,6 +55,21 @@ export type UIConfigPatch = Partial<UIConfig>;
 
 export interface PreviewNormalizeResult {
   normalized: string;
+}
+
+export type CleanupMode =
+  | { mode: 'size_limit'; target_mb: number }
+  | { mode: 'all' };
+
+export interface ClearCacheArgs {
+  mode: CleanupMode;
+  delete_texts: boolean;
+}
+
+export interface ClearCacheResult {
+  deleted_files: number;
+  deleted_entries: number;
+  freed_bytes: number;
 }
 
 // --- Commands (frontend → backend) ---
@@ -112,11 +126,14 @@ export const commands = {
   getTimestamps: (id: EntryId): Promise<WordTimestamp[]> =>
     tauriInvoke('get_timestamps', { id }),
 
-  clearCache: (force: boolean): Promise<{ deleted_files: number; freed_bytes: number }> =>
-    tauriInvoke('clear_cache', { force }),
+  clearCache: (args: ClearCacheArgs): Promise<ClearCacheResult> =>
+    tauriInvoke('clear_cache', { args }),
 
   getCacheStats: (): Promise<{ total_bytes: number; audio_file_count: number }> =>
     tauriInvoke('get_cache_stats'),
+
+  getCacheDir: (): Promise<string> =>
+    tauriInvoke('get_cache_dir'),
 
   previewNormalize: (text: string): Promise<PreviewNormalizeResult> =>
     tauriInvoke('preview_normalize', { text }),
@@ -125,6 +142,7 @@ export const commands = {
 // --- Events (backend → frontend) ---
 
 export interface EntryUpdatedPayload { entry: TextEntry; }
+export interface EntryRemovedPayload { id: EntryId; }
 export interface PlaybackPositionPayload { position_sec: number; entry_id: EntryId; duration_sec: number | null; }
 export interface PlaybackStartedPayload { entry_id: EntryId; duration_sec: number | null; }
 export interface PlaybackPausedPayload { entry_id: EntryId; position_sec: number; }
@@ -136,6 +154,9 @@ export interface SynthesisProgressPayload { entry_id: EntryId; progress: number;
 export const events = {
   entryUpdated: (cb: (p: EntryUpdatedPayload) => void): Promise<UnlistenFn> =>
     tauriListen<EntryUpdatedPayload>('entry_updated', (e: Event<EntryUpdatedPayload>) => cb(e.payload)),
+
+  entryRemoved: (cb: (p: EntryRemovedPayload) => void): Promise<UnlistenFn> =>
+    tauriListen<EntryRemovedPayload>('entry_removed', (e: Event<EntryRemovedPayload>) => cb(e.payload)),
 
   playbackPosition: (cb: (p: PlaybackPositionPayload) => void): Promise<UnlistenFn> =>
     tauriListen<PlaybackPositionPayload>('playback_position', (e) => cb(e.payload)),

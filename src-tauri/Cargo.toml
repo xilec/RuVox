@@ -55,6 +55,7 @@ byteorder = "1.5"
 [dev-dependencies]
 tempfile = "3"
 similar = "2"
+filetime = "0.2"
 
 [profile.release]
 codegen-units = 1

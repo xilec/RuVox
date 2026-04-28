@@ -1,21 +1,25 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import {
-  Modal,
-  Stack,
-  Select,
-  Switch,
-  NumberInput,
+  Alert,
   Button,
-  Group,
-  Text,
+  Checkbox,
   Divider,
+  Group,
+  Modal,
+  NumberInput,
+  Select,
+  Stack,
+  Switch,
+  Text,
   useMantineColorScheme,
 } from '@mantine/core';
 import type { MantineColorScheme } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
+import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { commands } from '../lib/tauri';
-import type { UIConfigPatch } from '../lib/tauri';
+import type { CleanupMode, UIConfigPatch } from '../lib/tauri';
+import { formatError } from '../lib/errors';
 
 interface SettingsFormValues {
   speaker: string;
@@ -24,7 +28,6 @@ interface SettingsFormValues {
   notify_on_error: boolean;
   preview_dialog_enabled: boolean;
   max_cache_size_mb: number;
-  auto_cleanup_days: number;
   theme: string;
 }
 
@@ -57,8 +60,131 @@ const THEME_OPTIONS = [
   { value: 'auto', label: 'Авто' },
 ];
 
+function formatMb(bytes: number): string {
+  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+}
+
+interface CleanupCacheModalProps {
+  opened: boolean;
+  defaultTargetMb: number;
+  onClose: () => void;
+  /** Fired after a successful clear so callers can refresh stats. */
+  onCleared?: () => void;
+}
+
+function CleanupCacheModal({
+  opened,
+  defaultTargetMb,
+  onClose,
+  onCleared,
+}: CleanupCacheModalProps) {
+  const [targetMb, setTargetMb] = useState<number>(defaultTargetMb);
+  const [deleteTexts, setDeleteTexts] = useState(false);
+  const [cleanFully, setCleanFully] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [stats, setStats] = useState<{ total_bytes: number; audio_file_count: number } | null>(
+    null,
+  );
+
+  useEffect(() => {
+    if (!opened) return;
+    setTargetMb(defaultTargetMb);
+    setDeleteTexts(false);
+    setCleanFully(false);
+    commands.getCacheStats().then(setStats).catch(() => setStats(null));
+  }, [opened, defaultTargetMb]);
+
+  const dangerous = cleanFully && deleteTexts;
+
+  const handleConfirm = async () => {
+    const mode: CleanupMode = cleanFully
+      ? { mode: 'all' }
+      : { mode: 'size_limit', target_mb: targetMb };
+    setSubmitting(true);
+    try {
+      const result = await commands.clearCache({ mode, delete_texts: deleteTexts });
+      const parts: string[] = [];
+      if (result.deleted_entries > 0) {
+        parts.push(`удалено записей: ${result.deleted_entries}`);
+      }
+      parts.push(`файлов: ${result.deleted_files}`);
+      parts.push(`освобождено ${formatMb(result.freed_bytes)}`);
+      notifications.show({
+        title: 'Кэш очищен',
+        message: parts.join(', '),
+        color: 'green',
+      });
+      onCleared?.();
+      onClose();
+    } catch (err) {
+      notifications.show({
+        title: 'Ошибка очистки кэша',
+        message: formatError(err),
+        color: 'red',
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Modal opened={opened} onClose={onClose} title="Очистить кэш" size="md" centered>
+      <Stack gap="sm">
+        {stats && (
+          <Text size="sm" c="dimmed">
+            Сейчас в кэше: {formatMb(stats.total_bytes)} ({stats.audio_file_count}{' '}
+            файлов)
+          </Text>
+        )}
+
+        <NumberInput
+          label="Очистить до размера, МБ"
+          description="Удаляются самые старые записи, пока кэш не уложится в указанный лимит."
+          min={0}
+          value={targetMb}
+          onChange={(v) =>
+            setTargetMb(typeof v === 'number' ? v : parseInt(String(v || 0), 10) || 0)
+          }
+          disabled={cleanFully}
+        />
+
+        <Checkbox
+          label="Удалять тексты"
+          description="Помимо аудио, удалять и сами записи из истории."
+          checked={deleteTexts}
+          onChange={(e) => setDeleteTexts(e.currentTarget.checked)}
+        />
+
+        <Checkbox
+          label="Очистить полностью"
+          description="Удалить всё аудио (и тексты, если включён флаг выше)."
+          checked={cleanFully}
+          onChange={(e) => setCleanFully(e.currentTarget.checked)}
+        />
+
+        {dangerous && (
+          <Alert color="red" variant="light">
+            Будут удалены все записи и всё аудио. Действие необратимо.
+          </Alert>
+        )}
+
+        <Group justify="flex-end" mt="sm">
+          <Button variant="subtle" onClick={onClose} disabled={submitting}>
+            Отмена
+          </Button>
+          <Button color={dangerous ? 'red' : 'blue'} loading={submitting} onClick={handleConfirm}>
+            {cleanFully ? 'Очистить' : 'Очистить кэш'}
+          </Button>
+        </Group>
+      </Stack>
+    </Modal>
+  );
+}
+
 export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) {
   const { setColorScheme } = useMantineColorScheme();
+  const [cleanupOpen, setCleanupOpen] = useState(false);
+  const [cacheDir, setCacheDir] = useState<string>('');
   const form = useForm<SettingsFormValues>({
     initialValues: {
       speaker: 'xenia',
@@ -67,12 +193,10 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
       notify_on_error: true,
       preview_dialog_enabled: true,
       max_cache_size_mb: 500,
-      auto_cleanup_days: 30,
       theme: 'auto',
     },
     validate: {
       max_cache_size_mb: (v) => (v < 100 ? 'Минимум 100 МБ' : null),
-      auto_cleanup_days: (v) => (v < 0 ? 'Значение не может быть отрицательным' : null),
     },
   });
 
@@ -86,13 +210,28 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
         notify_on_error: config.notify_on_error,
         preview_dialog_enabled: config.preview_dialog_enabled,
         max_cache_size_mb: config.max_cache_size_mb,
-        auto_cleanup_days: config.auto_cleanup_days,
         theme: config.theme,
       });
     });
+    commands.getCacheDir().then(setCacheDir).catch(() => setCacheDir(''));
     // form is excluded intentionally: setValues is stable, re-running on form change would loop
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opened]);
+
+  const handleOpenCacheDir = async () => {
+    if (!cacheDir) return;
+    try {
+      // revealItemInDir always needs an item path, not a bare directory.
+      // history.json is always present, so use it as the marker.
+      await revealItemInDir(`${cacheDir}/history.json`);
+    } catch (err) {
+      notifications.show({
+        title: 'Не удалось открыть папку',
+        message: formatError(err),
+        color: 'red',
+      });
+    }
+  };
 
   const handleSubmit = async (values: SettingsFormValues) => {
     const patch: UIConfigPatch = {
@@ -102,7 +241,6 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
       notify_on_error: values.notify_on_error,
       preview_dialog_enabled: values.preview_dialog_enabled,
       max_cache_size_mb: values.max_cache_size_mb,
-      auto_cleanup_days: values.auto_cleanup_days,
       theme: values.theme as UIConfigPatch['theme'],
     };
 
@@ -193,18 +331,31 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
 
           <NumberInput
             label="Максимальный размер кэша (МБ)"
+            description="При запуске и при ручной очистке самые старые записи удаляются, пока кэш не уложится в этот лимит."
             min={100}
             key={form.key('max_cache_size_mb')}
             {...form.getInputProps('max_cache_size_mb')}
           />
 
-          <NumberInput
-            label="Автоудаление через (дней)"
-            description="0 — отключить автоудаление"
-            min={0}
-            key={form.key('auto_cleanup_days')}
-            {...form.getInputProps('auto_cleanup_days')}
-          />
+          {cacheDir && (
+            <Stack gap={4}>
+              <Text size="xs" c="dimmed">
+                Папка кэша
+              </Text>
+              <Text size="sm" style={{ wordBreak: 'break-all', fontFamily: 'var(--mantine-font-family-monospace)' }}>
+                {cacheDir}
+              </Text>
+            </Stack>
+          )}
+
+          <Group justify="flex-start">
+            <Button variant="default" onClick={handleOpenCacheDir} disabled={!cacheDir}>
+              Открыть папку
+            </Button>
+            <Button variant="default" onClick={() => setCleanupOpen(true)}>
+              Очистить кэш…
+            </Button>
+          </Group>
 
           <Divider />
 
@@ -227,6 +378,12 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
           </Group>
         </Stack>
       </form>
+
+      <CleanupCacheModal
+        opened={cleanupOpen}
+        defaultTargetMb={form.values.max_cache_size_mb}
+        onClose={() => setCleanupOpen(false)}
+      />
     </Modal>
   );
 }
