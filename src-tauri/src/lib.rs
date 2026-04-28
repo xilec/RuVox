@@ -93,7 +93,7 @@ pub fn run() {
             let player = Arc::new(Player::new(app.handle().clone())?);
             player::spawn_position_emitter(player.clone(), app.handle().clone());
 
-            let storage = Arc::new(StorageService::new().expect("не удалось открыть хранилище"));
+            let storage = Arc::new(StorageService::new().expect("failed to open storage"));
 
             // Spawn ttsd subprocess.
             // In production: bundled next to the binary (resource_dir/ttsd).
@@ -119,7 +119,7 @@ pub fn run() {
             // explicitly via block_on (the inner spawn returns instantly).
             let tts = Arc::new(
                 tauri::async_runtime::block_on(async move { tts::TtsSubprocess::spawn(ttsd_dir) })
-                    .expect("не удалось запустить ttsd subprocess"),
+                    .expect("failed to spawn ttsd subprocess"),
             );
 
             // Warm up Silero model in background; emit model_loading → model_loaded/model_error.
