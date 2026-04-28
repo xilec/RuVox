@@ -90,6 +90,9 @@ export const commands = {
   deleteAudio: (id: EntryId): Promise<void> =>
     tauriInvoke('delete_audio', { id }),
 
+  regenerateEntry: (id: EntryId): Promise<void> =>
+    tauriInvoke('regenerate_entry', { id }),
+
   cancelSynthesis: (id: EntryId): Promise<void> =>
     tauriInvoke('cancel_synthesis', { id }),
 
