@@ -795,15 +795,6 @@ fn apply_config_patch(config: &mut UIConfig, patch: UIConfigPatch) {
     if let Some(v) = patch.text_format {
         config.text_format = v;
     }
-    if let Some(v) = patch.history_days {
-        config.history_days = v;
-    }
-    if let Some(v) = patch.audio_max_files {
-        config.audio_max_files = v;
-    }
-    if let Some(v) = patch.audio_regenerated_hours {
-        config.audio_regenerated_hours = v;
-    }
     if let Some(v) = patch.max_cache_size_mb {
         config.max_cache_size_mb = v;
     }

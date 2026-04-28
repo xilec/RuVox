@@ -39,9 +39,6 @@ export interface UIConfig {
   notify_on_ready: boolean;
   notify_on_error: boolean;
   text_format: string;
-  history_days: number;
-  audio_max_files: number;
-  audio_regenerated_hours: number;
   max_cache_size_mb: number;
   code_block_mode: string;
   read_operators: boolean;
