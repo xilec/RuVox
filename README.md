@@ -1,83 +1,85 @@
 # <img src="docs/images/logo.svg" width="40" align="top" alt=""/> RuVox
 
+[Русская версия](./README.ru.md)
+
 [![CI](https://github.com/xilec/RuVox/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/xilec/RuVox/actions/workflows/ci.yml)
 ![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-green)
 
-Desktop-приложение для озвучивания технических текстов на русском языке.
+A desktop application for narrating technical Russian-language texts.
 
-Нормализует английские термины, аббревиатуры, код, числа, URL и передаёт результат в [Silero TTS](https://github.com/snakers4/silero-models). В отличие от голого TTS, RuVox умеет читать `getUserData()` как «гет юзер дата», `API` как «эй пи ай», `/api/v2/users` как путь, а не по буквам.
+Normalizes English terms, abbreviations, code, numbers, and URLs, then pipes the result into [Silero TTS](https://github.com/snakers4/silero-models). Unlike a bare TTS, RuVox knows how to read `getUserData()` as «гет юзер дата», `API` as «эй пи ай», and `/api/v2/users` as a path rather than letter by letter.
 
-![Скриншот RuVox](docs/images/screenshot.png)
+![RuVox screenshot](docs/images/screenshot.png)
 
-## Стек
+## Stack
 
-| Слой | Технология |
-|------|------------|
-| Shell | [Tauri 2](https://tauri.app/) (Rust + нативный webview) |
+| Layer | Technology |
+|-------|------------|
+| Shell | [Tauri 2](https://tauri.app/) (Rust + native webview) |
 | Frontend | React 18 + TypeScript 5 + [Mantine 8](https://mantine.dev/) |
-| Backend | Rust (pipeline нормализации, storage, TTS-менеджер) |
-| TTS | Python 3.12 subprocess `ttsd`, обёртка над Silero TTS |
-| Аудио | `tauri-plugin-mpv` (libmpv с `scaletempo2`) |
+| Backend | Rust (normalization pipeline, storage, TTS manager) |
+| TTS | Python 3.12 subprocess `ttsd`, wrapping Silero TTS |
+| Audio | `tauri-plugin-mpv` (libmpv with `scaletempo2`) |
 
-## Возможности
+## Features
 
-- **Нормализация** — английский (camelCase/snake_case), аббревиатуры, числа, даты, URL, email, код.
-- **Markdown + HTML** — рендер и озвучивание с сохранением смысла.
-- **Mermaid-диаграммы** — визуализация в UI; для TTS заменяются маркером «тут мермэйд диаграмма».
-- **Подсветка слов** — синхронная подсветка читаемого слова в тексте во время воспроизведения.
-- **Preview-диалог** — предпросмотр нормализованного текста до синтеза.
-- **Системный трей** — close-to-tray, фоновый режим.
+- **Normalization** — English (camelCase / snake_case), abbreviations, numbers, dates, URLs, email, code.
+- **Markdown + HTML** — rendered and narrated while preserving meaning.
+- **Mermaid diagrams** — visualized in the UI; replaced with a «тут мермэйд диаграмма» marker for TTS.
+- **Word highlight** — synchronous highlighting of the currently narrated word during playback.
+- **Preview dialog** — preview the normalized text before synthesis.
+- **System tray** — close-to-tray, background mode.
 
-## Требования
+## Requirements
 
-- **ОС:** Linux (X11 или Wayland).
-- **Nix:** рекомендуется — всё окружение (Rust, Node, Python, Tauri-deps) собирается из `shell.nix` / `flake.nix`.
-- **Без Nix:** вручную установить Rust stable + Node 20 + Python 3.12 + system-deps Tauri 2 (webkitgtk 4.1, libsoup 3, gtk3, libmpv, pipewire/pulseaudio) — см. `buildInputs` в `shell.nix`.
+- **OS:** Linux (X11 or Wayland).
+- **Nix:** recommended — the entire toolchain (Rust, Node, Python, Tauri deps) is built from `shell.nix` / `flake.nix`.
+- **Without Nix:** install Rust stable + Node 20 + Python 3.12 + Tauri 2 system deps (webkitgtk 4.1, libsoup 3, gtk3, libmpv, pipewire/pulseaudio) manually — see `buildInputs` in `shell.nix`.
 
-## Dev-окружение
+## Dev environment
 
 ```bash
-# Через flake (рекомендуется)
+# Via flake (recommended)
 nix develop
 pnpm install
 pnpm tauri dev
 
-# Или через классический shell.nix
+# Or via the classic shell.nix
 nix-shell --run "pnpm install"
 nix-shell --run "pnpm tauri dev"
 ```
 
-Все команды в документации подразумевают запуск внутри `nix develop` / `nix-shell`.
+All commands in the docs assume execution inside `nix develop` / `nix-shell`.
 
-## Сборка production-бинаря
+## Production build
 
 ```bash
 nix build .#ruvox
 ./result/bin/ruvox
 ```
 
-`.#ruvox` собирает release-бинарь Tauri, оборачивает его через `wrapProgram` (runtime LD_LIBRARY_PATH + GIO_EXTRA_MODULES), линкует `ttsd` (Silero-subprocess) и `mpv` в `PATH`.
+`.#ruvox` builds the Tauri release binary, wraps it via `wrapProgram` (runtime `LD_LIBRARY_PATH` + `GIO_EXTRA_MODULES`), and links `ttsd` (Silero subprocess) and `mpv` into `PATH`.
 
-> **Первый запуск `nix build`:** derivation `frontend` использует `pnpm.fetchDeps` с `lib.fakeHash` — Nix упадёт с hash mismatch, напишет реальный hash; его нужно подставить в `flake.nix` и повторить build. Это стандартная процедура pnpm2nix.
+> **First `nix build` run:** the `frontend` derivation uses `pnpm.fetchDeps` with `lib.fakeHash` — Nix will fail with a hash mismatch and print the real hash; substitute it into `flake.nix` and re-run the build. This is the standard pnpm2nix procedure.
 
-## Тесты
+## Tests
 
 ```bash
-pnpm typecheck                                            # TypeScript
-cargo test --manifest-path src-tauri/Cargo.toml           # Rust (включая golden-тесты pipeline)
-cargo test --manifest-path src-tauri/Cargo.toml --test golden   # только golden-тесты
-cd ttsd && uv run python -m pytest                        # Python subprocess
+pnpm typecheck                                                  # TypeScript
+cargo test --manifest-path src-tauri/Cargo.toml                 # Rust (incl. pipeline golden tests)
+cargo test --manifest-path src-tauri/Cargo.toml --test golden   # golden tests only
+cd ttsd && uv run python -m pytest                              # Python subprocess
 ```
 
-## Документация
+## Documentation
 
-| Файл | Описание |
-|------|----------|
-| [AGENTS.md](AGENTS.md) | Правила разработки, структура проекта, соглашения |
-| [docs/ipc-contract.md](docs/ipc-contract.md) | Tauri-команды, события, протокол ttsd |
-| [docs/storage-schema.md](docs/storage-schema.md) | Схема history.json, timestamps, config |
-| [CHANGELOG.md](CHANGELOG.md) | Хронология изменений |
+| File | Description |
+|------|-------------|
+| [AGENTS.md](AGENTS.md) | Development rules, project structure, conventions |
+| [docs/ipc-contract.md](docs/ipc-contract.md) | Tauri commands, events, ttsd protocol |
+| [docs/storage-schema.md](docs/storage-schema.md) | `history.json` schema, timestamps, config |
+| [CHANGELOG.md](CHANGELOG.md) | Change history |
 
-## Лицензия
+## License
 
-GPL-3.0 — см. [LICENSE.md](LICENSE.md).
+GPL-3.0 — see [LICENSE.md](LICENSE.md).
