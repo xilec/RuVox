@@ -48,7 +48,7 @@ Silero TTS cannot correctly pronounce:
 ### Reference
 
 - [IPC contract](ipc-contract.md) — Tauri commands, events, ttsd JSON protocol.
-- [Storage schema](storage-schema.md) — `history.json`, `config.json`, `{uuid}.timestamps.json`, `{uuid}.wav`.
+- [Storage schema](storage-schema.md) — `history.json`, `config.json`, `{uuid}.timestamps.json`, `{uuid}.opus`.
 - [Normalization pipeline](pipeline.md) — processing stages, normalizers, golden tests.
 - [UI components](ui.md) — React app structure, components, styling.
 - [Preview dialog (FF 1.1)](preview-dialog.md) — behavior, settings, interaction flow.
