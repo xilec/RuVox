@@ -7,12 +7,16 @@
 //!
 //! Run with:
 //!   nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml \
-//!     --test supervisor"
+//!     --features test-helpers --test supervisor"
+//!
+//! `test-helpers` is required because the recording emitter helper lives in
+//! a feature-gated module so it stays out of release/dev builds.
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use ruvox_tauri_lib::tts::supervisor::{CommandFactory, Emitter, TtsSupervisor};
+use ruvox_tauri_lib::tts::supervisor::test_helpers::recording_emitter;
+use ruvox_tauri_lib::tts::supervisor::{CommandFactory, TtsSupervisor};
 use tokio::process::Command;
 
 /// Resolve the mock script path. `cargo test` may be invoked from either
@@ -40,17 +44,6 @@ fn build_factory() -> CommandFactory {
         cmd.arg(&script);
         cmd
     })
-}
-
-type EventLog = Arc<Mutex<Vec<(String, serde_json::Value)>>>;
-
-fn recording_emitter() -> (Emitter, EventLog) {
-    let log = Arc::new(Mutex::new(Vec::new()));
-    let log_clone = Arc::clone(&log);
-    let emitter: Emitter = Arc::new(move |name, payload| {
-        log_clone.lock().unwrap().push((name.to_string(), payload));
-    });
-    (emitter, log)
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
