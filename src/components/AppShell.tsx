@@ -1,5 +1,14 @@
-import { AppShell as MantineAppShell, Title, Group, Button, useMantineColorScheme } from '@mantine/core';
+import {
+  AppShell as MantineAppShell,
+  Title,
+  Group,
+  Button,
+  TextInput,
+  CloseButton,
+  useMantineColorScheme,
+} from '@mantine/core';
 import type { MantineColorScheme } from '@mantine/core';
+import { useHotkeys } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { useState, useEffect, useRef } from 'react';
 import { readText as readClipboardText } from '@tauri-apps/plugin-clipboard-manager';
@@ -10,8 +19,10 @@ import { TextViewer } from './TextViewer';
 import { Player } from './Player';
 import { QueueList } from './QueueList';
 import { useSelectedEntry } from '../stores/selectedEntry';
+import { useSearchQuery } from '../stores/searchQuery';
 import { PreviewDialog } from '../dialogs/PreviewDialog';
 import { SettingsModal } from '../dialogs/Settings';
+import { IconSearch } from './icons';
 
 export function AppShell() {
   const { selectedEntry } = useSelectedEntry();
@@ -28,6 +39,19 @@ export function AppShell() {
     startX: number;
     originW: number;
   } | null>(null);
+  const { query, setQuery } = useSearchQuery();
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Ctrl+F / Cmd+F focuses the queue search field. preventDefault stops the
+  // webview's built-in "find in page" behaviour so the hotkey is consistent
+  // across platforms.
+  useHotkeys([
+    [
+      'mod+F',
+      () => searchInputRef.current?.focus(),
+      { preventDefault: true },
+    ],
+  ]);
 
   function onNavResizeDown(e: React.PointerEvent<HTMLDivElement>) {
     e.preventDefault();
@@ -198,6 +222,32 @@ export function AppShell() {
               Add
             </Button>
           </Group>
+          <TextInput
+            ref={searchInputRef}
+            placeholder="Поиск по записям"
+            value={query}
+            onChange={(e) => setQuery(e.currentTarget.value)}
+            leftSection={<IconSearch />}
+            rightSection={
+              query ? (
+                <CloseButton
+                  size="sm"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => setQuery('')}
+                  aria-label="Очистить поиск"
+                />
+              ) : null
+            }
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                setQuery('');
+                e.currentTarget.blur();
+              }
+            }}
+            size="xs"
+            mb="xs"
+          />
           <QueueList />
           <div
             onPointerDown={onNavResizeDown}
