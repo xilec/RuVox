@@ -258,15 +258,18 @@ impl TtsSupervisor {
     }
 }
 
-#[cfg(test)]
-mod tests {
+/// Helpers shared between unit tests in this module and integration tests
+/// in `tests/supervisor.rs`. Gated on `cfg(test)` (always available to unit
+/// tests in this crate) and `feature = "test-helpers"` (so integration test
+/// crates can opt in without leaking helpers into release builds).
+#[cfg(any(test, feature = "test-helpers"))]
+pub mod test_helpers {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
 
-    type EventLog = Arc<std::sync::Mutex<Vec<(String, serde_json::Value)>>>;
+    pub type EventLog = Arc<std::sync::Mutex<Vec<(String, serde_json::Value)>>>;
 
     /// Build an emitter that records every event into a shared Vec.
-    fn recording_emitter() -> (Emitter, EventLog) {
+    pub fn recording_emitter() -> (Emitter, EventLog) {
         let log = Arc::new(std::sync::Mutex::new(Vec::new()));
         let log_clone = Arc::clone(&log);
         let emitter: Emitter = Arc::new(move |name, payload| {
@@ -274,6 +277,13 @@ mod tests {
         });
         (emitter, log)
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::test_helpers::recording_emitter;
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     /// Factory that always fails to spawn.  Used to verify the fatal path.
     fn failing_factory() -> CommandFactory {
