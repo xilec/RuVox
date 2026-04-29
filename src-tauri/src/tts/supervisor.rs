@@ -68,7 +68,7 @@ impl TtsSupervisor {
     /// than entering retry loops.
     pub fn spawn(factory: CommandFactory, emitter: Emitter) -> Result<Self, TtsError> {
         let cmd = factory();
-        let initial = TtsSubprocess::spawn_with_command(cmd)?;
+        let initial = TtsSubprocess::spawn(cmd)?;
         Ok(Self {
             current: RwLock::new(Some(Arc::new(initial))),
             respawn_lock: Mutex::new(()),
@@ -145,7 +145,7 @@ impl TtsSupervisor {
             sleep(*delay).await;
 
             let cmd = (self.factory)();
-            match TtsSubprocess::spawn_with_command(cmd) {
+            match TtsSubprocess::spawn(cmd) {
                 Ok(fresh) => {
                     let fresh = Arc::new(fresh);
                     {
@@ -179,6 +179,16 @@ impl TtsSupervisor {
         error!(target: "tts::supervisor", "ttsd respawn exhausted: {message}");
         (self.emitter)("tts_fatal", json!({ "message": message }));
         Err(err)
+    }
+
+    /// Run the first-time Silero warmup in the background, emitting the
+    /// `model_loading` → `model_loaded` / `model_error` lifecycle that the
+    /// frontend expects on startup. Same code path as post-respawn warmup —
+    /// callers don't need to duplicate the lifecycle plumbing.
+    pub async fn spawn_initial_warmup(&self) {
+        if let Some(handle) = self.current_handle().await {
+            self.spawn_warmup(handle);
+        }
     }
 
     /// Run `warmup` against the freshly-spawned handle in a background task,

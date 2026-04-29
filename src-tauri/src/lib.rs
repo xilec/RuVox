@@ -204,23 +204,13 @@ pub fn run() {
                 .expect("failed to spawn ttsd subprocess"),
             );
 
-            // Warm up Silero model in background; emit model_loading → model_loaded/model_error.
+            // Warm up Silero model in background. The supervisor owns the
+            // model_loading → model_loaded/model_error emit sequence so the
+            // initial warmup and post-respawn warmup share one code path.
             {
                 let tts_clone = Arc::clone(&tts);
-                let app_handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
-                    let _ = app_handle.emit("model_loading", json!({}));
-                    match tts_clone.warmup().await {
-                        Ok(()) => {
-                            tracing::info!("ttsd warmup ok");
-                            let _ = app_handle.emit("model_loaded", json!({}));
-                        }
-                        Err(e) => {
-                            tracing::error!("ttsd warmup failed: {e}");
-                            let _ =
-                                app_handle.emit("model_error", json!({ "message": e.to_string() }));
-                        }
-                    }
+                    tts_clone.spawn_initial_warmup().await;
                 });
             }
 
