@@ -12,7 +12,6 @@
 pub mod supervisor;
 pub use supervisor::TtsSupervisor;
 
-use std::path::PathBuf;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -182,23 +181,14 @@ pub struct TtsSubprocess {
 }
 
 impl TtsSubprocess {
-    /// Spawn the ttsd subprocess and start the driver task.
-    ///
-    /// `ttsd_dir` is the directory from which `uv run python -m ttsd` is executed.
-    pub fn spawn(ttsd_dir: PathBuf) -> Result<Self, TtsError> {
-        let mut cmd = Command::new("uv");
-        cmd.args(["run", "python", "-m", "ttsd"])
-            .current_dir(ttsd_dir);
-        Self::spawn_with_command(cmd)
-    }
-
-    /// Lower-level constructor: takes a fully-built [`Command`] and wires its
-    /// stdio + a driver task. Stdin/stdout/stderr are forced to `piped` and
+    /// Spawn the ttsd subprocess from a fully-built [`Command`] and start the
+    /// driver task. Stdin/stdout/stderr are forced to `piped` and
     /// `kill_on_drop` is set, regardless of what the caller configured.
     ///
-    /// Used by [`supervisor::TtsSupervisor`] to inject a respawn-friendly
-    /// command factory and by integration tests to point at mock binaries.
-    pub fn spawn_with_command(mut cmd: Command) -> Result<Self, TtsError> {
+    /// `pub(super)` because all production callers go through
+    /// [`supervisor::TtsSupervisor`], which owns the command factory and
+    /// respawn policy. Tests reach the subprocess via the supervisor too.
+    pub(super) fn spawn(mut cmd: Command) -> Result<Self, TtsError> {
         cmd.stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
