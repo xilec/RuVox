@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { ActionIcon, Group, Slider, Text, NumberInput, Tooltip } from '@mantine/core';
 import { useHotkeys } from '@mantine/hooks';
-import type { UnlistenFn } from '@tauri-apps/api/event';
 import { commands, events } from '../lib/tauri';
 import type { EntryId } from '../lib/tauri';
+import { useTauriEvents } from '../lib/useTauriEvents';
 import { IconPlay, IconPause, IconSettings, IconAppLogo } from './icons';
 import classes from './Player.module.css';
 
@@ -50,10 +50,8 @@ export function Player({ onOpenSettings }: PlayerProps = {}) {
   const speedRef = useRef(state.speed);
   useEffect(() => { speedRef.current = state.speed; }, [state.speed]);
 
-  useEffect(() => {
-    const unlisteners: Promise<UnlistenFn>[] = [];
-
-    unlisteners.push(
+  useTauriEvents([
+    () =>
       events.playbackStarted((p) => {
         setState((prev) => ({
           ...prev,
@@ -66,9 +64,7 @@ export function Player({ onOpenSettings }: PlayerProps = {}) {
           duration: p.duration_sec ?? prev.duration,
         }));
       }),
-    );
-
-    unlisteners.push(
+    () =>
       events.playbackPaused((p) => {
         setState((prev) => ({
           ...prev,
@@ -77,9 +73,7 @@ export function Player({ onOpenSettings }: PlayerProps = {}) {
           position: p.position_sec,
         }));
       }),
-    );
-
-    unlisteners.push(
+    () =>
       events.playbackStopped(() => {
         setState((prev) => ({
           ...prev,
@@ -89,9 +83,7 @@ export function Player({ onOpenSettings }: PlayerProps = {}) {
           currentEntryId: null,
         }));
       }),
-    );
-
-    unlisteners.push(
+    () =>
       events.playbackFinished(() => {
         setState((prev) => ({
           ...prev,
@@ -100,9 +92,7 @@ export function Player({ onOpenSettings }: PlayerProps = {}) {
           position: 0,
         }));
       }),
-    );
-
-    unlisteners.push(
+    () =>
       events.playbackPosition((p) => {
         setState((prev) => {
           const next: PlayerState = { ...prev, currentEntryId: p.entry_id };
@@ -117,10 +107,7 @@ export function Player({ onOpenSettings }: PlayerProps = {}) {
           return next;
         });
       }),
-    );
-
-    // Sync duration from entry_updated events
-    unlisteners.push(
+    () =>
       events.entryUpdated((p) => {
         setState((prev) => {
           if (
@@ -132,12 +119,7 @@ export function Player({ onOpenSettings }: PlayerProps = {}) {
           return prev;
         });
       }),
-    );
-
-    return () => {
-      unlisteners.forEach((p) => p.then((fn) => fn()));
-    };
-  }, []);
+  ]);
 
   const handlePlayPause = useCallback(async () => {
     if (state.isPlaying) {

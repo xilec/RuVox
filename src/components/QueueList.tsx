@@ -13,7 +13,8 @@ import {
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import { commands, events } from '../lib/tauri';
-import type { TextEntry, EntryStatus, EntryId, UnlistenFn } from '../lib/tauri';
+import type { TextEntry, EntryStatus, EntryId } from '../lib/tauri';
+import { useTauriEvents } from '../lib/useTauriEvents';
 import { useSelectedEntry } from '../stores/selectedEntry';
 import { useSearchQuery } from '../stores/searchQuery';
 import { IconPlay, IconLocate } from './icons';
@@ -165,11 +166,11 @@ export function QueueList() {
   }, []);
 
   useEffect(() => {
-    const unlisteners: Promise<UnlistenFn>[] = [];
-
     loadEntries();
+  }, [loadEntries]);
 
-    unlisteners.push(
+  useTauriEvents([
+    () =>
       events.entryUpdated((payload) => {
         setEntries((prev) => {
           const idx = prev.findIndex((e) => e.id === payload.entry.id);
@@ -194,9 +195,7 @@ export function QueueList() {
           return {};
         });
       }),
-    );
-
-    unlisteners.push(
+    () =>
       events.entryRemoved((payload) => {
         setEntries((prev) => prev.filter((e) => e.id !== payload.id));
         useSelectedEntry.setState((state) =>
@@ -205,18 +204,12 @@ export function QueueList() {
             : {},
         );
       }),
-    );
-
     // Highlight the currently-playing entry.  Paused playback keeps the
     // highlight (user may resume); only stop/finish clears it.
-    unlisteners.push(events.playbackStarted((p) => setPlayingId(p.entry_id)));
-    unlisteners.push(events.playbackStopped(() => setPlayingId(null)));
-    unlisteners.push(events.playbackFinished(() => setPlayingId(null)));
-
-    return () => {
-      unlisteners.forEach((p) => p.then((fn) => fn()));
-    };
-  }, [loadEntries]);
+    () => events.playbackStarted((p) => setPlayingId(p.entry_id)),
+    () => events.playbackStopped(() => setPlayingId(null)),
+    () => events.playbackFinished(() => setPlayingId(null)),
+  ]);
 
   // Track whether the playing entry is currently visible in the viewport so we
   // only surface the "jump to current" button when the user has scrolled away.
