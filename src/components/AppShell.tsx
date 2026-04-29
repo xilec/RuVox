@@ -12,8 +12,8 @@ import { useHotkeys } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { useState, useEffect, useRef } from 'react';
 import { readText as readClipboardText } from '@tauri-apps/plugin-clipboard-manager';
-import { commands } from '../lib/tauri';
-import type { UIConfig } from '../lib/tauri';
+import { commands, events } from '../lib/tauri';
+import type { UIConfig, UnlistenFn } from '../lib/tauri';
 import { formatError } from '../lib/errors';
 import { TextViewer } from './TextViewer';
 import { Player } from './Player';
@@ -91,6 +91,38 @@ export function AppShell() {
       // Config load failure is non-fatal; preview will be skipped
     });
   }, [setColorScheme]);
+
+  // ttsd lifecycle notifications. The supervisor emits ttsd_restarting on the
+  // first failed request after a crash and tts_fatal after three failed
+  // respawn attempts. Both are user-visible so the silence between
+  // background respawns isn't mistaken for a hung app.
+  useEffect(() => {
+    const pending: Promise<UnlistenFn>[] = [];
+    pending.push(
+      events.ttsdRestarting(() => {
+        notifications.show({
+          id: 'ttsd-restarting',
+          title: 'TTS перезапускается',
+          message: 'Подождите несколько секунд — модель будет загружена заново.',
+          color: 'yellow',
+          autoClose: 5000,
+        });
+      }),
+    );
+    pending.push(
+      events.ttsFatal((p) => {
+        notifications.show({
+          title: 'TTS не запускается',
+          message: p.message || 'Не удалось перезапустить процесс синтеза.',
+          color: 'red',
+          autoClose: false,
+        });
+      }),
+    );
+    return () => {
+      pending.forEach((p) => p.then((fn) => fn()));
+    };
+  }, []);
 
   async function addEntry() {
     if (pending) return;

@@ -175,12 +175,33 @@ pub fn run() {
                 }
             };
 
+            // Build a command factory the supervisor can call on every
+            // (re)spawn. Cloning the path captured by value keeps the closure
+            // `Fn` (not `FnOnce`) — required for the Arc<dyn Fn(...)> shape.
+            let ttsd_dir_for_factory = ttsd_dir.clone();
+            let factory: tts::supervisor::CommandFactory = Arc::new(move || {
+                let mut cmd = tokio::process::Command::new("uv");
+                cmd.args(["run", "python", "-m", "ttsd"])
+                    .current_dir(&ttsd_dir_for_factory);
+                cmd
+            });
+
+            // Emitter for ttsd_restarting / tts_fatal (and the model_*
+            // lifecycle re-emitted from supervisor.spawn_warmup).
+            let app_handle_for_emitter = app.handle().clone();
+            let emitter: tts::supervisor::Emitter =
+                Arc::new(move |event_name, payload| {
+                    let _ = app_handle_for_emitter.emit(event_name, payload);
+                });
+
             // tokio::process::Command::spawn requires an active tokio runtime
             // context; setup hook runs synchronously, so enter Tauri's runtime
             // explicitly via block_on (the inner spawn returns instantly).
             let tts = Arc::new(
-                tauri::async_runtime::block_on(async move { tts::TtsSubprocess::spawn(ttsd_dir) })
-                    .expect("failed to spawn ttsd subprocess"),
+                tauri::async_runtime::block_on(async move {
+                    tts::TtsSupervisor::spawn(factory, emitter)
+                })
+                .expect("failed to spawn ttsd subprocess"),
             );
 
             // Warm up Silero model in background; emit model_loading → model_loaded/model_error.

@@ -791,13 +791,26 @@ type ErrorCode =
 
 ### ttsd Auto-restart
 
-If ttsd exits unexpectedly (crash, SIGKILL from OOM killer), Rust detects the process exit and:
-1. Logs a `tracing::warn!` message.
-2. Spawns a new ttsd process.
-3. Sends `warmup` again.
-4. Re-emits `model_loading` to frontend.
+If ttsd exits unexpectedly (crash, SIGKILL from OOM killer), the
+`TtsSupervisor` (`src-tauri/src/tts/supervisor.rs`) detects the process exit
+on the next request that hits `TtsError::Died` and:
 
-Any in-flight synthesis request that was sent to the crashed process is marked as failed with `synthesis_failed`.
+1. Logs a `tracing::warn!` message.
+2. Emits `ttsd_restarting` (no payload) so the UI can show a "TTS
+   перезапускается" toast.
+3. Tries to spawn a fresh ttsd up to 3 times with backoff `1s / 3s / 5s`.
+4. On the first successful respawn it kicks off `warmup` in a background
+   task and re-emits `model_loading` → `model_loaded` (or `model_error` on
+   failure) so the frontend sees the same lifecycle as on startup.
+5. If all three respawn attempts fail, it emits
+   `tts_fatal { message: string }` and surfaces the spawn error to the
+   caller. Every pending entry whose synthesis was waiting will go to the
+   `error` state via the normal command-error path.
+
+Any in-flight synthesis request that was sent to the crashed process is
+marked as failed with `synthesis_failed`. The next request after a fatal
+state still triggers the supervisor to retry, so the system can recover if
+e.g. ttsd dependencies were briefly unavailable.
 
 ---
 

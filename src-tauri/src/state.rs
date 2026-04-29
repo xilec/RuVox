@@ -7,7 +7,7 @@ use crate::pipeline::TTSPipeline;
 use crate::player::Player;
 use crate::storage::service::StorageService;
 use crate::tray::TrayCmd;
-use crate::tts::TtsSubprocess;
+use crate::tts::TtsSupervisor;
 
 /// Application-wide state held in `tauri::State<AppState>`.
 ///
@@ -16,7 +16,7 @@ use crate::tts::TtsSubprocess;
 /// `tauri::generate_handler!`.
 pub struct AppState {
     pub storage: Arc<StorageService>,
-    pub tts: Arc<TtsSubprocess>,
+    pub tts: Arc<TtsSupervisor>,
     pub player: Arc<Player<tauri::Wry>>,
     pub pipeline: Arc<Mutex<TTSPipeline>>,
     /// Sender for tray menu commands (read_now / read_later).

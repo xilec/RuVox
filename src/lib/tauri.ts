@@ -149,6 +149,7 @@ export interface PlaybackPausedPayload { entry_id: EntryId; position_sec: number
 export interface PlaybackFinishedPayload { entry_id: EntryId; }
 export interface ModelErrorPayload { message: string; }
 export interface TtsErrorPayload { entry_id: EntryId; message: string; }
+export interface TtsFatalPayload { message: string; }
 export interface SynthesisProgressPayload { entry_id: EntryId; progress: number; }
 
 export const events = {
@@ -184,6 +185,12 @@ export const events = {
 
   ttsError: (cb: (p: TtsErrorPayload) => void): Promise<UnlistenFn> =>
     tauriListen<TtsErrorPayload>('tts_error', (e) => cb(e.payload)),
+
+  ttsdRestarting: (cb: () => void): Promise<UnlistenFn> =>
+    tauriListen<Record<string, never>>('ttsd_restarting', () => cb()),
+
+  ttsFatal: (cb: (p: TtsFatalPayload) => void): Promise<UnlistenFn> =>
+    tauriListen<TtsFatalPayload>('tts_fatal', (e) => cb(e.payload)),
 
   synthesisProgress: (cb: (p: SynthesisProgressPayload) => void): Promise<UnlistenFn> =>
     tauriListen<SynthesisProgressPayload>('synthesis_progress', (e) => cb(e.payload)),
