@@ -12,6 +12,7 @@
 pub mod supervisor;
 pub use supervisor::TtsSupervisor;
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -60,18 +61,23 @@ pub enum TtsError {
 // ---------------------------------------------------------------------------
 
 /// Requests sent to the ttsd subprocess over stdin (NDJSON).
+///
+/// Strings and the char_mapping slice are wrapped in `Arc` so the supervisor's
+/// retry loop can pass them through cheaply (atomic refcount bump) instead of
+/// memcpy-cloning on every attempt. Serde serializes `Arc<str>` / `Arc<[T]>`
+/// transparently as `&str` / `&[T]`.
 #[derive(Debug, Serialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
 pub enum TtsRequest {
     Warmup,
     Synthesize {
-        text: String,
-        speaker: String,
+        text: Arc<str>,
+        speaker: Arc<str>,
         sample_rate: u32,
-        out_wav: String,
+        out_wav: Arc<str>,
         /// Optional char mapping from the Rust pipeline for precise `original_pos` mapping.
         #[serde(skip_serializing_if = "Option::is_none")]
-        char_mapping: Option<Vec<CharMappingEntry>>,
+        char_mapping: Option<Arc<[CharMappingEntry]>>,
     },
     Shutdown,
 }
@@ -233,11 +239,11 @@ impl TtsSubprocess {
     /// Timeout: 5 minutes. Returns timestamps and duration from ttsd.
     pub async fn synthesize(
         &self,
-        text: String,
-        speaker: String,
+        text: Arc<str>,
+        speaker: Arc<str>,
         sample_rate: u32,
-        out_wav: String,
-        char_mapping: Option<Vec<CharMappingEntry>>,
+        out_wav: Arc<str>,
+        char_mapping: Option<Arc<[CharMappingEntry]>>,
     ) -> Result<SynthesizeOutput, TtsError> {
         const SYNTHESIZE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
@@ -392,10 +398,10 @@ mod tests {
     #[test]
     fn synthesize_serializes_all_required_fields() {
         let req = TtsRequest::Synthesize {
-            text: "привет мир".to_string(),
-            speaker: "xenia".to_string(),
+            text: Arc::from("привет мир"),
+            speaker: Arc::from("xenia"),
             sample_rate: 48000,
-            out_wav: "/tmp/test.wav".to_string(),
+            out_wav: Arc::from("/tmp/test.wav"),
             char_mapping: None,
         };
         let json = serde_json::to_string(&req).unwrap();
@@ -412,17 +418,17 @@ mod tests {
 
     #[test]
     fn synthesize_with_char_mapping_includes_it() {
-        let mapping = vec![CharMappingEntry {
+        let mapping: Arc<[CharMappingEntry]> = Arc::from(vec![CharMappingEntry {
             norm_start: 0,
             norm_end: 6,
             orig_start: 0,
             orig_end: 12,
-        }];
+        }]);
         let req = TtsRequest::Synthesize {
-            text: "привет".to_string(),
-            speaker: "xenia".to_string(),
+            text: Arc::from("привет"),
+            speaker: Arc::from("xenia"),
             sample_rate: 48000,
-            out_wav: "/tmp/test.wav".to_string(),
+            out_wav: Arc::from("/tmp/test.wav"),
             char_mapping: Some(mapping),
         };
         let json = serde_json::to_string(&req).unwrap();

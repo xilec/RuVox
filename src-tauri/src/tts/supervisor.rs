@@ -227,11 +227,17 @@ impl TtsSupervisor {
         out_wav: String,
         char_mapping: Option<Vec<CharMappingEntry>>,
     ) -> Result<SynthesizeOutput, TtsError> {
+        // Convert once at the supervisor boundary; each retry below only bumps
+        // the Arc refcount instead of memcpy-cloning the strings/Vec.
+        let text: Arc<str> = Arc::from(text);
+        let speaker: Arc<str> = Arc::from(speaker);
+        let out_wav: Arc<str> = Arc::from(out_wav);
+        let char_mapping: Option<Arc<[CharMappingEntry]>> = char_mapping.map(Arc::from);
+
         self.with_retry(move |h| {
-            // Clone the input so each retry attempt gets its own copy.
-            let text = text.clone();
-            let speaker = speaker.clone();
-            let out_wav = out_wav.clone();
+            let text = Arc::clone(&text);
+            let speaker = Arc::clone(&speaker);
+            let out_wav = Arc::clone(&out_wav);
             let char_mapping = char_mapping.clone();
             async move {
                 h.synthesize(text, speaker, sample_rate, out_wav, char_mapping)
