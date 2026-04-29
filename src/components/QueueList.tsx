@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Stack,
   Group,
@@ -8,13 +8,14 @@ import {
   ScrollArea,
   Loader,
   Menu,
+  Button,
 } from '@mantine/core';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import { commands, events } from '../lib/tauri';
 import type { TextEntry, EntryStatus, EntryId, UnlistenFn } from '../lib/tauri';
 import { useSelectedEntry } from '../stores/selectedEntry';
-import { IconPlay } from './icons';
+import { IconPlay, IconLocate } from './icons';
 import classes from './QueueList.module.css';
 
 function formatDuration(seconds: number): string {
@@ -78,6 +79,7 @@ function QueueItem({ entry, isSelected, isPlaying, onSelect, onPlay, onContextMe
   return (
     <div
       className={itemClass}
+      data-entry-id={entry.id}
       onClick={() => onSelect(entry)}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -137,6 +139,8 @@ function QueueItem({ entry, isSelected, isPlaying, onSelect, onPlay, onContextMe
 export function QueueList() {
   const [entries, setEntries] = useState<TextEntry[]>([]);
   const [playingId, setPlayingId] = useState<EntryId | null>(null);
+  const [playingVisible, setPlayingVisible] = useState(true);
+  const viewportRef = useRef<HTMLDivElement>(null);
   const { selectedId, setSelectedEntry } = useSelectedEntry();
   // Single Menu instance shared by all queue items — cheaper than one per item
   // and avoids stacking many hidden Menu portals that can interfere with other
@@ -207,6 +211,36 @@ export function QueueList() {
     };
   }, [loadEntries]);
 
+  // Track whether the playing entry is currently visible in the viewport so we
+  // only surface the "jump to current" button when the user has scrolled away.
+  useEffect(() => {
+    if (!playingId || !viewportRef.current) {
+      setPlayingVisible(true);
+      return;
+    }
+    const target = viewportRef.current.querySelector<HTMLElement>(
+      `[data-entry-id="${CSS.escape(playingId)}"]`,
+    );
+    if (!target) {
+      setPlayingVisible(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => setPlayingVisible(entry.intersectionRatio >= 1),
+      { root: viewportRef.current, threshold: [0, 1] },
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [playingId, entries]);
+
+  const handleJumpToPlaying = useCallback(() => {
+    if (!playingId || !viewportRef.current) return;
+    const target = viewportRef.current.querySelector<HTMLElement>(
+      `[data-entry-id="${CSS.escape(playingId)}"]`,
+    );
+    target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [playingId]);
+
   const handlePlay = useCallback(async (id: string) => {
     await commands.playEntry(id);
   }, []);
@@ -261,8 +295,8 @@ export function QueueList() {
   }
 
   return (
-    <>
-      <ScrollArea className={classes.scrollArea}>
+    <div className={classes.container}>
+      <ScrollArea className={classes.scrollArea} viewportRef={viewportRef}>
         <Stack gap={4}>
           {entries.map((entry) => (
             <QueueItem
@@ -277,6 +311,22 @@ export function QueueList() {
           ))}
         </Stack>
       </ScrollArea>
+
+      {playingId !== null && !playingVisible && (
+        <Button
+          className={classes.jumpToPlaying}
+          size="compact-xs"
+          radius="xl"
+          variant="filled"
+          color="teal"
+          leftSection={<IconLocate />}
+          onClick={handleJumpToPlaying}
+          title="К читаемому"
+          aria-label="К читаемому"
+        >
+          К читаемому
+        </Button>
+      )}
 
       <Menu
         opened={menu !== null}
@@ -327,6 +377,6 @@ export function QueueList() {
           </Menu.Item>
         </Menu.Dropdown>
       </Menu>
-    </>
+    </div>
   );
 }
