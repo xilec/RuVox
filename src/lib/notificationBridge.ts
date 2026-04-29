@@ -9,8 +9,56 @@ import { events } from './tauri';
 export async function setupNotificationBridge(): Promise<() => void> {
   const unlisteners: UnlistenFn[] = [];
 
+  // Toast routing for the model_loading → model_loaded/model_error sequence:
+  // - Cold-start path uses id 'model-loading'.
+  // - Post-respawn path uses id 'ttsd-restart' so the yellow "перезапускается"
+  //   toast morphs into "загружаю модель..." → "TTS восстановлен" / error
+  //   without ever disappearing silently. `restartActive` flips on
+  //   ttsd_restarting and back off when the post-respawn warmup completes
+  //   (success, model_error, or tts_fatal).
+  let restartActive = false;
+  const RESTART_TOAST_ID = 'ttsd-restart';
+
+  unlisteners.push(
+    await events.ttsdRestarting(() => {
+      restartActive = true;
+      notifications.show({
+        id: RESTART_TOAST_ID,
+        title: 'TTS перезапускается',
+        message: 'Подождите несколько секунд — процесс будет запущен заново.',
+        color: 'yellow',
+        loading: true,
+        autoClose: false,
+      });
+    }),
+  );
+
+  unlisteners.push(
+    await events.ttsFatal((p) => {
+      restartActive = false;
+      notifications.hide(RESTART_TOAST_ID);
+      notifications.show({
+        title: 'TTS не запускается',
+        message: p.message || 'Не удалось перезапустить процесс синтеза.',
+        color: 'red',
+        autoClose: false,
+      });
+    }),
+  );
+
   unlisteners.push(
     await events.modelLoading(() => {
+      if (restartActive) {
+        notifications.update({
+          id: RESTART_TOAST_ID,
+          title: 'Загружаю модель TTS',
+          message: 'Перезапуск завершён, повторная загрузка модели...',
+          color: 'yellow',
+          loading: true,
+          autoClose: false,
+        });
+        return;
+      }
       notifications.show({
         id: 'model-loading',
         title: 'Загрузка модели TTS',
@@ -23,6 +71,18 @@ export async function setupNotificationBridge(): Promise<() => void> {
 
   unlisteners.push(
     await events.modelLoaded(() => {
+      if (restartActive) {
+        restartActive = false;
+        notifications.update({
+          id: RESTART_TOAST_ID,
+          title: 'TTS восстановлен',
+          message: 'Синтез речи снова доступен.',
+          color: 'green',
+          loading: false,
+          autoClose: 3000,
+        });
+        return;
+      }
       notifications.update({
         id: 'model-loading',
         title: 'Модель TTS загружена',
@@ -36,6 +96,18 @@ export async function setupNotificationBridge(): Promise<() => void> {
 
   unlisteners.push(
     await events.modelError((p) => {
+      if (restartActive) {
+        restartActive = false;
+        notifications.update({
+          id: RESTART_TOAST_ID,
+          title: 'Ошибка загрузки модели TTS',
+          message: p.message,
+          color: 'red',
+          loading: false,
+          autoClose: 8000,
+        });
+        return;
+      }
       notifications.update({
         id: 'model-loading',
         title: 'Ошибка загрузки модели TTS',
