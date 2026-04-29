@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   Stack,
   Group,
@@ -15,6 +15,7 @@ import { notifications } from '@mantine/notifications';
 import { commands, events } from '../lib/tauri';
 import type { TextEntry, EntryStatus, EntryId, UnlistenFn } from '../lib/tauri';
 import { useSelectedEntry } from '../stores/selectedEntry';
+import { useSearchQuery } from '../stores/searchQuery';
 import { IconPlay, IconLocate } from './icons';
 import classes from './QueueList.module.css';
 
@@ -142,6 +143,12 @@ export function QueueList() {
   const [playingVisible, setPlayingVisible] = useState(true);
   const viewportRef = useRef<HTMLDivElement>(null);
   const { selectedId, setSelectedEntry } = useSelectedEntry();
+  const { query } = useSearchQuery();
+  const filteredEntries = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return entries;
+    return entries.filter((e) => e.original_text.toLowerCase().includes(q));
+  }, [entries, query]);
   // Single Menu instance shared by all queue items — cheaper than one per item
   // and avoids stacking many hidden Menu portals that can interfere with other
   // popovers (e.g. the theme dropdown in the header).
@@ -231,7 +238,7 @@ export function QueueList() {
     );
     observer.observe(target);
     return () => observer.disconnect();
-  }, [playingId, entries]);
+  }, [playingId, filteredEntries]);
 
   const handleJumpToPlaying = useCallback(() => {
     if (!playingId || !viewportRef.current) return;
@@ -286,31 +293,33 @@ export function QueueList() {
     [selectedId, setSelectedEntry],
   );
 
-  if (entries.length === 0) {
-    return (
-      <Text c="dimmed" size="sm" ta="center" mt="md">
-        Скопируйте текст и нажмите Add
-      </Text>
-    );
-  }
-
   return (
     <div className={classes.container}>
-      <ScrollArea className={classes.scrollArea} viewportRef={viewportRef}>
-        <Stack gap={4}>
-          {entries.map((entry) => (
-            <QueueItem
-              key={entry.id}
-              entry={entry}
-              isSelected={selectedId === entry.id}
-              isPlaying={playingId === entry.id}
-              onSelect={setSelectedEntry}
-              onPlay={handlePlay}
-              onContextMenu={(e, x, y) => setMenu({ entry: e, x, y })}
-            />
-          ))}
-        </Stack>
-      </ScrollArea>
+      {entries.length === 0 ? (
+        <Text c="dimmed" size="sm" ta="center" mt="md">
+          Скопируйте текст и нажмите Add
+        </Text>
+      ) : filteredEntries.length === 0 ? (
+        <Text c="dimmed" size="sm" ta="center" mt="md">
+          Ничего не найдено
+        </Text>
+      ) : (
+        <ScrollArea className={classes.scrollArea} viewportRef={viewportRef}>
+          <Stack gap={4}>
+            {filteredEntries.map((entry) => (
+              <QueueItem
+                key={entry.id}
+                entry={entry}
+                isSelected={selectedId === entry.id}
+                isPlaying={playingId === entry.id}
+                onSelect={setSelectedEntry}
+                onPlay={handlePlay}
+                onContextMenu={(e, x, y) => setMenu({ entry: e, x, y })}
+              />
+            ))}
+          </Stack>
+        </ScrollArea>
+      )}
 
       {playingId !== null && !playingVisible && (
         <Button
