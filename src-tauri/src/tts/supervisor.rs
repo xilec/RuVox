@@ -232,8 +232,7 @@ impl TtsSupervisor {
         let text: Arc<str> = Arc::from(text);
         let speaker: Arc<str> = Arc::from(speaker);
         let out_wav: Arc<str> = Arc::from(out_wav);
-        let char_mapping: Option<Arc<[CharMappingEntry]>> =
-            char_mapping.map(Arc::from);
+        let char_mapping: Option<Arc<[CharMappingEntry]>> = char_mapping.map(Arc::from);
 
         self.with_retry(move |h| {
             let text = Arc::clone(&text);
