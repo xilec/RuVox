@@ -56,6 +56,9 @@ byteorder = "1.5"
 tempfile = "3"
 similar = "2"
 filetime = "0.2"
+# `test-util` enables `#[tokio::test(start_paused = true)]` so the supervisor
+# backoff schedule (1s/3s/5s) doesn't make tests sleep for ~9s.
+tokio = { version = "1", features = ["test-util"] }
 
 [profile.release]
 codegen-units = 1

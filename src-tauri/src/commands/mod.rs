@@ -96,7 +96,7 @@ fn char_mapping_to_entries(mapping: &CharMapping) -> Vec<CharMappingEntry> {
 pub fn spawn_synthesis_pub<R: Runtime + 'static>(
     app: AppHandle<R>,
     storage: Arc<StorageService>,
-    tts: Arc<crate::tts::TtsSubprocess>,
+    tts: Arc<crate::tts::TtsSupervisor>,
     player: Arc<crate::player::Player<R>>,
     pipeline: Arc<parking_lot::Mutex<crate::pipeline::TTSPipeline>>,
     entry_id: EntryId,
@@ -125,7 +125,7 @@ pub fn spawn_synthesis_pub<R: Runtime + 'static>(
 fn spawn_synthesis<R: Runtime + 'static>(
     app: AppHandle<R>,
     storage: Arc<StorageService>,
-    tts: Arc<crate::tts::TtsSubprocess>,
+    tts: Arc<crate::tts::TtsSupervisor>,
     player: Arc<crate::player::Player<R>>,
     pipeline: Arc<parking_lot::Mutex<crate::pipeline::TTSPipeline>>,
     entry_id: EntryId,
@@ -532,7 +532,7 @@ pub async fn regenerate_entry(
 
 /// Cancel an in-progress or queued synthesis job.
 /// Currently marks entry as pending (mid-request abort is not supported since
-/// TtsSubprocess serializes all requests into a single channel).
+/// the TTS supervisor serialises all requests into a single channel).
 #[tauri::command]
 pub async fn cancel_synthesis(
     app: AppHandle<Wry>,

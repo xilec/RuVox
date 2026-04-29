@@ -5,8 +5,12 @@
 //! matches ttsd's own single-threaded design.
 //!
 //! # Auto-restart
-//! TODO: v1 does not auto-restart on crash. The driver task exits when the subprocess
-//! dies. Callers must detect the `Died` error and re-create via `TtsSubprocess::spawn()`.
+//! `TtsSubprocess` itself is single-shot — it does not respawn on crash; the
+//! driver task exits when the subprocess dies and subsequent calls return
+//! [`TtsError::Died`]. Crash recovery is layered on top in [`supervisor`].
+
+pub mod supervisor;
+pub use supervisor::TtsSupervisor;
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -182,16 +186,25 @@ impl TtsSubprocess {
     ///
     /// `ttsd_dir` is the directory from which `uv run python -m ttsd` is executed.
     pub fn spawn(ttsd_dir: PathBuf) -> Result<Self, TtsError> {
-        let child = Command::new("uv")
-            .args(["run", "python", "-m", "ttsd"])
-            .current_dir(&ttsd_dir)
-            .stdin(std::process::Stdio::piped())
+        let mut cmd = Command::new("uv");
+        cmd.args(["run", "python", "-m", "ttsd"])
+            .current_dir(ttsd_dir);
+        Self::spawn_with_command(cmd)
+    }
+
+    /// Lower-level constructor: takes a fully-built [`Command`] and wires its
+    /// stdio + a driver task. Stdin/stdout/stderr are forced to `piped` and
+    /// `kill_on_drop` is set, regardless of what the caller configured.
+    ///
+    /// Used by [`supervisor::TtsSupervisor`] to inject a respawn-friendly
+    /// command factory and by integration tests to point at mock binaries.
+    pub fn spawn_with_command(mut cmd: Command) -> Result<Self, TtsError> {
+        cmd.stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
-            // kill_on_drop: process is killed when the Child value is dropped
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(TtsError::Spawn)?;
+            .kill_on_drop(true);
+
+        let child = cmd.spawn().map_err(TtsError::Spawn)?;
 
         let (tx, rx) = mpsc::channel::<DriverRequest>(1);
         tokio::spawn(driver_task(child, rx));
