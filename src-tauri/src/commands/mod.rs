@@ -4,20 +4,23 @@
 //! typed JSON objects (`{ "type": "...", "message": "..." }`) which the frontend
 //! can pattern-match on.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tauri::{AppHandle, Emitter, Runtime, State, Wry};
 use tracing::{info, warn};
 
 use crate::pipeline::tracked_text::CharMapping;
+use crate::pipeline::TTSPipeline;
 use crate::state::AppState;
 use crate::storage::schema::{
     EntryId, EntryStatus, TextEntry, UIConfig, UIConfigPatch, WordTimestamp,
 };
 use crate::storage::service::{StorageError, StorageService};
-use crate::tts::{CharMappingEntry, TtsError};
+use crate::tts::{CharMappingEntry, SynthesizeOutput, TtsError, TtsSupervisor};
 
 // ── Error type ─────────────────────────────────────────────────────────────────
 
@@ -113,182 +116,245 @@ pub fn spawn_synthesis_pub<R: Runtime + 'static>(
     );
 }
 
-/// Run the full synthesis pipeline for `entry_id` in a background task.
+/// Distinct failure points for a synthesis task. Each variant maps to the
+/// user-visible string written into `TextEntry.error_message`; `TtsFailed`
+/// additionally triggers a `tts_error` event for the frontend toast.
+#[derive(Debug)]
+enum SynthesisError {
+    PipelinePanic(String),
+    EmptyText,
+    TtsFailed(String),
+}
+
+impl SynthesisError {
+    fn user_message(&self) -> String {
+        match self {
+            Self::PipelinePanic(msg) => format!("pipeline task panicked: {msg}"),
+            Self::EmptyText => "нормализация вернула пустой текст".to_string(),
+            Self::TtsFailed(msg) => msg.clone(),
+        }
+    }
+}
+
+/// Phase 1: run Rust text pipeline (CPU-bound, runs in blocking thread).
+async fn run_normalization(
+    pipeline: Arc<Mutex<TTSPipeline>>,
+    original_text: String,
+) -> Result<(String, CharMapping), SynthesisError> {
+    let (normalized, mapping) = tokio::task::spawn_blocking(move || {
+        let mut p = pipeline.lock();
+        p.process_with_char_mapping(&original_text)
+    })
+    .await
+    .map_err(|e| SynthesisError::PipelinePanic(e.to_string()))?;
+
+    if normalized.is_empty() {
+        return Err(SynthesisError::EmptyText);
+    }
+    Ok((normalized, mapping))
+}
+
+/// Phase 2: mark entry as `Processing` and emit `entry_updated`.
 ///
-/// Steps:
-/// 1. Run Rust pipeline → normalized text + char mapping.
-/// 2. Update entry status → processing.
-/// 3. Call ttsd synthesize.
-/// 4. Save WAV + timestamps.
-/// 5. Update entry status → ready.
-/// 6. Optionally start playback.
+/// Best-effort: a failed `update_entry` is logged and ignored, so a temporary
+/// `history.json` write hiccup does not abort synthesis.
+fn mark_processing<R: Runtime>(
+    storage: &StorageService,
+    app: &AppHandle<R>,
+    entry_id: &EntryId,
+    normalized: &str,
+) {
+    let Some(mut entry) = storage.get_entry(entry_id) else {
+        return;
+    };
+    entry.status = EntryStatus::Processing;
+    entry.normalized_text = Some(normalized.to_string());
+    if let Err(e) = storage.update_entry(entry.clone()) {
+        warn!("failed to update entry to processing: {e}");
+    }
+    emit_entry_updated(app, &entry);
+}
+
+/// Phases 3–4: determine the WAV path / config / char-mapping inputs and
+/// call `tts.synthesize`. Returns the synthesize output along with the
+/// resolved WAV path and filename so [`finalize_audio_files`] can transcode
+/// to Opus without rebuilding them.
+async fn synthesize_audio(
+    tts: &TtsSupervisor,
+    storage: &StorageService,
+    entry_id: &EntryId,
+    normalized: String,
+    mapping: &CharMapping,
+) -> Result<(SynthesizeOutput, PathBuf, String), SynthesisError> {
+    // ttsd writes WAV; finalize_audio_files transcodes it to Opus right after.
+    let wav_filename = format!("{entry_id}.wav");
+    let out_wav_path = storage.cache_dir().join("audio").join(&wav_filename);
+    let out_wav = out_wav_path.to_string_lossy().into_owned();
+
+    let config = storage.load_config().unwrap_or_default();
+    let tts_char_mapping = if mapping.char_map.is_empty() {
+        None
+    } else {
+        Some(char_mapping_to_entries(mapping))
+    };
+
+    let output = tts
+        .synthesize(
+            normalized,
+            config.speaker.clone(),
+            config.sample_rate,
+            out_wav,
+            tts_char_mapping,
+        )
+        .await
+        .map_err(|e| SynthesisError::TtsFailed(e.to_string()))?;
+
+    Ok((output, out_wav_path, wav_filename))
+}
+
+/// Phases 5 + 5b: persist word timestamps and transcode WAV → Opus.
+///
+/// Both steps are best-effort: timestamp save failure yields `None`; opus
+/// encode failure (or panic) keeps the original WAV filename so playback
+/// still works.
+async fn finalize_audio_files(
+    storage: &StorageService,
+    entry_id: &EntryId,
+    output: &SynthesizeOutput,
+    out_wav_path: PathBuf,
+    wav_filename: &str,
+) -> (Option<String>, String) {
+    let tts_words: Vec<WordTimestamp> = output
+        .timestamps
+        .iter()
+        .map(|w| WordTimestamp {
+            word: w.word.clone(),
+            start: w.start,
+            end: w.end,
+            original_pos: w.original_pos,
+        })
+        .collect();
+
+    let ts_filename = match storage.save_timestamps(entry_id, &tts_words) {
+        Ok(f) => Some(f),
+        Err(e) => {
+            warn!("failed to save timestamps: {e}");
+            None
+        }
+    };
+
+    let wav_path_for_encode = out_wav_path;
+    let encode_result = tokio::task::spawn_blocking(move || {
+        crate::audio::replace_wav_with_opus(&wav_path_for_encode)
+    })
+    .await;
+    let audio_filename = match encode_result {
+        Ok(Ok(opus_path)) => opus_path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| wav_filename.to_string()),
+        Ok(Err(e)) => {
+            warn!("opus encode failed for {entry_id}, keeping wav: {e}");
+            wav_filename.to_string()
+        }
+        Err(e) => {
+            warn!("opus encode task panicked for {entry_id}, keeping wav: {e}");
+            wav_filename.to_string()
+        }
+    };
+
+    (ts_filename, audio_filename)
+}
+
+/// Phase 6: mark entry `Ready` with audio + timestamp paths and emit
+/// `entry_updated`. Vanishing entries (deleted mid-synthesis) silently abort.
+fn mark_ready_and_emit<R: Runtime>(
+    storage: &StorageService,
+    app: &AppHandle<R>,
+    entry_id: &EntryId,
+    output: &SynthesizeOutput,
+    ts_filename: Option<String>,
+    audio_filename: &str,
+) {
+    let Some(mut entry) = storage.get_entry(entry_id) else {
+        return;
+    };
+    entry.status = EntryStatus::Ready;
+    entry.audio_path = Some(audio_filename.to_string());
+    entry.timestamps_path = ts_filename;
+    entry.duration_sec = Some(output.duration_sec);
+    entry.audio_generated_at = Some(chrono::Local::now().naive_local());
+
+    if let Err(e) = storage.update_entry(entry.clone()) {
+        warn!("failed to update entry to ready: {e}");
+    }
+    emit_entry_updated(app, &entry);
+    info!("synthesis complete: entry_id={entry_id}");
+}
+
+/// Phase 7: kick off auto-play. Errors are logged and swallowed — failed
+/// auto-play must not flip the entry into `Error`.
+fn autoplay<R: Runtime>(
+    player: &crate::player::Player<R>,
+    audio_path: PathBuf,
+    entry_id: &EntryId,
+) {
+    if let Err(e) = player.load(&audio_path, entry_id.to_string()) {
+        warn!("auto-play load failed: {e}");
+    } else if let Err(e) = player.play() {
+        warn!("auto-play play failed: {e}");
+    }
+}
+
+/// Run the full synthesis pipeline for `entry_id` in a background task.
 fn spawn_synthesis<R: Runtime + 'static>(
     app: AppHandle<R>,
     storage: Arc<StorageService>,
-    tts: Arc<crate::tts::TtsSupervisor>,
+    tts: Arc<TtsSupervisor>,
     player: Arc<crate::player::Player<R>>,
-    pipeline: Arc<parking_lot::Mutex<crate::pipeline::TTSPipeline>>,
+    pipeline: Arc<Mutex<TTSPipeline>>,
     entry_id: EntryId,
     play_when_ready: bool,
 ) {
     tokio::spawn(async move {
-        // Load entry — bail silently if already deleted.
-        let entry = match storage.get_entry(&entry_id) {
-            Some(e) => e,
-            None => {
-                warn!("synthesis task: entry {entry_id} vanished before synthesis started");
-                return;
-            }
+        let Some(entry) = storage.get_entry(&entry_id) else {
+            warn!("synthesis task: entry {entry_id} vanished before synthesis started");
+            return;
         };
 
-        // Phase 1: run Rust text pipeline (CPU-bound, run in blocking thread).
-        let pipeline_clone = Arc::clone(&pipeline);
-        let original_for_pipeline = entry.original_text.clone();
-        let pipeline_result = tokio::task::spawn_blocking(move || {
-            let mut p = pipeline_clone.lock();
-            p.process_with_char_mapping(&original_for_pipeline)
-        })
+        let result: Result<(), SynthesisError> = async {
+            let (normalized, mapping) =
+                run_normalization(Arc::clone(&pipeline), entry.original_text.clone()).await?;
+            mark_processing(&storage, &app, &entry_id, &normalized);
+            let (output, out_wav_path, wav_filename) =
+                synthesize_audio(&tts, &storage, &entry_id, normalized, &mapping).await?;
+            let (ts_filename, audio_filename) =
+                finalize_audio_files(&storage, &entry_id, &output, out_wav_path, &wav_filename)
+                    .await;
+            mark_ready_and_emit(
+                &storage,
+                &app,
+                &entry_id,
+                &output,
+                ts_filename,
+                &audio_filename,
+            );
+            if play_when_ready {
+                let path = storage.cache_dir().join("audio").join(&audio_filename);
+                autoplay(&player, path, &entry_id);
+            }
+            Ok(())
+        }
         .await;
 
-        let (normalized_text, char_mapping) = match pipeline_result {
-            Ok(result) => result,
-            Err(e) => {
-                let msg = format!("pipeline task panicked: {e}");
-                tracing::error!("{msg}");
-                set_entry_error(&storage, &app, &entry_id, &msg);
-                return;
-            }
-        };
-
-        if normalized_text.is_empty() {
-            let msg = "нормализация вернула пустой текст".to_string();
+        if let Err(err) = result {
+            let msg = err.user_message();
+            tracing::error!("synthesis failed for {entry_id}: {msg}");
             set_entry_error(&storage, &app, &entry_id, &msg);
-            return;
-        }
-
-        // Phase 2: update entry status → processing.
-        let mut processing_entry = match storage.get_entry(&entry_id) {
-            Some(e) => e,
-            None => return,
-        };
-        processing_entry.status = EntryStatus::Processing;
-        processing_entry.normalized_text = Some(normalized_text.clone());
-        if let Err(e) = storage.update_entry(processing_entry.clone()) {
-            warn!("failed to update entry to processing: {e}");
-        }
-        emit_entry_updated(&app, &processing_entry);
-
-        // Phase 3: determine output WAV path. ttsd writes WAV; we transcode
-        // to Opus right after (see Phase 5b).
-        let wav_filename = format!("{entry_id}.wav");
-        let out_wav_path = storage.cache_dir().join("audio").join(&wav_filename);
-        let out_wav = out_wav_path.to_string_lossy().into_owned();
-
-        // Load config for speaker / sample_rate.
-        let config = storage.load_config().unwrap_or_default();
-
-        // Build char_mapping entries for ttsd.
-        let tts_char_mapping = if char_mapping.char_map.is_empty() {
-            None
-        } else {
-            Some(char_mapping_to_entries(&char_mapping))
-        };
-
-        // Phase 4: call ttsd.
-        let synth_result = tts
-            .synthesize(
-                normalized_text.clone(),
-                config.speaker.clone(),
-                config.sample_rate,
-                out_wav.clone(),
-                tts_char_mapping,
-            )
-            .await;
-
-        match synth_result {
-            Ok(output) => {
-                // Phase 5: save timestamps.
-                let tts_words: Vec<WordTimestamp> = output
-                    .timestamps
-                    .iter()
-                    .map(|w| WordTimestamp {
-                        word: w.word.clone(),
-                        start: w.start,
-                        end: w.end,
-                        original_pos: w.original_pos,
-                    })
-                    .collect();
-
-                let ts_filename = match storage.save_timestamps(&entry_id, &tts_words) {
-                    Ok(f) => f,
-                    Err(e) => {
-                        warn!("failed to save timestamps: {e}");
-                        String::new()
-                    }
-                };
-
-                // Phase 5b: transcode WAV → Opus, then drop the WAV. CPU-
-                // bound, off the async runtime. On failure we log and fall
-                // back to keeping the WAV so playback still works.
-                let wav_path_for_encode = out_wav_path.clone();
-                let encode_result = tokio::task::spawn_blocking(move || {
-                    crate::audio::replace_wav_with_opus(&wav_path_for_encode)
-                })
-                .await;
-                let audio_filename = match encode_result {
-                    Ok(Ok(opus_path)) => opus_path
-                        .file_name()
-                        .map(|n| n.to_string_lossy().into_owned())
-                        .unwrap_or_else(|| wav_filename.clone()),
-                    Ok(Err(e)) => {
-                        warn!("opus encode failed for {entry_id}, keeping wav: {e}");
-                        wav_filename.clone()
-                    }
-                    Err(e) => {
-                        warn!("opus encode task panicked for {entry_id}, keeping wav: {e}");
-                        wav_filename.clone()
-                    }
-                };
-
-                // Phase 6: update entry → ready.
-                let mut ready_entry = match storage.get_entry(&entry_id) {
-                    Some(e) => e,
-                    None => return,
-                };
-                ready_entry.status = EntryStatus::Ready;
-                ready_entry.audio_path = Some(audio_filename.clone());
-                ready_entry.timestamps_path = if ts_filename.is_empty() {
-                    None
-                } else {
-                    Some(ts_filename)
-                };
-                ready_entry.duration_sec = Some(output.duration_sec);
-                ready_entry.audio_generated_at = Some(chrono::Local::now().naive_local());
-
-                if let Err(e) = storage.update_entry(ready_entry.clone()) {
-                    warn!("failed to update entry to ready: {e}");
-                }
-                emit_entry_updated(&app, &ready_entry);
-
-                info!("synthesis complete: entry_id={entry_id}");
-
-                // Phase 7: auto-play if requested.
-                if play_when_ready {
-                    let path = storage.cache_dir().join("audio").join(&audio_filename);
-                    if let Err(e) = player.load(&path, entry_id.to_string()) {
-                        warn!("auto-play load failed: {e}");
-                    } else if let Err(e) = player.play() {
-                        warn!("auto-play play failed: {e}");
-                    }
-                }
-            }
-            Err(tts_err) => {
-                let msg = tts_err.to_string();
-                tracing::error!("synthesis failed for {entry_id}: {msg}");
-                set_entry_error(&storage, &app, &entry_id, &msg);
+            if let SynthesisError::TtsFailed(tts_msg) = err {
                 let _ = app.emit(
                     "tts_error",
-                    json!({ "entry_id": entry_id.to_string(), "message": msg }),
+                    json!({ "entry_id": entry_id.to_string(), "message": tts_msg }),
                 );
             }
         }
@@ -881,5 +947,76 @@ fn apply_config_patch(config: &mut UIConfig, patch: UIConfigPatch) {
     }
     if let Some(v) = patch.preview_dialog_enabled {
         config.preview_dialog_enabled = v;
+    }
+}
+
+#[cfg(test)]
+mod synthesis_tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn make_storage() -> (StorageService, TempDir) {
+        let dir = TempDir::new().unwrap();
+        let svc = StorageService::with_cache_dir(dir.path().to_path_buf()).unwrap();
+        (svc, dir)
+    }
+
+    #[tokio::test]
+    async fn run_normalization_returns_normalized_text_and_mapping() {
+        let pipeline = Arc::new(Mutex::new(TTSPipeline::new()));
+        let (normalized, _mapping) = run_normalization(pipeline, "Привет мир".to_string())
+            .await
+            .unwrap();
+        assert!(!normalized.is_empty());
+    }
+
+    #[tokio::test]
+    async fn run_normalization_flags_empty_input_as_empty_text() {
+        let pipeline = Arc::new(Mutex::new(TTSPipeline::new()));
+        let err = run_normalization(pipeline, String::new())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, SynthesisError::EmptyText));
+    }
+
+    #[tokio::test]
+    async fn finalize_audio_files_falls_back_to_wav_when_opus_encode_fails() {
+        let (storage, _dir) = make_storage();
+        let entry = storage.add_entry("text".to_string()).unwrap();
+        let id = entry.id;
+
+        // The encoder requires a valid RIFF header; bogus bytes force the
+        // best-effort path that keeps the .wav file as audio_filename.
+        let wav_filename = format!("{id}.wav");
+        let wav_path = storage.cache_dir().join("audio").join(&wav_filename);
+        std::fs::write(&wav_path, b"not a wav file").unwrap();
+
+        let output = SynthesizeOutput {
+            timestamps: Vec::new(),
+            duration_sec: 1.0,
+        };
+
+        let (ts_filename, audio_filename) =
+            finalize_audio_files(&storage, &id, &output, wav_path.clone(), &wav_filename).await;
+        assert!(ts_filename.is_some());
+        assert_eq!(audio_filename, wav_filename);
+        // .wav file is left untouched on encode failure (replace_wav_with_opus contract).
+        assert!(wav_path.exists());
+    }
+
+    #[test]
+    fn synthesis_error_user_messages_match_legacy_strings() {
+        assert_eq!(
+            SynthesisError::EmptyText.user_message(),
+            "нормализация вернула пустой текст",
+        );
+        assert_eq!(
+            SynthesisError::PipelinePanic("boom".into()).user_message(),
+            "pipeline task panicked: boom",
+        );
+        assert_eq!(
+            SynthesisError::TtsFailed("ttsd died".into()).user_message(),
+            "ttsd died",
+        );
     }
 }
