@@ -242,11 +242,15 @@ export function QueueList() {
 
   const handleJumpToPlaying = useCallback(() => {
     if (!playingId || !viewportRef.current) return;
+    if (selectedId !== playingId) {
+      const playingEntry = entries.find((e) => e.id === playingId);
+      if (playingEntry) setSelectedEntry(playingEntry);
+    }
     const target = viewportRef.current.querySelector<HTMLElement>(
       `[data-entry-id="${CSS.escape(playingId)}"]`,
     );
     target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, [playingId]);
+  }, [playingId, selectedId, entries, setSelectedEntry]);
 
   const handlePlay = useCallback(async (id: string) => {
     await commands.playEntry(id);
