@@ -103,6 +103,12 @@ pub struct UIConfig {
     /// Show preview dialog before synthesis.
     #[serde(default = "UIConfig::default_true")]
     pub preview_dialog_enabled: bool,
+    /// Active TTS engine: `"piper"` (default) | `"silero"`.
+    #[serde(default = "UIConfig::default_engine")]
+    pub engine: String,
+    /// Active Piper voice id (`"ruslan"` by default — see `tts::piper::catalog`).
+    #[serde(default = "UIConfig::default_piper_voice")]
+    pub piper_voice: String,
 }
 
 impl UIConfig {
@@ -111,6 +117,12 @@ impl UIConfig {
     }
     fn default_sample_rate() -> u32 {
         48000
+    }
+    fn default_engine() -> String {
+        "piper".to_string()
+    }
+    fn default_piper_voice() -> String {
+        "ruslan".to_string()
     }
     fn default_speech_rate() -> f64 {
         1.0
@@ -163,6 +175,8 @@ impl Default for UIConfig {
             player_hotkeys: Self::default_player_hotkeys(),
             window_geometry: None,
             preview_dialog_enabled: true,
+            engine: Self::default_engine(),
+            piper_voice: Self::default_piper_voice(),
         }
     }
 }
@@ -184,6 +198,8 @@ pub struct UIConfigPatch {
     pub player_hotkeys: Option<std::collections::HashMap<String, String>>,
     pub window_geometry: Option<Option<[i32; 4]>>,
     pub preview_dialog_enabled: Option<bool>,
+    pub engine: Option<String>,
+    pub piper_voice: Option<String>,
 }
 
 #[cfg(test)]
@@ -257,6 +273,18 @@ mod tests {
         assert!(c.notify_on_error);
         assert_eq!(c.max_cache_size_mb, 500);
         assert!(!c.speaker.is_empty());
+        assert_eq!(c.engine, "piper");
+        assert_eq!(c.piper_voice, "ruslan");
+    }
+
+    #[test]
+    fn config_missing_engine_keys_defaults_to_piper() {
+        // Existing pre-#42 configs have no engine/piper_voice — must parse and
+        // silently switch the user to Piper (the new primary engine).
+        let json = r#"{"speaker":"xenia","sample_rate":48000,"speech_rate":1.0}"#;
+        let c: UIConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(c.engine, "piper");
+        assert_eq!(c.piper_voice, "ruslan");
     }
 
     #[test]

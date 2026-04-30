@@ -198,10 +198,19 @@ async fn synthesize_audio(
         Some(char_mapping_to_entries(mapping))
     };
 
+    // Voice id is engine-specific: Piper uses `piper_voice` (e.g. "ruslan"),
+    // Silero uses `speaker` (e.g. "xenia"). Keeping them in two distinct
+    // config fields means flipping engines preserves each side's choice.
+    let voice = if config.engine == "silero" {
+        config.speaker.clone()
+    } else {
+        config.piper_voice.clone()
+    };
+
     let output = tts
         .synthesize(
             normalized,
-            config.speaker.clone(),
+            voice,
             config.sample_rate,
             out_wav,
             tts_char_mapping,
@@ -756,11 +765,23 @@ pub async fn get_config(state: State<'_, AppState>) -> CmdResult<UIConfig> {
     state.storage.load_config().map_err(CommandError::from)
 }
 
-/// Merge a partial config patch into the current configuration and persist.
+/// Merge a partial config patch into the current configuration, swap the
+/// active TTS engine if needed, and persist. The engine swap runs *before*
+/// the config is saved — if the user picked a Silero stack we cannot spawn,
+/// the call returns an error and the previous config stays on disk.
 #[tauri::command]
 pub async fn update_config(state: State<'_, AppState>, patch: UIConfigPatch) -> CmdResult<()> {
     let mut config = state.storage.load_config().unwrap_or_default();
     apply_config_patch(&mut config, patch);
+
+    state
+        .engine_switcher
+        .apply_config(&config.engine, &config.piper_voice)
+        .await
+        .map_err(|e| CommandError::ConfigError {
+            message: format!("не удалось переключить движок: {e}"),
+        })?;
+
     state
         .storage
         .save_config(&config)
@@ -947,6 +968,12 @@ fn apply_config_patch(config: &mut UIConfig, patch: UIConfigPatch) {
     }
     if let Some(v) = patch.preview_dialog_enabled {
         config.preview_dialog_enabled = v;
+    }
+    if let Some(v) = patch.engine {
+        config.engine = v;
+    }
+    if let Some(v) = patch.piper_voice {
+        config.piper_voice = v;
     }
 }
 

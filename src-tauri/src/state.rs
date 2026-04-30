@@ -7,7 +7,7 @@ use crate::pipeline::TTSPipeline;
 use crate::player::Player;
 use crate::storage::service::StorageService;
 use crate::tray::TrayCmd;
-use crate::tts::TtsEngine;
+use crate::tts::{EngineSwitcher, TtsEngine};
 
 /// Application-wide state held in `tauri::State<AppState>`.
 ///
@@ -16,10 +16,13 @@ use crate::tts::TtsEngine;
 /// `tauri::generate_handler!`.
 pub struct AppState {
     pub storage: Arc<StorageService>,
-    /// TTS engine. Today this is always [`crate::tts::PiperEngine`]; #43 will
-    /// pick between Piper and Silero at startup based on the user's config
-    /// and an availability probe.
+    /// TTS engine — actually an [`EngineSwitcher`], exposed as a trait object
+    /// so the synthesis pipeline stays engine-agnostic. Use `engine_switcher`
+    /// when the caller needs to swap the underlying engine.
     pub tts: Arc<dyn TtsEngine>,
+    /// Typed handle to the same switcher held in `tts`. Used by
+    /// `update_config` to apply engine / voice changes at runtime.
+    pub engine_switcher: Arc<EngineSwitcher>,
     pub player: Arc<Player<tauri::Wry>>,
     pub pipeline: Arc<Mutex<TTSPipeline>>,
     /// Sender for tray menu commands (read_now / read_later).

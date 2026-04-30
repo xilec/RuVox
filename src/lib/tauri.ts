@@ -32,6 +32,8 @@ export interface WordTimestamp {
 
 export type Theme = 'light' | 'dark' | 'auto';
 
+export type EngineKind = 'piper' | 'silero';
+
 export interface UIConfig {
   speaker: string;
   sample_rate: number;
@@ -46,6 +48,11 @@ export interface UIConfig {
   player_hotkeys: Record<string, string>;
   window_geometry: [number, number, number, number] | null;
   preview_dialog_enabled: boolean;
+  /** Active TTS engine. Defaults to "piper" on fresh installs and on configs
+   *  that pre-date the engine selector. */
+  engine: EngineKind;
+  /** Active Piper voice id (e.g. "ruslan", "irina"). See piperVoices.ts. */
+  piper_voice: string;
 }
 
 export type UIConfigPatch = Partial<UIConfig>;

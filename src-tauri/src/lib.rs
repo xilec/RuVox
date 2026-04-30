@@ -143,17 +143,50 @@ fn spawn_audio_migration_and_cleanup(storage: Arc<StorageService>) {
     });
 }
 
-/// Build the TTS engine for the running app.
+/// Resolve the on-disk `ttsd/` directory used by Silero.
 ///
-/// Today we hardcode the Piper engine (issue #42, Phase 1). Once issue #43
-/// lands a `withSilero` flake flag and the availability probe (issue #42
-/// Phase 3), this function will branch on the user's config and the probe.
+/// In production the bundle ships ttsd next to the binary (resource_dir/ttsd).
+/// In `cargo tauri dev` cwd is `src-tauri/`, so the project ttsd lives at
+/// `../ttsd`; fall back to `./ttsd` for ad-hoc runs from the repo root.
+/// The path is consumed by [`tts::EngineSwitcher::apply_config`] only when
+/// the user actually picks Silero — the directory is not required to exist
+/// at startup.
+fn resolve_ttsd_dir<R: Runtime>(app: &AppHandle<R>) -> std::path::PathBuf {
+    let res_dir = app
+        .path()
+        .resource_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+        .join("ttsd");
+    if res_dir.exists() {
+        res_dir
+    } else if std::path::Path::new("../ttsd/pyproject.toml").exists() {
+        std::path::PathBuf::from("../ttsd")
+    } else {
+        std::path::PathBuf::from("ttsd")
+    }
+}
+
+/// Build the TTS engine layer for the running app.
 ///
-/// Voice models live at `<data_local_dir>/ruvox/voices/piper/<voice>/...`
+/// Returns the [`tts::EngineSwitcher`] that owns the active engine. The
+/// switcher impls [`tts::TtsEngine`], so callers can hold either an
+/// `Arc<EngineSwitcher>` (for swap/`apply_config`) or `Arc<dyn TtsEngine>`
+/// (for synthesis) — both pointing at the same allocation.
+///
+/// The initial engine is chosen from the persisted config:
+/// - `engine = "piper"` (default) → in-process [`tts::PiperEngine`].
+/// - `engine = "silero"` → [`tts::TtsSupervisor`] over `uv run python -m ttsd`.
+///   Failure to spawn (no `uv`, missing ttsd dir) silently falls back to
+///   Piper; Phase 3 of #42 will probe up-front instead.
+///
+/// Voice models live at `<data_local_dir>/ruvox/voices/piper/<voice>/…`
 /// — see `tts::piper::catalog`. Phase 4 of #42 adds on-demand download;
-/// for now, if the default voice isn't on disk, warmup logs a `model_error`
+/// for now, if the default voice isn't on disk, warmup emits `model_error`
 /// and the first synthesize returns `voice_not_installed`.
-fn build_engine<R: Runtime>(app: &AppHandle<R>) -> Result<Arc<dyn tts::TtsEngine>, SetupError> {
+fn build_engine<R: Runtime>(
+    app: &AppHandle<R>,
+    storage: &StorageService,
+) -> Result<Arc<tts::EngineSwitcher>, SetupError> {
     let voices_dir = dirs::data_local_dir()
         .ok_or("dirs::data_local_dir() returned None")?
         .join("ruvox")
@@ -165,11 +198,61 @@ fn build_engine<R: Runtime>(app: &AppHandle<R>) -> Result<Arc<dyn tts::TtsEngine
         let _ = app_handle_for_emitter.emit(event_name, payload);
     });
 
-    Ok(Arc::new(tts::PiperEngine::new(
+    let config = storage.load_config().unwrap_or_default();
+    let ttsd_dir = resolve_ttsd_dir(app);
+
+    let (initial_engine, initial_kind, initial_voice) = match config.engine.as_str() {
+        "silero" => match try_build_silero(&ttsd_dir, Arc::clone(&emitter)) {
+            Ok(sup) => {
+                let engine: Arc<dyn tts::TtsEngine> = sup;
+                (engine, tts::EngineKind::Silero, None)
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "config requested Silero but spawn failed ({e}); falling back to Piper"
+                );
+                let voice = config.piper_voice.clone();
+                let engine: Arc<dyn tts::TtsEngine> = Arc::new(tts::PiperEngine::new(
+                    voices_dir.clone(),
+                    voice.clone(),
+                    Arc::clone(&emitter),
+                ));
+                (engine, tts::EngineKind::Piper, Some(voice))
+            }
+        },
+        _ => {
+            let voice = config.piper_voice.clone();
+            let engine: Arc<dyn tts::TtsEngine> = Arc::new(tts::PiperEngine::new(
+                voices_dir.clone(),
+                voice.clone(),
+                Arc::clone(&emitter),
+            ));
+            (engine, tts::EngineKind::Piper, Some(voice))
+        }
+    };
+
+    Ok(Arc::new(tts::EngineSwitcher::new(
+        initial_engine,
+        initial_kind,
+        initial_voice,
         voices_dir,
-        tts::piper::catalog::DEFAULT_VOICE.to_string(),
+        ttsd_dir,
         emitter,
     )))
+}
+
+fn try_build_silero(
+    ttsd_dir: &std::path::Path,
+    emitter: tts::supervisor::Emitter,
+) -> Result<Arc<tts::TtsSupervisor>, tts::TtsError> {
+    let ttsd_dir = ttsd_dir.to_path_buf();
+    let factory: tts::supervisor::CommandFactory = Arc::new(move || {
+        let mut cmd = tokio::process::Command::new("uv");
+        cmd.args(["run", "python", "-m", "ttsd"])
+            .current_dir(&ttsd_dir);
+        cmd
+    });
+    Ok(Arc::new(tts::TtsSupervisor::spawn(factory, emitter)?))
 }
 
 /// Spawn the tray-command handler loop and return the channel sender.
@@ -253,7 +336,8 @@ pub fn run() {
             let storage = Arc::new(StorageService::new().expect("failed to open storage"));
             spawn_audio_migration_and_cleanup(Arc::clone(&storage));
 
-            let tts: Arc<dyn tts::TtsEngine> = build_engine(app.handle())?;
+            let engine_switcher = build_engine(app.handle(), &storage)?;
+            let tts: Arc<dyn tts::TtsEngine> = engine_switcher.clone();
             // Warm up the model in background. The engine owns the
             // model_loading → model_loaded/model_error emit sequence so the
             // initial warmup and post-respawn warmup share one code path.
@@ -276,6 +360,7 @@ pub fn run() {
             app.manage(AppState {
                 storage,
                 tts,
+                engine_switcher,
                 player,
                 pipeline,
                 tray_cmd_tx: Some(tray_tx),

@@ -12,10 +12,12 @@
 pub mod engine;
 pub mod piper;
 pub mod supervisor;
+pub mod switcher;
 
 pub use engine::{EngineKind, SharedEngine, TtsEngine};
 pub use piper::PiperEngine;
 pub use supervisor::TtsSupervisor;
+pub use switcher::EngineSwitcher;
 
 use std::sync::Arc;
 use std::time::Duration;
