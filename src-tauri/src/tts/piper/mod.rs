@@ -4,6 +4,7 @@
 //! the design rationale (native runtime, no Python sidecar, voices on demand).
 
 pub mod catalog;
+pub mod download;
 pub mod engine;
 pub mod timestamps;
 

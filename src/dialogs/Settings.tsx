@@ -373,22 +373,42 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
           )}
 
           {form.values.engine === 'piper' ? (
-            <Select
-              label="Голос Piper"
-              data={piperVoiceOptions}
-              key={form.key('piper_voice')}
-              {...form.getInputProps('piper_voice')}
-              rightSection={
-                PIPER_VOICES.find((v) => v.id === form.values.piper_voice)?.recommended ? (
-                  <Tooltip label="Рекомендуется для технических текстов">
-                    <Badge size="xs" color="blue" variant="light">
-                      Рек.
-                    </Badge>
-                  </Tooltip>
-                ) : null
-              }
-              rightSectionWidth={60}
-            />
+            <Stack gap={6}>
+              <Select
+                label="Голос Piper"
+                description="При первом синтезе ~60 МБ загрузятся автоматически."
+                data={piperVoiceOptions}
+                key={form.key('piper_voice')}
+                {...form.getInputProps('piper_voice')}
+                rightSection={
+                  PIPER_VOICES.find((v) => v.id === form.values.piper_voice)?.recommended ? (
+                    <Tooltip label="Рекомендуется для технических текстов">
+                      <Badge size="xs" color="blue" variant="light">
+                        Рек.
+                      </Badge>
+                    </Tooltip>
+                  ) : null
+                }
+                rightSectionWidth={60}
+              />
+              <Group justify="flex-start">
+                <Button
+                  variant="default"
+                  size="xs"
+                  onClick={() =>
+                    commands.downloadPiperVoice(form.values.piper_voice).catch((err) => {
+                      notifications.show({
+                        title: 'Не удалось запустить загрузку',
+                        message: formatError(err),
+                        color: 'red',
+                      });
+                    })
+                  }
+                >
+                  Скачать сейчас
+                </Button>
+              </Group>
+            </Stack>
           ) : (
             <Select
               label="Голос Silero"

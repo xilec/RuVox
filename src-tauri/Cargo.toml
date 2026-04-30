@@ -82,6 +82,12 @@ ort = { version = "=2.0.0-rc.9", default-features = false, features = ["load-dyn
 ort-sys = "=2.0.0-rc.9"
 async-trait = "0.1"
 
+# On-demand Piper voice download (Phase 4 of #42). `rustls-tls` keeps us off
+# the system OpenSSL ABI; `stream` exposes `bytes_stream()` for the progress
+# loop. `default-features = false` suppresses ureq + native-tls.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+futures-util = "0.3"
+
 [dev-dependencies]
 tempfile = "3"
 similar = "2"

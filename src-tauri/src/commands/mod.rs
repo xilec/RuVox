@@ -20,6 +20,7 @@ use crate::storage::schema::{
     EntryId, EntryStatus, TextEntry, UIConfig, UIConfigPatch, WordTimestamp,
 };
 use crate::storage::service::{StorageError, StorageService};
+use crate::tts::piper::download::download_voice;
 use crate::tts::{
     availability, AvailableEngines, CharMappingEntry, SynthesizeOutput, TtsEngine, TtsError,
 };
@@ -98,10 +99,13 @@ fn char_mapping_to_entries(mapping: &CharMapping) -> Vec<CharMappingEntry> {
 // ── Background synthesis ───────────────────────────────────────────────────────
 
 /// Public alias used by the tray module to avoid duplicating the synthesis logic.
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_synthesis_pub<R: Runtime + 'static>(
     app: AppHandle<R>,
     storage: Arc<StorageService>,
     tts: Arc<dyn TtsEngine>,
+    piper_voices_dir: PathBuf,
+    emitter: crate::tts::supervisor::Emitter,
     player: Arc<crate::player::Player<R>>,
     pipeline: Arc<parking_lot::Mutex<crate::pipeline::TTSPipeline>>,
     entry_id: EntryId,
@@ -111,6 +115,8 @@ pub fn spawn_synthesis_pub<R: Runtime + 'static>(
         app,
         storage,
         tts,
+        piper_voices_dir,
+        emitter,
         player,
         pipeline,
         entry_id,
@@ -181,9 +187,17 @@ fn mark_processing<R: Runtime>(
 /// call `tts.synthesize`. Returns the synthesize output along with the
 /// resolved WAV path and filename so [`finalize_audio_files`] can transcode
 /// to Opus without rebuilding them.
+///
+/// When the engine returns `voice_not_installed` and the active engine is
+/// Piper, the function auto-fetches the voice files via
+/// [`crate::tts::piper::download::download_voice`] and retries once. The
+/// retry runs only on Piper because Silero is bundled — its Python venv
+/// already includes the model.
 async fn synthesize_audio(
     tts: &dyn TtsEngine,
     storage: &StorageService,
+    piper_voices_dir: &std::path::Path,
+    emitter: &crate::tts::supervisor::Emitter,
     entry_id: &EntryId,
     normalized: String,
     mapping: &CharMapping,
@@ -209,16 +223,37 @@ async fn synthesize_audio(
         config.piper_voice.clone()
     };
 
-    let output = tts
+    let attempt = tts
         .synthesize(
-            normalized,
-            voice,
+            normalized.clone(),
+            voice.clone(),
             config.sample_rate,
-            out_wav,
-            tts_char_mapping,
+            out_wav.clone(),
+            tts_char_mapping.clone(),
         )
-        .await
-        .map_err(|e| SynthesisError::TtsFailed(e.to_string()))?;
+        .await;
+
+    let output = match attempt {
+        Ok(o) => o,
+        Err(TtsError::Ttsd { code, message })
+            if code == "voice_not_installed" && config.engine == "piper" =>
+        {
+            info!("voice \"{voice}\" not installed; auto-downloading then retrying ({message})");
+            crate::tts::piper::download::download_voice(piper_voices_dir, &voice, emitter)
+                .await
+                .map_err(|e| SynthesisError::TtsFailed(e.to_string()))?;
+            tts.synthesize(
+                normalized,
+                voice,
+                config.sample_rate,
+                out_wav,
+                tts_char_mapping,
+            )
+            .await
+            .map_err(|e| SynthesisError::TtsFailed(e.to_string()))?
+        }
+        Err(e) => return Err(SynthesisError::TtsFailed(e.to_string())),
+    };
 
     Ok((output, out_wav_path, wav_filename))
 }
@@ -318,10 +353,13 @@ fn autoplay<R: Runtime>(
 }
 
 /// Run the full synthesis pipeline for `entry_id` in a background task.
+#[allow(clippy::too_many_arguments)]
 fn spawn_synthesis<R: Runtime + 'static>(
     app: AppHandle<R>,
     storage: Arc<StorageService>,
     tts: Arc<dyn TtsEngine>,
+    piper_voices_dir: PathBuf,
+    emitter: crate::tts::supervisor::Emitter,
     player: Arc<crate::player::Player<R>>,
     pipeline: Arc<Mutex<TTSPipeline>>,
     entry_id: EntryId,
@@ -337,8 +375,16 @@ fn spawn_synthesis<R: Runtime + 'static>(
             let (normalized, mapping) =
                 run_normalization(Arc::clone(&pipeline), entry.original_text.clone()).await?;
             mark_processing(&storage, &app, &entry_id, &normalized);
-            let (output, out_wav_path, wav_filename) =
-                synthesize_audio(tts.as_ref(), &storage, &entry_id, normalized, &mapping).await?;
+            let (output, out_wav_path, wav_filename) = synthesize_audio(
+                tts.as_ref(),
+                &storage,
+                &piper_voices_dir,
+                &emitter,
+                &entry_id,
+                normalized,
+                &mapping,
+            )
+            .await?;
             let (ts_filename, audio_filename) =
                 finalize_audio_files(&storage, &entry_id, &output, out_wav_path, &wav_filename)
                     .await;
@@ -412,6 +458,8 @@ fn ingest_text(
         app,
         Arc::clone(&state.storage),
         Arc::clone(&state.tts),
+        state.piper_voices_dir.clone(),
+        Arc::clone(&state.emitter),
         Arc::clone(&state.player),
         Arc::clone(&state.pipeline),
         entry_id,
@@ -598,6 +646,8 @@ pub async fn regenerate_entry(
         app,
         Arc::clone(&state.storage),
         Arc::clone(&state.tts),
+        state.piper_voices_dir.clone(),
+        Arc::clone(&state.emitter),
         Arc::clone(&state.player),
         Arc::clone(&state.pipeline),
         uuid,
@@ -765,6 +815,20 @@ pub async fn set_volume(state: State<'_, AppState>, volume: f32) -> CmdResult<()
 #[tauri::command]
 pub async fn get_config(state: State<'_, AppState>) -> CmdResult<UIConfig> {
     state.storage.load_config().map_err(CommandError::from)
+}
+
+/// Download a Piper voice on user demand. Idempotent — already-present
+/// files are skipped. Progress is delivered via the
+/// `voice_download_started` / `voice_download_progress` /
+/// `voice_download_finished` events; the `Result` here only reports the
+/// final outcome so the frontend can show one final notification.
+#[tauri::command]
+pub async fn download_piper_voice(state: State<'_, AppState>, voice_id: String) -> CmdResult<()> {
+    let voices_dir = state.piper_voices_dir.clone();
+    let emitter = Arc::clone(&state.emitter);
+    download_voice(&voices_dir, &voice_id, &emitter)
+        .await
+        .map_err(CommandError::from)
 }
 
 /// Probe which TTS engines can be selected on the running system.

@@ -186,10 +186,19 @@ fn resolve_ttsd_dir<R: Runtime>(app: &AppHandle<R>) -> std::path::PathBuf {
 /// — see `tts::piper::catalog`. Phase 4 of #42 adds on-demand download;
 /// for now, if the default voice isn't on disk, warmup emits `model_error`
 /// and the first synthesize returns `voice_not_installed`.
+/// Returns the active engine layer plus the runtime paths and emitter the
+/// rest of the app needs (Phase 4 download command, Phase 3 probe).
+type EngineWiring = (
+    Arc<tts::EngineSwitcher>,
+    std::path::PathBuf, // ttsd_dir
+    std::path::PathBuf, // piper_voices_dir
+    tts::supervisor::Emitter,
+);
+
 fn build_engine<R: Runtime>(
     app: &AppHandle<R>,
     storage: &StorageService,
-) -> Result<(Arc<tts::EngineSwitcher>, std::path::PathBuf), SetupError> {
+) -> Result<EngineWiring, SetupError> {
     let voices_dir = dirs::data_local_dir()
         .ok_or("dirs::data_local_dir() returned None")?
         .join("ruvox")
@@ -229,11 +238,11 @@ fn build_engine<R: Runtime>(
         initial_engine,
         initial_kind,
         initial_voice,
-        voices_dir,
+        voices_dir.clone(),
         ttsd_dir.clone(),
-        emitter,
+        Arc::clone(&emitter),
     ));
-    Ok((switcher, ttsd_dir))
+    Ok((switcher, ttsd_dir, voices_dir, emitter))
 }
 
 fn build_piper_initial(
@@ -268,9 +277,12 @@ fn try_build_silero(
 /// The tray emits commands for "read clipboard now" / "queue clipboard"; this
 /// loop reads the system clipboard on a blocking thread, creates a history
 /// entry, and kicks off background synthesis.
+#[allow(clippy::too_many_arguments)]
 fn spawn_tray_handler<R: Runtime + 'static>(
     storage: Arc<StorageService>,
     tts: Arc<dyn tts::TtsEngine>,
+    piper_voices_dir: std::path::PathBuf,
+    emitter: tts::supervisor::Emitter,
     player: Arc<Player<R>>,
     pipeline: Arc<Mutex<TTSPipeline>>,
     app: AppHandle<R>,
@@ -317,6 +329,8 @@ fn spawn_tray_handler<R: Runtime + 'static>(
                 app.clone(),
                 Arc::clone(&storage),
                 Arc::clone(&tts),
+                piper_voices_dir.clone(),
+                Arc::clone(&emitter),
                 Arc::clone(&player),
                 Arc::clone(&pipeline),
                 entry_id,
@@ -344,7 +358,8 @@ pub fn run() {
             let storage = Arc::new(StorageService::new().expect("failed to open storage"));
             spawn_audio_migration_and_cleanup(Arc::clone(&storage));
 
-            let (engine_switcher, ttsd_dir) = build_engine(app.handle(), &storage)?;
+            let (engine_switcher, ttsd_dir, piper_voices_dir, emitter) =
+                build_engine(app.handle(), &storage)?;
             let tts: Arc<dyn tts::TtsEngine> = engine_switcher.clone();
             // Warm up the model in background. The engine owns the
             // model_loading → model_loaded/model_error emit sequence so the
@@ -360,6 +375,8 @@ pub fn run() {
             let tray_tx = spawn_tray_handler(
                 Arc::clone(&storage),
                 Arc::clone(&tts),
+                piper_voices_dir.clone(),
+                Arc::clone(&emitter),
                 Arc::clone(&player),
                 Arc::clone(&pipeline),
                 app.handle().clone(),
@@ -370,6 +387,8 @@ pub fn run() {
                 tts,
                 engine_switcher,
                 ttsd_dir,
+                piper_voices_dir,
+                emitter,
                 player,
                 pipeline,
                 tray_cmd_tx: Some(tray_tx),
@@ -398,6 +417,7 @@ pub fn run() {
             get_config,
             update_config,
             get_available_engines,
+            download_piper_voice,
             get_timestamps,
             clear_cache,
             get_cache_stats,

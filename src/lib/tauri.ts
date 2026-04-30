@@ -143,6 +143,9 @@ export const commands = {
   getAvailableEngines: (): Promise<AvailableEngines> =>
     tauriInvoke('get_available_engines'),
 
+  downloadPiperVoice: (voice_id: string): Promise<void> =>
+    tauriInvoke('download_piper_voice', { voiceId: voice_id }),
+
   getTimestamps: (id: EntryId): Promise<WordTimestamp[]> =>
     tauriInvoke('get_timestamps', { id }),
 
@@ -171,6 +174,31 @@ export interface ModelErrorPayload { message: string; }
 export interface TtsErrorPayload { entry_id: EntryId; message: string; }
 export interface TtsFatalPayload { message: string; }
 export interface SynthesisProgressPayload { entry_id: EntryId; progress: number; }
+
+export interface VoiceDownloadStartedPayload {
+  engine: 'piper';
+  voice: string;
+}
+export interface VoiceDownloadProgressPayload {
+  engine: 'piper';
+  voice: string;
+  /** "json" or "onnx". */
+  file_kind: string;
+  file_idx: number;
+  total_files: number;
+  downloaded_bytes: number;
+  /** Server-supplied content-length; null when unknown. */
+  total_bytes: number | null;
+  /** Set when the file was already on disk and download was skipped. */
+  skipped?: boolean;
+}
+export interface VoiceDownloadFinishedPayload {
+  engine: 'piper';
+  voice: string;
+  ok: boolean;
+  /** Russian-language failure message, present when ok=false. */
+  message?: string;
+}
 
 export const events = {
   entryUpdated: (cb: (p: EntryUpdatedPayload) => void): Promise<UnlistenFn> =>
@@ -220,4 +248,13 @@ export const events = {
 
   trayReadLater: (cb: () => void): Promise<UnlistenFn> =>
     tauriListen<Record<string, never>>('tray_read_later', () => cb()),
+
+  voiceDownloadStarted: (cb: (p: VoiceDownloadStartedPayload) => void): Promise<UnlistenFn> =>
+    tauriListen<VoiceDownloadStartedPayload>('voice_download_started', (e) => cb(e.payload)),
+
+  voiceDownloadProgress: (cb: (p: VoiceDownloadProgressPayload) => void): Promise<UnlistenFn> =>
+    tauriListen<VoiceDownloadProgressPayload>('voice_download_progress', (e) => cb(e.payload)),
+
+  voiceDownloadFinished: (cb: (p: VoiceDownloadFinishedPayload) => void): Promise<UnlistenFn> =>
+    tauriListen<VoiceDownloadFinishedPayload>('voice_download_finished', (e) => cb(e.payload)),
 };
