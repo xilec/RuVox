@@ -20,7 +20,7 @@ use crate::storage::schema::{
     EntryId, EntryStatus, TextEntry, UIConfig, UIConfigPatch, WordTimestamp,
 };
 use crate::storage::service::{StorageError, StorageService};
-use crate::tts::{CharMappingEntry, SynthesizeOutput, TtsError, TtsSupervisor};
+use crate::tts::{CharMappingEntry, SynthesizeOutput, TtsEngine, TtsError};
 
 // ── Error type ─────────────────────────────────────────────────────────────────
 
@@ -99,7 +99,7 @@ fn char_mapping_to_entries(mapping: &CharMapping) -> Vec<CharMappingEntry> {
 pub fn spawn_synthesis_pub<R: Runtime + 'static>(
     app: AppHandle<R>,
     storage: Arc<StorageService>,
-    tts: Arc<crate::tts::TtsSupervisor>,
+    tts: Arc<dyn TtsEngine>,
     player: Arc<crate::player::Player<R>>,
     pipeline: Arc<parking_lot::Mutex<crate::pipeline::TTSPipeline>>,
     entry_id: EntryId,
@@ -180,7 +180,7 @@ fn mark_processing<R: Runtime>(
 /// resolved WAV path and filename so [`finalize_audio_files`] can transcode
 /// to Opus without rebuilding them.
 async fn synthesize_audio(
-    tts: &TtsSupervisor,
+    tts: &dyn TtsEngine,
     storage: &StorageService,
     entry_id: &EntryId,
     normalized: String,
@@ -310,7 +310,7 @@ fn autoplay<R: Runtime>(
 fn spawn_synthesis<R: Runtime + 'static>(
     app: AppHandle<R>,
     storage: Arc<StorageService>,
-    tts: Arc<TtsSupervisor>,
+    tts: Arc<dyn TtsEngine>,
     player: Arc<crate::player::Player<R>>,
     pipeline: Arc<Mutex<TTSPipeline>>,
     entry_id: EntryId,
@@ -327,7 +327,7 @@ fn spawn_synthesis<R: Runtime + 'static>(
                 run_normalization(Arc::clone(&pipeline), entry.original_text.clone()).await?;
             mark_processing(&storage, &app, &entry_id, &normalized);
             let (output, out_wav_path, wav_filename) =
-                synthesize_audio(&tts, &storage, &entry_id, normalized, &mapping).await?;
+                synthesize_audio(tts.as_ref(), &storage, &entry_id, normalized, &mapping).await?;
             let (ts_filename, audio_filename) =
                 finalize_audio_files(&storage, &entry_id, &output, out_wav_path, &wav_filename)
                     .await;

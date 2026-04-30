@@ -143,52 +143,33 @@ fn spawn_audio_migration_and_cleanup(storage: Arc<StorageService>) {
     });
 }
 
-/// Resolve `ttsd` directory, build the supervisor's command factory + emitter,
-/// and spawn the subprocess.
+/// Build the TTS engine for the running app.
 ///
-/// `tokio::process::Command::spawn` requires an active tokio runtime context,
-/// so the spawn is driven from `block_on` — the inner future returns instantly.
-fn build_ttsd_supervisor<R: Runtime>(
-    app: &AppHandle<R>,
-) -> Result<Arc<tts::TtsSupervisor>, SetupError> {
-    // In production: bundled next to the binary (resource_dir/ttsd).
-    // In `cargo tauri dev`: cwd is src-tauri/, so the project ttsd lives
-    // at ../ttsd; fall back to ./ttsd for ad-hoc runs from the repo root.
-    let ttsd_dir = {
-        let res_dir = app
-            .path()
-            .resource_dir()
-            .unwrap_or_else(|_| std::path::PathBuf::from("."))
-            .join("ttsd");
-        if res_dir.exists() {
-            res_dir
-        } else if std::path::Path::new("../ttsd/pyproject.toml").exists() {
-            std::path::PathBuf::from("../ttsd")
-        } else {
-            std::path::PathBuf::from("ttsd")
-        }
-    };
+/// Today we hardcode the Piper engine (issue #42, Phase 1). Once issue #43
+/// lands a `withSilero` flake flag and the availability probe (issue #42
+/// Phase 3), this function will branch on the user's config and the probe.
+///
+/// Voice models live at `<data_local_dir>/ruvox/voices/piper/<voice>/...`
+/// — see `tts::piper::catalog`. Phase 4 of #42 adds on-demand download;
+/// for now, if the default voice isn't on disk, warmup logs a `model_error`
+/// and the first synthesize returns `voice_not_installed`.
+fn build_engine<R: Runtime>(app: &AppHandle<R>) -> Result<Arc<dyn tts::TtsEngine>, SetupError> {
+    let voices_dir = dirs::data_local_dir()
+        .ok_or("dirs::data_local_dir() returned None")?
+        .join("ruvox")
+        .join("voices")
+        .join("piper");
 
-    // Cloning the path captured by value keeps the closure `Fn` (not
-    // `FnOnce`) — required for the `Arc<dyn Fn(...)>` shape.
-    let ttsd_dir_for_factory = ttsd_dir;
-    let factory: tts::supervisor::CommandFactory = Arc::new(move || {
-        let mut cmd = tokio::process::Command::new("uv");
-        cmd.args(["run", "python", "-m", "ttsd"])
-            .current_dir(&ttsd_dir_for_factory);
-        cmd
-    });
-
-    // Emitter for ttsd_restarting / tts_fatal (and the model_* lifecycle
-    // re-emitted from supervisor.spawn_warmup).
     let app_handle_for_emitter = app.clone();
     let emitter: tts::supervisor::Emitter = Arc::new(move |event_name, payload| {
         let _ = app_handle_for_emitter.emit(event_name, payload);
     });
 
-    let supervisor =
-        tauri::async_runtime::block_on(async move { tts::TtsSupervisor::spawn(factory, emitter) })?;
-    Ok(Arc::new(supervisor))
+    Ok(Arc::new(tts::PiperEngine::new(
+        voices_dir,
+        tts::piper::catalog::DEFAULT_VOICE.to_string(),
+        emitter,
+    )))
 }
 
 /// Spawn the tray-command handler loop and return the channel sender.
@@ -198,7 +179,7 @@ fn build_ttsd_supervisor<R: Runtime>(
 /// entry, and kicks off background synthesis.
 fn spawn_tray_handler<R: Runtime + 'static>(
     storage: Arc<StorageService>,
-    tts: Arc<tts::TtsSupervisor>,
+    tts: Arc<dyn tts::TtsEngine>,
     player: Arc<Player<R>>,
     pipeline: Arc<Mutex<TTSPipeline>>,
     app: AppHandle<R>,
@@ -272,8 +253,8 @@ pub fn run() {
             let storage = Arc::new(StorageService::new().expect("failed to open storage"));
             spawn_audio_migration_and_cleanup(Arc::clone(&storage));
 
-            let tts = build_ttsd_supervisor(app.handle())?;
-            // Warm up Silero model in background. The supervisor owns the
+            let tts: Arc<dyn tts::TtsEngine> = build_engine(app.handle())?;
+            // Warm up the model in background. The engine owns the
             // model_loading → model_loaded/model_error emit sequence so the
             // initial warmup and post-respawn warmup share one code path.
             {

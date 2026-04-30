@@ -7,7 +7,7 @@ use crate::pipeline::TTSPipeline;
 use crate::player::Player;
 use crate::storage::service::StorageService;
 use crate::tray::TrayCmd;
-use crate::tts::TtsSupervisor;
+use crate::tts::TtsEngine;
 
 /// Application-wide state held in `tauri::State<AppState>`.
 ///
@@ -16,7 +16,10 @@ use crate::tts::TtsSupervisor;
 /// `tauri::generate_handler!`.
 pub struct AppState {
     pub storage: Arc<StorageService>,
-    pub tts: Arc<TtsSupervisor>,
+    /// TTS engine. Today this is always [`crate::tts::PiperEngine`]; #43 will
+    /// pick between Piper and Silero at startup based on the user's config
+    /// and an availability probe.
+    pub tts: Arc<dyn TtsEngine>,
     pub player: Arc<Player<tauri::Wry>>,
     pub pipeline: Arc<Mutex<TTSPipeline>>,
     /// Sender for tray menu commands (read_now / read_later).
