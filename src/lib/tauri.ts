@@ -34,6 +34,16 @@ export type Theme = 'light' | 'dark' | 'auto';
 
 export type EngineKind = 'piper' | 'silero';
 
+export interface EngineAvailability {
+  available: boolean;
+  reason: string | null;
+}
+
+export interface AvailableEngines {
+  piper: EngineAvailability;
+  silero: EngineAvailability;
+}
+
 export interface UIConfig {
   speaker: string;
   sample_rate: number;
@@ -129,6 +139,9 @@ export const commands = {
 
   updateConfig: (patch: UIConfigPatch): Promise<void> =>
     tauriInvoke('update_config', { patch }),
+
+  getAvailableEngines: (): Promise<AvailableEngines> =>
+    tauriInvoke('get_available_engines'),
 
   getTimestamps: (id: EntryId): Promise<WordTimestamp[]> =>
     tauriInvoke('get_timestamps', { id }),

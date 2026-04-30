@@ -20,7 +20,9 @@ use crate::storage::schema::{
     EntryId, EntryStatus, TextEntry, UIConfig, UIConfigPatch, WordTimestamp,
 };
 use crate::storage::service::{StorageError, StorageService};
-use crate::tts::{CharMappingEntry, SynthesizeOutput, TtsEngine, TtsError};
+use crate::tts::{
+    availability, AvailableEngines, CharMappingEntry, SynthesizeOutput, TtsEngine, TtsError,
+};
 
 // ── Error type ─────────────────────────────────────────────────────────────────
 
@@ -763,6 +765,22 @@ pub async fn set_volume(state: State<'_, AppState>, volume: f32) -> CmdResult<()
 #[tauri::command]
 pub async fn get_config(state: State<'_, AppState>) -> CmdResult<UIConfig> {
     state.storage.load_config().map_err(CommandError::from)
+}
+
+/// Probe which TTS engines can be selected on the running system.
+///
+/// Piper is in-process and always available. Silero requires the `ttsd/`
+/// Python package and the `uv` toolchain — see [`tts::availability`].
+/// Cheap (filesystem stat + one `uv --version` exec); safe to call on
+/// every Settings dialog open.
+#[tauri::command]
+pub async fn get_available_engines(state: State<'_, AppState>) -> CmdResult<AvailableEngines> {
+    let ttsd_dir = state.ttsd_dir.clone();
+    tokio::task::spawn_blocking(move || availability::probe(&ttsd_dir))
+        .await
+        .map_err(|e| CommandError::Internal {
+            message: format!("availability probe panicked: {e}"),
+        })
 }
 
 /// Merge a partial config patch into the current configuration, swap the

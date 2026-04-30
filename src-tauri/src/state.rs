@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -23,6 +24,10 @@ pub struct AppState {
     /// Typed handle to the same switcher held in `tts`. Used by
     /// `update_config` to apply engine / voice changes at runtime.
     pub engine_switcher: Arc<EngineSwitcher>,
+    /// Resolved on-disk location of the optional `ttsd/` Python package.
+    /// Consumed by `get_available_engines` to probe Silero's environment
+    /// without re-discovering the path on every call.
+    pub ttsd_dir: PathBuf,
     pub player: Arc<Player<tauri::Wry>>,
     pub pipeline: Arc<Mutex<TTSPipeline>>,
     /// Sender for tray menu commands (read_now / read_later).

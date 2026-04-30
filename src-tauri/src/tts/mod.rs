@@ -9,11 +9,13 @@
 //! driver task exits when the subprocess dies and subsequent calls return
 //! [`TtsError::Died`]. Crash recovery is layered on top in [`supervisor`].
 
+pub mod availability;
 pub mod engine;
 pub mod piper;
 pub mod supervisor;
 pub mod switcher;
 
+pub use availability::{AvailableEngines, EngineAvailability};
 pub use engine::{EngineKind, SharedEngine, TtsEngine};
 pub use piper::PiperEngine;
 pub use supervisor::TtsSupervisor;

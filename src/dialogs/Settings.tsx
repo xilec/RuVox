@@ -41,21 +41,18 @@ interface SettingsFormValues {
   theme: string;
 }
 
-// Phase 2: Silero is rendered but disabled. Phase 3 of #42 replaces this
-// with a runtime probe (`get_available_engines`) so the reason text reflects
-// the actual environment (no `uv`, no `ttsd/`, etc).
-const PHASE2_AVAILABILITY: AvailabilityMap = {
-  piper: { available: true, reason: null },
-  silero: {
-    available: false,
-    reason: 'Доступно после установки Python-стека (будет включено в следующей фазе #42).',
-  },
-};
-
 const ENGINE_OPTIONS: ReadonlyArray<{ value: EngineKind; label: string }> = [
   { value: 'piper', label: 'Piper (по умолчанию, без Python)' },
   { value: 'silero', label: 'Silero (Python ttsd)' },
 ];
+
+/// Pessimistic default used until `getAvailableEngines()` resolves: Piper
+/// is always on; Silero is treated as unavailable so users don't briefly
+/// see it as enabled and click before the probe lands.
+const PESSIMISTIC_AVAILABILITY: AvailabilityMap = {
+  piper: { available: true, reason: null },
+  silero: { available: false, reason: 'Проверяю наличие Python-стека…' },
+};
 
 interface SettingsModalProps {
   opened: boolean;
@@ -212,6 +209,7 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
   const [cleanupOpen, setCleanupOpen] = useState(false);
   const [cacheDir, setCacheDir] = useState<string>('');
   const [coercedAlert, setCoercedAlert] = useState(false);
+  const [availability, setAvailability] = useState<AvailabilityMap>(PESSIMISTIC_AVAILABILITY);
   const form = useForm<SettingsFormValues>({
     initialValues: {
       engine: 'piper',
@@ -231,21 +229,30 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
 
   useEffect(() => {
     if (!opened) return;
-    commands.getConfig().then((config) => {
-      const initial = computeEngineFormState(config, PHASE2_AVAILABILITY);
-      form.setValues({
-        engine: initial.engine,
-        piper_voice: initial.piperVoice,
-        speaker: initial.sileroSpeaker,
-        sample_rate: config.sample_rate,
-        notify_on_ready: config.notify_on_ready,
-        notify_on_error: config.notify_on_error,
-        preview_dialog_enabled: config.preview_dialog_enabled,
-        max_cache_size_mb: config.max_cache_size_mb,
-        theme: config.theme,
+    Promise.all([commands.getConfig(), commands.getAvailableEngines()])
+      .then(([config, probed]) => {
+        setAvailability(probed);
+        const initial = computeEngineFormState(config, probed);
+        form.setValues({
+          engine: initial.engine,
+          piper_voice: initial.piperVoice,
+          speaker: initial.sileroSpeaker,
+          sample_rate: config.sample_rate,
+          notify_on_ready: config.notify_on_ready,
+          notify_on_error: config.notify_on_error,
+          preview_dialog_enabled: config.preview_dialog_enabled,
+          max_cache_size_mb: config.max_cache_size_mb,
+          theme: config.theme,
+        });
+        setCoercedAlert(initial.coercedAwayFromUnavailable);
+      })
+      .catch((err) => {
+        notifications.show({
+          title: 'Не удалось загрузить настройки',
+          message: formatError(err),
+          color: 'red',
+        });
       });
-      setCoercedAlert(initial.coercedAwayFromUnavailable);
-    });
     commands.getCacheDir().then(setCacheDir).catch(() => setCacheDir(''));
     // form is excluded intentionally: setValues is stable, re-running on form change would loop
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -263,7 +270,7 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
       sileroSpeaker: form.values.speaker,
       coercedAwayFromUnavailable: coercedAlert,
     };
-    const updated = applyEngineChange(current, next, PHASE2_AVAILABILITY);
+    const updated = applyEngineChange(current, next, availability);
     form.setFieldValue('engine', updated.engine);
     setCoercedAlert(updated.coercedAwayFromUnavailable);
   };
@@ -353,15 +360,15 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
             data={ENGINE_OPTIONS.map((opt) => ({
               value: opt.value,
               label: opt.label,
-              disabled: !PHASE2_AVAILABILITY[opt.value].available,
+              disabled: !availability[opt.value].available,
             }))}
             value={form.values.engine}
             onChange={(v) => v && handleEngineChange(v as EngineKind)}
           />
 
-          {!PHASE2_AVAILABILITY.silero.available && (
+          {!availability.silero.available && availability.silero.reason && (
             <Text size="xs" c="dimmed" mt={-8}>
-              Silero: {PHASE2_AVAILABILITY.silero.reason}
+              Silero: {availability.silero.reason}
             </Text>
           )}
 
