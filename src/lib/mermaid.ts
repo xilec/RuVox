@@ -35,14 +35,30 @@ export async function renderMermaidIn(
     if (!source) continue;
 
     const id = `mermaid-${Date.now().toString(36)}-${renderCounter++}`;
+    // Render into a temporary off-screen container. Calling `mermaid.render`
+    // without a container makes the library inject and clean up its own host
+    // element on `document.body`, which is fragile inside Tauri's WebKit (the
+    // SVG sometimes never reaches the caller). An explicit container avoids
+    // that path entirely.
+    const host = document.createElement('div');
+    host.setAttribute('aria-hidden', 'true');
+    host.style.cssText = 'position:absolute;visibility:hidden;left:-99999px;top:-99999px;';
+    document.body.appendChild(host);
     try {
-      const { svg, bindFunctions } = await mermaid.render(id, source);
+      const { svg, bindFunctions } = await mermaid.render(id, source, host);
       node.innerHTML = svg;
       bindFunctions?.(node);
     } catch (e) {
-      // Restore the source as plain text so users can see what failed.
-      node.textContent = source;
-      throw e;
+      // Show the source inside <pre> so line breaks survive HTML whitespace
+      // collapsing — the diagram code stays readable while the user (or we)
+      // figure out the syntax problem.
+      const pre = document.createElement('pre');
+      pre.className = 'mermaid-error';
+      pre.textContent = source;
+      node.replaceChildren(pre);
+      console.error('mermaid render error:', e);
+    } finally {
+      host.remove();
     }
   }
 }
