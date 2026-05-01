@@ -15,6 +15,12 @@ use crate::tts::{CharMappingEntry, WordTimestamp};
 /// `total_duration_sec`. `char_mapping`, when present, maps normalized-text
 /// offsets back to original-text offsets (so the player highlights the right
 /// span in the user's input).
+///
+/// Word offsets are reported in **Unicode codepoint** units (not UTF-8 bytes),
+/// matching `CharMapping`/`CharMappingEntry` and the JS frontend (which indexes
+/// into UTF-16 strings — equivalent to codepoints for BMP characters like all
+/// Cyrillic). `regex::find_iter` returns byte spans, so we convert them in a
+/// single forward pass that amortizes the char-counting work.
 pub fn estimate_timestamps_single_chunk(
     text: &str,
     total_duration_sec: f64,
@@ -22,11 +28,18 @@ pub fn estimate_timestamps_single_chunk(
 ) -> Vec<WordTimestamp> {
     // `regex::Regex::new(r"\b\w+\b")` is Unicode-aware by default — `\w`
     // matches Cyrillic and other letter scripts.
-    static_re().captures_iter(text);
-    let words: Vec<(&str, usize, usize)> = static_re()
-        .find_iter(text)
-        .map(|m| (m.as_str(), m.start(), m.end()))
-        .collect();
+    let mut words: Vec<(&str, usize, usize)> = Vec::new();
+    let mut prev_byte = 0;
+    let mut chars_so_far = 0;
+    for m in static_re().find_iter(text) {
+        chars_so_far += text[prev_byte..m.start()].chars().count();
+        let char_start = chars_so_far;
+        let word_chars = m.as_str().chars().count();
+        chars_so_far += word_chars;
+        let char_end = chars_so_far;
+        prev_byte = m.end();
+        words.push((m.as_str(), char_start, char_end));
+    }
 
     if words.is_empty() {
         return Vec::new();
@@ -139,12 +152,13 @@ mod tests {
 
     #[test]
     fn char_mapping_maps_norm_to_orig() {
-        // "API" (3 bytes in original) was normalized to "эй пи ай" — 14 bytes
-        // in UTF-8. One span covers the whole normalized range and points at
-        // the original 3-byte word.
+        // "API" (3 chars in original) was normalized to "эй пи ай" — 8 chars
+        // in the normalized text. One span covers the whole normalized range
+        // and points at the original 3-char word. Both ends are codepoint
+        // (char) indices, matching the `CharMapping` contract.
         let spans = vec![CharMappingEntry {
             norm_start: 0,
-            norm_end: 14,
+            norm_end: 8,
             orig_start: 0,
             orig_end: 3,
         }];
@@ -153,5 +167,18 @@ mod tests {
         for w in &ts {
             assert_eq!(w.original_pos, (0, 3));
         }
+    }
+
+    #[test]
+    fn original_pos_is_codepoint_indexed_for_cyrillic() {
+        // Without char_mapping, original_pos falls back to the normalized
+        // offsets. Those must be codepoint indices, not UTF-8 byte offsets —
+        // the JS frontend matches them against `data-orig-start` attributes
+        // emitted by `wrapWordsWithOrigPos`, which uses JS string indices
+        // (UTF-16 code units = codepoints for BMP characters).
+        let ts = estimate_timestamps_single_chunk("привет мир", 1.0, None);
+        assert_eq!(ts.len(), 2);
+        assert_eq!(ts[0].original_pos, (0, 6));
+        assert_eq!(ts[1].original_pos, (7, 10));
     }
 }
