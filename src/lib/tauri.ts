@@ -32,6 +32,18 @@ export interface WordTimestamp {
 
 export type Theme = 'light' | 'dark' | 'auto';
 
+export type EngineKind = 'piper' | 'silero';
+
+export interface EngineAvailability {
+  available: boolean;
+  reason: string | null;
+}
+
+export interface AvailableEngines {
+  piper: EngineAvailability;
+  silero: EngineAvailability;
+}
+
 export interface UIConfig {
   speaker: string;
   sample_rate: number;
@@ -46,6 +58,11 @@ export interface UIConfig {
   player_hotkeys: Record<string, string>;
   window_geometry: [number, number, number, number] | null;
   preview_dialog_enabled: boolean;
+  /** Active TTS engine. Defaults to "piper" on fresh installs and on configs
+   *  that pre-date the engine selector. */
+  engine: EngineKind;
+  /** Active Piper voice id (e.g. "ruslan", "irina"). See piperVoices.ts. */
+  piper_voice: string;
 }
 
 export type UIConfigPatch = Partial<UIConfig>;
@@ -123,6 +140,12 @@ export const commands = {
   updateConfig: (patch: UIConfigPatch): Promise<void> =>
     tauriInvoke('update_config', { patch }),
 
+  getAvailableEngines: (): Promise<AvailableEngines> =>
+    tauriInvoke('get_available_engines'),
+
+  downloadPiperVoice: (voice_id: string): Promise<void> =>
+    tauriInvoke('download_piper_voice', { voiceId: voice_id }),
+
   getTimestamps: (id: EntryId): Promise<WordTimestamp[]> =>
     tauriInvoke('get_timestamps', { id }),
 
@@ -151,6 +174,31 @@ export interface ModelErrorPayload { message: string; }
 export interface TtsErrorPayload { entry_id: EntryId; message: string; }
 export interface TtsFatalPayload { message: string; }
 export interface SynthesisProgressPayload { entry_id: EntryId; progress: number; }
+
+export interface VoiceDownloadStartedPayload {
+  engine: 'piper';
+  voice: string;
+}
+export interface VoiceDownloadProgressPayload {
+  engine: 'piper';
+  voice: string;
+  /** "json" or "onnx". */
+  file_kind: string;
+  file_idx: number;
+  total_files: number;
+  downloaded_bytes: number;
+  /** Server-supplied content-length; null when unknown. */
+  total_bytes: number | null;
+  /** Set when the file was already on disk and download was skipped. */
+  skipped?: boolean;
+}
+export interface VoiceDownloadFinishedPayload {
+  engine: 'piper';
+  voice: string;
+  ok: boolean;
+  /** Russian-language failure message, present when ok=false. */
+  message?: string;
+}
 
 export const events = {
   entryUpdated: (cb: (p: EntryUpdatedPayload) => void): Promise<UnlistenFn> =>
@@ -200,4 +248,13 @@ export const events = {
 
   trayReadLater: (cb: () => void): Promise<UnlistenFn> =>
     tauriListen<Record<string, never>>('tray_read_later', () => cb()),
+
+  voiceDownloadStarted: (cb: (p: VoiceDownloadStartedPayload) => void): Promise<UnlistenFn> =>
+    tauriListen<VoiceDownloadStartedPayload>('voice_download_started', (e) => cb(e.payload)),
+
+  voiceDownloadProgress: (cb: (p: VoiceDownloadProgressPayload) => void): Promise<UnlistenFn> =>
+    tauriListen<VoiceDownloadProgressPayload>('voice_download_progress', (e) => cb(e.payload)),
+
+  voiceDownloadFinished: (cb: (p: VoiceDownloadFinishedPayload) => void): Promise<UnlistenFn> =>
+    tauriListen<VoiceDownloadFinishedPayload>('voice_download_finished', (e) => cb(e.payload)),
 };

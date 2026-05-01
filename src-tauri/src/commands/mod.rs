@@ -20,7 +20,10 @@ use crate::storage::schema::{
     EntryId, EntryStatus, TextEntry, UIConfig, UIConfigPatch, WordTimestamp,
 };
 use crate::storage::service::{StorageError, StorageService};
-use crate::tts::{CharMappingEntry, SynthesizeOutput, TtsError, TtsSupervisor};
+use crate::tts::piper::download::download_voice;
+use crate::tts::{
+    availability, AvailableEngines, CharMappingEntry, SynthesizeOutput, TtsEngine, TtsError,
+};
 
 // ── Error type ─────────────────────────────────────────────────────────────────
 
@@ -96,10 +99,13 @@ fn char_mapping_to_entries(mapping: &CharMapping) -> Vec<CharMappingEntry> {
 // ── Background synthesis ───────────────────────────────────────────────────────
 
 /// Public alias used by the tray module to avoid duplicating the synthesis logic.
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_synthesis_pub<R: Runtime + 'static>(
     app: AppHandle<R>,
     storage: Arc<StorageService>,
-    tts: Arc<crate::tts::TtsSupervisor>,
+    tts: Arc<dyn TtsEngine>,
+    piper_voices_dir: PathBuf,
+    emitter: crate::tts::supervisor::Emitter,
     player: Arc<crate::player::Player<R>>,
     pipeline: Arc<parking_lot::Mutex<crate::pipeline::TTSPipeline>>,
     entry_id: EntryId,
@@ -109,6 +115,8 @@ pub fn spawn_synthesis_pub<R: Runtime + 'static>(
         app,
         storage,
         tts,
+        piper_voices_dir,
+        emitter,
         player,
         pipeline,
         entry_id,
@@ -179,9 +187,17 @@ fn mark_processing<R: Runtime>(
 /// call `tts.synthesize`. Returns the synthesize output along with the
 /// resolved WAV path and filename so [`finalize_audio_files`] can transcode
 /// to Opus without rebuilding them.
+///
+/// When the engine returns `voice_not_installed` and the active engine is
+/// Piper, the function auto-fetches the voice files via
+/// [`crate::tts::piper::download::download_voice`] and retries once. The
+/// retry runs only on Piper because Silero is bundled — its Python venv
+/// already includes the model.
 async fn synthesize_audio(
-    tts: &TtsSupervisor,
+    tts: &dyn TtsEngine,
     storage: &StorageService,
+    piper_voices_dir: &std::path::Path,
+    emitter: &crate::tts::supervisor::Emitter,
     entry_id: &EntryId,
     normalized: String,
     mapping: &CharMapping,
@@ -198,16 +214,46 @@ async fn synthesize_audio(
         Some(char_mapping_to_entries(mapping))
     };
 
-    let output = tts
+    // Voice id is engine-specific: Piper uses `piper_voice` (e.g. "ruslan"),
+    // Silero uses `speaker` (e.g. "xenia"). Keeping them in two distinct
+    // config fields means flipping engines preserves each side's choice.
+    let voice = if config.engine == "silero" {
+        config.speaker.clone()
+    } else {
+        config.piper_voice.clone()
+    };
+
+    let attempt = tts
         .synthesize(
-            normalized,
-            config.speaker.clone(),
+            normalized.clone(),
+            voice.clone(),
             config.sample_rate,
-            out_wav,
-            tts_char_mapping,
+            out_wav.clone(),
+            tts_char_mapping.clone(),
         )
-        .await
-        .map_err(|e| SynthesisError::TtsFailed(e.to_string()))?;
+        .await;
+
+    let output = match attempt {
+        Ok(o) => o,
+        Err(TtsError::Ttsd { code, message })
+            if code == "voice_not_installed" && config.engine == "piper" =>
+        {
+            info!("voice \"{voice}\" not installed; auto-downloading then retrying ({message})");
+            crate::tts::piper::download::download_voice(piper_voices_dir, &voice, emitter)
+                .await
+                .map_err(|e| SynthesisError::TtsFailed(e.to_string()))?;
+            tts.synthesize(
+                normalized,
+                voice,
+                config.sample_rate,
+                out_wav,
+                tts_char_mapping,
+            )
+            .await
+            .map_err(|e| SynthesisError::TtsFailed(e.to_string()))?
+        }
+        Err(e) => return Err(SynthesisError::TtsFailed(e.to_string())),
+    };
 
     Ok((output, out_wav_path, wav_filename))
 }
@@ -307,10 +353,13 @@ fn autoplay<R: Runtime>(
 }
 
 /// Run the full synthesis pipeline for `entry_id` in a background task.
+#[allow(clippy::too_many_arguments)]
 fn spawn_synthesis<R: Runtime + 'static>(
     app: AppHandle<R>,
     storage: Arc<StorageService>,
-    tts: Arc<TtsSupervisor>,
+    tts: Arc<dyn TtsEngine>,
+    piper_voices_dir: PathBuf,
+    emitter: crate::tts::supervisor::Emitter,
     player: Arc<crate::player::Player<R>>,
     pipeline: Arc<Mutex<TTSPipeline>>,
     entry_id: EntryId,
@@ -326,8 +375,16 @@ fn spawn_synthesis<R: Runtime + 'static>(
             let (normalized, mapping) =
                 run_normalization(Arc::clone(&pipeline), entry.original_text.clone()).await?;
             mark_processing(&storage, &app, &entry_id, &normalized);
-            let (output, out_wav_path, wav_filename) =
-                synthesize_audio(&tts, &storage, &entry_id, normalized, &mapping).await?;
+            let (output, out_wav_path, wav_filename) = synthesize_audio(
+                tts.as_ref(),
+                &storage,
+                &piper_voices_dir,
+                &emitter,
+                &entry_id,
+                normalized,
+                &mapping,
+            )
+            .await?;
             let (ts_filename, audio_filename) =
                 finalize_audio_files(&storage, &entry_id, &output, out_wav_path, &wav_filename)
                     .await;
@@ -401,6 +458,8 @@ fn ingest_text(
         app,
         Arc::clone(&state.storage),
         Arc::clone(&state.tts),
+        state.piper_voices_dir.clone(),
+        Arc::clone(&state.emitter),
         Arc::clone(&state.player),
         Arc::clone(&state.pipeline),
         entry_id,
@@ -587,6 +646,8 @@ pub async fn regenerate_entry(
         app,
         Arc::clone(&state.storage),
         Arc::clone(&state.tts),
+        state.piper_voices_dir.clone(),
+        Arc::clone(&state.emitter),
         Arc::clone(&state.player),
         Arc::clone(&state.pipeline),
         uuid,
@@ -756,11 +817,53 @@ pub async fn get_config(state: State<'_, AppState>) -> CmdResult<UIConfig> {
     state.storage.load_config().map_err(CommandError::from)
 }
 
-/// Merge a partial config patch into the current configuration and persist.
+/// Download a Piper voice on user demand. Idempotent — already-present
+/// files are skipped. Progress is delivered via the
+/// `voice_download_started` / `voice_download_progress` /
+/// `voice_download_finished` events; the `Result` here only reports the
+/// final outcome so the frontend can show one final notification.
+#[tauri::command]
+pub async fn download_piper_voice(state: State<'_, AppState>, voice_id: String) -> CmdResult<()> {
+    let voices_dir = state.piper_voices_dir.clone();
+    let emitter = Arc::clone(&state.emitter);
+    download_voice(&voices_dir, &voice_id, &emitter)
+        .await
+        .map_err(CommandError::from)
+}
+
+/// Probe which TTS engines can be selected on the running system.
+///
+/// Piper is in-process and always available. Silero requires the `ttsd/`
+/// Python package and the `uv` toolchain — see [`tts::availability`].
+/// Cheap (filesystem stat + one `uv --version` exec); safe to call on
+/// every Settings dialog open.
+#[tauri::command]
+pub async fn get_available_engines(state: State<'_, AppState>) -> CmdResult<AvailableEngines> {
+    let ttsd_dir = state.ttsd_dir.clone();
+    tokio::task::spawn_blocking(move || availability::probe(&ttsd_dir))
+        .await
+        .map_err(|e| CommandError::Internal {
+            message: format!("availability probe panicked: {e}"),
+        })
+}
+
+/// Merge a partial config patch into the current configuration, swap the
+/// active TTS engine if needed, and persist. The engine swap runs *before*
+/// the config is saved — if the user picked a Silero stack we cannot spawn,
+/// the call returns an error and the previous config stays on disk.
 #[tauri::command]
 pub async fn update_config(state: State<'_, AppState>, patch: UIConfigPatch) -> CmdResult<()> {
     let mut config = state.storage.load_config().unwrap_or_default();
     apply_config_patch(&mut config, patch);
+
+    state
+        .engine_switcher
+        .apply_config(&config.engine, &config.piper_voice)
+        .await
+        .map_err(|e| CommandError::ConfigError {
+            message: format!("не удалось переключить движок: {e}"),
+        })?;
+
     state
         .storage
         .save_config(&config)
@@ -947,6 +1050,12 @@ fn apply_config_patch(config: &mut UIConfig, patch: UIConfigPatch) {
     }
     if let Some(v) = patch.preview_dialog_enabled {
         config.preview_dialog_enabled = v;
+    }
+    if let Some(v) = patch.engine {
+        config.engine = v;
+    }
+    if let Some(v) = patch.piper_voice {
+        config.piper_voice = v;
     }
 }
 

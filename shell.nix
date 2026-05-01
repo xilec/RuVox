@@ -34,6 +34,23 @@ pkgs.mkShell {
 
     # ── Build tools ────────────────────────────────────────────────────────
     pkg-config
+    cmake
+    clang
+    llvmPackages.libclang
+
+    # ── Piper TTS native runtime ───────────────────────────────────────────
+    # piper-rs links libonnxruntime via `ort` with the `load-dynamic` feature
+    # (set ORT_DYLIB_PATH below). espeak-rs-sys vendors libespeak-ng and
+    # builds it via cmake, so we don't need the package for linking — but
+    # the cmake build's espeak-ng-data ends up in target/debug/build/.../out
+    # which espeak-rs never looks at (it checks $CWD/espeak-ng-data and
+    # $exe_dir/espeak-ng-data only). Without PIPER_ESPEAKNG_DATA_DIRECTORY
+    # (set in shellHook) the library initialises with NULL data path, the
+    # ru_dict / phondata / intonations files are not loaded, and Russian
+    # phonemization falls back to skeleton defaults — manifesting as
+    # consistently wrong word stress on every Piper voice.
+    onnxruntime
+    espeak-ng
 
     # ── Tauri 2 Linux system dependencies ─────────────────────────────────
     # WebKit with ABI 4.1 (required by Tauri 2; 4.0 was removed)
@@ -141,8 +158,29 @@ pkgs.mkShell {
   OPENSSL_DIR = "${pkgs.openssl.dev}";
   OPENSSL_LIB_DIR = "${pkgs.openssl.out}/lib";
 
+  # bindgen (used by sonic-rs-sys, espeak-rs-sys, ort-sys) needs libclang.
+  LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+
+  # `ort` with the `load-dynamic` feature dlopens libonnxruntime at runtime.
+  ORT_DYLIB_PATH = "${pkgs.onnxruntime}/lib/libonnxruntime.so";
+
+  # Point espeak-rs at the full nixpkgs espeak-ng data dir. The crate looks
+  # for `<this>/espeak-ng-data/` and falls back to NULL (= no data path) if
+  # the directory is missing — see comment next to `espeak-ng` in buildInputs.
+  PIPER_ESPEAKNG_DATA_DIRECTORY = "${pkgs.espeak-ng}/share";
+
   shellHook = ''
     export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:$LD_LIBRARY_PATH"
+
+    # bindgen needs the C system include paths from stdenv.cc — without these,
+    # `#include <stdio.h>` fails inside the espeak-rs-sys / sonic-rs-sys build
+    # scripts because clang has no implicit C system headers under nix.
+    if [ -f "${pkgs.stdenv.cc}/nix-support/libcxx-cxxflags" ]; then
+      _cxxflags="$(< ${pkgs.stdenv.cc}/nix-support/libcxx-cxxflags)"
+    else
+      _cxxflags=""
+    fi
+    export BINDGEN_EXTRA_CLANG_ARGS="$(< ${pkgs.stdenv.cc}/nix-support/libc-crt1-cflags) $(< ${pkgs.stdenv.cc}/nix-support/libc-cflags) $(< ${pkgs.stdenv.cc}/nix-support/cc-cflags) $_cxxflags"
 
     # Needed by glib-networking (TLS for WebKit)
     export GIO_EXTRA_MODULES="${pkgs.glib-networking}/lib/gio/modules"

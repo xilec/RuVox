@@ -170,6 +170,70 @@ export async function setupNotificationBridge(): Promise<() => void> {
     }),
   );
 
+  // Voice-download lifecycle: each voice gets its own toast id keyed on the
+  // voice id so concurrent downloads (rare but possible) don't trample each
+  // other. Progress events update the body with a kilobyte/megabyte tally;
+  // started/finished flip the toast colour and loading state.
+  const voiceToastId = (voice: string) => `voice-download-${voice}`;
+  const fmtMb = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+
+  unlisteners.push(
+    await events.voiceDownloadStarted((p) => {
+      notifications.show({
+        id: voiceToastId(p.voice),
+        title: `Загрузка голоса ${p.voice}`,
+        message: 'Запрашиваю файлы…',
+        loading: true,
+        autoClose: false,
+      });
+    }),
+  );
+
+  unlisteners.push(
+    await events.voiceDownloadProgress((p) => {
+      // `skipped: true` events are no-ops in the toast — they fire when the
+      // file is already on disk and we don't want to confuse the user with
+      // 0/0 readouts.
+      if (p.skipped) return;
+      const total = p.total_bytes ?? 0;
+      const file = p.file_kind === 'onnx' ? 'модель' : 'конфиг';
+      const message = total > 0
+        ? `${file} (${p.file_idx + 1}/${p.total_files}): ${fmtMb(p.downloaded_bytes)} / ${fmtMb(total)}`
+        : `${file}: ${fmtMb(p.downloaded_bytes)}`;
+      notifications.update({
+        id: voiceToastId(p.voice),
+        title: `Загрузка голоса ${p.voice}`,
+        message,
+        loading: true,
+        autoClose: false,
+      });
+    }),
+  );
+
+  unlisteners.push(
+    await events.voiceDownloadFinished((p) => {
+      if (p.ok) {
+        notifications.update({
+          id: voiceToastId(p.voice),
+          title: 'Голос загружен',
+          message: `Голос «${p.voice}» готов к использованию.`,
+          color: 'green',
+          loading: false,
+          autoClose: 3000,
+        });
+      } else {
+        notifications.update({
+          id: voiceToastId(p.voice),
+          title: 'Не удалось загрузить голос',
+          message: p.message ?? `Голос «${p.voice}» не загружен.`,
+          color: 'red',
+          loading: false,
+          autoClose: 8000,
+        });
+      }
+    }),
+  );
+
   return () => {
     for (const unlisten of unlisteners) {
       unlisten();

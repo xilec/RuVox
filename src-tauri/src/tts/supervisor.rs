@@ -25,12 +25,14 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use async_trait::async_trait;
 use serde_json::json;
 use tokio::process::Command;
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::sleep;
 use tracing::{error, info, warn};
 
+use super::engine::{EngineKind, TtsEngine};
 use super::{CharMappingEntry, SynthesizeOutput, TtsError, TtsSubprocess};
 
 /// Backoff schedule for respawn attempts. Each entry is the delay *before*
@@ -181,16 +183,6 @@ impl TtsSupervisor {
         Err(err)
     }
 
-    /// Run the first-time Silero warmup in the background, emitting the
-    /// `model_loading` → `model_loaded` / `model_error` lifecycle that the
-    /// frontend expects on startup. Same code path as post-respawn warmup —
-    /// callers don't need to duplicate the lifecycle plumbing.
-    pub async fn spawn_initial_warmup(&self) {
-        if let Some(handle) = self.current_handle().await {
-            self.spawn_warmup(handle);
-        }
-    }
-
     /// Run `warmup` against the freshly-spawned handle in a background task,
     /// mirroring the `model_loading` → `model_loaded` / `model_error`
     /// lifecycle that startup uses. Failures here do not invalidate the
@@ -212,17 +204,34 @@ impl TtsSupervisor {
             }
         });
     }
+}
 
-    // ── Proxied methods ───────────────────────────────────────────────────
+// ── TtsEngine impl ─────────────────────────────────────────────────────────────
 
-    pub async fn warmup(&self) -> Result<(), TtsError> {
+#[async_trait]
+impl TtsEngine for TtsSupervisor {
+    fn kind(&self) -> EngineKind {
+        EngineKind::Silero
+    }
+
+    async fn warmup(&self) -> Result<(), TtsError> {
         self.with_retry(|h| async move { h.warmup().await }).await
     }
 
-    pub async fn synthesize(
+    /// Run the first-time Silero warmup in the background, emitting the
+    /// `model_loading` → `model_loaded` / `model_error` lifecycle that the
+    /// frontend expects on startup. Same code path as post-respawn warmup —
+    /// callers don't need to duplicate the lifecycle plumbing.
+    async fn spawn_initial_warmup(&self) {
+        if let Some(handle) = self.current_handle().await {
+            self.spawn_warmup(handle);
+        }
+    }
+
+    async fn synthesize(
         &self,
         text: String,
-        speaker: String,
+        voice: String,
         sample_rate: u32,
         out_wav: String,
         char_mapping: Option<Vec<CharMappingEntry>>,
@@ -230,7 +239,7 @@ impl TtsSupervisor {
         // Convert once at the supervisor boundary; each retry below only bumps
         // the Arc refcount instead of memcpy-cloning the strings/Vec.
         let text: Arc<str> = Arc::from(text);
-        let speaker: Arc<str> = Arc::from(speaker);
+        let speaker: Arc<str> = Arc::from(voice);
         let out_wav: Arc<str> = Arc::from(out_wav);
         let char_mapping: Option<Arc<[CharMappingEntry]>> = char_mapping.map(Arc::from);
 
@@ -249,7 +258,7 @@ impl TtsSupervisor {
 
     /// Graceful shutdown. Does *not* respawn on Died — at this point we are
     /// tearing down anyway.
-    pub async fn shutdown(&self) -> Result<(), TtsError> {
+    async fn shutdown(&self) -> Result<(), TtsError> {
         let handle = match self.current_handle().await {
             Some(h) => h,
             None => return Ok(()),

@@ -17,6 +17,9 @@ use std::sync::Arc;
 
 use ruvox_tauri_lib::tts::supervisor::test_helpers::recording_emitter;
 use ruvox_tauri_lib::tts::supervisor::{CommandFactory, TtsSupervisor};
+// Bring the trait into scope so `sup.synthesize(...)` resolves to its
+// `TtsEngine` impl methods.
+use ruvox_tauri_lib::tts::TtsEngine;
 use tokio::process::Command;
 
 /// Resolve the mock script path. `cargo test` may be invoked from either

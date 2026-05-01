@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  Badge,
   Button,
   Checkbox,
   Divider,
@@ -11,6 +12,7 @@ import {
   Stack,
   Switch,
   Text,
+  Tooltip,
   useMantineColorScheme,
 } from '@mantine/core';
 import type { MantineColorScheme } from '@mantine/core';
@@ -18,10 +20,18 @@ import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { commands } from '../lib/tauri';
-import type { CleanupMode, UIConfigPatch } from '../lib/tauri';
+import type { CleanupMode, EngineKind, UIConfigPatch } from '../lib/tauri';
 import { formatError } from '../lib/errors';
+import { PIPER_VOICES } from '../lib/piperVoices';
+import {
+  applyEngineChange,
+  computeEngineFormState,
+  type AvailabilityMap,
+} from '../lib/engineSelection';
 
 interface SettingsFormValues {
+  engine: EngineKind;
+  piper_voice: string;
   speaker: string;
   sample_rate: number;
   notify_on_ready: boolean;
@@ -30,6 +40,19 @@ interface SettingsFormValues {
   max_cache_size_mb: number;
   theme: string;
 }
+
+const ENGINE_OPTIONS: ReadonlyArray<{ value: EngineKind; label: string }> = [
+  { value: 'piper', label: 'Piper (по умолчанию, без Python)' },
+  { value: 'silero', label: 'Silero (Python ttsd)' },
+];
+
+/// Pessimistic default used until `getAvailableEngines()` resolves: Piper
+/// is always on; Silero is treated as unavailable so users don't briefly
+/// see it as enabled and click before the probe lands.
+const PESSIMISTIC_AVAILABILITY: AvailabilityMap = {
+  piper: { available: true, reason: null },
+  silero: { available: false, reason: 'Проверяю наличие Python-стека…' },
+};
 
 interface SettingsModalProps {
   opened: boolean;
@@ -185,8 +208,12 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
   const { setColorScheme } = useMantineColorScheme();
   const [cleanupOpen, setCleanupOpen] = useState(false);
   const [cacheDir, setCacheDir] = useState<string>('');
+  const [coercedAlert, setCoercedAlert] = useState(false);
+  const [availability, setAvailability] = useState<AvailabilityMap>(PESSIMISTIC_AVAILABILITY);
   const form = useForm<SettingsFormValues>({
     initialValues: {
+      engine: 'piper',
+      piper_voice: 'ruslan',
       speaker: 'xenia',
       sample_rate: 48000,
       notify_on_ready: true,
@@ -202,21 +229,51 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
 
   useEffect(() => {
     if (!opened) return;
-    commands.getConfig().then((config) => {
-      form.setValues({
-        speaker: config.speaker,
-        sample_rate: config.sample_rate,
-        notify_on_ready: config.notify_on_ready,
-        notify_on_error: config.notify_on_error,
-        preview_dialog_enabled: config.preview_dialog_enabled,
-        max_cache_size_mb: config.max_cache_size_mb,
-        theme: config.theme,
+    Promise.all([commands.getConfig(), commands.getAvailableEngines()])
+      .then(([config, probed]) => {
+        setAvailability(probed);
+        const initial = computeEngineFormState(config, probed);
+        form.setValues({
+          engine: initial.engine,
+          piper_voice: initial.piperVoice,
+          speaker: initial.sileroSpeaker,
+          sample_rate: config.sample_rate,
+          notify_on_ready: config.notify_on_ready,
+          notify_on_error: config.notify_on_error,
+          preview_dialog_enabled: config.preview_dialog_enabled,
+          max_cache_size_mb: config.max_cache_size_mb,
+          theme: config.theme,
+        });
+        setCoercedAlert(initial.coercedAwayFromUnavailable);
+      })
+      .catch((err) => {
+        notifications.show({
+          title: 'Не удалось загрузить настройки',
+          message: formatError(err),
+          color: 'red',
+        });
       });
-    });
     commands.getCacheDir().then(setCacheDir).catch(() => setCacheDir(''));
     // form is excluded intentionally: setValues is stable, re-running on form change would loop
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opened]);
+
+  const piperVoiceOptions = useMemo(
+    () => PIPER_VOICES.map((v) => ({ value: v.id, label: v.label })),
+    [],
+  );
+
+  const handleEngineChange = (next: EngineKind) => {
+    const current = {
+      engine: form.values.engine,
+      piperVoice: form.values.piper_voice,
+      sileroSpeaker: form.values.speaker,
+      coercedAwayFromUnavailable: coercedAlert,
+    };
+    const updated = applyEngineChange(current, next, availability);
+    form.setFieldValue('engine', updated.engine);
+    setCoercedAlert(updated.coercedAwayFromUnavailable);
+  };
 
   // Reset the nested cleanup modal's visibility when Settings closes, so
   // reopening Settings does not resurrect a stale nested-open state.
@@ -241,6 +298,8 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
 
   const handleSubmit = async (values: SettingsFormValues) => {
     const patch: UIConfigPatch = {
+      engine: values.engine,
+      piper_voice: values.piper_voice,
       speaker: values.speaker,
       sample_rate: values.sample_rate,
       notify_on_ready: values.notify_on_ready,
@@ -263,10 +322,10 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
       });
       onSaved?.();
       onClose();
-    } catch {
+    } catch (err) {
       notifications.show({
         title: 'Ошибка сохранения',
-        message: 'Не удалось сохранить настройки.',
+        message: formatError(err),
         color: 'red',
       });
     }
@@ -289,12 +348,75 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
             Синтез речи
           </Text>
 
+          {coercedAlert && (
+            <Alert color="yellow" variant="light">
+              Сохранённый движок недоступен — выбран Piper.
+            </Alert>
+          )}
+
           <Select
-            label="Голос"
-            data={SPEAKER_OPTIONS}
-            key={form.key('speaker')}
-            {...form.getInputProps('speaker')}
+            label="Движок"
+            description="Piper — встроенный, не требует Python."
+            data={ENGINE_OPTIONS.map((opt) => ({
+              value: opt.value,
+              label: opt.label,
+              disabled: !availability[opt.value].available,
+            }))}
+            value={form.values.engine}
+            onChange={(v) => v && handleEngineChange(v as EngineKind)}
           />
+
+          {!availability.silero.available && availability.silero.reason && (
+            <Text size="xs" c="dimmed" mt={-8}>
+              Silero: {availability.silero.reason}
+            </Text>
+          )}
+
+          {form.values.engine === 'piper' ? (
+            <Stack gap={6}>
+              <Select
+                label="Голос Piper"
+                description="При первом синтезе ~60 МБ загрузятся автоматически."
+                data={piperVoiceOptions}
+                key={form.key('piper_voice')}
+                {...form.getInputProps('piper_voice')}
+                rightSection={
+                  PIPER_VOICES.find((v) => v.id === form.values.piper_voice)?.recommended ? (
+                    <Tooltip label="Рекомендуется для технических текстов">
+                      <Badge size="xs" color="blue" variant="light">
+                        Рек.
+                      </Badge>
+                    </Tooltip>
+                  ) : null
+                }
+                rightSectionWidth={60}
+              />
+              <Group justify="flex-start">
+                <Button
+                  variant="default"
+                  size="xs"
+                  onClick={() =>
+                    commands.downloadPiperVoice(form.values.piper_voice).catch((err) => {
+                      notifications.show({
+                        title: 'Не удалось запустить загрузку',
+                        message: formatError(err),
+                        color: 'red',
+                      });
+                    })
+                  }
+                >
+                  Скачать сейчас
+                </Button>
+              </Group>
+            </Stack>
+          ) : (
+            <Select
+              label="Голос Silero"
+              data={SPEAKER_OPTIONS}
+              key={form.key('speaker')}
+              {...form.getInputProps('speaker')}
+            />
+          )}
 
           <Select
             label="Частота дискретизации"

@@ -65,6 +65,29 @@ ogg = "0.9"
 hound = "3.5"
 byteorder = "1.5"
 
+# ── Piper TTS (native engine) ────────────────────────────────────────────────
+# `piper-rs` runs Piper's VITS ONNX models in-process. We pin both `ort` and
+# `ort-sys` to `=2.0.0-rc.9` because piper-rs 0.1.9's source uses ort APIs that
+# were broken between rc.9 and rc.12, and `ort 2.0.0-rc.9` requires
+# `ort-sys = 2.0.0-rc.9` (later ort-sys releases dropped the `load-dynamic`
+# feature). See tmp/piper_rs_spike/findings.md for the reasoning.
+#
+# `ort` is configured with `default-features = false` + `load-dynamic` so
+# onnxruntime is dlopened from the path in `ORT_DYLIB_PATH` (set by shell.nix
+# to ${pkgs.onnxruntime}/lib/libonnxruntime.so) — avoids the default
+# `download-binaries` feature which fetches a prebuilt blob at build time and
+# does not work inside the nix sandbox.
+piper-rs = "0.1.9"
+ort = { version = "=2.0.0-rc.9", default-features = false, features = ["load-dynamic"] }
+ort-sys = "=2.0.0-rc.9"
+async-trait = "0.1"
+
+# On-demand Piper voice download (Phase 4 of #42). `rustls-tls` keeps us off
+# the system OpenSSL ABI; `stream` exposes `bytes_stream()` for the progress
+# loop. `default-features = false` suppresses ureq + native-tls.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+futures-util = "0.3"
+
 [dev-dependencies]
 tempfile = "3"
 similar = "2"
