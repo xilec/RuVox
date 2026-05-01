@@ -123,6 +123,14 @@
             # buildInputs is enough — wrapGAppsHook3 picks it up for the
             # runtime LD_LIBRARY_PATH automatically.
             libopus
+            # espeak-ng — present for its data files only (see preFixup).
+            # piper-rs uses espeak-rs-sys's vendored libespeak-ng for
+            # phonemization, but its data dir lives in the cargo OUT_DIR
+            # which espeak-rs doesn't search at runtime. Pointing
+            # PIPER_ESPEAKNG_DATA_DIRECTORY at the nixpkgs share/ dir loads
+            # the full ru_dict / phondata / intonations files instead of
+            # the skeleton defaults that produce wrong Russian stress.
+            espeak-ng
           ];
 
           # Single target is enough for Nix — we only want a usable binary,
@@ -134,6 +142,7 @@
               --prefix PATH : ${lib.makeBinPath [ ttsd pkgs.mpv ]}
               --prefix LD_LIBRARY_PATH : ${extraRuntimeLibPath}
               --set-default WEBKIT_DISABLE_DMABUF_RENDERER 1
+              --set-default PIPER_ESPEAKNG_DATA_DIRECTORY ${pkgs.espeak-ng}/share
             )
           '';
 

@@ -40,11 +40,17 @@ pkgs.mkShell {
 
     # ── Piper TTS native runtime ───────────────────────────────────────────
     # piper-rs links libonnxruntime via `ort` with the `load-dynamic` feature
-    # (set ORT_DYLIB_PATH below). espeak-ng is *not* listed: espeak-rs-sys
-    # vendors the espeak-ng source under its own `espeak-ng/` directory and
-    # builds it via cmake — both the C library and the phoneme data ship
-    # inside the dependency.
+    # (set ORT_DYLIB_PATH below). espeak-rs-sys vendors libespeak-ng and
+    # builds it via cmake, so we don't need the package for linking — but
+    # the cmake build's espeak-ng-data ends up in target/debug/build/.../out
+    # which espeak-rs never looks at (it checks $CWD/espeak-ng-data and
+    # $exe_dir/espeak-ng-data only). Without PIPER_ESPEAKNG_DATA_DIRECTORY
+    # (set in shellHook) the library initialises with NULL data path, the
+    # ru_dict / phondata / intonations files are not loaded, and Russian
+    # phonemization falls back to skeleton defaults — manifesting as
+    # consistently wrong word stress on every Piper voice.
     onnxruntime
+    espeak-ng
 
     # ── Tauri 2 Linux system dependencies ─────────────────────────────────
     # WebKit with ABI 4.1 (required by Tauri 2; 4.0 was removed)
@@ -157,6 +163,11 @@ pkgs.mkShell {
 
   # `ort` with the `load-dynamic` feature dlopens libonnxruntime at runtime.
   ORT_DYLIB_PATH = "${pkgs.onnxruntime}/lib/libonnxruntime.so";
+
+  # Point espeak-rs at the full nixpkgs espeak-ng data dir. The crate looks
+  # for `<this>/espeak-ng-data/` and falls back to NULL (= no data path) if
+  # the directory is missing — see comment next to `espeak-ng` in buildInputs.
+  PIPER_ESPEAKNG_DATA_DIRECTORY = "${pkgs.espeak-ng}/share";
 
   shellHook = ''
     export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:$LD_LIBRARY_PATH"
