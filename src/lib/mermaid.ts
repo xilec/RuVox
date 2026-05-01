@@ -56,7 +56,12 @@ export async function renderMermaidIn(
       pre.className = 'mermaid-error';
       pre.textContent = source;
       node.replaceChildren(pre);
-      console.error('mermaid render error:', e);
+      // eslint-disable-next-line no-console
+      console.error(
+        'mermaid render error:',
+        e,
+        '\n=== SOURCE FED TO mermaid.render ===\n' + JSON.stringify(source),
+      );
     } finally {
       host.remove();
     }
