@@ -29,9 +29,16 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use piper_rs::synth::PiperSpeechSynthesizer;
+use piper_rs::PiperSynthesisConfig;
 use serde_json::json;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
+
+/// VITS `length_scale` applied at synthesis time. The Piper voice configs
+/// ship `length_scale: 1.0` which sounds slow on Russian voices; 0.8 cuts
+/// audio length by ~20% while keeping the natural prosody (we change the
+/// model's own duration prediction, not a post-process resample).
+const PIPER_LENGTH_SCALE: f32 = 0.8;
 
 use super::timestamps::estimate_timestamps_single_chunk;
 use crate::tts::engine::{EngineKind, TtsEngine};
@@ -305,6 +312,26 @@ fn load_voice_blocking(config_path: &Path) -> Result<(PiperSpeechSynthesizer, u3
         code: "piper_load_failed".to_string(),
         message: format!("piper-rs from_config_path failed: {e}"),
     })?;
+    // Pull the voice's noise scales from the JSON we just parsed so we keep
+    // the per-voice tuning when overriding `length_scale`.
+    let inference = cfg.get("inference");
+    let noise_scale = inference
+        .and_then(|v| v.get("noise_scale"))
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.667) as f32;
+    let noise_w = inference
+        .and_then(|v| v.get("noise_w"))
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.8) as f32;
+    let synth_config = PiperSynthesisConfig {
+        speaker: None,
+        noise_scale,
+        length_scale: PIPER_LENGTH_SCALE,
+        noise_w,
+    };
+    if let Err(e) = model.set_fallback_synthesis_config(&synth_config) {
+        warn!(target: "tts::piper", "failed to apply length_scale={PIPER_LENGTH_SCALE}: {e}");
+    }
     let synth = PiperSpeechSynthesizer::new(model).map_err(|e| TtsError::Ttsd {
         code: "piper_load_failed".to_string(),
         message: format!("PiperSpeechSynthesizer::new failed: {e}"),
