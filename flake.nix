@@ -107,7 +107,7 @@
             pname = "ruvox";
             inherit (finalAttrs) version src;
             fetcherVersion = 3;
-            hash = "sha256-/FNFfLZqu/ndlHtg8ee2Qa1tNiarwT7hI8t0m/LsLbo=";
+            hash = "sha256-5lpLq7SoTnKyW6jPS8HfROaC8S7uPefG4NmMNFue4EY=";
           };
 
           nativeBuildInputs = with pkgs; [
