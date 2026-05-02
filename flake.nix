@@ -117,6 +117,14 @@
             pnpmConfigHook
             pkg-config
             wrapGAppsHook3
+            # cmake: espeak-rs-sys 0.1.9 vendors libespeak-ng and builds it
+            # via cmake from its own build.rs.
+            cmake
+            # bindgenHook: sets LIBCLANG_PATH and BINDGEN_EXTRA_CLANG_ARGS
+            # (with the C system header search paths from stdenv.cc) so
+            # bindgen invocations in espeak-rs-sys's build script can find
+            # `<stdio.h>` etc. inside the hermetic sandbox.
+            rustPlatform.bindgenHook
           ];
 
           # Transitive deps (gtk3, glib, libsoup_3, wayland, x11, libGL,
@@ -142,11 +150,36 @@
             # the full ru_dict / phondata / intonations files instead of
             # the skeleton defaults that produce wrong Russian stress.
             espeak-ng
+            # onnxruntime — `ort` is configured with `load-dynamic` and
+            # dlopens libonnxruntime.so at runtime via ORT_DYLIB_PATH (set
+            # in preFixup). At build time `ort-sys` probes pkg-config for
+            # libonnxruntime; nixpkgs onnxruntime ships a .pc, so the probe
+            # succeeds and the build script becomes a no-op.
+            onnxruntime
+            # sonic — espeak-ng's CMakeLists has
+            # `find_library(SONIC_LIB sonic)` and falls back to git-cloning
+            # https://github.com/waywardgeek/sonic if not found, which is
+            # blocked by the nix sandbox. Providing the system library
+            # short-circuits the FetchContent path.
+            sonic
           ];
 
           # Single target is enough for Nix — we only want a usable binary,
           # not an OS-native package.  "deb" is the cheapest Linux bundle.
           tauriBundleType = "deb";
+
+          # espeak-ng on Linux pins `path_home[N_PATH_HOME=160]` and then
+          # writes `<path_home>/<phoneme-file>` into an 180-byte buffer
+          # (compiledata.c::LoadSpect). The nix sandbox phsource path is
+          # `/build/<src>/target/.../espeak-rs-sys-<hash>/out/build/espeak-ng-data/../phsource`,
+          # already over 180 bytes, so snprintf truncates filenames and the
+          # phoneme compiler errors out with "Bad vowel file" / "Failed to
+          # open: ...vwl_en_us_nyc/a_ra". Bumping the buffer to 1024 fixes
+          # the `cargo tauri build` cmake step deterministically.
+          preBuild = ''
+            substituteInPlace "$NIX_BUILD_TOP/cargo-vendor-dir/espeak-rs-sys-0.1.9/espeak-ng/src/libespeak-ng/speech.h" \
+              --replace-fail 'N_PATH_HOME_DEF  160' 'N_PATH_HOME_DEF  1024'
+          '';
 
           preFixup = ''
             gappsWrapperArgs+=(
@@ -154,6 +187,7 @@
               --prefix LD_LIBRARY_PATH : ${extraRuntimeLibPath}
               --set-default WEBKIT_DISABLE_DMABUF_RENDERER 1
               --set-default PIPER_ESPEAKNG_DATA_DIRECTORY ${pkgs.espeak-ng}/share
+              --set-default ORT_DYLIB_PATH ${pkgs.onnxruntime}/lib/libonnxruntime.so
             )
           '';
 

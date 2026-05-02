@@ -79,7 +79,15 @@ byteorder = "1.5"
 # does not work inside the nix sandbox.
 piper-rs = "0.1.9"
 ort = { version = "=2.0.0-rc.9", default-features = false, features = ["load-dynamic"] }
-ort-sys = "=2.0.0-rc.9"
+# `ort-sys` must mirror `ort`'s feature flags. Without `default-features =
+# false, features = ["load-dynamic"]` cargo's feature unification can drag
+# `download-binaries` back in (the `ort` crate transitively re-enables it
+# when any other dependency in the workspace touches `ort-sys` with default
+# features), and the build script then unconditionally GETs a prebuilt
+# onnxruntime tarball from parcel.pyke.io — which fails inside the nix
+# sandbox. With `load-dynamic` the build script becomes a no-op and
+# onnxruntime is dlopened at runtime via `ORT_DYLIB_PATH`.
+ort-sys = { version = "=2.0.0-rc.9", default-features = false, features = ["load-dynamic"] }
 async-trait = "0.1"
 
 # On-demand Piper voice download (Phase 4 of #42). `rustls-tls` keeps us off
