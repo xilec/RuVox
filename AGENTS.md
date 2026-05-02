@@ -72,7 +72,7 @@ nix-shell --run "cd ttsd && uv run python -m pytest"                        # Py
 ├── docs/             # Project documentation
 ├── scripts/          # Utility scripts
 ├── shell.nix         # Nix dev environment (Rust + Node + Python)
-└── flake.nix         # Production build via `nix build .#ruvox`
+└── flake.nix         # Production build: `.#ruvox` (slim, Piper only) and `.#ruvox-with-silero` (full, Piper + ttsd Python sidecar)
 ```
 
 ## Development rules

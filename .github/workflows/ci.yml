@@ -14,6 +14,7 @@ jobs:
       rust: ${{ steps.filter.outputs.rust }}
       typescript: ${{ steps.filter.outputs.typescript }}
       ttsd: ${{ steps.filter.outputs.ttsd }}
+      nix: ${{ steps.filter.outputs.nix }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -33,6 +34,11 @@ jobs:
               - '.github/workflows/ci.yml'
             ttsd:
               - 'ttsd/**'
+              - '.github/workflows/ci.yml'
+            nix:
+              - 'flake.nix'
+              - 'flake.lock'
+              - 'shell.nix'
               - '.github/workflows/ci.yml'
 
   rust:
@@ -96,3 +102,34 @@ jobs:
         run: uv run ruff check
       - working-directory: ttsd
         run: uv run python -m pytest
+
+  nix:
+    name: Nix (eval slim/full flake)
+    needs: changes
+    if: needs.changes.outputs.nix == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v30
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: Eval all flake outputs
+        run: nix flake check --no-build
+      - name: Slim .#ruvox does not pull in ttsd at the derivation level
+        run: |
+          set -euo pipefail
+          drvs=$(nix derivation show .#ruvox | jq -r 'to_entries[0].value.inputDrvs | keys[]')
+          echo "$drvs" | grep -i ttsd && {
+            echo "::error::slim .#ruvox derivation pulls in ttsd; this defeats the withSilero=false default"
+            exit 1
+          } || true
+      - name: Full .#ruvox-with-silero does pull in ttsd
+        run: |
+          set -euo pipefail
+          drvs=$(nix derivation show .#ruvox-with-silero | jq -r 'to_entries[0].value.inputDrvs | keys[]')
+          echo "$drvs" | grep -qi ttsd || {
+            echo "::error::full .#ruvox-with-silero derivation does not pull in ttsd"
+            exit 1
+          }

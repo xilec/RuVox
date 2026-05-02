@@ -75,13 +75,17 @@
         #     devicePixelRatio reports a sane value (see issue #2).
         #
         # What we add on top:
-        #   - ttsd + mpv binaries in PATH (sidecar + player).
+        #   - mpv binary in PATH (player).
+        #   - ttsd binary in PATH only when withSilero = true (the Silero
+        #     subprocess is opt-in; with withSilero = false the runtime
+        #     probe in tts::availability::probe_silero greys the option
+        #     out in Settings and Piper handles all narration in-process).
         #   - mpv audio-backend libs in LD_LIBRARY_PATH (pulse/pipewire/alsa
         #     are not in buildInputs because Tauri itself doesn't need them).
         #   - WEBKIT_DISABLE_DMABUF_RENDERER=1 for KDE Plasma 6 Wayland
         #     (see issue #3).
-        ruvox = pkgs.rustPlatform.buildRustPackage (finalAttrs: {
-          pname = "ruvox";
+        mkRuvox = { withSilero ? false }: pkgs.rustPlatform.buildRustPackage (finalAttrs: {
+          pname = if withSilero then "ruvox-with-silero" else "ruvox";
           version = "0.2.0";
           src = ./.;
 
@@ -139,7 +143,7 @@
 
           preFixup = ''
             gappsWrapperArgs+=(
-              --prefix PATH : ${lib.makeBinPath [ ttsd pkgs.mpv ]}
+              --prefix PATH : ${lib.makeBinPath ([ pkgs.mpv ] ++ lib.optional withSilero ttsd)}
               --prefix LD_LIBRARY_PATH : ${extraRuntimeLibPath}
               --set-default WEBKIT_DISABLE_DMABUF_RENDERER 1
               --set-default PIPER_ESPEAKNG_DATA_DIRECTORY ${pkgs.espeak-ng}/share
@@ -147,16 +151,22 @@
           '';
 
           meta = {
-            description = "RuVox — desktop app for reading technical texts aloud";
+            description =
+              if withSilero
+              then "RuVox — desktop app for reading technical texts aloud (with Silero/Python ttsd)"
+              else "RuVox — desktop app for reading technical texts aloud";
             mainProgram = "ruvox-tauri";
             platforms = lib.platforms.linux;
           };
         });
+
+        ruvox = mkRuvox { };
+        ruvox-with-silero = mkRuvox { withSilero = true; };
       in
       {
         packages = {
           default = ruvox;
-          inherit ruvox ttsd;
+          inherit ruvox ruvox-with-silero ttsd;
         };
 
         devShells.default = import ./shell.nix { inherit pkgs; };
