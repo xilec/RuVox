@@ -97,8 +97,15 @@
           cargoRoot = "src-tauri";
           buildAndTestSubdir = "src-tauri";
 
+          # Pin pname here independently of withSilero — the pnpm
+          # lockfile and the on-disk content of fetched deps are
+          # identical for slim and full, so we want a single shared
+          # fixed-output derivation. Inheriting `pname` from finalAttrs
+          # would make the full build's pname leak into the deps
+          # derivation name, change its hash, and break the build.
           pnpmDeps = pkgs.fetchPnpmDeps {
-            inherit (finalAttrs) pname version src;
+            pname = "ruvox";
+            inherit (finalAttrs) version src;
             fetcherVersion = 3;
             hash = "sha256-/FNFfLZqu/ndlHtg8ee2Qa1tNiarwT7hI8t0m/LsLbo=";
           };
