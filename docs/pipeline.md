@@ -187,8 +187,8 @@ The behavior for non-mermaid code blocks depends on `UIConfig.code_block_mode`:
 **Run:**
 
 ```bash
-nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml --test golden"
-nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml -- pipeline"
+nix develop -c cargo test --manifest-path src-tauri/Cargo.toml --test golden
+nix develop -c cargo test --manifest-path src-tauri/Cargo.toml -- pipeline
 ```
 
 **Adding a new case:** see [contributing.md](contributing.md).

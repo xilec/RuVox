@@ -41,7 +41,7 @@ echo "Используем кубернетис и терраформ" > src-tau
 **3. Run:**
 
 ```bash
-nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml --test golden -- it_kubernetes"
+nix develop -c cargo test --manifest-path src-tauri/Cargo.toml --test golden -- it_kubernetes
 ```
 
 **4. Commit:**
@@ -73,7 +73,7 @@ Multi-character operators (`===`, `=>`, `>=`) are handled in `pipeline/mod.rs::T
 2. **Expected result** — how it should sound.
 3. **Actual result** — what came out (`normalized_text` from `~/.cache/ruvox/history.json`).
 4. **Version** — `git log -1 --oneline`.
-5. **Environment** — OS, NixOS/Nix-shell or manual install.
+5. **Environment** — OS, Nix (`nix develop`) or manual install.
 
 ### Example
 
@@ -119,9 +119,9 @@ chore(deps): bump tauri to 2.10
 
 ### Checklist
 
-- [ ] `nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml"` is green.
-- [ ] `nix-shell --run "pnpm typecheck"` is green.
-- [ ] `nix-shell --run "pnpm lint"` is green.
+- [ ] `nix develop -c cargo test --manifest-path src-tauri/Cargo.toml` is green.
+- [ ] `nix develop -c pnpm typecheck` is green.
+- [ ] `nix develop -c pnpm lint` is green.
 - [ ] If the pipeline was touched — a golden fixture has been added/updated.
 - [ ] If ttsd was touched — `cd ttsd && uv run python -m pytest` is green.
 - [ ] Documentation (`docs/`) is updated if behavior changed.

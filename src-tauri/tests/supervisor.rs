@@ -6,8 +6,8 @@
 //! synthesize call (from the caller's POV) succeeds.
 //!
 //! Run with:
-//!   nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml \
-//!     --features test-helpers --test supervisor"
+//!   nix develop -c cargo test --manifest-path src-tauri/Cargo.toml \
+//!     --features test-helpers --test supervisor
 //!
 //! `test-helpers` is required because the recording emitter helper lives in
 //! a feature-gated module so it stays out of release/dev builds.

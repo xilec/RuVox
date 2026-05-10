@@ -34,7 +34,7 @@ Silero TTS cannot correctly pronounce:
 | Backend | Rust (normalization pipeline, storage, TTS manager, player wrapper) |
 | TTS | Python 3.12 subprocess `ttsd`, a wrapper around [Silero TTS](https://github.com/snakers4/silero-models) |
 | Audio | [`tauri-plugin-mpv`](https://crates.io/crates/tauri-plugin-mpv) (libmpv with `scaletempo2`) |
-| Build environment | Nix (`shell.nix` + `flake.nix`) |
+| Build environment | Nix (`flake.nix`; dev shell in `nix/devshell.nix`) |
 
 ## Documentation
 

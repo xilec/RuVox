@@ -7,9 +7,13 @@
 #   - Tauri 2 Linux system deps (webkitgtk_4_1, libsoup_3, ...)
 #   - MPV/libmpv for tauri-plugin-mpv
 #
-# Usage:
-#   nix-shell          — enter dev shell
-#   nix-shell --run "cmd"  — run a single command
+# Usage (canonical, via flake):
+#   nix develop          — enter dev shell
+#   nix develop -c cmd   — run a single command (use `bash -c "..."` for chains)
+#
+# This file is consumed from flake.nix `devShells.default`. It is not
+# auto-loaded by `nix-shell` — that's intentional, so users land on the
+# pinned, reproducible flake environment instead of the system NIX_PATH one.
 
 { pkgs ? import <nixpkgs> {} }:
 

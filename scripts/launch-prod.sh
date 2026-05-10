@@ -17,4 +17,4 @@ if [ ! -x "${BIN}" ]; then
 fi
 
 cd "${REPO_DIR}"
-exec nix-shell --run "exec '${BIN}'"
+exec nix develop -c "${BIN}"

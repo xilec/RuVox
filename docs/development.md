@@ -6,22 +6,22 @@ Guide to setting up the environment and working on RuVox.
 
 - **Linux** (X11 or Wayland). macOS/Windows are not supported.
 - **Nix** (recommended) — provides a fully reproducible environment: Rust toolchain, Node, pnpm, Python 3.12, uv, libmpv, webkit2gtk, and Tauri's system libraries.
-- **Without Nix** — you'll have to manually install Rust stable + Node 20 + Python 3.12 + system deps (see `buildInputs` in `shell.nix`: `webkitgtk_4_1`, `libsoup_3`, `gtk3`, `libmpv`, `pipewire`/`pulseaudio`, `libappindicator-gtk3`, `librsvg`, `pkg-config`).
+- **Without Nix** — you'll have to manually install Rust stable + Node 20 + Python 3.12 + system deps (see `buildInputs` in `nix/devshell.nix`: `webkitgtk_4_1`, `libsoup_3`, `gtk3`, `libmpv`, `pipewire`/`pulseaudio`, `libappindicator-gtk3`, `librsvg`, `pkg-config`).
 
 ## Environment
 
 ```bash
-# Via flake (recommended)
+# Interactive shell
 nix develop
 pnpm install
 pnpm tauri dev
 
-# Or via the classic shell.nix
-nix-shell --run "pnpm install"
-nix-shell --run "pnpm tauri dev"
+# Or run a single command without entering the shell
+nix develop -c pnpm install
+nix develop -c pnpm tauri dev
 ```
 
-> **Important:** all commands (`cargo`, `pnpm`, `uv`, `tauri`, `ruff`, `pytest`) are only available inside `nix develop` / `nix-shell`. Don't run commands from an "already open" nix-shell session after editing `shell.nix` — `shellHook` (including `XDG_DATA_DIRS`, `GIO_EXTRA_MODULES`, `WEBKIT_DISABLE_DMABUF_RENDERER`) is only executed when entering the shell. Each `nix-shell --run "..."` forks a fresh subshell and gets the up-to-date env.
+> **Important:** all commands (`cargo`, `pnpm`, `uv`, `tauri`, `ruff`, `pytest`) are only available inside `nix develop`. Don't run commands from an "already open" `nix develop` session after editing `nix/devshell.nix` — `shellHook` (including `XDG_DATA_DIRS`, `GIO_EXTRA_MODULES`, `WEBKIT_DISABLE_DMABUF_RENDERER`) is only executed when entering the shell. Each `nix develop -c "..."` forks a fresh subshell and gets the up-to-date env.
 
 ## Project structure
 
@@ -54,7 +54,8 @@ nix-shell --run "pnpm tauri dev"
 │       └── main.py         # Main stdin→stdout JSON loop
 ├── docs/                   # Documentation (this directory)
 ├── scripts/                # Utilities (launch-prod, rebuild_prod)
-├── shell.nix               # Nix environment (Rust + Node + Python + Tauri deps)
+├── nix/
+│   └── devshell.nix        # Nix dev environment (Rust + Node + Python + Tauri deps)
 └── flake.nix               # Flake (for nix build .#ruvox and nix develop)
 ```
 
@@ -63,17 +64,17 @@ nix-shell --run "pnpm tauri dev"
 ### Run
 
 ```bash
-nix-shell --run "pnpm tauri dev"            # dev mode with hot reload
+nix develop -c pnpm tauri dev               # dev mode with hot reload
 nix build .#ruvox && ./result/bin/ruvox     # production binary
 ```
 
 ### Tests
 
 ```bash
-nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml"           # all Rust tests
-nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml --test golden"  # golden tests only
-nix-shell --run "pnpm typecheck"                                            # TypeScript strict
-nix-shell --run "cd ttsd && uv run python -m pytest"                        # Python subprocess
+nix develop -c cargo test --manifest-path src-tauri/Cargo.toml                  # all Rust tests
+nix develop -c cargo test --manifest-path src-tauri/Cargo.toml --test golden    # golden tests only
+nix develop -c pnpm typecheck                                                   # TypeScript strict
+nix develop -c bash -c "cd ttsd && uv run python -m pytest"                     # Python subprocess
 ```
 
 ### Production build
@@ -162,7 +163,7 @@ See [Storage schema](storage-schema.md) for details.
 ```bash
 git checkout -b feat/short-description     # separate branch
 # ... edits ...
-nix-shell --run "cargo test ..."           # run tests
+nix develop -c cargo test ...              # run tests
 git commit -m "feat(<module>): <desc>"     # commit
 git push -u origin feat/short-description  # push (after approval)
 ```

@@ -146,7 +146,7 @@ The filename is the entry's UUID, e.g. `550e8400-e29b-41d4-a716-446655440000.opu
 
 `audio_path` in `TextEntry` stores the **filename only** (not the full path). The full path is resolved as `~/.cache/ruvox/audio/{audio_path}`.
 
-Encoding pipeline: `ttsd` writes a mono 32-bit-float WAV at `UIConfig.sample_rate`; the Rust side immediately transcodes it to Opus via `crate::audio::replace_wav_with_opus` and removes the source WAV. The encoder uses the `opus = "0.3"` crate (FFI to system `libopus` 1.x, see [shell.nix](../shell.nix) / [flake.nix](../flake.nix)). The Opus container records the input sample rate verbatim; decoders (mpv, libopusfile, browsers) handle any-to-48 kHz output internally. On encode failure the source `.wav` is left in place as a fallback so playback keeps working.
+Encoding pipeline: `ttsd` writes a mono 32-bit-float WAV at `UIConfig.sample_rate`; the Rust side immediately transcodes it to Opus via `crate::audio::replace_wav_with_opus` and removes the source WAV. The encoder uses the `opus = "0.3"` crate (FFI to system `libopus` 1.x, see [nix/devshell.nix](../nix/devshell.nix) / [flake.nix](../flake.nix)). The Opus container records the input sample rate verbatim; decoders (mpv, libopusfile, browsers) handle any-to-48 kHz output internally. On encode failure the source `.wav` is left in place as a fallback so playback keeps working.
 
 ### Migration: WAV → Opus
 

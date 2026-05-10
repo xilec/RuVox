@@ -38,7 +38,7 @@ jobs:
             nix:
               - 'flake.nix'
               - 'flake.lock'
-              - 'shell.nix'
+              - 'nix/devshell.nix'
               - '.github/workflows/ci.yml'
 
   rust:

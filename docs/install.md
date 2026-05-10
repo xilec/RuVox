@@ -166,7 +166,7 @@ Outputs:
 
 ## Verifying
 
-This guide is derived from `shell.nix` (the Nix dev shell, which is
-the source of truth for build dependencies). It has not been
+This guide is derived from `nix/devshell.nix` (the Nix dev shell, which
+is the source of truth for build dependencies). It has not been
 end-to-end tested on a fresh Ubuntu install — if a step fails on your
 machine, please open an issue or PR with the correction.

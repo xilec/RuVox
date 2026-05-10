@@ -36,16 +36,16 @@
 
 ## Quick start
 
-> **All commands must be run via `nix-shell --run "..."`** — `cargo`, `pnpm`, `uv` and other tooling are only available inside the nix-shell (defined in `shell.nix` at the repo root).
+> **All commands must be run via `nix develop -c "..."`** — `cargo`, `pnpm`, `uv` and other tooling are only available inside the dev shell (defined in `nix/devshell.nix`, exposed as `devShells.default` in `flake.nix`).
 >
-> **Do not run commands from an "already open" nix-shell session** after editing `shell.nix`. The `shellHook` (including `XDG_DATA_DIRS` / `GIO_EXTRA_MODULES` / `WEBKIT_DISABLE_DMABUF_RENDERER` — required for WebKit2GTK in Tauri to read GSettings correctly and avoid `devicePixelRatio`=negative, see [tauri #7354](https://github.com/tauri-apps/tauri/issues/7354)) only runs on shell entry. Each `nix-shell --run "..."` forks a fresh subshell and always picks up the up-to-date env. Running `pnpm tauri dev` "bare" in the current session breaks fonts and window metrics.
+> **Do not run commands from an "already open" `nix develop` session** after editing `nix/devshell.nix`. The `shellHook` (including `XDG_DATA_DIRS` / `GIO_EXTRA_MODULES` / `WEBKIT_DISABLE_DMABUF_RENDERER` — required for WebKit2GTK in Tauri to read GSettings correctly and avoid `devicePixelRatio`=negative, see [tauri #7354](https://github.com/tauri-apps/tauri/issues/7354)) only runs on shell entry. Each `nix develop -c "..."` forks a fresh subshell and always picks up the up-to-date env. Running `pnpm tauri dev` "bare" in the current session breaks fonts and window metrics.
 
 ```bash
-nix-shell --run "pnpm install"                                              # frontend deps
-nix-shell --run "pnpm tauri dev"                                            # run the app
-nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml"          # Rust tests
-nix-shell --run "pnpm typecheck"                                            # TS typecheck
-nix-shell --run "cd ttsd && uv run python -m pytest"                        # Python subprocess tests
+nix develop -c pnpm install                                                # frontend deps
+nix develop -c pnpm tauri dev                                              # run the app
+nix develop -c cargo test --manifest-path src-tauri/Cargo.toml             # Rust tests
+nix develop -c pnpm typecheck                                              # TS typecheck
+nix develop -c bash -c "cd ttsd && uv run python -m pytest"                # Python subprocess tests
 ```
 
 ## Project layout
@@ -71,7 +71,8 @@ nix-shell --run "cd ttsd && uv run python -m pytest"                        # Py
 │       └── main.py        # main stdin→stdout JSON loop
 ├── docs/             # Project documentation
 ├── scripts/          # Utility scripts
-├── shell.nix         # Nix dev environment (Rust + Node + Python)
+├── nix/
+│   └── devshell.nix  # Nix dev environment (Rust + Node + Python), wired into flake.nix
 └── flake.nix         # Production build: `.#ruvox` (slim, Piper only) and `.#ruvox-with-silero` (full, Piper + ttsd Python sidecar)
 ```
 
@@ -150,14 +151,14 @@ The pipeline lives in `src-tauri/src/pipeline/` (Rust). Correctness is verified 
 
 ```bash
 # Rust (all tests)
-nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml"
+nix develop -c cargo test --manifest-path src-tauri/Cargo.toml
 
 # Rust pipeline golden tests
-nix-shell --run "cargo test --manifest-path src-tauri/Cargo.toml --test golden"
+nix develop -c cargo test --manifest-path src-tauri/Cargo.toml --test golden
 
 # Python subprocess
-nix-shell --run "cd ttsd && uv run python -m pytest"
+nix develop -c bash -c "cd ttsd && uv run python -m pytest"
 
 # TypeScript
-nix-shell --run "pnpm typecheck"
+nix develop -c pnpm typecheck
 ```

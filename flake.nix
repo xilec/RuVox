@@ -210,7 +210,7 @@
           inherit ruvox ruvox-with-silero ttsd;
         };
 
-        devShells.default = import ./shell.nix { inherit pkgs; };
+        devShells.default = import ./nix/devshell.nix { inherit pkgs; };
 
         apps.default = {
           type = "app";

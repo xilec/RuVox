@@ -33,23 +33,23 @@ Normalizes English terms, abbreviations, code, numbers, and URLs, then pipes the
 ## Requirements
 
 - **OS:** Linux (X11 or Wayland).
-- **Nix:** recommended — the entire toolchain (Rust, Node, Python, Tauri deps) is built from `shell.nix` / `flake.nix`.
+- **Nix:** recommended — the entire toolchain (Rust, Node, Python, Tauri deps) is built from `flake.nix` (dev shell lives in `nix/devshell.nix`).
 - **Without Nix:** Linux distribution that ships `webkit2gtk-4.1` (Ubuntu 24.04+, Debian 13+, Fedora 40+, Arch). Detailed step-by-step build guide: [docs/install.md](docs/install.md). Python 3.12 + `uv` are only required if you want to use Silero (the `ttsd` sidecar).
 
 ## Dev environment
 
 ```bash
-# Via flake (recommended)
+# Interactive shell
 nix develop
 pnpm install
 pnpm tauri dev
 
-# Or via the classic shell.nix
-nix-shell --run "pnpm install"
-nix-shell --run "pnpm tauri dev"
+# Or run a single command without entering the shell
+nix develop -c pnpm install
+nix develop -c pnpm tauri dev
 ```
 
-All commands in the docs assume execution inside `nix develop` / `nix-shell`.
+All commands in the docs assume execution inside `nix develop` (or via `nix develop -c ...`).
 
 ## Production build
 

@@ -76,7 +76,7 @@ fn check_uv() -> Result<(), String> {
             "uv найден, но `uv --version` вернул {}",
             o.status
         )),
-        Err(_) => Err("`uv` не найден в PATH. Установите его или используйте nix-shell с включённым Silero-флагом.".to_string()),
+        Err(_) => Err("`uv` не найден в PATH. Установите его или используйте `nix develop` с включённым Silero-флагом.".to_string()),
     }
 }
 

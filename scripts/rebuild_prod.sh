@@ -7,4 +7,4 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "${REPO_DIR}"
 
-exec nix-shell --run "pnpm tauri build --no-bundle"
+exec nix develop -c pnpm tauri build --no-bundle
