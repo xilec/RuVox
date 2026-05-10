@@ -53,10 +53,10 @@
   flex-shrink: 0;
   align-self: flex-end;
   margin-bottom: 2px;
-  /* Brand mark uses violet on purpose: blue is reserved for Mantine's
-     interactive affordances (buttons, sliders, etc.), so the logo gets a
-     non-interactive accent that reads as "branding" rather than "click me".
-     light-dark() gives a deeper tint on light backgrounds and a brighter
-     one on dark, matching Mantine's own dark-mode color shifts. */
-  color: light-dark(var(--mantine-color-violet-7), var(--mantine-color-violet-5));
+  /* Brand mark uses a bright violet on purpose: blue is reserved for
+     Mantine's interactive affordances (buttons, sliders, etc.), so the logo
+     gets a non-interactive accent that reads as "branding" rather than
+     "click me". The hex matches src-tauri/icons/source.svg so the in-app
+     mark and the desktop/taskbar icon stay visually identical. */
+  color: #9d4edd;
 }

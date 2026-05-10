@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="#9D4EDD" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
   <!-- Sound waves above the book -->
   <path d="M 13 24 Q 32 4 51 24" />
   <path d="M 21 28 Q 32 16 43 28" />
