@@ -87,11 +87,11 @@ pkgs.mkShell {
     wayland
     wayland-protocols
     libxkbcommon
-    xorg.libX11
-    xorg.libXcursor
-    xorg.libXrandr
-    xorg.libXi
-    xorg.libxcb
+    libx11
+    libxcursor
+    libxrandr
+    libxi
+    libxcb
 
     # ── Audio backend ──────────────────────────────────────────────────────
     libpulseaudio
@@ -144,11 +144,11 @@ pkgs.mkShell {
     pkgs.mpv-unwrapped
     pkgs.wayland
     pkgs.libxkbcommon
-    pkgs.xorg.libX11
-    pkgs.xorg.libXcursor
-    pkgs.xorg.libXrandr
-    pkgs.xorg.libXi
-    pkgs.xorg.libxcb
+    pkgs.libx11
+    pkgs.libxcursor
+    pkgs.libxrandr
+    pkgs.libxi
+    pkgs.libxcb
     pkgs.libpulseaudio
     pkgs.pipewire
     pkgs.alsa-lib
