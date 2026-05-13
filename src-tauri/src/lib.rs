@@ -269,7 +269,12 @@ fn try_build_silero(
             .current_dir(&ttsd_dir);
         cmd
     });
-    Ok(Arc::new(tts::TtsSupervisor::spawn(factory, emitter)?))
+    // tokio::process::Command::spawn requires an active tokio runtime
+    // context; the Tauri setup hook runs synchronously, so enter the
+    // runtime explicitly via block_on (the inner spawn returns instantly).
+    let supervisor =
+        tauri::async_runtime::block_on(async move { tts::TtsSupervisor::spawn(factory, emitter) })?;
+    Ok(Arc::new(supervisor))
 }
 
 /// Spawn the tray-command handler loop and return the channel sender.
