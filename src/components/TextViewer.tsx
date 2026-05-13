@@ -111,6 +111,35 @@ export function TextViewer({ entry }: Props) {
     });
   }, [content, format, colorScheme]);
 
+  // Ctrl/Cmd+A while focus/selection is inside the viewer should select
+  // only the rendered text, not the whole window. Skip when the user is
+  // typing in an input/textarea/contentEditable so default behavior wins.
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (!(e.ctrlKey || e.metaKey) || e.key !== 'a') return;
+      const container = containerRef.current;
+      if (!container) return;
+      const active = document.activeElement as HTMLElement | null;
+      if (
+        active &&
+        (active.tagName === 'INPUT' ||
+          active.tagName === 'TEXTAREA' ||
+          active.isContentEditable)
+      ) {
+        return;
+      }
+      const sel = window.getSelection();
+      if (!sel || !sel.focusNode || !container.contains(sel.focusNode)) return;
+      e.preventDefault();
+      const range = document.createRange();
+      range.selectNodeContents(container);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, []);
+
   // Click-to-zoom: when user clicks a rendered mermaid SVG, show it in a modal.
   useEffect(() => {
     const container = containerRef.current;
