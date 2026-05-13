@@ -394,25 +394,22 @@ impl TTSPipeline {
         let result = mapping.transformed.trim().to_string();
 
         if result != mapping.transformed {
-            let leading = mapping.transformed.len() - mapping.transformed.trim_start().len();
-            let trailing = mapping.transformed.len() - mapping.transformed.trim_end().len();
-            let chars: Vec<char> = mapping.transformed.chars().collect();
-            let leading_chars = chars[..leading].iter().collect::<String>().chars().count();
-            let trailing_chars = if trailing > 0 {
-                chars[mapping.transformed.len() - trailing..]
-                    .iter()
-                    .collect::<String>()
-                    .chars()
-                    .count()
-            } else {
-                0
-            };
+            // char_map is indexed by codepoints, so count whitespace in
+            // codepoints too — `&str::len()` returns bytes and panics here
+            // on multi-byte input (e.g. trailing space after Cyrillic).
+            let leading_chars = mapping
+                .transformed
+                .chars()
+                .take_while(|c| c.is_whitespace())
+                .count();
+            let trailing_chars = mapping
+                .transformed
+                .chars()
+                .rev()
+                .take_while(|c| c.is_whitespace())
+                .count();
             let total = mapping.char_map.len();
-            let end_idx = if trailing_chars > 0 {
-                total - trailing_chars
-            } else {
-                total
-            };
+            let end_idx = total - trailing_chars;
             let new_char_map = mapping.char_map[leading_chars..end_idx].to_vec();
             let final_mapping = CharMapping {
                 original: mapping.original,
@@ -949,5 +946,18 @@ mod tests {
     fn golden_version_semver() {
         let (got, expected) = run_fixture("version_semver");
         assert_eq!(got, expected, "version_semver fixture mismatch");
+    }
+
+    #[test]
+    fn trim_fixup_handles_multibyte_input() {
+        // Regression: char_map is indexed by codepoints, but the trim
+        // fixup used &str::len() (bytes), so the post-trim slice
+        // panicked whenever the surrounding text contained multi-byte
+        // characters (any Cyrillic / non-ASCII).
+        let mut pipeline = TTSPipeline::new();
+        let (result, mapping) = pipeline.process_with_char_mapping("  привет мир  ");
+        assert!(!result.starts_with(char::is_whitespace));
+        assert!(!result.ends_with(char::is_whitespace));
+        assert_eq!(mapping.char_map.len(), result.chars().count());
     }
 }
