@@ -72,6 +72,37 @@ export function TextViewer({ entry }: Props) {
     }
   }, [entry?.id, format]);
 
+  // Prefetch timestamps as soon as the entry has them on disk. Otherwise
+  // the highlight pipeline depends on `playback_started` arriving after
+  // the listener is registered, but tauri `listen()` is async and
+  // autoplay emits `playback_started` inside the same task that emits
+  // `entry_updated` — the started event can race the subscription, so
+  // highlight never starts until Stop+Play (or a re-subscribe via entry
+  // switch) re-fires `playback_started`.
+  useEffect(() => {
+    if (!entry?.id || !entry.timestamps_path) {
+      timestampsRef.current = [];
+      playingEntryIdRef.current = null;
+      return;
+    }
+    let cancelled = false;
+    commands
+      .getTimestamps(entry.id)
+      .then((ts) => {
+        if (cancelled) return;
+        timestampsRef.current = ts;
+        playingEntryIdRef.current = entry.id;
+      })
+      .catch(() => {
+        if (cancelled) return;
+        timestampsRef.current = [];
+        playingEntryIdRef.current = null;
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [entry?.id, entry?.timestamps_path]);
+
   useEffect(() => {
     if (format !== "markdown" || !containerRef.current) return;
     renderMermaidIn(containerRef.current, colorScheme).catch((e) => {
