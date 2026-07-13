@@ -421,6 +421,35 @@ impl<R: Runtime> Drop for Player<R> {
 }
 
 // ---------------------------------------------------------------------------
+// Pure position logic (extracted so it can be unit-tested without mpv)
+// ---------------------------------------------------------------------------
+
+/// Decide whether the emitter should treat the current poll as end-of-file.
+///
+/// mpv reports three different "end of file" states and we treat all as EOF:
+///   1. `time-pos` is None  — mpv unloaded the file / entered idle,
+///   2. `time-pos` >= duration − 0.2,
+///   3. duration known but `time-pos` stopped advancing (covered implicitly
+///      by #2 since mpv pins time-pos to duration).
+///
+/// A None duration is never EOF: without a known length we cannot tell that
+/// playback has ended, so we keep emitting positions.
+fn is_eof(pos: Option<f64>, duration: Option<f64>) -> bool {
+    match (pos, duration) {
+        (None, Some(_)) => true,
+        (Some(p), Some(d)) if d > 0.0 && p >= d - 0.2 => true,
+        _ => false,
+    }
+}
+
+/// True while a seek-suppress window is still open: `deadline` is set and
+/// `now` has not reached it yet.  A None deadline (or an expired one) means
+/// suppression is over.
+fn seek_suppressed(now: Instant, deadline: Option<Instant>) -> bool {
+    matches!(deadline, Some(d) if now < d)
+}
+
+// ---------------------------------------------------------------------------
 // Position emitter task
 // ---------------------------------------------------------------------------
 
@@ -448,20 +477,9 @@ pub fn spawn_position_emitter<R: Runtime + 'static>(player: Arc<Player<R>>, app:
 
             // EOF detection runs *before* the seek-suppress window so a file
             // that reaches its end inside the 300 ms window still triggers
-            // `playback_finished` instead of leaving the UI stuck.  mpv
-            // reports three different "end of file" states and we treat all
-            // as EOF:
-            //   1. `time-pos` is None  — mpv unloaded the file / entered idle,
-            //   2. `time-pos` >= duration − 0.2,
-            //   3. duration known but `time-pos` stopped advancing (covered
-            //      implicitly by #2 since mpv pins time-pos to duration).
+            // `playback_finished` instead of leaving the UI stuck.
             let pos = player.position_sec();
-            let eof = match (pos, duration_sec) {
-                (None, Some(_)) => true,
-                (Some(p), Some(d)) if d > 0.0 && p >= d - 0.2 => true,
-                _ => false,
-            };
-            if eof {
+            if is_eof(pos, duration_sec) {
                 debug!("playback finished: entry_id={entry_id}");
                 let _ = app.emit("playback_finished", json!({ "entry_id": entry_id }));
                 let _ = app.emit("playback_stopped", json!({}));
@@ -474,13 +492,13 @@ pub fn spawn_position_emitter<R: Runtime + 'static>(player: Arc<Player<R>>, app:
             // already been handled, so skipping ticks here is safe.
             let suppressed = {
                 let mut s = player.state.lock();
-                match s.seek_suppress_until {
-                    Some(deadline) if Instant::now() < deadline => true,
-                    Some(_) => {
-                        s.seek_suppress_until = None;
-                        false
-                    }
-                    None => false,
+                if seek_suppressed(Instant::now(), s.seek_suppress_until) {
+                    true
+                } else {
+                    // Deadline passed (or none): clear it so the check is cheap
+                    // on subsequent ticks.
+                    s.seek_suppress_until = None;
+                    false
                 }
             };
             if suppressed {
@@ -535,31 +553,68 @@ mod tests {
         assert_eq!(e.to_string(), "file not found: /tmp/x.wav");
     }
 
-    /// Integration test (requires libmpv runtime + audio device): load a small
-    /// WAV, play briefly, check that position increases.
-    ///
-    /// Run with: `cargo test -- --ignored`
+    // -- is_eof ------------------------------------------------------------
+
     #[test]
-    #[ignore]
-    fn integration_play_wav_position_increases() {
-        // This test must be run on a host with mpv installed and an audio
-        // output device available.  It is ignored by default so CI does not
-        // fail in headless environments.
-        //
-        // To run:
-        //   cargo test --lib player -- --ignored
-        //
-        // The test would:
-        // 1. Build a minimal Tauri app context (tauri::test::mock_app).
-        // 2. Create Player::new(app.handle().clone()).
-        // 3. Call player.load(&wav_path, "test-entry".into()).
-        // 4. Call player.play().
-        // 5. Sleep 300 ms.
-        // 6. Assert player.position_sec() > Some(0.1).
-        // 7. Call player.stop().
-        //
-        // Skipped here because tauri::test requires the full Tauri test harness
-        // which is not available without the `test-utils` feature enabled.
-        println!("integration test skipped — run with --ignored on a real host");
+    fn is_eof_none_pos_with_duration_is_eof() {
+        // mpv unloaded the file / entered idle while a duration was known.
+        assert!(is_eof(None, Some(10.0)));
+    }
+
+    #[test]
+    fn is_eof_pos_at_or_past_threshold_is_eof() {
+        // At exactly duration − 0.2 and beyond.
+        assert!(is_eof(Some(9.8), Some(10.0)));
+        assert!(is_eof(Some(10.0), Some(10.0)));
+        assert!(is_eof(Some(11.0), Some(10.0)));
+    }
+
+    #[test]
+    fn is_eof_pos_before_threshold_is_not_eof() {
+        // Just short of duration − 0.2 keeps playing.
+        assert!(!is_eof(Some(9.79), Some(10.0)));
+        assert!(!is_eof(Some(0.0), Some(10.0)));
+    }
+
+    #[test]
+    fn is_eof_unknown_duration_is_never_eof() {
+        // Without a duration we cannot decide the file ended.
+        assert!(!is_eof(None, None));
+        assert!(!is_eof(Some(5.0), None));
+    }
+
+    #[test]
+    fn is_eof_zero_duration_is_not_eof() {
+        // d > 0.0 guard: a zero-length duration must not be treated as EOF
+        // for a real position poll.
+        assert!(!is_eof(Some(0.0), Some(0.0)));
+    }
+
+    // -- seek_suppressed ---------------------------------------------------
+
+    #[test]
+    fn seek_suppressed_none_deadline_is_not_suppressed() {
+        assert!(!seek_suppressed(Instant::now(), None));
+    }
+
+    #[test]
+    fn seek_suppressed_before_deadline_is_suppressed() {
+        let now = Instant::now();
+        let deadline = now + Duration::from_millis(300);
+        assert!(seek_suppressed(now, Some(deadline)));
+    }
+
+    #[test]
+    fn seek_suppressed_at_deadline_is_not_suppressed() {
+        // Boundary: `now < deadline` is strict, so now == deadline is over.
+        let now = Instant::now();
+        assert!(!seek_suppressed(now, Some(now)));
+    }
+
+    #[test]
+    fn seek_suppressed_after_deadline_is_not_suppressed() {
+        let deadline = Instant::now();
+        let now = deadline + Duration::from_millis(1);
+        assert!(!seek_suppressed(now, Some(deadline)));
     }
 }
