@@ -365,9 +365,7 @@ mod tests {
     #[test]
     fn test_multiple_paragraphs() {
         let html = "<p>Первый абзац.</p><p>Второй абзац.</p>";
-        let out = extract(html);
-        assert!(out.contains("Первый абзац."));
-        assert!(out.contains("Второй абзац."));
+        assert_eq!(extract(html), "Первый абзац.\nВторой абзац.");
     }
 
     // ── 3. Heading tags ──────────────────────────────────────────────────────
@@ -375,9 +373,7 @@ mod tests {
     #[test]
     fn test_headings() {
         let html = "<h1>Заголовок</h1><p>Текст статьи.</p>";
-        let out = extract(html);
-        assert!(out.contains("Заголовок"), "heading missing: {out:?}");
-        assert!(out.contains("Текст статьи."), "body missing: {out:?}");
+        assert_eq!(extract(html), "Заголовок\nТекст статьи.");
     }
 
     // ── 4. Nested block elements ─────────────────────────────────────────────
@@ -393,12 +389,7 @@ mod tests {
     #[test]
     fn test_nav_excluded() {
         let html = "<nav><a href='/'>Домой</a></nav><p>Основное содержимое.</p>";
-        let out = extract(html);
-        assert!(
-            !out.contains("Домой"),
-            "nav content must be excluded: {out:?}"
-        );
-        assert!(out.contains("Основное содержимое."));
+        assert_eq!(extract(html), "Основное содержимое.");
     }
 
     // ── 6. footer excluded ───────────────────────────────────────────────────
@@ -406,12 +397,7 @@ mod tests {
     #[test]
     fn test_footer_excluded() {
         let html = "<p>Тело страницы.</p><footer><p>Копирайт 2026</p></footer>";
-        let out = extract(html);
-        assert!(
-            !out.contains("Копирайт"),
-            "footer must be excluded: {out:?}"
-        );
-        assert!(out.contains("Тело страницы."));
+        assert_eq!(extract(html), "Тело страницы.");
     }
 
     // ── 7. aside excluded ────────────────────────────────────────────────────
@@ -419,12 +405,7 @@ mod tests {
     #[test]
     fn test_aside_excluded() {
         let html = "<p>Главный текст.</p><aside><p>Боковая заметка</p></aside>";
-        let out = extract(html);
-        assert!(
-            !out.contains("Боковая заметка"),
-            "aside must be excluded: {out:?}"
-        );
-        assert!(out.contains("Главный текст."));
+        assert_eq!(extract(html), "Главный текст.");
     }
 
     // ── 8. script and style excluded ─────────────────────────────────────────
@@ -432,13 +413,7 @@ mod tests {
     #[test]
     fn test_script_style_excluded() {
         let html = r#"<style>body{color:red}</style><script>alert(1)</script><p>Виден</p>"#;
-        let out = extract(html);
-        assert!(
-            !out.contains("body{color:red}"),
-            "style content must be excluded"
-        );
-        assert!(!out.contains("alert"), "script content must be excluded");
-        assert!(out.contains("Виден"));
+        assert_eq!(extract(html), "Виден");
     }
 
     // ── 9. Unordered list ────────────────────────────────────────────────────
@@ -446,9 +421,7 @@ mod tests {
     #[test]
     fn test_unordered_list() {
         let html = "<ul><li>Первый пункт</li><li>Второй пункт</li></ul>";
-        let out = extract(html);
-        assert!(out.contains("Первый пункт"), "list item 1 missing: {out:?}");
-        assert!(out.contains("Второй пункт"), "list item 2 missing: {out:?}");
+        assert_eq!(extract(html), "Первый пункт\nВторой пункт");
     }
 
     // ── 10. Ordered list ─────────────────────────────────────────────────────
@@ -456,10 +429,7 @@ mod tests {
     #[test]
     fn test_ordered_list() {
         let html = "<ol><li>Шаг один</li><li>Шаг два</li><li>Шаг три</li></ol>";
-        let out = extract(html);
-        assert!(out.contains("Шаг один"));
-        assert!(out.contains("Шаг два"));
-        assert!(out.contains("Шаг три"));
+        assert_eq!(extract(html), "Шаг один\nШаг два\nШаг три");
     }
 
     // ── 11. Inline code ──────────────────────────────────────────────────────
@@ -467,10 +437,9 @@ mod tests {
     #[test]
     fn test_inline_code() {
         let html = "<p>Вызови функцию <code>getUserData()</code> для получения данных.</p>";
-        let out = extract(html);
-        assert!(
-            out.contains("getUserData()"),
-            "code content missing: {out:?}"
+        assert_eq!(
+            extract(html),
+            "Вызови функцию getUserData() для получения данных."
         );
     }
 
@@ -480,8 +449,7 @@ mod tests {
     fn test_pre_code_block() {
         let html =
             r#"<pre><code class="language-rust">fn main() { println!("hello"); }</code></pre>"#;
-        let out = extract(html);
-        assert!(out.contains("fn main()"), "pre/code block missing: {out:?}");
+        assert_eq!(extract(html), r#"fn main() { println!("hello"); }"#);
     }
 
     // ── 13. Full article structure with exclusions ───────────────────────────
@@ -505,14 +473,10 @@ mod tests {
             </body>
             </html>
         "#;
-        let out = extract(html);
-
-        assert!(out.contains("Заголовок статьи"), "h1 missing");
-        assert!(out.contains("Первый параграф"), "first para missing");
-        assert!(out.contains("Второй параграф"), "second para missing");
-        assert!(!out.contains("Главная"), "nav must be excluded");
-        assert!(!out.contains("Боковая панель"), "aside must be excluded");
-        assert!(!out.contains("Подвал сайта"), "footer must be excluded");
+        assert_eq!(
+            extract(html),
+            "Заголовок статьи\nПервый параграф содержимого.\nВторой параграф содержимого."
+        );
     }
 
     // ── 14. Whitespace normalisation ─────────────────────────────────────────
@@ -520,43 +484,106 @@ mod tests {
     #[test]
     fn test_whitespace_normalisation() {
         let html = "<p>Текст   с   лишними   пробелами.</p>";
-        let out = extract(html);
         // Multiple spaces in HTML source collapse to a single space in text.
-        assert!(
-            !out.contains("   "),
-            "multiple spaces should collapse: {out:?}"
-        );
-        assert!(out.contains("Текст"), "text missing: {out:?}");
+        assert_eq!(extract(html), "Текст с лишними пробелами.");
     }
 
-    // ── 15. TrackedHtml span lookup ──────────────────────────────────────────
+    // ── 15. TrackedHtml span boundaries ──────────────────────────────────────
 
+    // NOTE: `push_text` (see production code) records one span per raw text
+    // node, with `text_start`/`text_end` as *byte* offsets into `self.output`
+    // (matching `TrackedHtml.text` once the leading-whitespace trim offset is
+    // applied). Crucially, `html_start`/`html_end` are hard-coded to `0` for
+    // every span — the doc comment on `push_text` explains that scraper does
+    // not expose source byte offsets for text nodes, so the field is a
+    // sentinel ("source position unknown"), not a real mapping back into the
+    // HTML source. This test therefore verifies the one boundary that *is*
+    // implemented (text-side spans slicing back to the correct substrings)
+    // and pins down the current sentinel behaviour of the html-side fields,
+    // rather than asserting a source-position guarantee the code does not
+    // provide.
     #[test]
     fn test_tracked_html_spans_exist() {
-        let html = "<p>Привет мир</p>";
+        // Three text nodes: "Первый " (before <b>), "второй" (inside <b>),
+        // " третий" (after </b>) — none of them adjacent to a block-level
+        // newline, so each becomes its own span with no trim adjustment.
+        let html = "<p>Первый <b>второй</b> третий</p>";
         let tracked = extract_text_for_tts(html);
-        // Spans must cover the extracted text.
-        assert!(!tracked.spans.is_empty(), "spans should not be empty");
-        let total_coverage: usize = tracked
-            .spans
-            .iter()
-            .map(|s| s.text_end - s.text_start)
-            .sum();
+
+        assert_eq!(tracked.text, "Первый второй третий");
+        assert_eq!(tracked.spans.len(), 3, "expected one span per text node");
+
+        let expected = [(0, 13, "Первый "), (13, 25, "второй"), (25, 38, " третий")];
+        for (span, (start, end, fragment)) in tracked.spans.iter().zip(expected) {
+            assert_eq!(
+                (span.text_start, span.text_end),
+                (start, end),
+                "span byte range mismatch for {fragment:?}"
+            );
+            assert_eq!(
+                &tracked.text[span.text_start..span.text_end],
+                fragment,
+                "span does not slice back to its own text"
+            );
+            // Sentinel: source-position tracking for text nodes is not
+            // implemented, so html_start/html_end are always (0, 0).
+            assert_eq!((span.html_start, span.html_end), (0, 0));
+        }
+
+        // Spans are contiguous and cover the whole trimmed text exactly.
+        assert_eq!(tracked.spans.last().unwrap().text_end, tracked.text.len());
+    }
+
+    // ── 16. html_range_for ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_html_range_for_out_of_bounds_range_returns_none() {
+        let html = "<p>Привет</p>";
+        let tracked = extract_text_for_tts(html);
+        // The range (1000, 1000) lies entirely past the end of the text, so
+        // no span overlaps it.
+        let result = tracked.html_range_for(1000, 1000);
+        assert!(result.is_none(), "out-of-bounds range should return None");
+    }
+
+    #[test]
+    fn test_html_range_for_whitespace_gap_between_blocks_returns_none() {
+        // The newline separating the two paragraphs is synthesised by
+        // `push_newline` and is not covered by any span, so a text range
+        // that falls entirely inside it must return None.
+        let html = "<p>Первый абзац.</p><p>Второй абзац.</p>";
+        let tracked = extract_text_for_tts(html);
+        assert_eq!(tracked.text, "Первый абзац.\nВторой абзац.");
+        let newline_at = tracked.text.find('\n').expect("expected a newline gap");
+        assert_eq!(newline_at, 24);
+
+        let result = tracked.html_range_for(newline_at, newline_at + 1);
         assert!(
-            total_coverage >= tracked.text.trim().len(),
-            "spans should cover at least the trimmed text length"
+            result.is_none(),
+            "a range inside the inter-paragraph gap should return None"
         );
     }
 
-    // ── 16. html_range_for returns None for whitespace-only range ────────────
-
     #[test]
-    fn test_html_range_for_empty_range() {
-        let html = "<p>Привет</p>";
+    fn test_html_range_for_valid_overlap_returns_range() {
+        // A request range that overlaps a real span must return Some(range).
+        // Because html_start/html_end are currently a (0, 0) sentinel for
+        // every text-node span (see note on test_tracked_html_spans_exist),
+        // the returned range is (0, 0) for any overlapping query today; this
+        // pins the current overlap-detection behaviour precisely rather than
+        // asserting a source-position guarantee the implementation does not
+        // yet provide.
+        let html = "<p>Первый <b>второй</b> третий</p>";
         let tracked = extract_text_for_tts(html);
-        // A zero-length range returns None.
-        let result = tracked.html_range_for(1000, 1000);
-        assert!(result.is_none(), "out-of-bounds range should return None");
+        assert_eq!(tracked.text, "Первый второй третий");
+
+        // Query exactly the middle span ("второй"), byte range [13, 25).
+        let result = tracked.html_range_for(13, 25);
+        assert_eq!(result, Some((0, 0)));
+
+        // A partial overlap with the first span also matches.
+        let partial = tracked.html_range_for(5, 15);
+        assert_eq!(partial, Some((0, 0)));
     }
 
     // ── 17. normalise_extracted collapses blank lines ────────────────────────
@@ -573,11 +600,7 @@ mod tests {
     #[test]
     fn test_blockquote_preserved() {
         let html = "<blockquote><p>Цитата из источника.</p></blockquote>";
-        let out = extract(html);
-        assert!(
-            out.contains("Цитата из источника."),
-            "blockquote missing: {out:?}"
-        );
+        assert_eq!(extract(html), "Цитата из источника.");
     }
 
     // ── 19. table cells concatenated ─────────────────────────────────────────
@@ -585,9 +608,7 @@ mod tests {
     #[test]
     fn test_table_cells() {
         let html = "<table><tr><td>Ячейка один</td><td>Ячейка два</td></tr></table>";
-        let out = extract(html);
-        assert!(out.contains("Ячейка один"), "td 1 missing: {out:?}");
-        assert!(out.contains("Ячейка два"), "td 2 missing: {out:?}");
+        assert_eq!(extract(html), "Ячейка один\nЯчейка два");
     }
 
     // ── 20. Empty HTML returns empty string ──────────────────────────────────
