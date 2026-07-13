@@ -32,6 +32,7 @@
 | [docs/pipeline.md](docs/pipeline.md) | Text normalization stages |
 | [docs/ui.md](docs/ui.md) | Frontend structure |
 | [docs/use-cases.md](docs/use-cases.md) | User scenarios |
+| [docs/decisions.md](docs/decisions.md) | Rationale log for non-obvious tooling/architecture choices |
 | [docs/preview-dialog.md](docs/preview-dialog.md) | Normalization preview dialog |
 
 ## Quick start

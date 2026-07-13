@@ -58,6 +58,7 @@ Silero TTS cannot correctly pronounce:
 - [Use cases](use-cases.md) — user scenarios: adding text, plain/markdown modes, mermaid, word highlight.
 - [Development](development.md) — environment, commands, debugging.
 - [Contributing](contributing.md) — how to add a term to the dictionary, commit and style rules.
+- [Decisions](decisions.md) — rationale log for non-obvious tooling/architecture choices (e.g. pnpm vs bun).
 
 ## License
 
