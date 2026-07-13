@@ -230,9 +230,12 @@ mod tests {
             encode_wav_to_opus(&wav_path, &opus_path)
                 .unwrap_or_else(|e| panic!("encode failed at {rate} Hz: {e}"));
 
+            // 1 s at 32 kbps VOIP yields >1700 bytes even at 8/12 kHz; the
+            // pre-refactor 48 kHz test asserted > 1000, keep that bar so a
+            // header-only or truncated stream can't slip through.
             let bytes = std::fs::read(&opus_path).expect("read opus");
             assert!(
-                bytes.len() > 200,
+                bytes.len() > 1000,
                 "opus too small at {rate} Hz: {}",
                 bytes.len()
             );
