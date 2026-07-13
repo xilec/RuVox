@@ -4,19 +4,14 @@
 //! `<voices_dir>/<voice_id>/`. Inference runs in `spawn_blocking` because
 //! piper-rs's synthesis is synchronous CPU work.
 //!
-//! ## Why we hold a [`PiperSpeechSynthesizer`] and parse the JSON manually
+//! ## Why a `Mutex<Piper>` instead of a shared read-only handle
 //!
-//! piper-rs 0.1.9 does not publicly export the `PiperModel` trait — only
-//! [`PiperSpeechSynthesizer`] (via `piper_rs::synth`) and a handful of
-//! Result/Error types. That means we cannot:
-//!   * name `Arc<dyn PiperModel + Send + Sync>` in our struct fields,
-//!   * call `audio_output_info()` (a `PiperModel` trait method) from outside.
-//!
-//! Workarounds: store the public `PiperSpeechSynthesizer` and read the audio
-//! sample rate ourselves from the `.onnx.json` config file. Synthesis goes
-//! through `synthesize_parallel`, which yields `AudioSamples` chunks whose
-//! `into_vec()` inherent method is public even though `AudioSamples` itself
-//! isn't a nameable type.
+//! piper-rs 0.2.0's `Piper::create` takes `&mut self` (the ONNX Runtime
+//! session is mutated during inference), so concurrent synthesis calls for
+//! the same loaded voice must serialize on a lock. `parking_lot::Mutex` is
+//! used (not `tokio::sync::Mutex`) because the lock is only ever held inside
+//! a `spawn_blocking` closure — a synchronous context, never across an
+//! `.await`.
 //!
 //! ## Failure mapping
 //! - voice files missing → `TtsError::Ttsd { code: "voice_not_installed", … }`
@@ -28,8 +23,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use piper_rs::synth::PiperSpeechSynthesizer;
-use piper_rs::PiperSynthesisConfig;
+use parking_lot::Mutex;
+use piper_rs::{ModelConfig, Piper};
 use serde_json::json;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
@@ -62,15 +57,19 @@ pub struct PiperEngine {
 
 struct LoadedVoice {
     id: String,
-    synth: Arc<PiperSpeechSynthesizer>,
-    sample_rate: u32,
+    piper: Arc<Mutex<Piper>>,
+    /// Per-voice tuning read from the `.onnx.json` config, kept alongside
+    /// our own `PIPER_LENGTH_SCALE` override at synthesis time.
+    noise_scale: f32,
+    noise_w: f32,
 }
 
-/// Lightweight handle returned from `ensure_loaded` — keeps the synthesizer
-/// alive while a synthesize call runs without holding the engine's RwLock.
+/// Lightweight handle returned from `ensure_loaded` — keeps the model alive
+/// while a synthesize call runs without holding the engine's RwLock.
 struct LoadedHandle {
-    synth: Arc<PiperSpeechSynthesizer>,
-    sample_rate: u32,
+    piper: Arc<Mutex<Piper>>,
+    noise_scale: f32,
+    noise_w: f32,
 }
 
 impl PiperEngine {
@@ -101,8 +100,9 @@ impl PiperEngine {
             if let Some(loaded) = guard.as_ref() {
                 if loaded.id == voice_id {
                     return Ok(LoadedHandle {
-                        synth: Arc::clone(&loaded.synth),
-                        sample_rate: loaded.sample_rate,
+                        piper: Arc::clone(&loaded.piper),
+                        noise_scale: loaded.noise_scale,
+                        noise_w: loaded.noise_w,
                     });
                 }
             }
@@ -122,22 +122,28 @@ impl PiperEngine {
 
         let voice_id_owned = voice_id.to_string();
         let cfg = config_path.clone();
-        let (synth, sample_rate) = tokio::task::spawn_blocking(move || load_voice_blocking(&cfg))
-            .await
-            .map_err(|e| TtsError::Ttsd {
-                code: "piper_load_panic".to_string(),
-                message: format!("piper-rs load task panicked: {e}"),
-            })??;
+        let (piper, noise_scale, noise_w, sample_rate) =
+            tokio::task::spawn_blocking(move || load_voice_blocking(&cfg))
+                .await
+                .map_err(|e| TtsError::Ttsd {
+                    code: "piper_load_panic".to_string(),
+                    message: format!("piper-rs load task panicked: {e}"),
+                })??;
 
-        let synth = Arc::new(synth);
+        let piper = Arc::new(Mutex::new(piper));
         let mut guard = self.loaded.write().await;
         *guard = Some(LoadedVoice {
             id: voice_id_owned,
-            synth: Arc::clone(&synth),
-            sample_rate,
+            piper: Arc::clone(&piper),
+            noise_scale,
+            noise_w,
         });
         info!(target: "tts::piper", "loaded voice \"{voice_id}\" (sr={sample_rate})");
-        Ok(LoadedHandle { synth, sample_rate })
+        Ok(LoadedHandle {
+            piper,
+            noise_scale,
+            noise_w,
+        })
     }
 }
 
@@ -177,13 +183,14 @@ impl TtsEngine for PiperEngine {
             let load_result = tokio::task::spawn_blocking(move || load_voice_blocking(&cfg)).await;
 
             match load_result {
-                Ok(Ok((synth, sample_rate))) => {
-                    let synth = Arc::new(synth);
+                Ok(Ok((piper, noise_scale, noise_w, sample_rate))) => {
+                    let piper = Arc::new(Mutex::new(piper));
                     let mut guard = slot.write().await;
                     *guard = Some(LoadedVoice {
                         id: voice_id,
-                        synth,
-                        sample_rate,
+                        piper,
+                        noise_scale,
+                        noise_w,
                     });
                     info!(target: "tts::piper", "warmup complete (sr={sample_rate})");
                     (emitter)("model_loaded", json!({ "engine": "piper" }));
@@ -215,28 +222,27 @@ impl TtsEngine for PiperEngine {
         char_mapping: Option<Vec<CharMappingEntry>>,
     ) -> Result<SynthesizeOutput, TtsError> {
         let handle = self.ensure_loaded(&voice).await?;
-        let synth = Arc::clone(&handle.synth);
-        let sample_rate = handle.sample_rate;
+        let piper = Arc::clone(&handle.piper);
+        let noise_scale = handle.noise_scale;
+        let noise_w = handle.noise_w;
         let text_for_blocking = text.clone();
 
-        let samples: Vec<f32> =
-            tokio::task::spawn_blocking(move || -> Result<Vec<f32>, TtsError> {
-                let stream = synth
-                    .synthesize_parallel(text_for_blocking, None)
+        let (samples, sample_rate) =
+            tokio::task::spawn_blocking(move || -> Result<(Vec<f32>, u32), TtsError> {
+                piper
+                    .lock()
+                    .create(
+                        &text_for_blocking,
+                        false,
+                        None,
+                        Some(PIPER_LENGTH_SCALE),
+                        Some(noise_scale),
+                        Some(noise_w),
+                    )
                     .map_err(|e| TtsError::Ttsd {
                         code: "piper_synthesis_failed".to_string(),
-                        message: format!("synthesize_parallel failed: {e}"),
-                    })?;
-
-                let mut samples: Vec<f32> = Vec::new();
-                for chunk_result in stream {
-                    let chunk = chunk_result.map_err(|e| TtsError::Ttsd {
-                        code: "piper_synthesis_failed".to_string(),
-                        message: format!("synthesis chunk failed: {e}"),
-                    })?;
-                    samples.append(&mut chunk.into_vec());
-                }
-                Ok(samples)
+                        message: format!("Piper::create failed: {e}"),
+                    })
             })
             .await
             .map_err(|e| TtsError::Ttsd {
@@ -278,65 +284,43 @@ impl TtsEngine for PiperEngine {
     }
 
     async fn shutdown(&self) -> Result<(), TtsError> {
-        // In-process — drop the synthesizer so onnxruntime releases its
-        // session. The next `warmup` will reload.
+        // In-process — drop the model so onnxruntime releases its session.
+        // The next `warmup` will reload.
         let mut guard = self.loaded.write().await;
         *guard = None;
         Ok(())
     }
 }
 
-/// Synchronous helper for the blocking thread: load the model, parse the
-/// config JSON to extract the sample rate, wrap in `PiperSpeechSynthesizer`.
-fn load_voice_blocking(config_path: &Path) -> Result<(PiperSpeechSynthesizer, u32), TtsError> {
-    // Sample rate comes from the config JSON because PiperModel::audio_output_info
-    // is not reachable from outside the crate (see module-level comment).
+/// Synchronous helper for the blocking thread: load the model and read the
+/// per-voice tuning (`noise_scale`, `noise_w`, `sample_rate`) from the
+/// `.onnx.json` config that ships alongside the `.onnx` model.
+fn load_voice_blocking(config_path: &Path) -> Result<(Piper, f32, f32, u32), TtsError> {
+    // `Piper::new` wants the `.onnx` model path and the `.onnx.json` config
+    // path separately; rhasspy's naming convention is the config path with
+    // its trailing `.json` extension stripped.
+    let model_path = config_path.with_extension("");
+
     let cfg_text = std::fs::read_to_string(config_path).map_err(|e| TtsError::Ttsd {
         code: "piper_load_failed".to_string(),
         message: format!("failed to read piper config {}: {e}", config_path.display()),
     })?;
-    let cfg: serde_json::Value = serde_json::from_str(&cfg_text).map_err(|e| TtsError::Ttsd {
+    let cfg: ModelConfig = serde_json::from_str(&cfg_text).map_err(|e| TtsError::Ttsd {
         code: "piper_load_failed".to_string(),
         message: format!("failed to parse piper config: {e}"),
     })?;
-    let sample_rate = cfg
-        .get("audio")
-        .and_then(|a| a.get("sample_rate"))
-        .and_then(|v| v.as_u64())
-        .ok_or_else(|| TtsError::Ttsd {
-            code: "piper_load_failed".to_string(),
-            message: "piper config is missing audio.sample_rate".to_string(),
-        })? as u32;
 
-    let model = piper_rs::from_config_path(config_path).map_err(|e| TtsError::Ttsd {
+    let piper = Piper::new(&model_path, config_path).map_err(|e| TtsError::Ttsd {
         code: "piper_load_failed".to_string(),
-        message: format!("piper-rs from_config_path failed: {e}"),
+        message: format!("piper-rs Piper::new failed: {e}"),
     })?;
-    // Pull the voice's noise scales from the JSON we just parsed so we keep
-    // the per-voice tuning when overriding `length_scale`.
-    let inference = cfg.get("inference");
-    let noise_scale = inference
-        .and_then(|v| v.get("noise_scale"))
-        .and_then(|v| v.as_f64())
-        .unwrap_or(0.667) as f32;
-    let noise_w = inference
-        .and_then(|v| v.get("noise_w"))
-        .and_then(|v| v.as_f64())
-        .unwrap_or(0.8) as f32;
-    let synth_config = PiperSynthesisConfig {
-        speaker: None,
-        noise_scale,
-        length_scale: PIPER_LENGTH_SCALE,
-        noise_w,
-    };
-    if let Err(e) = model.set_fallback_synthesis_config(&synth_config) {
-        warn!(target: "tts::piper", "failed to apply length_scale={PIPER_LENGTH_SCALE}: {e}");
-    }
-    let synth = PiperSpeechSynthesizer::new(model).map_err(|e| TtsError::Ttsd {
-        code: "piper_load_failed".to_string(),
-        message: format!("PiperSpeechSynthesizer::new failed: {e}"),
-    })?;
-    Ok((synth, sample_rate))
+
+    Ok((
+        piper,
+        cfg.inference.noise_scale,
+        cfg.inference.noise_w,
+        cfg.audio.sample_rate,
+    ))
 }
 
 /// Write `samples` (f32 in -1.0..1.0) as a mono i16 PCM WAV at `sample_rate`.

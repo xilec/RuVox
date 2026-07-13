@@ -8,7 +8,15 @@
 set -euo pipefail
 
 REPO_DIR="/home/evgen/work/github/RuVox"
-BIN="${REPO_DIR}/src-tauri/target/release/ruvox-tauri"
+
+# Matches rebuild_prod.sh's CARGO_TARGET_DIR override (short path — see that
+# script for why), falling back to the in-tree default for binaries built
+# before that override existed.
+CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/tmp/ruvox-prod-target}"
+BIN="${CARGO_TARGET_DIR}/release/ruvox-tauri"
+if [ ! -x "${BIN}" ]; then
+  BIN="${REPO_DIR}/src-tauri/target/release/ruvox-tauri"
+fi
 
 if [ ! -x "${BIN}" ]; then
   notify-send -u critical "RuVox" "Production-бинарь не найден: ${BIN}. Запусти pnpm tauri build --no-bundle." 2>/dev/null || true
