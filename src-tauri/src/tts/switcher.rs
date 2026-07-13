@@ -204,23 +204,30 @@ mod tests {
     use super::*;
     use crate::tts::supervisor::test_helpers::recording_emitter;
 
-    fn fake_switcher() -> EngineSwitcher {
+    /// Builds a switcher backed by per-call `TempDir`s so parallel test runs
+    /// never collide on a shared `/tmp/ruvox-test-*` path. The guards must
+    /// be kept alive for the duration of the test (dropping them removes
+    /// the directories).
+    fn fake_switcher() -> (EngineSwitcher, tempfile::TempDir, tempfile::TempDir) {
         let (emitter, _) = recording_emitter();
-        let voices_dir = std::env::temp_dir().join("ruvox-test-voices");
-        let ttsd_dir = std::env::temp_dir().join("ruvox-test-ttsd");
+        let voices_tmp = tempfile::TempDir::new().expect("voices tempdir");
+        let ttsd_tmp = tempfile::TempDir::new().expect("ttsd tempdir");
+        let voices_dir = voices_tmp.path().to_path_buf();
+        let ttsd_dir = ttsd_tmp.path().to_path_buf();
         let initial: Arc<dyn TtsEngine> = Arc::new(PiperEngine::new(
             voices_dir.clone(),
             "ruslan".to_string(),
             Arc::clone(&emitter),
         ));
-        EngineSwitcher::new(
+        let switcher = EngineSwitcher::new(
             initial,
             EngineKind::Piper,
             Some("ruslan".to_string()),
             voices_dir,
             ttsd_dir,
             emitter,
-        )
+        );
+        (switcher, voices_tmp, ttsd_tmp)
     }
 
     #[test]
@@ -240,7 +247,7 @@ mod tests {
 
     #[tokio::test]
     async fn apply_config_with_same_engine_and_voice_is_noop() {
-        let sw = fake_switcher();
+        let (sw, _voices_tmp, _ttsd_tmp) = fake_switcher();
         // Same kind + same voice → no rebuild attempted.
         sw.apply_config("piper", "ruslan").await.unwrap();
         assert_eq!(sw.kind(), EngineKind::Piper);
@@ -248,7 +255,7 @@ mod tests {
 
     #[tokio::test]
     async fn apply_config_rebuilds_piper_on_voice_change() {
-        let sw = fake_switcher();
+        let (sw, _voices_tmp, _ttsd_tmp) = fake_switcher();
         sw.apply_config("piper", "irina").await.unwrap();
         // Engine kind unchanged, but the inner slot now references "irina".
         assert_eq!(sw.kind(), EngineKind::Piper);
@@ -258,7 +265,7 @@ mod tests {
 
     #[tokio::test]
     async fn apply_config_rejects_unknown_engine() {
-        let sw = fake_switcher();
+        let (sw, _voices_tmp, _ttsd_tmp) = fake_switcher();
         let err = sw.apply_config("nemo", "ruslan").await.unwrap_err();
         match err {
             TtsError::Ttsd { code, .. } => assert_eq!(code, "engine_unknown"),

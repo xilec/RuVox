@@ -43,7 +43,7 @@ fn mock_script_path() -> PathBuf {
 fn build_factory() -> CommandFactory {
     let script = mock_script_path();
     Arc::new(move || {
-        let mut cmd = Command::new("python");
+        let mut cmd = Command::new("python3");
         cmd.arg(&script);
         cmd
     })
@@ -55,13 +55,20 @@ async fn supervisor_respawns_after_subprocess_suicide() {
     let (emitter, log) = recording_emitter();
     let sup = TtsSupervisor::spawn(factory, emitter).expect("initial spawn ok");
 
+    // The mock never actually writes a WAV file — it only echoes the
+    // protocol — but the output path is still routed through a per-test
+    // TempDir so no run ever touches a shared `/tmp/ruvox-mock-out-*.wav`.
+    let out_dir = tempfile::TempDir::new().expect("tempdir for mock wav outputs");
+    let out_wav_1 = out_dir.path().join("ruvox-mock-out-1.wav");
+    let out_wav_2 = out_dir.path().join("ruvox-mock-out-2.wav");
+
     // First call goes through cleanly — the mock counts this as call #1.
     let first = sup
         .synthesize(
             "hello".to_string(),
             "xenia".to_string(),
             48_000,
-            "/tmp/ruvox-mock-out-1.wav".to_string(),
+            out_wav_1.to_string_lossy().into_owned(),
             None,
         )
         .await
@@ -76,7 +83,7 @@ async fn supervisor_respawns_after_subprocess_suicide() {
             "world".to_string(),
             "xenia".to_string(),
             48_000,
-            "/tmp/ruvox-mock-out-2.wav".to_string(),
+            out_wav_2.to_string_lossy().into_owned(),
             None,
         )
         .await
