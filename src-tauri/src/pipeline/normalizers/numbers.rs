@@ -1018,6 +1018,7 @@ impl Default for NumberNormalizer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test_case::test_case;
 
     fn nn() -> NumberNormalizer {
         NumberNormalizer::new()
@@ -1025,598 +1026,152 @@ mod tests {
 
     // ---- TestIntegers ----
 
-    #[test]
-    fn test_integer_zero() {
-        assert_eq!(nn().normalize_number("0"), "ноль");
-    }
-
-    #[test]
-    fn test_integer_one() {
-        assert_eq!(nn().normalize_number("1"), "один");
-    }
-
-    #[test]
-    fn test_integer_five() {
-        assert_eq!(nn().normalize_number("5"), "пять");
-    }
-
-    #[test]
-    fn test_integer_ten() {
-        assert_eq!(nn().normalize_number("10"), "десять");
-    }
-
-    #[test]
-    fn test_integer_eleven() {
-        assert_eq!(nn().normalize_number("11"), "одиннадцать");
-    }
-
-    #[test]
-    fn test_integer_fifteen() {
-        assert_eq!(nn().normalize_number("15"), "пятнадцать");
-    }
-
-    #[test]
-    fn test_integer_twenty() {
-        assert_eq!(nn().normalize_number("20"), "двадцать");
-    }
-
-    #[test]
-    fn test_integer_twenty_one() {
-        assert_eq!(nn().normalize_number("21"), "двадцать один");
-    }
-
-    #[test]
-    fn test_integer_forty_two() {
-        assert_eq!(nn().normalize_number("42"), "сорок два");
-    }
-
-    #[test]
-    fn test_integer_ninety_nine() {
-        assert_eq!(nn().normalize_number("99"), "девяносто девять");
-    }
-
-    #[test]
-    fn test_integer_hundred() {
-        assert_eq!(nn().normalize_number("100"), "сто");
-    }
-
-    #[test]
-    fn test_integer_hundred_one() {
-        assert_eq!(nn().normalize_number("101"), "сто один");
-    }
-
-    #[test]
-    fn test_integer_hundred_twenty_three() {
-        assert_eq!(nn().normalize_number("123"), "сто двадцать три");
-    }
-
-    #[test]
-    fn test_integer_two_hundred() {
-        assert_eq!(nn().normalize_number("200"), "двести");
-    }
-
-    #[test]
-    fn test_integer_three_hundred() {
-        assert_eq!(nn().normalize_number("300"), "триста");
-    }
-
-    #[test]
-    fn test_integer_five_hundred() {
-        assert_eq!(nn().normalize_number("500"), "пятьсот");
-    }
-
-    #[test]
-    fn test_integer_999() {
-        assert_eq!(nn().normalize_number("999"), "девятьсот девяносто девять");
-    }
-
-    #[test]
-    fn test_integer_one_thousand() {
-        assert_eq!(nn().normalize_number("1000"), "одна тысяча");
-    }
-
-    #[test]
-    fn test_integer_one_thousand_one() {
-        assert_eq!(nn().normalize_number("1001"), "одна тысяча один");
-    }
-
-    #[test]
-    fn test_integer_1234() {
-        assert_eq!(
-            nn().normalize_number("1234"),
-            "одна тысяча двести тридцать четыре"
-        );
-    }
-
-    #[test]
-    fn test_integer_ten_thousand() {
-        assert_eq!(nn().normalize_number("10000"), "десять тысяч");
-    }
-
-    #[test]
-    fn test_integer_hundred_thousand() {
-        assert_eq!(nn().normalize_number("100000"), "сто тысяч");
-    }
-
-    #[test]
-    fn test_integer_one_million() {
-        assert_eq!(nn().normalize_number("1000000"), "один миллион");
+    #[test_case("0" => "ноль"; "zero")]
+    #[test_case("1" => "один"; "one")]
+    #[test_case("5" => "пять"; "five")]
+    #[test_case("10" => "десять"; "ten")]
+    #[test_case("11" => "одиннадцать"; "eleven")]
+    #[test_case("15" => "пятнадцать"; "fifteen")]
+    #[test_case("20" => "двадцать"; "twenty")]
+    #[test_case("21" => "двадцать один"; "twenty_one")]
+    #[test_case("42" => "сорок два"; "forty_two")]
+    #[test_case("99" => "девяносто девять"; "ninety_nine")]
+    #[test_case("100" => "сто"; "hundred")]
+    #[test_case("101" => "сто один"; "hundred_one")]
+    #[test_case("123" => "сто двадцать три"; "hundred_twenty_three")]
+    #[test_case("200" => "двести"; "two_hundred")]
+    #[test_case("300" => "триста"; "three_hundred")]
+    #[test_case("500" => "пятьсот"; "five_hundred")]
+    #[test_case("999" => "девятьсот девяносто девять"; "nine_hundred_ninety_nine")]
+    #[test_case("1000" => "одна тысяча"; "one_thousand")]
+    #[test_case("1001" => "одна тысяча один"; "one_thousand_one")]
+    #[test_case("1234" => "одна тысяча двести тридцать четыре"; "one_thousand_two_hundred_thirty_four")]
+    #[test_case("10000" => "десять тысяч"; "ten_thousand")]
+    #[test_case("100000" => "сто тысяч"; "hundred_thousand")]
+    #[test_case("1000000" => "один миллион"; "one_million")]
+    fn integer(input: &str) -> String {
+        nn().normalize_number(input)
     }
 
     // ---- TestFloats ----
 
-    #[test]
-    fn test_float_pi() {
-        assert_eq!(nn().normalize_float("3.14"), "три точка один четыре");
-    }
-
-    #[test]
-    fn test_float_zero_point_five() {
-        assert_eq!(nn().normalize_float("0.5"), "ноль точка пять");
-    }
-
-    #[test]
-    fn test_float_two_point_zero() {
-        assert_eq!(nn().normalize_float("2.0"), "два точка ноль");
-    }
-
-    #[test]
-    fn test_float_ten_point_twenty_five() {
-        assert_eq!(nn().normalize_float("10.25"), "десять точка два пять");
-    }
-
-    #[test]
-    fn test_float_99_99() {
-        assert_eq!(
-            nn().normalize_float("99.99"),
-            "девяносто девять точка девять девять"
-        );
-    }
-
-    #[test]
-    fn test_float_zero_zero_one() {
-        assert_eq!(nn().normalize_float("0.001"), "ноль точка ноль ноль один");
-    }
-
-    #[test]
-    fn test_float_one_point_five() {
-        assert_eq!(nn().normalize_float("1.5"), "один точка пять");
-    }
-
-    #[test]
-    fn test_float_comma_pi() {
-        assert_eq!(nn().normalize_float("3,14"), "три точка один четыре");
-    }
-
-    #[test]
-    fn test_float_comma_zero_five() {
-        assert_eq!(nn().normalize_float("0,5"), "ноль точка пять");
-    }
-
-    #[test]
-    fn test_float_comma_ten_25() {
-        assert_eq!(nn().normalize_float("10,25"), "десять точка два пять");
+    #[test_case("3.14" => "три точка один четыре"; "pi")]
+    #[test_case("0.5" => "ноль точка пять"; "zero_point_five")]
+    #[test_case("2.0" => "два точка ноль"; "two_point_zero")]
+    #[test_case("10.25" => "десять точка два пять"; "ten_point_twenty_five")]
+    #[test_case("99.99" => "девяносто девять точка девять девять"; "ninety_nine_ninety_nine")]
+    #[test_case("0.001" => "ноль точка ноль ноль один"; "zero_zero_one")]
+    #[test_case("1.5" => "один точка пять"; "one_point_five")]
+    #[test_case("3,14" => "три точка один четыре"; "comma_pi")]
+    #[test_case("0,5" => "ноль точка пять"; "comma_zero_five")]
+    #[test_case("10,25" => "десять точка два пять"; "comma_ten_25")]
+    fn float(input: &str) -> String {
+        nn().normalize_float(input)
     }
 
     // ---- TestPercentages ----
 
-    #[test]
-    fn test_pct_fifty() {
-        assert_eq!(nn().normalize_percentage("50%"), "пятьдесят процентов");
-    }
-
-    #[test]
-    fn test_pct_hundred() {
-        assert_eq!(nn().normalize_percentage("100%"), "сто процентов");
-    }
-
-    #[test]
-    fn test_pct_one() {
-        assert_eq!(nn().normalize_percentage("1%"), "один процент");
-    }
-
-    #[test]
-    fn test_pct_two() {
-        assert_eq!(nn().normalize_percentage("2%"), "два процента");
-    }
-
-    #[test]
-    fn test_pct_five() {
-        assert_eq!(nn().normalize_percentage("5%"), "пять процентов");
-    }
-
-    #[test]
-    fn test_pct_twenty_one() {
-        assert_eq!(nn().normalize_percentage("21%"), "двадцать один процент");
-    }
-
-    #[test]
-    fn test_pct_twenty_two() {
-        assert_eq!(nn().normalize_percentage("22%"), "двадцать два процента");
-    }
-
-    #[test]
-    fn test_pct_twenty_five() {
-        assert_eq!(nn().normalize_percentage("25%"), "двадцать пять процентов");
-    }
-
-    #[test]
-    fn test_pct_float_99_9() {
-        assert_eq!(
-            nn().normalize_percentage("99.9%"),
-            "девяносто девять точка девять процентов"
-        );
-    }
-
-    #[test]
-    fn test_pct_float_0_5() {
-        assert_eq!(
-            nn().normalize_percentage("0.5%"),
-            "ноль точка пять процентов"
-        );
-    }
-
-    #[test]
-    fn test_pct_float_33_33() {
-        assert_eq!(
-            nn().normalize_percentage("33.33%"),
-            "тридцать три точка три три процентов"
-        );
+    #[test_case("50%" => "пятьдесят процентов"; "fifty")]
+    #[test_case("100%" => "сто процентов"; "hundred")]
+    #[test_case("1%" => "один процент"; "one")]
+    #[test_case("2%" => "два процента"; "two")]
+    #[test_case("5%" => "пять процентов"; "five")]
+    #[test_case("21%" => "двадцать один процент"; "twenty_one")]
+    #[test_case("22%" => "двадцать два процента"; "twenty_two")]
+    #[test_case("25%" => "двадцать пять процентов"; "twenty_five")]
+    #[test_case("99.9%" => "девяносто девять точка девять процентов"; "float_99_9")]
+    #[test_case("0.5%" => "ноль точка пять процентов"; "float_0_5")]
+    #[test_case("33.33%" => "тридцать три точка три три процентов"; "float_33_33")]
+    fn percentage(input: &str) -> String {
+        nn().normalize_percentage(input)
     }
 
     // ---- TestRanges ----
 
-    #[test]
-    fn test_range_1_10() {
-        assert_eq!(nn().normalize_range("1-10"), "от одного до десяти");
-    }
-
-    #[test]
-    fn test_range_10_20() {
-        assert_eq!(nn().normalize_range("10-20"), "от десяти до двадцати");
-    }
-
-    #[test]
-    fn test_range_100_200() {
-        assert_eq!(nn().normalize_range("100-200"), "от ста до двухсот");
-    }
-
-    #[test]
-    fn test_range_years() {
-        assert_eq!(
-            nn().normalize_range("2020-2024"),
-            "от две тысячи двадцатого до две тысячи двадцать четвёртого"
-        );
-    }
-
-    #[test]
-    fn test_range_5_6() {
-        assert_eq!(nn().normalize_range("5-6"), "от пяти до шести");
-    }
-
-    #[test]
-    fn test_range_1_100() {
-        assert_eq!(nn().normalize_range("1-100"), "от одного до ста");
-    }
-
-    #[test]
-    fn test_range_en_dash() {
-        assert_eq!(
-            nn().normalize_range("10\u{2013}20"),
-            "от десяти до двадцати"
-        );
-    }
-
-    #[test]
-    fn test_range_em_dash() {
-        assert_eq!(nn().normalize_range("100\u{2014}200"), "от ста до двухсот");
+    #[test_case("1-10" => "от одного до десяти"; "one_ten")]
+    #[test_case("10-20" => "от десяти до двадцати"; "ten_twenty")]
+    #[test_case("100-200" => "от ста до двухсот"; "hundred_two_hundred")]
+    #[test_case("2020-2024" => "от две тысячи двадцатого до две тысячи двадцать четвёртого"; "years")]
+    #[test_case("5-6" => "от пяти до шести"; "five_six")]
+    #[test_case("1-100" => "от одного до ста"; "one_hundred")]
+    #[test_case("10\u{2013}20" => "от десяти до двадцати"; "en_dash")]
+    #[test_case("100\u{2014}200" => "от ста до двухсот"; "em_dash")]
+    fn range(input: &str) -> String {
+        nn().normalize_range(input)
     }
 
     // ---- TestSizeUnits ----
 
-    #[test]
-    fn test_size_100kb() {
-        assert_eq!(nn().normalize_size("100KB"), "сто килобайт");
-    }
-
-    #[test]
-    fn test_size_1mb() {
-        assert_eq!(nn().normalize_size("1MB"), "один мегабайт");
-    }
-
-    #[test]
-    fn test_size_2mb() {
-        assert_eq!(nn().normalize_size("2MB"), "два мегабайта");
-    }
-
-    #[test]
-    fn test_size_5mb() {
-        assert_eq!(nn().normalize_size("5MB"), "пять мегабайт");
-    }
-
-    #[test]
-    fn test_size_16gb() {
-        assert_eq!(nn().normalize_size("16GB"), "шестнадцать гигабайт");
-    }
-
-    #[test]
-    fn test_size_1tb() {
-        assert_eq!(nn().normalize_size("1TB"), "один терабайт");
-    }
-
-    #[test]
-    fn test_size_512gb() {
-        assert_eq!(nn().normalize_size("512GB"), "пятьсот двенадцать гигабайт");
-    }
-
-    #[test]
-    fn test_size_100kb_space() {
-        assert_eq!(nn().normalize_size("100 KB"), "сто килобайт");
-    }
-
-    #[test]
-    fn test_size_16gb_space() {
-        assert_eq!(nn().normalize_size("16 GB"), "шестнадцать гигабайт");
-    }
-
-    #[test]
-    fn test_size_10ms() {
-        assert_eq!(nn().normalize_size("10ms"), "десять миллисекунд");
-    }
-
-    #[test]
-    fn test_size_1sec() {
-        assert_eq!(nn().normalize_size("1sec"), "одна секунда");
-    }
-
-    #[test]
-    fn test_size_5sec() {
-        assert_eq!(nn().normalize_size("5sec"), "пять секунд");
-    }
-
-    #[test]
-    fn test_size_30min() {
-        assert_eq!(nn().normalize_size("30min"), "тридцать минут");
-    }
-
-    #[test]
-    fn test_size_2hr() {
-        assert_eq!(nn().normalize_size("2hr"), "два часа");
-    }
-
-    #[test]
-    fn test_size_16px() {
-        assert_eq!(nn().normalize_size("16px"), "шестнадцать пикселей");
-    }
-
-    #[test]
-    fn test_size_1_5em() {
-        assert_eq!(nn().normalize_size("1.5em"), "один точка пять эм");
-    }
-
-    #[test]
-    fn test_size_100vh() {
-        assert_eq!(nn().normalize_size("100vh"), "сто ви эйч");
-    }
-
-    #[test]
-    fn test_size_russian_100kb() {
-        assert_eq!(nn().normalize_size("100кб"), "сто килобайт");
-    }
-
-    #[test]
-    fn test_size_russian_1mb() {
-        assert_eq!(nn().normalize_size("1мб"), "один мегабайт");
-    }
-
-    #[test]
-    fn test_size_russian_16gb() {
-        assert_eq!(nn().normalize_size("16гб"), "шестнадцать гигабайт");
+    #[test_case("100KB" => "сто килобайт"; "100kb")]
+    #[test_case("1MB" => "один мегабайт"; "1mb")]
+    #[test_case("2MB" => "два мегабайта"; "2mb")]
+    #[test_case("5MB" => "пять мегабайт"; "5mb")]
+    #[test_case("16GB" => "шестнадцать гигабайт"; "16gb")]
+    #[test_case("1TB" => "один терабайт"; "1tb")]
+    #[test_case("512GB" => "пятьсот двенадцать гигабайт"; "512gb")]
+    #[test_case("100 KB" => "сто килобайт"; "100kb_space")]
+    #[test_case("16 GB" => "шестнадцать гигабайт"; "16gb_space")]
+    #[test_case("10ms" => "десять миллисекунд"; "10ms")]
+    #[test_case("1sec" => "одна секунда"; "1sec")]
+    #[test_case("5sec" => "пять секунд"; "5sec")]
+    #[test_case("30min" => "тридцать минут"; "30min")]
+    #[test_case("2hr" => "два часа"; "2hr")]
+    #[test_case("16px" => "шестнадцать пикселей"; "16px")]
+    #[test_case("1.5em" => "один точка пять эм"; "1_5em")]
+    #[test_case("100vh" => "сто ви эйч"; "100vh")]
+    #[test_case("100кб" => "сто килобайт"; "russian_100kb")]
+    #[test_case("1мб" => "один мегабайт"; "russian_1mb")]
+    #[test_case("16гб" => "шестнадцать гигабайт"; "russian_16gb")]
+    fn size(input: &str) -> String {
+        nn().normalize_size(input)
     }
 
     // ---- TestVersions ----
 
-    #[test]
-    fn test_version_1_0() {
-        assert_eq!(nn().normalize_version("1.0"), "один точка ноль");
-    }
-
-    #[test]
-    fn test_version_2_0() {
-        assert_eq!(nn().normalize_version("2.0"), "два точка ноль");
-    }
-
-    #[test]
-    fn test_version_1_0_0() {
-        assert_eq!(
-            nn().normalize_version("1.0.0"),
-            "один точка ноль точка ноль"
-        );
-    }
-
-    #[test]
-    fn test_version_2_3_1() {
-        assert_eq!(nn().normalize_version("2.3.1"), "два точка три точка один");
-    }
-
-    #[test]
-    fn test_version_3_11() {
-        assert_eq!(nn().normalize_version("3.11"), "три точка одиннадцать");
-    }
-
-    #[test]
-    fn test_version_10_15_7() {
-        assert_eq!(
-            nn().normalize_version("10.15.7"),
-            "десять точка пятнадцать точка семь"
-        );
-    }
-
-    #[test]
-    fn test_version_v1_0() {
-        assert_eq!(nn().normalize_version("v1.0"), "один точка ноль");
-    }
-
-    #[test]
-    fn test_version_v2_3_1() {
-        assert_eq!(nn().normalize_version("v2.3.1"), "два точка три точка один");
-    }
-
-    #[test]
-    fn test_version_beta() {
-        assert_eq!(nn().normalize_version("1.0-beta"), "один точка ноль бета");
-    }
-
-    #[test]
-    fn test_version_alpha() {
-        assert_eq!(nn().normalize_version("2.0-alpha"), "два точка ноль альфа");
-    }
-
-    #[test]
-    fn test_version_rc1() {
-        assert_eq!(
-            nn().normalize_version("1.0.0-rc1"),
-            "один точка ноль точка ноль эр си один"
-        );
-    }
-
-    #[test]
-    fn test_version_beta_point() {
-        assert_eq!(
-            nn().normalize_version("3.11.0-beta.1"),
-            "три точка одиннадцать точка ноль бета точка один"
-        );
+    #[test_case("1.0" => "один точка ноль"; "1_0")]
+    #[test_case("2.0" => "два точка ноль"; "2_0")]
+    #[test_case("1.0.0" => "один точка ноль точка ноль"; "1_0_0")]
+    #[test_case("2.3.1" => "два точка три точка один"; "2_3_1")]
+    #[test_case("3.11" => "три точка одиннадцать"; "3_11")]
+    #[test_case("10.15.7" => "десять точка пятнадцать точка семь"; "10_15_7")]
+    #[test_case("v1.0" => "один точка ноль"; "v1_0")]
+    #[test_case("v2.3.1" => "два точка три точка один"; "v2_3_1")]
+    #[test_case("1.0-beta" => "один точка ноль бета"; "beta")]
+    #[test_case("2.0-alpha" => "два точка ноль альфа"; "alpha")]
+    #[test_case("1.0.0-rc1" => "один точка ноль точка ноль эр си один"; "rc1")]
+    #[test_case("3.11.0-beta.1" => "три точка одиннадцать точка ноль бета точка один"; "beta_point")]
+    fn version(input: &str) -> String {
+        nn().normalize_version(input)
     }
 
     // ---- TestDates ----
 
-    #[test]
-    fn test_date_iso_2024_01_15() {
-        assert_eq!(
-            nn().normalize_date("2024-01-15"),
-            "пятнадцатое января две тысячи двадцать четвёртого года"
-        );
-    }
-
-    #[test]
-    fn test_date_iso_2024_12_31() {
-        assert_eq!(
-            nn().normalize_date("2024-12-31"),
-            "тридцать первое декабря две тысячи двадцать четвёртого года"
-        );
-    }
-
-    #[test]
-    fn test_date_iso_2000_01_01() {
-        assert_eq!(
-            nn().normalize_date("2000-01-01"),
-            "первое января двухтысячного года"
-        );
-    }
-
-    #[test]
-    fn test_date_eu_15_01_2024() {
-        assert_eq!(
-            nn().normalize_date("15.01.2024"),
-            "пятнадцатое января две тысячи двадцать четвёртого года"
-        );
-    }
-
-    #[test]
-    fn test_date_eu_01_12_2023() {
-        assert_eq!(
-            nn().normalize_date("01.12.2023"),
-            "первое декабря две тысячи двадцать третьего года"
-        );
-    }
-
-    #[test]
-    fn test_date_slash_2024_01_15() {
-        assert_eq!(
-            nn().normalize_date("2024/01/15"),
-            "пятнадцатое января две тысячи двадцать четвёртого года"
-        );
-    }
-
-    #[test]
-    fn test_date_slash_15_01_2024() {
-        assert_eq!(
-            nn().normalize_date("15/01/2024"),
-            "пятнадцатое января две тысячи двадцать четвёртого года"
-        );
+    #[test_case("2024-01-15" => "пятнадцатое января две тысячи двадцать четвёртого года"; "iso_2024_01_15")]
+    #[test_case("2024-12-31" => "тридцать первое декабря две тысячи двадцать четвёртого года"; "iso_2024_12_31")]
+    #[test_case("2000-01-01" => "первое января двухтысячного года"; "iso_2000_01_01")]
+    #[test_case("15.01.2024" => "пятнадцатое января две тысячи двадцать четвёртого года"; "eu_15_01_2024")]
+    #[test_case("01.12.2023" => "первое декабря две тысячи двадцать третьего года"; "eu_01_12_2023")]
+    #[test_case("2024/01/15" => "пятнадцатое января две тысячи двадцать четвёртого года"; "slash_2024_01_15")]
+    #[test_case("15/01/2024" => "пятнадцатое января две тысячи двадцать четвёртого года"; "slash_15_01_2024")]
+    fn date(input: &str) -> String {
+        nn().normalize_date(input)
     }
 
     // ---- TestTimes ----
 
-    #[test]
-    fn test_time_10_00() {
-        assert_eq!(nn().normalize_time("10:00"), "десять часов");
-    }
-
-    #[test]
-    fn test_time_10_30() {
-        assert_eq!(nn().normalize_time("10:30"), "десять часов тридцать минут");
-    }
-
-    #[test]
-    fn test_time_14_15() {
-        assert_eq!(
-            nn().normalize_time("14:15"),
-            "четырнадцать часов пятнадцать минут"
-        );
-    }
-
-    #[test]
-    fn test_time_00_00() {
-        assert_eq!(nn().normalize_time("00:00"), "ноль часов");
-    }
-
-    #[test]
-    fn test_time_01_00() {
-        assert_eq!(nn().normalize_time("01:00"), "один час");
-    }
-
-    #[test]
-    fn test_time_02_00() {
-        assert_eq!(nn().normalize_time("02:00"), "два часа");
-    }
-
-    #[test]
-    fn test_time_05_00() {
-        assert_eq!(nn().normalize_time("05:00"), "пять часов");
-    }
-
-    #[test]
-    fn test_time_21_00() {
-        assert_eq!(nn().normalize_time("21:00"), "двадцать один час");
-    }
-
-    #[test]
-    fn test_time_22_30() {
-        assert_eq!(
-            nn().normalize_time("22:30"),
-            "двадцать два часа тридцать минут"
-        );
-    }
-
-    #[test]
-    fn test_time_23_59() {
-        assert_eq!(
-            nn().normalize_time("23:59"),
-            "двадцать три часа пятьдесят девять минут"
-        );
-    }
-
-    #[test]
-    fn test_time_with_seconds() {
-        assert_eq!(
-            nn().normalize_time("10:30:15"),
-            "десять часов тридцать минут пятнадцать секунд"
-        );
-    }
-
-    #[test]
-    fn test_time_eight_zeros() {
-        assert_eq!(nn().normalize_time("08:00:00"), "восемь часов");
+    #[test_case("10:00" => "десять часов"; "10_00")]
+    #[test_case("10:30" => "десять часов тридцать минут"; "10_30")]
+    #[test_case("14:15" => "четырнадцать часов пятнадцать минут"; "14_15")]
+    #[test_case("00:00" => "ноль часов"; "00_00")]
+    #[test_case("01:00" => "один час"; "01_00")]
+    #[test_case("02:00" => "два часа"; "02_00")]
+    #[test_case("05:00" => "пять часов"; "05_00")]
+    #[test_case("21:00" => "двадцать один час"; "21_00")]
+    #[test_case("22:30" => "двадцать два часа тридцать минут"; "22_30")]
+    #[test_case("23:59" => "двадцать три часа пятьдесят девять минут"; "23_59")]
+    #[test_case("10:30:15" => "десять часов тридцать минут пятнадцать секунд"; "with_seconds")]
+    #[test_case("08:00:00" => "восемь часов"; "eight_zeros")]
+    fn time(input: &str) -> String {
+        nn().normalize_time(input)
     }
 }
