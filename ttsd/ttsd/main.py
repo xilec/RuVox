@@ -3,6 +3,7 @@
 import logging
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ValidationError
 
@@ -15,11 +16,25 @@ from ttsd.protocol import (
     RequestAdapter,
     SynthesizeRequest,
 )
-from ttsd.silero import SileroEngine
+
+if TYPE_CHECKING:
+    from ttsd.silero import SileroEngine
 
 logger = logging.getLogger("ttsd")
 
-_engine = SileroEngine()
+# The engine is created lazily so importing this module (and unit-testing the
+# request loop) does not pull in torch/numpy/scipy via ttsd.silero. Tests may
+# override the singleton by setting ttsd.main._engine to a stub.
+_engine: "SileroEngine | None" = None
+
+
+def _get_engine() -> "SileroEngine":
+    global _engine
+    if _engine is None:
+        from ttsd.silero import SileroEngine
+
+        _engine = SileroEngine()
+    return _engine
 
 
 def _setup_logging() -> None:
@@ -41,7 +56,7 @@ def _handle_warmup() -> OkWarmup | ErrResponse:
     model_error and may retry.
     """
     try:
-        _engine.load()
+        _get_engine().load()
     except Exception as exc:
         logger.exception("warmup failed")
         return ErrResponse(error="model_not_loaded", message=str(exc))
@@ -49,7 +64,8 @@ def _handle_warmup() -> OkWarmup | ErrResponse:
 
 
 def _handle_synthesize(req: SynthesizeRequest) -> OkSynthesize | ErrResponse:
-    if not _engine.is_loaded():
+    engine = _get_engine()
+    if not engine.is_loaded():
         return ErrResponse(
             error="model_not_loaded",
             message="Silero model is not loaded; send warmup first",
@@ -62,7 +78,7 @@ def _handle_synthesize(req: SynthesizeRequest) -> OkSynthesize | ErrResponse:
         char_mapping = (
             [entry.model_dump() for entry in req.char_mapping] if req.char_mapping else None
         )
-        result = _engine.synthesize(
+        result = engine.synthesize(
             text=req.text,
             speaker=req.speaker,
             sample_rate=req.sample_rate,

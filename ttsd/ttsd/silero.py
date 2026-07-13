@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -10,13 +9,21 @@ import numpy as np
 import torch
 from scipy.io import wavfile
 
+from ttsd.chunking import MAX_CHUNK_SIZE, sanitize_for_silero, split_into_chunks
 from ttsd.protocol import WordTimestamp
 from ttsd.timestamps import estimate_timestamps_chunked
 
 logger = logging.getLogger("ttsd.silero")
 
-# Maximum characters per TTS chunk (Silero limit is ~1000-1500)
-MAX_CHUNK_SIZE = 900
+# MAX_CHUNK_SIZE / split_into_chunks / sanitize_for_silero now live in ttsd.chunking
+# (torch-free) and are re-exported here for backwards compatibility.
+__all__ = [
+    "MAX_CHUNK_SIZE",
+    "SileroEngine",
+    "SynthesisOutput",
+    "sanitize_for_silero",
+    "split_into_chunks",
+]
 
 
 @dataclass
@@ -72,7 +79,7 @@ class SileroEngine:
         if not text.strip():
             raise ValueError("text must not be empty")
 
-        chunks = self._split_into_chunks(text)
+        chunks = split_into_chunks(text)
         logger.debug("Synthesizing %d chars in %d chunks", len(text), len(chunks))
 
         audio_parts: list[np.ndarray] = []
@@ -80,7 +87,7 @@ class SileroEngine:
 
         for i, (chunk_text, chunk_start) in enumerate(chunks):
             logger.debug("Chunk %d/%d: %d chars", i + 1, len(chunks), len(chunk_text))
-            silero_text = self._sanitize_for_silero(chunk_text)
+            silero_text = sanitize_for_silero(chunk_text)
             with torch.no_grad():
                 audio = self._model.apply_tts(  # type: ignore[union-attr]
                     text=silero_text,
@@ -102,58 +109,3 @@ class SileroEngine:
         timestamps = estimate_timestamps_chunked(text, chunk_durations, char_mapping)
 
         return SynthesisOutput(timestamps=timestamps, duration_sec=duration_sec)
-
-    @staticmethod
-    def _split_into_chunks(text: str) -> list[tuple[str, int]]:
-        """Split text into chunks for TTS processing.
-
-        Returns list of (chunk_text, start_position) tuples.
-        """
-        if len(text) <= MAX_CHUNK_SIZE:
-            return [(text, 0)]
-
-        chunks: list[tuple[str, int]] = []
-        current_pos = 0
-
-        while current_pos < len(text):
-            chunk_end = min(current_pos + MAX_CHUNK_SIZE, len(text))
-
-            if chunk_end >= len(text):
-                chunks.append((text[current_pos:], current_pos))
-                break
-
-            chunk_text = text[current_pos:chunk_end]
-
-            best_split = -1
-            for match in re.finditer(r"[.!?]\s+", chunk_text):
-                best_split = match.end()
-
-            if best_split == -1:
-                for match in re.finditer(r"[,;:]\s+", chunk_text):
-                    best_split = match.end()
-
-            if best_split == -1:
-                for match in re.finditer(r"\s+", chunk_text):
-                    best_split = match.end()
-
-            if best_split == -1 or best_split < len(chunk_text) // 2:
-                best_split = MAX_CHUNK_SIZE
-
-            actual_chunk = text[current_pos : current_pos + best_split].strip()
-            if actual_chunk:
-                chunks.append((actual_chunk, current_pos))
-
-            current_pos += best_split
-
-        return chunks
-
-    @staticmethod
-    def _sanitize_for_silero(text: str) -> str:
-        """Remove newlines and collapse spaces before passing to Silero.
-
-        Silero's character-level tokenizer does not handle control characters;
-        newlines cause a fatal abort inside prepare_tts_model_input.
-        """
-        text = re.sub(r"\s*\n\s*", " ", text)
-        text = re.sub(r" +", " ", text)
-        return text.strip()
