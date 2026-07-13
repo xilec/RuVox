@@ -7,9 +7,9 @@ import sys
 import pytest
 
 
-@pytest.mark.slow
-def test_warmup_and_shutdown() -> None:
-    """Spawn python -m ttsd, send warmup, expect ok response, then shutdown."""
+@pytest.fixture
+def ttsd_process():
+    """Spawn `python -m ttsd` with piped stdio and terminate it on teardown."""
     proc = subprocess.Popen(
         [sys.executable, "-m", "ttsd"],
         stdin=subprocess.PIPE,
@@ -18,31 +18,7 @@ def test_warmup_and_shutdown() -> None:
         text=True,
     )
     try:
-        # Send warmup
-        assert proc.stdin is not None
-        proc.stdin.write('{"cmd": "warmup"}\n')
-        proc.stdin.flush()
-
-        # Read warmup response
-        assert proc.stdout is not None
-        line = proc.stdout.readline()
-        response = json.loads(line)
-        assert response["ok"] is True
-        assert "version" in response
-        assert response["version"] == "0.1.0"
-
-        # Send shutdown
-        proc.stdin.write('{"cmd": "shutdown"}\n')
-        proc.stdin.flush()
-
-        # Read shutdown response
-        line = proc.stdout.readline()
-        response = json.loads(line)
-        assert response["ok"] is True
-
-        # Process should exit cleanly
-        proc.wait(timeout=5)
-        assert proc.returncode == 0
+        yield proc
     finally:
         if proc.poll() is None:
             proc.terminate()
@@ -50,34 +26,51 @@ def test_warmup_and_shutdown() -> None:
 
 
 @pytest.mark.slow
-def test_bad_input_returns_error() -> None:
+def test_warmup_and_shutdown(ttsd_process) -> None:
+    """Send warmup, expect ok response, then shutdown."""
+    proc = ttsd_process
+    assert proc.stdin is not None
+    assert proc.stdout is not None
+
+    proc.stdin.write('{"cmd": "warmup"}\n')
+    proc.stdin.flush()
+
+    line = proc.stdout.readline()
+    response = json.loads(line)
+    assert response["ok"] is True
+    assert "version" in response
+    assert response["version"] == "0.1.0"
+
+    proc.stdin.write('{"cmd": "shutdown"}\n')
+    proc.stdin.flush()
+
+    line = proc.stdout.readline()
+    response = json.loads(line)
+    assert response["ok"] is True
+
+    # Process should exit cleanly
+    proc.wait(timeout=5)
+    assert proc.returncode == 0
+
+
+@pytest.mark.slow
+def test_bad_input_returns_error(ttsd_process) -> None:
     """Malformed JSON should return an ErrResponse with error='bad_input'."""
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "ttsd"],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
-    try:
-        assert proc.stdin is not None
-        assert proc.stdout is not None
+    proc = ttsd_process
+    assert proc.stdin is not None
+    assert proc.stdout is not None
 
-        # Send invalid JSON (missing required fields)
-        proc.stdin.write('{"cmd": "synthesize"}\n')
-        proc.stdin.flush()
+    # Send invalid JSON (missing required fields)
+    proc.stdin.write('{"cmd": "synthesize"}\n')
+    proc.stdin.flush()
 
-        line = proc.stdout.readline()
-        response = json.loads(line)
-        assert response["ok"] is False
-        assert response["error"] == "bad_input"
+    line = proc.stdout.readline()
+    response = json.loads(line)
+    assert response["ok"] is False
+    assert response["error"] == "bad_input"
 
-        # Clean shutdown
-        proc.stdin.write('{"cmd": "shutdown"}\n')
-        proc.stdin.flush()
-        proc.wait(timeout=5)
-        assert proc.returncode == 0
-    finally:
-        if proc.poll() is None:
-            proc.terminate()
-            proc.wait(timeout=5)
+    # Clean shutdown
+    proc.stdin.write('{"cmd": "shutdown"}\n')
+    proc.stdin.flush()
+    proc.wait(timeout=5)
+    assert proc.returncode == 0
