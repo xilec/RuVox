@@ -86,7 +86,8 @@ mod tests {
 
     #[test]
     fn piper_is_always_available() {
-        let res = probe(&std::env::temp_dir());
+        let dir = tempfile::TempDir::new().unwrap();
+        let res = probe(dir.path());
         assert!(res.piper.available);
         assert!(res.piper.reason.is_none());
     }
@@ -98,16 +99,9 @@ mod tests {
         assert!(!probe_result.silero.available);
         let reason = probe_result.silero.reason.expect("reason set");
         assert!(reason.contains("ttsd"));
-    }
-
-    #[test]
-    fn silero_reason_is_in_russian() {
-        // Smoke: every reason we surface to the user must be Cyrillic. Lets
-        // future probes (e.g. torch sniff) break loudly if someone ships an
+        // Every reason we surface to the user must be Cyrillic. Lets future
+        // probes (e.g. torch sniff) break loudly if someone ships an
         // English string by accident.
-        let dir = tempfile::TempDir::new().unwrap();
-        let r = probe(dir.path()).silero;
-        let reason = r.reason.unwrap();
         assert!(
             reason.chars().any(|c| matches!(c, 'А'..='я' | 'ё' | 'Ё')),
             "reason should be Russian: {reason}"
