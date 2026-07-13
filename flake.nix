@@ -117,7 +117,7 @@
             pnpmConfigHook
             pkg-config
             wrapGAppsHook3
-            # cmake: espeak-rs-sys 0.1.9 vendors libespeak-ng and builds it
+            # cmake: espeak-rs-sys 0.2.0 vendors libespeak-ng and builds it
             # via cmake from its own build.rs.
             cmake
             # bindgenHook: sets LIBCLANG_PATH and BINDGEN_EXTRA_CLANG_ARGS
@@ -177,7 +177,7 @@
           # open: ...vwl_en_us_nyc/a_ra". Bumping the buffer to 1024 fixes
           # the `cargo tauri build` cmake step deterministically.
           preBuild = ''
-            substituteInPlace "$NIX_BUILD_TOP/cargo-vendor-dir/espeak-rs-sys-0.1.9/espeak-ng/src/libespeak-ng/speech.h" \
+            substituteInPlace "$NIX_BUILD_TOP/cargo-vendor-dir/espeak-rs-sys-0.2.0/espeak-ng/src/libespeak-ng/speech.h" \
               --replace-fail 'N_PATH_HOME_DEF  160' 'N_PATH_HOME_DEF  1024'
           '';
 
