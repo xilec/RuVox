@@ -657,446 +657,88 @@ impl Default for CodeIdentifierNormalizer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test_case::test_case;
 
     fn normalizer() -> CodeIdentifierNormalizer {
         CodeIdentifierNormalizer::new()
     }
 
-    // --- CamelCase ---
+    // --- CamelCase / PascalCase (normalize_camel_case) ---
 
-    #[test]
-    fn camel_get_user_data() {
-        assert_eq!(
-            normalizer().normalize_camel_case("getUserData"),
-            "гет юзер дата"
-        );
+    #[test_case("getUserData" => "гет юзер дата"; "get_user_data")]
+    #[test_case("myVariable" => "май вэриабл"; "my_variable")]
+    #[test_case("isValid" => "из вэлид"; "is_valid")]
+    #[test_case("hasValue" => "хэз вэлью"; "has_value")]
+    #[test_case("onClick" => "он клик"; "on_click")]
+    #[test_case("onChange" => "он чейндж"; "on_change")]
+    #[test_case("handleSubmit" => "хендл сабмит"; "handle_submit")]
+    #[test_case("fetchData" => "фетч дата"; "fetch_data")]
+    #[test_case("parseJSON" => "парс джейсон"; "parse_json")]
+    #[test_case("toString" => "ту стринг"; "to_string")]
+    #[test_case("getUserDataFromServer" => "гет юзер дата фром сервер"; "get_user_data_from_server")]
+    #[test_case("calculateTotalPrice" => "калькулейт тотал прайс"; "calculate_total_price")]
+    #[test_case("isUserAuthenticated" => "из юзер аутентикейтед"; "is_user_authenticated")]
+    #[test_case("parseHTMLContent" => "парс эйч ти эм эл контент"; "parse_html_content")]
+    #[test_case("getAPIResponse" => "гет эй пи ай респонс"; "get_api_response")]
+    #[test_case("loadJSONData" => "лоуд джейсон дата"; "load_json_data")]
+    #[test_case("createURLPath" => "криейт ю ар эл пас"; "create_url_path")]
+    #[test_case("getUser2Data" => "гет юзер два дата"; "get_user2_data")]
+    #[test_case("item1Name" => "айтем один нейм"; "item1_name")]
+    #[test_case("UserService" => "юзер сервис"; "pascal_user_service")]
+    #[test_case("DataRepository" => "дата репозитори"; "pascal_data_repository")]
+    #[test_case("HttpClient" => "эйч ти ти пи клиент"; "pascal_http_client")]
+    #[test_case("ApiController" => "эй пи ай контроллер"; "pascal_api_controller")]
+    #[test_case("DatabaseConnection" => "датабейз коннекшн"; "pascal_database_connection")]
+    #[test_case("EventHandler" => "ивент хендлер"; "pascal_event_handler")]
+    #[test_case("FileManager" => "файл менеджер"; "pascal_file_manager")]
+    #[test_case("ConfigLoader" => "конфиг лоудер"; "pascal_config_loader")]
+    fn camel_case(input: &str) -> String {
+        normalizer().normalize_camel_case(input)
     }
 
-    #[test]
-    fn camel_my_variable() {
-        assert_eq!(
-            normalizer().normalize_camel_case("myVariable"),
-            "май вэриабл"
-        );
+    // --- SnakeCase / SCREAMING_SNAKE_CASE (normalize_snake_case) ---
+
+    #[test_case("get_user_data" => "гет юзер дата"; "get_user_data")]
+    #[test_case("my_variable" => "май вэриабл"; "my_variable")]
+    #[test_case("is_valid" => "из вэлид"; "is_valid")]
+    #[test_case("has_value" => "хэз вэлью"; "has_value")]
+    #[test_case("on_click" => "он клик"; "on_click")]
+    #[test_case("handle_submit" => "хендл сабмит"; "handle_submit")]
+    #[test_case("fetch_data" => "фетч дата"; "fetch_data")]
+    #[test_case("parse_json" => "парс джейсон"; "parse_json")]
+    #[test_case("get_user_data_from_server" => "гет юзер дата фром сервер"; "get_user_data_from_server")]
+    #[test_case("calculate_total_price" => "калькулейт тотал прайс"; "calculate_total_price")]
+    #[test_case("user_2_data" => "юзер два дата"; "user_2_data")]
+    #[test_case("item_1_name" => "айтем один нейм"; "item_1_name")]
+    #[test_case("__init__" => "инит"; "dunder_init")]
+    #[test_case("__str__" => "стр"; "dunder_str")]
+    #[test_case("__repr__" => "репр"; "dunder_repr")]
+    #[test_case("__len__" => "лен"; "dunder_len")]
+    #[test_case("_private_method" => "прайвит метод"; "private_method")]
+    #[test_case("__private_attr" => "прайвит аттр"; "private_attr")]
+    #[test_case("MAX_VALUE" => "макс вэлью"; "screaming_max_value")]
+    #[test_case("DEFAULT_TIMEOUT" => "дефолт таймаут"; "screaming_default_timeout")]
+    #[test_case("API_BASE_URL" => "эй пи ай бейз ю ар эл"; "screaming_api_base_url")]
+    fn snake_case(input: &str) -> String {
+        normalizer().normalize_snake_case(input)
     }
 
-    #[test]
-    fn camel_is_valid() {
-        assert_eq!(normalizer().normalize_camel_case("isValid"), "из вэлид");
-    }
+    // --- KebabCase (normalize_kebab_case) ---
 
-    #[test]
-    fn camel_has_value() {
-        assert_eq!(normalizer().normalize_camel_case("hasValue"), "хэз вэлью");
-    }
-
-    #[test]
-    fn camel_on_click() {
-        assert_eq!(normalizer().normalize_camel_case("onClick"), "он клик");
-    }
-
-    #[test]
-    fn camel_on_change() {
-        assert_eq!(normalizer().normalize_camel_case("onChange"), "он чейндж");
-    }
-
-    #[test]
-    fn camel_handle_submit() {
-        assert_eq!(
-            normalizer().normalize_camel_case("handleSubmit"),
-            "хендл сабмит"
-        );
-    }
-
-    #[test]
-    fn camel_fetch_data() {
-        assert_eq!(normalizer().normalize_camel_case("fetchData"), "фетч дата");
-    }
-
-    #[test]
-    fn camel_parse_json() {
-        assert_eq!(
-            normalizer().normalize_camel_case("parseJSON"),
-            "парс джейсон"
-        );
-    }
-
-    #[test]
-    fn camel_to_string() {
-        assert_eq!(normalizer().normalize_camel_case("toString"), "ту стринг");
-    }
-
-    #[test]
-    fn camel_get_user_data_from_server() {
-        assert_eq!(
-            normalizer().normalize_camel_case("getUserDataFromServer"),
-            "гет юзер дата фром сервер"
-        );
-    }
-
-    #[test]
-    fn camel_calculate_total_price() {
-        assert_eq!(
-            normalizer().normalize_camel_case("calculateTotalPrice"),
-            "калькулейт тотал прайс"
-        );
-    }
-
-    #[test]
-    fn camel_is_user_authenticated() {
-        assert_eq!(
-            normalizer().normalize_camel_case("isUserAuthenticated"),
-            "из юзер аутентикейтед"
-        );
-    }
-
-    #[test]
-    fn camel_parse_html_content() {
-        assert_eq!(
-            normalizer().normalize_camel_case("parseHTMLContent"),
-            "парс эйч ти эм эл контент"
-        );
-    }
-
-    #[test]
-    fn camel_get_api_response() {
-        assert_eq!(
-            normalizer().normalize_camel_case("getAPIResponse"),
-            "гет эй пи ай респонс"
-        );
-    }
-
-    #[test]
-    fn camel_load_json_data() {
-        assert_eq!(
-            normalizer().normalize_camel_case("loadJSONData"),
-            "лоуд джейсон дата"
-        );
-    }
-
-    #[test]
-    fn camel_create_url_path() {
-        assert_eq!(
-            normalizer().normalize_camel_case("createURLPath"),
-            "криейт ю ар эл пас"
-        );
-    }
-
-    #[test]
-    fn camel_get_user2_data() {
-        assert_eq!(
-            normalizer().normalize_camel_case("getUser2Data"),
-            "гет юзер два дата"
-        );
-    }
-
-    #[test]
-    fn camel_item1_name() {
-        assert_eq!(
-            normalizer().normalize_camel_case("item1Name"),
-            "айтем один нейм"
-        );
-    }
-
-    // --- PascalCase ---
-
-    #[test]
-    fn pascal_user_service() {
-        assert_eq!(
-            normalizer().normalize_camel_case("UserService"),
-            "юзер сервис"
-        );
-    }
-
-    #[test]
-    fn pascal_data_repository() {
-        assert_eq!(
-            normalizer().normalize_camel_case("DataRepository"),
-            "дата репозитори"
-        );
-    }
-
-    #[test]
-    fn pascal_http_client() {
-        assert_eq!(
-            normalizer().normalize_camel_case("HttpClient"),
-            "эйч ти ти пи клиент"
-        );
-    }
-
-    #[test]
-    fn pascal_api_controller() {
-        assert_eq!(
-            normalizer().normalize_camel_case("ApiController"),
-            "эй пи ай контроллер"
-        );
-    }
-
-    #[test]
-    fn pascal_database_connection() {
-        assert_eq!(
-            normalizer().normalize_camel_case("DatabaseConnection"),
-            "датабейз коннекшн"
-        );
-    }
-
-    #[test]
-    fn pascal_event_handler() {
-        assert_eq!(
-            normalizer().normalize_camel_case("EventHandler"),
-            "ивент хендлер"
-        );
-    }
-
-    #[test]
-    fn pascal_file_manager() {
-        assert_eq!(
-            normalizer().normalize_camel_case("FileManager"),
-            "файл менеджер"
-        );
-    }
-
-    #[test]
-    fn pascal_config_loader() {
-        assert_eq!(
-            normalizer().normalize_camel_case("ConfigLoader"),
-            "конфиг лоудер"
-        );
-    }
-
-    // --- SnakeCase ---
-
-    #[test]
-    fn snake_get_user_data() {
-        assert_eq!(
-            normalizer().normalize_snake_case("get_user_data"),
-            "гет юзер дата"
-        );
-    }
-
-    #[test]
-    fn snake_my_variable() {
-        assert_eq!(
-            normalizer().normalize_snake_case("my_variable"),
-            "май вэриабл"
-        );
-    }
-
-    #[test]
-    fn snake_is_valid() {
-        assert_eq!(normalizer().normalize_snake_case("is_valid"), "из вэлид");
-    }
-
-    #[test]
-    fn snake_has_value() {
-        assert_eq!(normalizer().normalize_snake_case("has_value"), "хэз вэлью");
-    }
-
-    #[test]
-    fn snake_on_click() {
-        assert_eq!(normalizer().normalize_snake_case("on_click"), "он клик");
-    }
-
-    #[test]
-    fn snake_handle_submit() {
-        assert_eq!(
-            normalizer().normalize_snake_case("handle_submit"),
-            "хендл сабмит"
-        );
-    }
-
-    #[test]
-    fn snake_fetch_data() {
-        assert_eq!(normalizer().normalize_snake_case("fetch_data"), "фетч дата");
-    }
-
-    #[test]
-    fn snake_parse_json() {
-        assert_eq!(
-            normalizer().normalize_snake_case("parse_json"),
-            "парс джейсон"
-        );
-    }
-
-    #[test]
-    fn snake_get_user_data_from_server() {
-        assert_eq!(
-            normalizer().normalize_snake_case("get_user_data_from_server"),
-            "гет юзер дата фром сервер"
-        );
-    }
-
-    #[test]
-    fn snake_calculate_total_price() {
-        assert_eq!(
-            normalizer().normalize_snake_case("calculate_total_price"),
-            "калькулейт тотал прайс"
-        );
-    }
-
-    #[test]
-    fn snake_user_2_data() {
-        assert_eq!(
-            normalizer().normalize_snake_case("user_2_data"),
-            "юзер два дата"
-        );
-    }
-
-    #[test]
-    fn snake_item_1_name() {
-        assert_eq!(
-            normalizer().normalize_snake_case("item_1_name"),
-            "айтем один нейм"
-        );
-    }
-
-    #[test]
-    fn snake_dunder_init() {
-        assert_eq!(normalizer().normalize_snake_case("__init__"), "инит");
-    }
-
-    #[test]
-    fn snake_dunder_str() {
-        assert_eq!(normalizer().normalize_snake_case("__str__"), "стр");
-    }
-
-    #[test]
-    fn snake_dunder_repr() {
-        assert_eq!(normalizer().normalize_snake_case("__repr__"), "репр");
-    }
-
-    #[test]
-    fn snake_dunder_len() {
-        assert_eq!(normalizer().normalize_snake_case("__len__"), "лен");
-    }
-
-    #[test]
-    fn snake_private_method() {
-        assert_eq!(
-            normalizer().normalize_snake_case("_private_method"),
-            "прайвит метод"
-        );
-    }
-
-    #[test]
-    fn snake_private_attr() {
-        assert_eq!(
-            normalizer().normalize_snake_case("__private_attr"),
-            "прайвит аттр"
-        );
-    }
-
-    // --- KebabCase ---
-
-    #[test]
-    fn kebab_my_component() {
-        assert_eq!(
-            normalizer().normalize_kebab_case("my-component"),
-            "май компонент"
-        );
-    }
-
-    #[test]
-    fn kebab_button_primary() {
-        assert_eq!(
-            normalizer().normalize_kebab_case("button-primary"),
-            "баттон праймари"
-        );
-    }
-
-    #[test]
-    fn kebab_nav_bar() {
-        assert_eq!(normalizer().normalize_kebab_case("nav-bar"), "нав бар");
-    }
-
-    #[test]
-    fn kebab_side_menu() {
-        assert_eq!(normalizer().normalize_kebab_case("side-menu"), "сайд меню");
-    }
-
-    #[test]
-    fn kebab_header_logo() {
-        assert_eq!(
-            normalizer().normalize_kebab_case("header-logo"),
-            "хедер лого"
-        );
-    }
-
-    #[test]
-    fn kebab_footer_links() {
-        assert_eq!(
-            normalizer().normalize_kebab_case("footer-links"),
-            "футер линкс"
-        );
-    }
-
-    #[test]
-    fn kebab_output_dir() {
-        assert_eq!(
-            normalizer().normalize_kebab_case("output-dir"),
-            "аутпут дир"
-        );
-    }
-
-    #[test]
-    fn kebab_config_file() {
-        assert_eq!(
-            normalizer().normalize_kebab_case("config-file"),
-            "конфиг файл"
-        );
-    }
-
-    #[test]
-    fn kebab_no_cache() {
-        assert_eq!(normalizer().normalize_kebab_case("no-cache"), "ноу кэш");
-    }
-
-    #[test]
-    fn kebab_dry_run() {
-        assert_eq!(normalizer().normalize_kebab_case("dry-run"), "драй ран");
-    }
-
-    #[test]
-    fn kebab_my_awesome_package() {
-        assert_eq!(
-            normalizer().normalize_kebab_case("my-awesome-package"),
-            "май авесом пакет"
-        );
-    }
-
-    #[test]
-    fn kebab_react_dom() {
-        assert_eq!(normalizer().normalize_kebab_case("react-dom"), "риакт дом");
-    }
-
-    #[test]
-    fn kebab_vue_router() {
-        assert_eq!(
-            normalizer().normalize_kebab_case("vue-router"),
-            "вью роутер"
-        );
-    }
-
-    // --- SCREAMING_SNAKE_CASE (MixedIdentifiers) ---
-
-    #[test]
-    fn screaming_max_value() {
-        assert_eq!(normalizer().normalize_snake_case("MAX_VALUE"), "макс вэлью");
-    }
-
-    #[test]
-    fn screaming_default_timeout() {
-        assert_eq!(
-            normalizer().normalize_snake_case("DEFAULT_TIMEOUT"),
-            "дефолт таймаут"
-        );
-    }
-
-    #[test]
-    fn screaming_api_base_url() {
-        assert_eq!(
-            normalizer().normalize_snake_case("API_BASE_URL"),
-            "эй пи ай бейз ю ар эл"
-        );
+    #[test_case("my-component" => "май компонент"; "my_component")]
+    #[test_case("button-primary" => "баттон праймари"; "button_primary")]
+    #[test_case("nav-bar" => "нав бар"; "nav_bar")]
+    #[test_case("side-menu" => "сайд меню"; "side_menu")]
+    #[test_case("header-logo" => "хедер лого"; "header_logo")]
+    #[test_case("footer-links" => "футер линкс"; "footer_links")]
+    #[test_case("output-dir" => "аутпут дир"; "output_dir")]
+    #[test_case("config-file" => "конфиг файл"; "config_file")]
+    #[test_case("no-cache" => "ноу кэш"; "no_cache")]
+    #[test_case("dry-run" => "драй ран"; "dry_run")]
+    #[test_case("my-awesome-package" => "май авесом пакет"; "my_awesome_package")]
+    #[test_case("react-dom" => "риакт дом"; "react_dom")]
+    #[test_case("vue-router" => "вью роутер"; "vue_router")]
+    fn kebab_case(input: &str) -> String {
+        normalizer().normalize_kebab_case(input)
     }
 }
