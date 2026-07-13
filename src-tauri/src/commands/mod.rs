@@ -1062,13 +1062,7 @@ fn apply_config_patch(config: &mut UIConfig, patch: UIConfigPatch) {
 #[cfg(test)]
 mod synthesis_tests {
     use super::*;
-    use tempfile::TempDir;
-
-    fn make_storage() -> (StorageService, TempDir) {
-        let dir = TempDir::new().unwrap();
-        let svc = StorageService::with_cache_dir(dir.path().to_path_buf()).unwrap();
-        (svc, dir)
-    }
+    use crate::storage::test_util::make_service;
 
     #[tokio::test]
     async fn run_normalization_returns_normalized_text_and_mapping() {
@@ -1090,7 +1084,7 @@ mod synthesis_tests {
 
     #[tokio::test]
     async fn finalize_audio_files_falls_back_to_wav_when_opus_encode_fails() {
-        let (storage, _dir) = make_storage();
+        let (storage, _dir) = make_service();
         let entry = storage.add_entry("text".to_string()).unwrap();
         let id = entry.id;
 
