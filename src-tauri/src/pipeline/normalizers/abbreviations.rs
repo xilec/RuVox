@@ -164,552 +164,145 @@ pub fn as_word() -> &'static HashMap<&'static str, &'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test_case::test_case;
 
     fn normalizer() -> AbbreviationNormalizer {
         AbbreviationNormalizer::new()
     }
 
-    // --- AS_WORD tests ---
-
-    #[test]
-    fn test_json_as_word() {
-        assert_eq!(normalizer().normalize("JSON"), "джейсон");
-    }
-
-    #[test]
-    fn test_yaml_as_word() {
-        assert_eq!(normalizer().normalize("YAML"), "ямл");
-    }
-
-    #[test]
-    fn test_toml_as_word() {
-        assert_eq!(normalizer().normalize("TOML"), "томл");
-    }
-
-    #[test]
-    fn test_rest_as_word() {
-        assert_eq!(normalizer().normalize("REST"), "рест");
-    }
-
-    #[test]
-    fn test_ajax_as_word() {
-        assert_eq!(normalizer().normalize("AJAX"), "эйджакс");
-    }
-
-    #[test]
-    fn test_crud_as_word() {
-        assert_eq!(normalizer().normalize("CRUD"), "крад");
-    }
-
-    #[test]
-    fn test_cors_as_word() {
-        assert_eq!(normalizer().normalize("CORS"), "корс");
-    }
-
-    #[test]
-    fn test_oauth_as_word() {
-        assert_eq!(normalizer().normalize("OAuth"), "о ауз");
-    }
-
-    #[test]
-    fn test_gif_as_word() {
-        assert_eq!(normalizer().normalize("GIF"), "гиф");
-    }
-
-    #[test]
-    fn test_jpeg_as_word() {
-        assert_eq!(normalizer().normalize("JPEG"), "джейпег");
-    }
-
-    #[test]
-    fn test_png_spelled_out() {
-        // PNG is not in AS_WORD, so it gets spelled out
-        assert_eq!(normalizer().normalize("PNG"), "пи эн джи");
-    }
-
-    #[test]
-    fn test_ram_as_word() {
-        assert_eq!(normalizer().normalize("RAM"), "рам");
-    }
-
-    #[test]
-    fn test_rom_as_word() {
-        assert_eq!(normalizer().normalize("ROM"), "ром");
-    }
-
-    #[test]
-    fn test_lan_as_word() {
-        assert_eq!(normalizer().normalize("LAN"), "лан");
-    }
-
-    #[test]
-    fn test_wan_as_word() {
-        assert_eq!(normalizer().normalize("WAN"), "ван");
-    }
-
-    #[test]
-    fn test_spa_as_word() {
-        assert_eq!(normalizer().normalize("SPA"), "спа");
-    }
-
-    #[test]
-    fn test_dom_as_word() {
-        assert_eq!(normalizer().normalize("DOM"), "дом");
-    }
-
-    #[test]
-    fn test_gui_as_word() {
-        assert_eq!(normalizer().normalize("GUI"), "гуи");
-    }
-
-    #[test]
-    fn test_imap_as_word() {
-        assert_eq!(normalizer().normalize("IMAP"), "ай мап");
-    }
-
-    #[test]
-    fn test_pop_as_word() {
-        assert_eq!(normalizer().normalize("POP"), "поп");
-    }
-
-    // --- Spelled out tests ---
-
-    #[test]
-    fn test_http_spelled_out() {
-        assert_eq!(normalizer().normalize("HTTP"), "эйч ти ти пи");
-    }
-
-    #[test]
-    fn test_https_spelled_out() {
-        assert_eq!(normalizer().normalize("HTTPS"), "эйч ти ти пи эс");
-    }
-
-    #[test]
-    fn test_html_spelled_out() {
-        assert_eq!(normalizer().normalize("HTML"), "эйч ти эм эл");
-    }
-
-    #[test]
-    fn test_css_spelled_out() {
-        assert_eq!(normalizer().normalize("CSS"), "си эс эс");
-    }
-
-    #[test]
-    fn test_xml_spelled_out() {
-        assert_eq!(normalizer().normalize("XML"), "экс эм эл");
-    }
-
-    #[test]
-    fn test_url_spelled_out() {
-        assert_eq!(normalizer().normalize("URL"), "ю ар эл");
-    }
-
-    #[test]
-    fn test_uri_spelled_out() {
-        assert_eq!(normalizer().normalize("URI"), "ю ар ай");
-    }
-
-    #[test]
-    fn test_api_spelled_out() {
-        assert_eq!(normalizer().normalize("API"), "эй пи ай");
-    }
-
-    #[test]
-    fn test_sdk_spelled_out() {
-        assert_eq!(normalizer().normalize("SDK"), "эс ди кей");
-    }
-
-    #[test]
-    fn test_cli_spelled_out() {
-        assert_eq!(normalizer().normalize("CLI"), "си эл ай");
-    }
-
-    #[test]
-    fn test_ide_spelled_out() {
-        assert_eq!(normalizer().normalize("IDE"), "ай ди и");
-    }
-
-    #[test]
-    fn test_ssl_spelled_out() {
-        assert_eq!(normalizer().normalize("SSL"), "эс эс эл");
-    }
-
-    #[test]
-    fn test_tls_spelled_out() {
-        assert_eq!(normalizer().normalize("TLS"), "ти эл эс");
-    }
-
-    #[test]
-    fn test_ssh_spelled_out() {
-        assert_eq!(normalizer().normalize("SSH"), "эс эс эйч");
-    }
-
-    #[test]
-    fn test_vpn_spelled_out() {
-        assert_eq!(normalizer().normalize("VPN"), "ви пи эн");
-    }
-
-    #[test]
-    fn test_jwt_spelled_out() {
-        assert_eq!(normalizer().normalize("JWT"), "джей дабл ю ти");
-    }
-
-    #[test]
-    fn test_xss_spelled_out() {
-        assert_eq!(normalizer().normalize("XSS"), "экс эс эс");
-    }
-
-    #[test]
-    fn test_csrf_spelled_out() {
-        assert_eq!(normalizer().normalize("CSRF"), "си эс ар эф");
-    }
-
-    #[test]
-    fn test_tcp_spelled_out() {
-        assert_eq!(normalizer().normalize("TCP"), "ти си пи");
-    }
-
-    #[test]
-    fn test_udp_spelled_out() {
-        assert_eq!(normalizer().normalize("UDP"), "ю ди пи");
-    }
-
-    #[test]
-    fn test_ftp_spelled_out() {
-        assert_eq!(normalizer().normalize("FTP"), "эф ти пи");
-    }
-
-    #[test]
-    fn test_dns_spelled_out() {
-        assert_eq!(normalizer().normalize("DNS"), "ди эн эс");
-    }
-
-    #[test]
-    fn test_smtp_spelled_out() {
-        assert_eq!(normalizer().normalize("SMTP"), "эс эм ти пи");
-    }
-
-    #[test]
-    fn test_ip_spelled_out() {
-        assert_eq!(normalizer().normalize("IP"), "ай пи");
-    }
-
-    #[test]
-    fn test_cpu_spelled_out() {
-        assert_eq!(normalizer().normalize("CPU"), "си пи ю");
-    }
-
-    #[test]
-    fn test_gpu_spelled_out() {
-        assert_eq!(normalizer().normalize("GPU"), "джи пи ю");
-    }
-
-    #[test]
-    fn test_ssd_spelled_out() {
-        assert_eq!(normalizer().normalize("SSD"), "эс эс ди");
-    }
-
-    #[test]
-    fn test_hdd_spelled_out() {
-        assert_eq!(normalizer().normalize("HDD"), "эйч ди ди");
-    }
-
-    #[test]
-    fn test_usb_spelled_out() {
-        assert_eq!(normalizer().normalize("USB"), "ю эс би");
-    }
-
-    #[test]
-    fn test_hdmi_spelled_out() {
-        assert_eq!(normalizer().normalize("HDMI"), "эйч ди эм ай");
-    }
-
-    #[test]
-    fn test_ui_spelled_out() {
-        assert_eq!(normalizer().normalize("UI"), "ю ай");
-    }
-
-    #[test]
-    fn test_ux_spelled_out() {
-        assert_eq!(normalizer().normalize("UX"), "ю экс");
-    }
-
-    #[test]
-    fn test_ci_spelled_out() {
-        assert_eq!(normalizer().normalize("CI"), "си ай");
-    }
-
-    #[test]
-    fn test_cd_spelled_out() {
-        assert_eq!(normalizer().normalize("CD"), "си ди");
-    }
-
-    #[test]
-    fn test_ai_spelled_out() {
-        assert_eq!(normalizer().normalize("AI"), "эй ай");
-    }
-
-    #[test]
-    fn test_ml_spelled_out() {
-        assert_eq!(normalizer().normalize("ML"), "эм эл");
-    }
-
-    #[test]
-    fn test_nlp_spelled_out() {
-        assert_eq!(normalizer().normalize("NLP"), "эн эл пи");
-    }
-
-    #[test]
-    fn test_cv_spelled_out() {
-        assert_eq!(normalizer().normalize("CV"), "си ви");
-    }
-
-    #[test]
-    fn test_sql_spelled_out() {
-        assert_eq!(normalizer().normalize("SQL"), "эс кью эл");
-    }
-
-    #[test]
-    fn test_orm_spelled_out() {
-        assert_eq!(normalizer().normalize("ORM"), "о ар эм");
-    }
-
-    #[test]
-    fn test_mvc_spelled_out() {
-        assert_eq!(normalizer().normalize("MVC"), "эм ви си");
-    }
-
-    #[test]
-    fn test_mvp_spelled_out() {
-        assert_eq!(normalizer().normalize("MVP"), "эм ви пи");
-    }
-
-    #[test]
-    fn test_iot_special_case() {
-        assert_eq!(normalizer().normalize("IoT"), "ай о ти");
-    }
-
-    #[test]
-    fn test_ssr_spelled_out() {
-        assert_eq!(normalizer().normalize("SSR"), "эс эс ар");
-    }
-
-    #[test]
-    fn test_ssg_spelled_out() {
-        assert_eq!(normalizer().normalize("SSG"), "эс эс джи");
-    }
-
-    #[test]
-    fn test_csr_spelled_out() {
-        assert_eq!(normalizer().normalize("CSR"), "си эс ар");
-    }
-
-    #[test]
-    fn test_pwa_spelled_out() {
-        assert_eq!(normalizer().normalize("PWA"), "пи дабл ю эй");
-    }
-
-    #[test]
-    fn test_svg_spelled_out() {
-        assert_eq!(normalizer().normalize("SVG"), "эс ви джи");
-    }
-
-    // --- Letter map tests ---
-
-    #[test]
-    fn test_letter_a() {
-        assert_eq!(normalizer().normalize("A"), "эй");
-    }
-
-    #[test]
-    fn test_letter_b() {
-        assert_eq!(normalizer().normalize("B"), "би");
-    }
-
-    #[test]
-    fn test_letter_c() {
-        assert_eq!(normalizer().normalize("C"), "си");
-    }
-
-    #[test]
-    fn test_letter_d() {
-        assert_eq!(normalizer().normalize("D"), "ди");
-    }
-
-    #[test]
-    fn test_letter_e() {
-        assert_eq!(normalizer().normalize("E"), "и");
-    }
-
-    #[test]
-    fn test_letter_f() {
-        assert_eq!(normalizer().normalize("F"), "эф");
-    }
-
-    #[test]
-    fn test_letter_g() {
-        assert_eq!(normalizer().normalize("G"), "джи");
-    }
-
-    #[test]
-    fn test_letter_h() {
-        assert_eq!(normalizer().normalize("H"), "эйч");
-    }
-
-    #[test]
-    fn test_letter_i() {
-        assert_eq!(normalizer().normalize("I"), "ай");
-    }
-
-    #[test]
-    fn test_letter_j() {
-        assert_eq!(normalizer().normalize("J"), "джей");
-    }
-
-    #[test]
-    fn test_letter_k() {
-        assert_eq!(normalizer().normalize("K"), "кей");
-    }
-
-    #[test]
-    fn test_letter_l() {
-        assert_eq!(normalizer().normalize("L"), "эл");
-    }
-
-    #[test]
-    fn test_letter_m() {
-        assert_eq!(normalizer().normalize("M"), "эм");
-    }
-
-    #[test]
-    fn test_letter_n() {
-        assert_eq!(normalizer().normalize("N"), "эн");
-    }
-
-    #[test]
-    fn test_letter_o() {
-        assert_eq!(normalizer().normalize("O"), "о");
-    }
-
-    #[test]
-    fn test_letter_p() {
-        assert_eq!(normalizer().normalize("P"), "пи");
-    }
-
-    #[test]
-    fn test_letter_q() {
-        assert_eq!(normalizer().normalize("Q"), "кью");
-    }
-
-    #[test]
-    fn test_letter_r() {
-        assert_eq!(normalizer().normalize("R"), "ар");
-    }
-
-    #[test]
-    fn test_letter_s() {
-        assert_eq!(normalizer().normalize("S"), "эс");
-    }
-
-    #[test]
-    fn test_letter_t() {
-        assert_eq!(normalizer().normalize("T"), "ти");
-    }
-
-    #[test]
-    fn test_letter_u() {
-        assert_eq!(normalizer().normalize("U"), "ю");
-    }
-
-    #[test]
-    fn test_letter_v() {
-        assert_eq!(normalizer().normalize("V"), "ви");
-    }
-
-    #[test]
-    fn test_letter_w() {
-        assert_eq!(normalizer().normalize("W"), "дабл ю");
-    }
-
-    #[test]
-    fn test_letter_x() {
-        assert_eq!(normalizer().normalize("X"), "экс");
-    }
-
-    #[test]
-    fn test_letter_y() {
-        assert_eq!(normalizer().normalize("Y"), "уай");
-    }
-
-    #[test]
-    fn test_letter_z() {
-        assert_eq!(normalizer().normalize("Z"), "зед");
-    }
-
-    // --- Case insensitivity tests ---
-
-    #[test]
-    fn test_json_lowercase() {
-        assert_eq!(normalizer().normalize("json"), "джейсон");
-    }
-
-    #[test]
-    fn test_json_mixed_case() {
-        assert_eq!(normalizer().normalize("Json"), "джейсон");
-    }
-
-    #[test]
-    fn test_api_lowercase() {
-        assert_eq!(normalizer().normalize("api"), "эй пи ай");
-    }
-
-    #[test]
-    fn test_api_mixed_case() {
-        assert_eq!(normalizer().normalize("Api"), "эй пи ай");
-    }
-
-    // --- Unknown abbreviations ---
-
-    #[test]
-    fn test_xyz_spelled_out() {
-        assert_eq!(normalizer().normalize("XYZ"), "экс уай зед");
-    }
-
-    #[test]
-    fn test_abc_spelled_out() {
-        assert_eq!(normalizer().normalize("ABC"), "эй би си");
-    }
-
-    #[test]
-    fn test_qrs_spelled_out() {
-        assert_eq!(normalizer().normalize("QRS"), "кью ар эс");
-    }
-
-    #[test]
-    fn test_wxyz_spelled_out() {
-        assert_eq!(normalizer().normalize("WXYZ"), "дабл ю экс уай зед");
-    }
-
-    // --- Mixed case special cases ---
-
-    #[test]
-    fn test_ios_special() {
-        assert_eq!(normalizer().normalize("iOS"), "ай оу эс");
-    }
-
-    #[test]
-    fn test_macos_special() {
-        assert_eq!(normalizer().normalize("macOS"), "мак оу эс");
-    }
-
-    #[test]
-    fn test_devops_as_word() {
-        assert_eq!(normalizer().normalize("DevOps"), "девопс");
-    }
-
-    #[test]
-    fn test_graphql_special() {
-        assert_eq!(normalizer().normalize("GraphQL"), "граф кью эл");
+    #[test_case("JSON" => "джейсон"; "json")]
+    #[test_case("YAML" => "ямл"; "yaml")]
+    #[test_case("TOML" => "томл"; "toml")]
+    #[test_case("REST" => "рест"; "rest")]
+    #[test_case("AJAX" => "эйджакс"; "ajax")]
+    #[test_case("CRUD" => "крад"; "crud")]
+    #[test_case("CORS" => "корс"; "cors")]
+    #[test_case("OAuth" => "о ауз"; "oauth")]
+    #[test_case("GIF" => "гиф"; "gif")]
+    #[test_case("JPEG" => "джейпег"; "jpeg")]
+    #[test_case("PNG" => "пи эн джи"; "png_spelled_out")]
+    #[test_case("RAM" => "рам"; "ram")]
+    #[test_case("ROM" => "ром"; "rom")]
+    #[test_case("LAN" => "лан"; "lan")]
+    #[test_case("WAN" => "ван"; "wan")]
+    #[test_case("SPA" => "спа"; "spa")]
+    #[test_case("DOM" => "дом"; "dom")]
+    #[test_case("GUI" => "гуи"; "gui")]
+    #[test_case("IMAP" => "ай мап"; "imap")]
+    #[test_case("POP" => "поп"; "pop")]
+    fn as_word_lookup(input: &str) -> String {
+        normalizer().normalize(input)
+    }
+
+    #[test_case("HTTP" => "эйч ти ти пи"; "http")]
+    #[test_case("HTTPS" => "эйч ти ти пи эс"; "https")]
+    #[test_case("HTML" => "эйч ти эм эл"; "html")]
+    #[test_case("CSS" => "си эс эс"; "css")]
+    #[test_case("XML" => "экс эм эл"; "xml")]
+    #[test_case("URL" => "ю ар эл"; "url")]
+    #[test_case("URI" => "ю ар ай"; "uri")]
+    #[test_case("API" => "эй пи ай"; "api")]
+    #[test_case("SDK" => "эс ди кей"; "sdk")]
+    #[test_case("CLI" => "си эл ай"; "cli")]
+    #[test_case("IDE" => "ай ди и"; "ide")]
+    #[test_case("SSL" => "эс эс эл"; "ssl")]
+    #[test_case("TLS" => "ти эл эс"; "tls")]
+    #[test_case("SSH" => "эс эс эйч"; "ssh")]
+    #[test_case("VPN" => "ви пи эн"; "vpn")]
+    #[test_case("JWT" => "джей дабл ю ти"; "jwt")]
+    #[test_case("XSS" => "экс эс эс"; "xss")]
+    #[test_case("CSRF" => "си эс ар эф"; "csrf")]
+    #[test_case("TCP" => "ти си пи"; "tcp")]
+    #[test_case("UDP" => "ю ди пи"; "udp")]
+    #[test_case("FTP" => "эф ти пи"; "ftp")]
+    #[test_case("DNS" => "ди эн эс"; "dns")]
+    #[test_case("SMTP" => "эс эм ти пи"; "smtp")]
+    #[test_case("IP" => "ай пи"; "ip")]
+    #[test_case("CPU" => "си пи ю"; "cpu")]
+    #[test_case("GPU" => "джи пи ю"; "gpu")]
+    #[test_case("SSD" => "эс эс ди"; "ssd")]
+    #[test_case("HDD" => "эйч ди ди"; "hdd")]
+    #[test_case("USB" => "ю эс би"; "usb")]
+    #[test_case("HDMI" => "эйч ди эм ай"; "hdmi")]
+    #[test_case("UI" => "ю ай"; "ui")]
+    #[test_case("UX" => "ю экс"; "ux")]
+    #[test_case("CI" => "си ай"; "ci")]
+    #[test_case("CD" => "си ди"; "cd")]
+    #[test_case("AI" => "эй ай"; "ai")]
+    #[test_case("ML" => "эм эл"; "ml")]
+    #[test_case("NLP" => "эн эл пи"; "nlp")]
+    #[test_case("CV" => "си ви"; "cv")]
+    #[test_case("SQL" => "эс кью эл"; "sql")]
+    #[test_case("ORM" => "о ар эм"; "orm")]
+    #[test_case("MVC" => "эм ви си"; "mvc")]
+    #[test_case("MVP" => "эм ви пи"; "mvp")]
+    #[test_case("IoT" => "ай о ти"; "iot_special_case")]
+    #[test_case("SSR" => "эс эс ар"; "ssr")]
+    #[test_case("SSG" => "эс эс джи"; "ssg")]
+    #[test_case("CSR" => "си эс ар"; "csr")]
+    #[test_case("PWA" => "пи дабл ю эй"; "pwa")]
+    #[test_case("SVG" => "эс ви джи"; "svg")]
+    fn spelled_out(input: &str) -> String {
+        normalizer().normalize(input)
+    }
+
+    #[test_case("A" => "эй"; "a")]
+    #[test_case("B" => "би"; "b")]
+    #[test_case("C" => "си"; "c")]
+    #[test_case("D" => "ди"; "d")]
+    #[test_case("E" => "и"; "e")]
+    #[test_case("F" => "эф"; "f")]
+    #[test_case("G" => "джи"; "g")]
+    #[test_case("H" => "эйч"; "h")]
+    #[test_case("I" => "ай"; "i")]
+    #[test_case("J" => "джей"; "j")]
+    #[test_case("K" => "кей"; "k")]
+    #[test_case("L" => "эл"; "l")]
+    #[test_case("M" => "эм"; "m")]
+    #[test_case("N" => "эн"; "n")]
+    #[test_case("O" => "о"; "o")]
+    #[test_case("P" => "пи"; "p")]
+    #[test_case("Q" => "кью"; "q")]
+    #[test_case("R" => "ар"; "r")]
+    #[test_case("S" => "эс"; "s")]
+    #[test_case("T" => "ти"; "t")]
+    #[test_case("U" => "ю"; "u")]
+    #[test_case("V" => "ви"; "v")]
+    #[test_case("W" => "дабл ю"; "w")]
+    #[test_case("X" => "экс"; "x")]
+    #[test_case("Y" => "уай"; "y")]
+    #[test_case("Z" => "зед"; "z")]
+    fn letter(input: &str) -> String {
+        normalizer().normalize(input)
+    }
+
+    #[test_case("json" => "джейсон"; "json_lowercase")]
+    #[test_case("Json" => "джейсон"; "json_mixed_case")]
+    #[test_case("api" => "эй пи ай"; "api_lowercase")]
+    #[test_case("Api" => "эй пи ай"; "api_mixed_case")]
+    fn case_insensitive(input: &str) -> String {
+        normalizer().normalize(input)
+    }
+
+    #[test_case("XYZ" => "экс уай зед"; "xyz")]
+    #[test_case("ABC" => "эй би си"; "abc")]
+    #[test_case("QRS" => "кью ар эс"; "qrs")]
+    #[test_case("WXYZ" => "дабл ю экс уай зед"; "wxyz")]
+    fn unknown_abbreviation(input: &str) -> String {
+        normalizer().normalize(input)
+    }
+
+    #[test_case("iOS" => "ай оу эс"; "ios")]
+    #[test_case("macOS" => "мак оу эс"; "macos")]
+    #[test_case("DevOps" => "девопс"; "devops")]
+    #[test_case("GraphQL" => "граф кью эл"; "graphql")]
+    fn special_case(input: &str) -> String {
+        normalizer().normalize(input)
+    }
+
+    #[test_case("" => ""; "empty_string")]
+    fn edge_case(input: &str) -> String {
+        normalizer().normalize(input)
     }
 
     // --- Public accessors ---
@@ -727,12 +320,5 @@ mod tests {
         let map = as_word();
         assert_eq!(map.get("json"), Some(&"джейсон"));
         assert_eq!(map.get("api"), None); // api is spelled out, not in AS_WORD
-    }
-
-    // --- Edge cases ---
-
-    #[test]
-    fn test_empty_string() {
-        assert_eq!(normalizer().normalize(""), "");
     }
 }
