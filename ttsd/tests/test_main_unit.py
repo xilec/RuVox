@@ -237,20 +237,16 @@ def test_main_invalid_json_returns_bad_input(monkeypatch, use_engine):
     assert responses[0]["error"] == "bad_input"
 
 
-def test_main_unknown_cmd(monkeypatch, use_engine):
+def test_main_unknown_cmd_rejected_as_bad_input(monkeypatch, use_engine):
+    # RequestAdapter's discriminated union rejects an unknown cmd during
+    # validation, so it surfaces as bad_input without ever reaching the
+    # defensive else-branch in the dispatch loop.
     use_engine(FakeEngine())
-
-    # RequestAdapter's discriminated union cannot produce an unknown cmd, so we
-    # stub validate_json to return a request object with an out-of-range cmd,
-    # which is the only way to reach the else-branch.
-    fake_adapter = SimpleNamespace(validate_json=lambda line: SimpleNamespace(cmd="bogus"))
-    monkeypatch.setattr(ttsd_main, "RequestAdapter", fake_adapter)
-    stdin = io.StringIO('{"cmd": "bogus"}\n')
+    stdin = io.StringIO('{"cmd": "bogus"}\n{"cmd": "shutdown"}\n')
     rc, responses = _run_main(monkeypatch, stdin)
     assert rc == 0
     assert responses[0]["ok"] is False
     assert responses[0]["error"] == "bad_input"
-    assert "unknown cmd: bogus" in responses[0]["message"]
 
 
 class _RaisingStdin:

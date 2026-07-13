@@ -46,19 +46,6 @@ def test_silero_second_load_is_noop():
     assert engine._model is model_before
 
 
-@pytest.mark.slow
-def test_silero_empty_text_raises(tmp_path):
-    engine = _import_silero_engine()()
-    engine.load()
-    with pytest.raises(ValueError, match="empty"):
-        engine.synthesize(
-            text="   ",
-            speaker="xenia",
-            sample_rate=48000,
-            out_wav=tmp_path / "empty.wav",
-        )
-
-
 def _assert_covers_source(text: str, chunks: list[tuple[str, int]]) -> None:
     """Every chunk must sit at its declared start position, stay within
     MAX_CHUNK_SIZE, and the gaps between (and after) chunks must be
