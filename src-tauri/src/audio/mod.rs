@@ -193,82 +193,59 @@ fn build_opus_tags() -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::test_util::write_sine_wav;
 
-    /// Write a 1-second mono 32-bit-float sine WAV at `rate`. Used by encode
-    /// tests below.
-    fn write_sine_wav(path: &Path, rate: u32, freq_hz: f32) {
-        let spec = hound::WavSpec {
-            channels: 1,
-            sample_rate: rate,
-            bits_per_sample: 32,
-            sample_format: hound::SampleFormat::Float,
-        };
-        let mut writer = hound::WavWriter::create(path, spec).expect("create wav");
-        for i in 0..rate as usize {
-            let t = i as f32 / rate as f32;
-            writer
-                .write_sample((2.0 * std::f32::consts::PI * freq_hz * t).sin() * 0.25)
-                .expect("write sample");
-        }
-        writer.finalize().expect("finalize wav");
-    }
-
-    /// Encode a 48 kHz / 1 s sine and confirm the result is a non-empty Ogg
-    /// stream that announces 48 kHz in its OpusHead.
-    #[test]
-    fn encode_48khz_wav_produces_valid_opus() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let wav_path = dir.path().join("in.wav");
-        let opus_path = dir.path().join("out.opus");
-
-        write_sine_wav(&wav_path, 48_000, 440.0);
-        encode_wav_to_opus(&wav_path, &opus_path).expect("encode");
-
-        let bytes = std::fs::read(&opus_path).expect("read opus");
-        assert!(bytes.len() > 1000, "opus too small: {}", bytes.len());
+    /// Read the `input_sample_rate` field out of an encoded Ogg-Opus file's
+    /// OpusHead packet. The packet is: "OggS" page header (27+ bytes) then
+    /// segment table, then payload starting with "OpusHead"; the rate is a
+    /// little-endian u32 at offset +12 from that magic (bytes 12-15 of the
+    /// 19-byte OpusHead payload, RFC 7845 §5.1).
+    fn read_opus_head_rate(opus_path: &Path) -> u32 {
+        let bytes = std::fs::read(opus_path).expect("read opus");
         assert_eq!(&bytes[..4], b"OggS", "not an Ogg stream");
-        // OpusHead packet: "OggS" page header (27+) then segment table, then
-        // payload starting with "OpusHead". Look for the magic and read the
-        // input-sample-rate field at offset +12 from "OpusHead" (bytes 12-15
-        // of the 19-byte header).
         let head_off = bytes
             .windows(8)
             .position(|w| w == b"OpusHead")
             .expect("OpusHead present");
-        let rate = u32::from_le_bytes([
+        u32::from_le_bytes([
             bytes[head_off + 12],
             bytes[head_off + 13],
             bytes[head_off + 14],
             bytes[head_off + 15],
-        ]);
-        assert_eq!(rate, 48_000, "OpusHead input_sample_rate mismatch");
+        ])
     }
 
-    /// Same as above but at 24 kHz — the rate the prior 48-kHz-only encoder
-    /// would have rejected. Verifies the multi-rate path end-to-end.
+    /// Every Opus-native sample rate (RFC 6716 §2, `SUPPORTED_SAMPLE_RATES`)
+    /// must round-trip through the encoder: a non-empty Ogg stream whose
+    /// OpusHead records the input rate. Table-driven so the 5 rates share one
+    /// assertion path instead of one copy-pasted test per rate.
     #[test]
-    fn encode_24khz_wav_produces_valid_opus() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let wav_path = dir.path().join("in.wav");
-        let opus_path = dir.path().join("out.opus");
+    fn encode_wav_produces_valid_opus_at_each_supported_rate() {
+        for rate in SUPPORTED_SAMPLE_RATES {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let wav_path = dir.path().join("in.wav");
+            let opus_path = dir.path().join("out.opus");
 
-        write_sine_wav(&wav_path, 24_000, 440.0);
-        encode_wav_to_opus(&wav_path, &opus_path).expect("encode");
+            write_sine_wav(&wav_path, rate, 440.0, 0.25);
+            encode_wav_to_opus(&wav_path, &opus_path)
+                .unwrap_or_else(|e| panic!("encode failed at {rate} Hz: {e}"));
 
-        let bytes = std::fs::read(&opus_path).expect("read opus");
-        assert!(bytes.len() > 500, "opus too small: {}", bytes.len());
-        assert_eq!(&bytes[..4], b"OggS");
-        let head_off = bytes
-            .windows(8)
-            .position(|w| w == b"OpusHead")
-            .expect("OpusHead present");
-        let rate = u32::from_le_bytes([
-            bytes[head_off + 12],
-            bytes[head_off + 13],
-            bytes[head_off + 14],
-            bytes[head_off + 15],
-        ]);
-        assert_eq!(rate, 24_000, "OpusHead must record the input rate");
+            // 1 s at 32 kbps VOIP yields >1700 bytes even at 8/12 kHz; the
+            // pre-refactor 48 kHz test asserted > 1000, keep that bar so a
+            // header-only or truncated stream can't slip through.
+            let bytes = std::fs::read(&opus_path).expect("read opus");
+            assert!(
+                bytes.len() > 1000,
+                "opus too small at {rate} Hz: {}",
+                bytes.len()
+            );
+
+            let head_rate = read_opus_head_rate(&opus_path);
+            assert_eq!(
+                head_rate, rate,
+                "OpusHead input_sample_rate mismatch at {rate} Hz"
+            );
+        }
     }
 
     /// Rates outside the Opus-native set must be rejected up front.
@@ -298,12 +275,69 @@ mod tests {
         }
     }
 
+    /// Non-mono input must be rejected up front — `encode_wav_to_opus` checks
+    /// `spec.channels` before touching the encoder, it does not downmix.
+    #[test]
+    fn rejects_stereo_wav() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let wav_path = dir.path().join("in.wav");
+        let opus_path = dir.path().join("out.opus");
+
+        let spec = hound::WavSpec {
+            channels: 2,
+            sample_rate: 48_000,
+            bits_per_sample: 32,
+            sample_format: hound::SampleFormat::Float,
+        };
+        let mut writer = hound::WavWriter::create(&wav_path, spec).expect("create wav");
+        for _ in 0..1000 {
+            writer.write_sample(0.0f32).expect("write sample (L)");
+            writer.write_sample(0.0f32).expect("write sample (R)");
+        }
+        writer.finalize().expect("finalize");
+
+        let err = encode_wav_to_opus(&wav_path, &opus_path).expect_err("should reject stereo wav");
+        match err {
+            AudioError::UnsupportedFormat(_) => {}
+            other => panic!("expected UnsupportedFormat, got {other:?}"),
+        }
+    }
+
+    /// Non-float sample formats must be rejected up front — `encode_wav_to_opus`
+    /// checks `spec.sample_format`/`bits_per_sample` before touching the
+    /// encoder, it does not convert integer PCM to float.
+    #[test]
+    fn rejects_non_float_sample_format() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let wav_path = dir.path().join("in.wav");
+        let opus_path = dir.path().join("out.opus");
+
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 48_000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut writer = hound::WavWriter::create(&wav_path, spec).expect("create wav");
+        for _ in 0..1000 {
+            writer.write_sample(0i16).expect("write sample");
+        }
+        writer.finalize().expect("finalize");
+
+        let err = encode_wav_to_opus(&wav_path, &opus_path)
+            .expect_err("should reject 16-bit int PCM wav");
+        match err {
+            AudioError::UnsupportedFormat(_) => {}
+            other => panic!("expected UnsupportedFormat, got {other:?}"),
+        }
+    }
+
     #[test]
     fn replace_wav_with_opus_removes_source() {
         let dir = tempfile::tempdir().expect("tempdir");
         let wav_path = dir.path().join("clip.wav");
 
-        write_sine_wav(&wav_path, 48_000, 220.0);
+        write_sine_wav(&wav_path, 48_000, 220.0, 0.25);
 
         let opus_path = replace_wav_with_opus(&wav_path).expect("replace");
         assert!(opus_path.exists(), "opus file missing");
