@@ -517,7 +517,7 @@ fn remove_file_if_exists(path: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::test_util::{add_entry_at, make_service};
+    use crate::storage::test_util::{add_entry_at, make_service, write_sine_wav};
     use tempfile::TempDir;
 
     #[test]
@@ -825,20 +825,7 @@ mod tests {
         // legacy `.wav` filename so the migration finds something to encode.
         let wav_filename = format!("{id}.wav");
         let wav_path = svc.cache_dir().join("audio").join(&wav_filename);
-        let spec = hound::WavSpec {
-            channels: 1,
-            sample_rate: 48_000,
-            bits_per_sample: 32,
-            sample_format: hound::SampleFormat::Float,
-        };
-        let mut writer = hound::WavWriter::create(&wav_path, spec).unwrap();
-        for i in 0..48_000usize {
-            let t = i as f32 / 48_000.0;
-            writer
-                .write_sample((2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.2)
-                .unwrap();
-        }
-        writer.finalize().unwrap();
+        write_sine_wav(&wav_path, 48_000, 440.0, 0.2);
 
         let mut updated = entry.clone();
         updated.audio_path = Some(wav_filename.clone());

@@ -1,16 +1,40 @@
 //! Test-only helpers shared by the storage unit tests (`service.rs`,
-//! `eviction.rs`) and by the synthesis tests in `crate::commands`.
+//! `eviction.rs`), the synthesis tests in `crate::commands`, and the
+//! opus-encode tests in `crate::audio`.
 //!
 //! Unlike `tts::supervisor::test_helpers`, this module doesn't need a
 //! `test-helpers` Cargo feature: every consumer lives inside this crate, so
 //! plain `#[cfg(test)]` + `pub(crate)` (see the `mod` declaration in
 //! `storage/mod.rs`) is enough.
 
+use std::path::Path;
+
 use chrono::{Local, NaiveDateTime};
 use tempfile::TempDir;
 
 use crate::storage::schema::{EntryId, EntryStatus, TextEntry, WordTimestamp};
 use crate::storage::service::StorageService;
+
+/// Write a mono 32-bit-float sine WAV at `rate` Hz, `amplitude` peak, 1
+/// second long, to `path`. Shared by the opus-encode tests (`crate::audio`)
+/// and the wav-to-opus migration test (`storage::service`) so both exercise
+/// the same well-formed input instead of each keeping its own copy.
+pub(crate) fn write_sine_wav(path: &Path, rate: u32, freq_hz: f32, amplitude: f32) {
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: rate,
+        bits_per_sample: 32,
+        sample_format: hound::SampleFormat::Float,
+    };
+    let mut writer = hound::WavWriter::create(path, spec).expect("create wav");
+    for i in 0..rate as usize {
+        let t = i as f32 / rate as f32;
+        writer
+            .write_sample((2.0 * std::f32::consts::PI * freq_hz * t).sin() * amplitude)
+            .expect("write sample");
+    }
+    writer.finalize().expect("finalize wav");
+}
 
 /// Build a [`StorageService`] backed by a fresh temp dir. The returned
 /// [`TempDir`] must be kept alive for as long as the service is used —
