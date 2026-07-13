@@ -1,5 +1,8 @@
 """Unit tests for timestamps.py — no torch required."""
 
+import pytest
+
+from ttsd.protocol import CharMappingEntry
 from ttsd.timestamps import (
     _map_via_positional,
     _map_via_spans,
@@ -79,35 +82,47 @@ class TestEstimateTimestampsChunked:
         ts = result[0]
         assert ts.original_pos == (0, 5)
 
-    def test_char_mapping_dict_shape(self):
-        # Dict shape: {"char_map": [[orig_start, orig_end], ...]} indexed by norm pos
-        text = "ab"
-        # norm positions 0,1 → orig positions 10,11; norm positions 1,2 → 11,12
-        char_map = [[10, 12], [11, 13]]
-        mapping = {"char_map": char_map}
-        result = estimate_timestamps_chunked(text, [(0, len(text), 1.0)], mapping)
+    @pytest.mark.parametrize(
+        "text, chunks, mapping, expected_pos",
+        [
+            pytest.param(
+                "ab",
+                [(0, 2, 1.0)],
+                {"char_map": [[10, 12], [11, 13]]},
+                (10, 13),
+                id="dict_shape",
+                # norm_start=0, norm_end=2 → start_idx=0, end_idx=1 → orig_start=10, orig_end=13
+            ),
+            pytest.param(
+                "слово",
+                [(0, 5, 1.0)],
+                [{"norm_start": 0, "norm_end": 5, "orig_start": 100, "orig_end": 105}],
+                (100, 105),
+                id="span_list_of_dicts",
+            ),
+            pytest.param(
+                "abc",
+                [(0, 3, 1.0)],
+                [[5, 6], [6, 7], [7, 8]],
+                (5, 8),
+                id="positional_list",
+                # norm_start=0, norm_end=3 → start_idx=0, end_idx=2 → orig [5,8]
+            ),
+            pytest.param(
+                "слово",
+                [(0, 5, 1.0)],
+                [CharMappingEntry(norm_start=0, norm_end=5, orig_start=100, orig_end=105)],
+                (100, 105),
+                id="pydantic_span_entries",
+                # Exercises the hasattr branch of _is_span_entry (non-dict span
+                # with a norm_start attribute) via real CharMappingEntry objects.
+            ),
+        ],
+    )
+    def test_char_mapping_shapes(self, text, chunks, mapping, expected_pos):
+        result = estimate_timestamps_chunked(text, chunks, mapping)
         assert len(result) == 1
-        # norm_start=0, norm_end=2 → start_idx=0, end_idx=1 → orig_start=10, orig_end=13
-        assert result[0].original_pos == (10, 13)
-
-    def test_char_mapping_span_list_of_dicts(self):
-        # Shape 1: list of dicts with norm_start/norm_end/orig_start/orig_end
-        text = "слово"
-        spans = [
-            {"norm_start": 0, "norm_end": 5, "orig_start": 100, "orig_end": 105},
-        ]
-        result = estimate_timestamps_chunked(text, [(0, 5, 1.0)], spans)
-        assert len(result) == 1
-        assert result[0].original_pos == (100, 105)
-
-    def test_char_mapping_positional_list(self):
-        # Shape 3: plain list [[orig_start, orig_end], ...]
-        text = "abc"
-        char_map = [[5, 6], [6, 7], [7, 8]]
-        result = estimate_timestamps_chunked(text, [(0, 3, 1.0)], char_map)
-        assert len(result) == 1
-        # norm_start=0, norm_end=3 → start_idx=0, end_idx=2 → orig [5,8]
-        assert result[0].original_pos == (5, 8)
+        assert result[0].original_pos == expected_pos
 
     def test_timestamps_are_pydantic_models(self):
         from ttsd.protocol import WordTimestamp
@@ -116,17 +131,6 @@ class TestEstimateTimestampsChunked:
         result = estimate_timestamps_chunked(text, [(0, 4, 1.0)], None)
         assert len(result) == 1
         assert isinstance(result[0], WordTimestamp)
-
-    def test_char_mapping_pydantic_span_entries(self):
-        # Shape 1 via real CharMappingEntry objects — exercises the hasattr
-        # branch of _is_span_entry (non-dict span with a norm_start attribute).
-        from ttsd.protocol import CharMappingEntry
-
-        text = "слово"
-        spans = [CharMappingEntry(norm_start=0, norm_end=5, orig_start=100, orig_end=105)]
-        result = estimate_timestamps_chunked(text, [(0, 5, 1.0)], spans)
-        assert len(result) == 1
-        assert result[0].original_pos == (100, 105)
 
     def test_timestamps_rounded_to_three_decimals(self):
         # "a"(1 char) + "bb"(2 chars), total 3, duration 1.0s.

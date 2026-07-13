@@ -150,20 +150,19 @@ def test_handle_synthesize_empty_text(use_engine):
     assert "empty" in resp.message
 
 
-def test_handle_synthesize_value_error_is_bad_input(use_engine):
-    use_engine(FakeEngine(loaded=True, synth_exc=ValueError("bad char")))
+@pytest.mark.parametrize(
+    "exc, expected_error, expected_substr",
+    [
+        pytest.param(ValueError("bad char"), "bad_input", "bad char", id="value_error_to_bad_input"),
+        pytest.param(RuntimeError("boom"), "synthesis_failed", "boom", id="runtime_error_to_synthesis_failed"),
+    ],
+)
+def test_handle_synthesize_exception_mapping(use_engine, exc, expected_error, expected_substr):
+    use_engine(FakeEngine(loaded=True, synth_exc=exc))
     resp = ttsd_main._handle_synthesize(_make_synth_request())
     assert isinstance(resp, ttsd_main.ErrResponse)
-    assert resp.error == "bad_input"
-    assert "bad char" in resp.message
-
-
-def test_handle_synthesize_generic_error_is_synthesis_failed(use_engine):
-    use_engine(FakeEngine(loaded=True, synth_exc=RuntimeError("boom")))
-    resp = ttsd_main._handle_synthesize(_make_synth_request())
-    assert isinstance(resp, ttsd_main.ErrResponse)
-    assert resp.error == "synthesis_failed"
-    assert "boom" in resp.message
+    assert resp.error == expected_error
+    assert expected_substr in resp.message
 
 
 def test_handle_synthesize_ok_without_char_mapping(use_engine):

@@ -119,16 +119,15 @@ class TestOkSynthesize:
 
 
 class TestOkWarmup:
-    def test_ok_warmup_has_version(self) -> None:
-        resp = OkWarmup(version="0.1.0")
+    @pytest.mark.parametrize("version", ["0.1.0", "1.2.3-test"])
+    def test_ok_warmup_has_version_and_serializes(self, version: str) -> None:
+        resp = OkWarmup(version=version)
         assert resp.ok is True
-        assert resp.version == "0.1.0"
+        assert resp.version == version
 
-    def test_ok_warmup_serializes(self) -> None:
-        resp = OkWarmup(version="0.1.0")
         data = resp.model_dump()
         assert data["ok"] is True
-        assert data["version"] == "0.1.0"
+        assert data["version"] == version
 
 
 class TestOkShutdown:
@@ -139,17 +138,22 @@ class TestOkShutdown:
 
 
 class TestErrResponse:
-    def test_err_response_model_not_loaded(self) -> None:
-        resp = ErrResponse(error="model_not_loaded", message="Model not loaded")
+    @pytest.mark.parametrize(
+        "error, message",
+        [
+            ("model_not_loaded", "Model not loaded"),
+            ("bad_input", "text must not be empty"),
+        ],
+    )
+    def test_err_response_valid_error_codes(self, error: str, message: str) -> None:
+        resp = ErrResponse(error=error, message=message)  # type: ignore[arg-type]
         assert resp.ok is False
-        assert resp.error == "model_not_loaded"
+        assert resp.error == error
 
-    def test_err_response_bad_input(self) -> None:
-        resp = ErrResponse(error="bad_input", message="text must not be empty")
         data = resp.model_dump()
         assert data["ok"] is False
-        assert data["error"] == "bad_input"
-        assert data["message"] == "text must not be empty"
+        assert data["error"] == error
+        assert data["message"] == message
 
     def test_err_response_invalid_error_code_raises(self) -> None:
         with pytest.raises(ValidationError):
