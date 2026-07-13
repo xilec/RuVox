@@ -517,13 +517,8 @@ fn remove_file_if_exists(path: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::test_util::{add_entry_at, make_service};
     use tempfile::TempDir;
-
-    fn make_service() -> (StorageService, TempDir) {
-        let dir = TempDir::new().unwrap();
-        let svc = StorageService::with_cache_dir(dir.path().to_path_buf()).unwrap();
-        (svc, dir)
-    }
 
     #[test]
     fn new_creates_dirs() {
@@ -591,10 +586,9 @@ mod tests {
     #[test]
     fn get_all_entries_newest_first() {
         let (svc, _dir) = make_service();
-        let e1 = svc.add_entry("first".to_string()).unwrap();
-        // Small sleep to ensure distinct timestamps.
-        std::thread::sleep(std::time::Duration::from_millis(5));
-        let e2 = svc.add_entry("second".to_string()).unwrap();
+        let base = Local::now().naive_local();
+        let e1 = add_entry_at(&svc, "first", base);
+        let e2 = add_entry_at(&svc, "second", base + chrono::Duration::seconds(1));
 
         let all = svc.get_all_entries();
         assert_eq!(all.len(), 2);

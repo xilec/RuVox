@@ -274,16 +274,9 @@ pub fn run_startup_cleanup(svc: &StorageService, target_bytes: u64) -> Result<St
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::schema::WordTimestamp;
+    use crate::storage::test_util::{make_ready_entry, make_ready_entry_at, make_service};
     use std::fs;
     use std::path::Path;
-    use tempfile::TempDir;
-
-    fn make_service() -> (StorageService, TempDir) {
-        let dir = TempDir::new().unwrap();
-        let svc = StorageService::with_cache_dir(dir.path().to_path_buf()).unwrap();
-        (svc, dir)
-    }
 
     /// Mark a file's mtime far enough in the past that the orphan sweep won't
     /// treat it as "recent" and skip it.
@@ -291,29 +284,6 @@ mod tests {
         let aged = SystemTime::now() - (RECENT_FILE_GRACE * 2);
         // Setting access time too keeps the call cross-platform; we only care about mtime.
         let _ = filetime::set_file_mtime(path, filetime::FileTime::from_system_time(aged));
-    }
-
-    /// Create an entry already populated with on-disk audio + timestamps of
-    /// the requested sizes. Returns the entry id.
-    fn make_ready_entry(svc: &StorageService, audio_bytes: usize, ts_words: usize) -> EntryId {
-        let entry = svc.add_entry("test".into()).unwrap();
-        let id = entry.id;
-        let audio_filename = svc.save_audio(&id, &vec![0u8; audio_bytes]).unwrap();
-        let words: Vec<WordTimestamp> = (0..ts_words)
-            .map(|i| WordTimestamp {
-                word: format!("w{i}"),
-                start: i as f64,
-                end: i as f64 + 0.5,
-                original_pos: (0, 1),
-            })
-            .collect();
-        let ts_filename = svc.save_timestamps(&id, &words).unwrap();
-        let mut updated = entry.clone();
-        updated.audio_path = Some(audio_filename);
-        updated.timestamps_path = Some(ts_filename);
-        updated.status = EntryStatus::Ready;
-        svc.update_entry(updated).unwrap();
-        id
     }
 
     #[test]
@@ -364,12 +334,11 @@ mod tests {
     fn evict_to_size_drops_oldest_first_keeping_entry() {
         let (svc, _dir) = make_service();
 
-        // Three entries with distinct created_at (sleep between adds).
-        let id1 = make_ready_entry(&svc, 10_000, 0);
-        std::thread::sleep(std::time::Duration::from_millis(5));
-        let id2 = make_ready_entry(&svc, 10_000, 0);
-        std::thread::sleep(std::time::Duration::from_millis(5));
-        let id3 = make_ready_entry(&svc, 10_000, 0);
+        // Three entries with distinct, explicit created_at (oldest to newest).
+        let base = chrono::Local::now().naive_local();
+        let id1 = make_ready_entry_at(&svc, 10_000, 0, base);
+        let id2 = make_ready_entry_at(&svc, 10_000, 0, base + chrono::Duration::seconds(1));
+        let id3 = make_ready_entry_at(&svc, 10_000, 0, base + chrono::Duration::seconds(2));
 
         // Target is small enough to force at least the oldest two to be evicted.
         let stats = svc.evict_to_size(15_000, false).unwrap();
@@ -394,9 +363,9 @@ mod tests {
     #[test]
     fn evict_to_size_with_delete_texts_removes_entries() {
         let (svc, _dir) = make_service();
-        let id1 = make_ready_entry(&svc, 5_000, 0);
-        std::thread::sleep(std::time::Duration::from_millis(5));
-        let id2 = make_ready_entry(&svc, 5_000, 0);
+        let base = chrono::Local::now().naive_local();
+        let id1 = make_ready_entry_at(&svc, 5_000, 0, base);
+        let id2 = make_ready_entry_at(&svc, 5_000, 0, base + chrono::Duration::seconds(1));
 
         let stats = svc.evict_to_size(1, true).unwrap();
         // target 1 byte → both entries must be removed.
@@ -474,9 +443,9 @@ mod tests {
     #[test]
     fn evict_to_size_skips_processing_entries() {
         let (svc, _dir) = make_service();
-        let id_old = make_ready_entry(&svc, 10_000, 0);
-        std::thread::sleep(std::time::Duration::from_millis(5));
-        let id_proc = make_ready_entry(&svc, 10_000, 0);
+        let base = chrono::Local::now().naive_local();
+        let id_old = make_ready_entry_at(&svc, 10_000, 0, base);
+        let id_proc = make_ready_entry_at(&svc, 10_000, 0, base + chrono::Duration::seconds(1));
         // Force the older one into Processing — eviction loop must skip it
         // even though it would otherwise be picked first.
         let mut e = svc.get_entry(&id_old).unwrap();
