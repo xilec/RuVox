@@ -340,4 +340,34 @@ mod tests {
         // 1 initial /bin/cat + 3 ENOENT retries.
         assert_eq!(counter.load(Ordering::SeqCst), 4);
     }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn with_retry_propagates_non_died_error_without_respawn() {
+        // A non-`Died` error (here `Timeout`) must be surfaced to the caller
+        // as-is: no respawn is attempted and no `ttsd_restarting` event fires.
+        // The factory records how many times it is asked to build a Command —
+        // exactly once (the initial spawn) proves no respawn happened.
+        let counter = Arc::new(AtomicUsize::new(0));
+        let counter_clone = Arc::clone(&counter);
+        let factory: CommandFactory = Arc::new(move || {
+            counter_clone.fetch_add(1, Ordering::SeqCst);
+            Command::new("cat")
+        });
+
+        let (emitter, log) = recording_emitter();
+        let sup = TtsSupervisor::spawn(factory, emitter).expect("initial spawn ok");
+
+        let res: Result<(), TtsError> = sup.with_retry(|_h| async { Err(TtsError::Timeout) }).await;
+        assert!(matches!(res, Err(TtsError::Timeout)));
+
+        // Only the initial spawn ran; the error path did not respawn.
+        assert_eq!(counter.load(Ordering::SeqCst), 1);
+
+        let log = log.lock().unwrap();
+        let names: Vec<&str> = log.iter().map(|(n, _)| n.as_str()).collect();
+        assert!(
+            !names.contains(&"ttsd_restarting"),
+            "non-Died error must not trigger a restart, got events: {names:?}"
+        );
+    }
 }

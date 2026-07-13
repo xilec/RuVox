@@ -169,6 +169,55 @@ mod tests {
         }
     }
 
+    fn span(
+        norm_start: usize,
+        norm_end: usize,
+        orig_start: usize,
+        orig_end: usize,
+    ) -> CharMappingEntry {
+        CharMappingEntry {
+            norm_start,
+            norm_end,
+            orig_start,
+            orig_end,
+        }
+    }
+
+    #[test]
+    fn map_via_spans_merges_multiple_overlapping_spans() {
+        // Three spans intersect [2, 10). The result must be the smallest
+        // original interval that contains them all: min(orig_start) over the
+        // intersecting spans, max(orig_end). The middle span lowers best_start
+        // (2 < 5) but leaves best_end untouched (6 < 8); the last span raises
+        // best_end (14 > 8) but leaves best_start untouched (10 > 2) — so every
+        // arm of both `match` blocks is exercised.
+        let spans = vec![span(0, 4, 5, 8), span(4, 8, 2, 6), span(8, 12, 10, 14)];
+        assert_eq!(map_via_spans(&spans, 2, 10), (2, 14));
+    }
+
+    #[test]
+    fn map_via_spans_breaks_on_span_starting_at_or_after_norm_end() {
+        // Once a span begins at/after norm_end the scan stops: later spans are
+        // assumed sorted and cannot intersect. The trailing span here *would*
+        // intersect [0, 5) if reached, so a result of (0, 3) — not (0, 200) —
+        // proves the early `break` fired.
+        let spans = vec![
+            span(0, 3, 0, 3),
+            span(5, 10, 50, 60),  // norm_start (5) >= norm_end (5) → break
+            span(1, 2, 100, 200), // unreachable due to the break above
+        ];
+        assert_eq!(map_via_spans(&spans, 0, 5), (0, 3));
+    }
+
+    #[test]
+    fn map_via_spans_falls_back_to_norm_offsets_when_no_span_intersects() {
+        // Every span ends at/before norm_start, so all are skipped and neither
+        // best_start nor best_end is set. The fallback returns the normalized
+        // offsets unchanged.
+        let spans = vec![span(0, 5, 0, 3), span(5, 8, 3, 6)];
+        assert_eq!(map_via_spans(&spans, 10, 15), (10, 15));
+    }
+
     #[test]
     fn original_pos_is_codepoint_indexed_for_cyrillic() {
         // Without char_mapping, original_pos falls back to the normalized

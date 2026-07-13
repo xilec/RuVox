@@ -56,8 +56,8 @@ pub struct HistoryFile {
 
 /// Word-level timestamp entry inside `{uuid}.timestamps.json`.
 ///
-/// `original_pos` is a two-element tuple `[start, end]` — char byte offsets
-/// in `TextEntry.original_text` used for word highlighting in the UI.
+/// `original_pos` is a two-element tuple `[start, end]` — Unicode codepoint
+/// offsets in `TextEntry.original_text` used for word highlighting in the UI.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WordTimestamp {
     pub word: String,
