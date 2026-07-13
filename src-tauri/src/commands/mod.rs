@@ -1137,6 +1137,27 @@ mod tests {
     /// only needs a new entry, not a new copy-pasted test function.
     #[test]
     fn apply_config_patch_applies_each_field_in_isolation() {
+        // Compile-time guard: exhaustive destructuring (no `..`) breaks the
+        // build when a field is added to `UIConfigPatch`, forcing the table
+        // below (and `apply_config_patch` itself) to be extended in step.
+        let UIConfigPatch {
+            speaker: _,
+            sample_rate: _,
+            speech_rate: _,
+            notify_on_ready: _,
+            notify_on_error: _,
+            text_format: _,
+            max_cache_size_mb: _,
+            code_block_mode: _,
+            read_operators: _,
+            theme: _,
+            player_hotkeys: _,
+            window_geometry: _,
+            preview_dialog_enabled: _,
+            engine: _,
+            piper_voice: _,
+        } = UIConfigPatch::default();
+
         let mut custom_hotkeys = HashMap::new();
         custom_hotkeys.insert("play_pause".to_string(), "Enter".to_string());
 
