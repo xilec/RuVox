@@ -1123,3 +1123,484 @@ mod synthesis_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    // ── apply_config_patch ──────────────────────────────────────────────────
+
+    /// Every `UIConfigPatch` field, in isolation: set to a value distinct
+    /// from `UIConfig::default()` and confirm it lands, and nothing else
+    /// changes as a side effect. Table-driven so adding a 16th field later
+    /// only needs a new entry, not a new copy-pasted test function.
+    #[test]
+    fn apply_config_patch_applies_each_field_in_isolation() {
+        // Compile-time guard: exhaustive destructuring (no `..`) breaks the
+        // build when a field is added to `UIConfigPatch`, forcing the table
+        // below (and `apply_config_patch` itself) to be extended in step.
+        let UIConfigPatch {
+            speaker: _,
+            sample_rate: _,
+            speech_rate: _,
+            notify_on_ready: _,
+            notify_on_error: _,
+            text_format: _,
+            max_cache_size_mb: _,
+            code_block_mode: _,
+            read_operators: _,
+            theme: _,
+            player_hotkeys: _,
+            window_geometry: _,
+            preview_dialog_enabled: _,
+            engine: _,
+            piper_voice: _,
+        } = UIConfigPatch::default();
+
+        let mut custom_hotkeys = HashMap::new();
+        custom_hotkeys.insert("play_pause".to_string(), "Enter".to_string());
+
+        struct Case {
+            field: &'static str,
+            patch: UIConfigPatch,
+        }
+
+        let cases = vec![
+            Case {
+                field: "speaker",
+                patch: UIConfigPatch {
+                    speaker: Some("helga".to_string()),
+                    ..Default::default()
+                },
+            },
+            Case {
+                field: "sample_rate",
+                patch: UIConfigPatch {
+                    sample_rate: Some(16000),
+                    ..Default::default()
+                },
+            },
+            Case {
+                field: "speech_rate",
+                patch: UIConfigPatch {
+                    speech_rate: Some(1.5),
+                    ..Default::default()
+                },
+            },
+            Case {
+                field: "notify_on_ready",
+                patch: UIConfigPatch {
+                    notify_on_ready: Some(false),
+                    ..Default::default()
+                },
+            },
+            Case {
+                field: "notify_on_error",
+                patch: UIConfigPatch {
+                    notify_on_error: Some(false),
+                    ..Default::default()
+                },
+            },
+            Case {
+                field: "text_format",
+                patch: UIConfigPatch {
+                    text_format: Some("markdown".to_string()),
+                    ..Default::default()
+                },
+            },
+            Case {
+                field: "max_cache_size_mb",
+                patch: UIConfigPatch {
+                    max_cache_size_mb: Some(1000),
+                    ..Default::default()
+                },
+            },
+            Case {
+                field: "code_block_mode",
+                patch: UIConfigPatch {
+                    code_block_mode: Some("skip".to_string()),
+                    ..Default::default()
+                },
+            },
+            Case {
+                field: "read_operators",
+                patch: UIConfigPatch {
+                    read_operators: Some(false),
+                    ..Default::default()
+                },
+            },
+            Case {
+                field: "theme",
+                patch: UIConfigPatch {
+                    theme: Some("dark".to_string()),
+                    ..Default::default()
+                },
+            },
+            Case {
+                field: "player_hotkeys",
+                patch: UIConfigPatch {
+                    player_hotkeys: Some(custom_hotkeys.clone()),
+                    ..Default::default()
+                },
+            },
+            Case {
+                field: "preview_dialog_enabled",
+                patch: UIConfigPatch {
+                    preview_dialog_enabled: Some(false),
+                    ..Default::default()
+                },
+            },
+            Case {
+                field: "engine",
+                patch: UIConfigPatch {
+                    engine: Some("silero".to_string()),
+                    ..Default::default()
+                },
+            },
+            Case {
+                field: "piper_voice",
+                patch: UIConfigPatch {
+                    piper_voice: Some("irina".to_string()),
+                    ..Default::default()
+                },
+            },
+        ];
+
+        for case in cases {
+            let mut config = UIConfig::default();
+            let before = serde_json::to_value(&config).unwrap();
+
+            apply_config_patch(&mut config, case.patch);
+
+            let after = serde_json::to_value(&config).unwrap();
+            let before_obj = before.as_object().unwrap();
+            let after_obj = after.as_object().unwrap();
+
+            let changed: Vec<&String> = before_obj
+                .keys()
+                .filter(|k| before_obj[*k] != after_obj[*k])
+                .collect();
+
+            assert_eq!(
+                changed,
+                vec![case.field],
+                "patching {} should change exactly that field",
+                case.field
+            );
+        }
+    }
+
+    /// `window_geometry` is `Option<Option<[i32; 4]>>` in the patch: the outer
+    /// `Option` says whether the patch touches the field at all, the inner
+    /// one says whether the new value is "set" or "cleared". Distinct enough
+    /// from the other fields to warrant its own cases rather than a table row.
+    #[test]
+    fn apply_config_patch_window_geometry_set_and_clear() {
+        // Absent from the patch (outer None) -> old value untouched.
+        let mut config = UIConfig {
+            window_geometry: Some([1, 2, 3, 4]),
+            ..UIConfig::default()
+        };
+        apply_config_patch(&mut config, UIConfigPatch::default());
+        assert_eq!(config.window_geometry, Some([1, 2, 3, 4]));
+
+        // Patch sets a new geometry (outer Some, inner Some).
+        let mut config = UIConfig::default();
+        assert_eq!(config.window_geometry, None);
+        apply_config_patch(
+            &mut config,
+            UIConfigPatch {
+                window_geometry: Some(Some([10, 20, 30, 40])),
+                ..Default::default()
+            },
+        );
+        assert_eq!(config.window_geometry, Some([10, 20, 30, 40]));
+
+        // Patch explicitly clears geometry (outer Some, inner None).
+        let mut config = UIConfig {
+            window_geometry: Some([5, 6, 7, 8]),
+            ..UIConfig::default()
+        };
+        apply_config_patch(
+            &mut config,
+            UIConfigPatch {
+                window_geometry: Some(None),
+                ..Default::default()
+            },
+        );
+        assert_eq!(config.window_geometry, None);
+    }
+
+    /// An all-`None` patch (the wire format for "nothing changed") must leave
+    /// every field exactly as it was, even when the config already diverges
+    /// from `UIConfig::default()`.
+    #[test]
+    fn apply_config_patch_all_none_leaves_config_untouched() {
+        let mut custom_hotkeys = HashMap::new();
+        custom_hotkeys.insert("play_pause".to_string(), "Enter".to_string());
+
+        let mut config = UIConfig {
+            speaker: "helga".to_string(),
+            sample_rate: 16000,
+            speech_rate: 1.5,
+            notify_on_ready: false,
+            notify_on_error: false,
+            text_format: "markdown".to_string(),
+            max_cache_size_mb: 1000,
+            code_block_mode: "skip".to_string(),
+            read_operators: false,
+            theme: "dark".to_string(),
+            player_hotkeys: custom_hotkeys,
+            window_geometry: Some([1, 2, 3, 4]),
+            preview_dialog_enabled: false,
+            engine: "silero".to_string(),
+            piper_voice: "irina".to_string(),
+        };
+        let before = serde_json::to_value(&config).unwrap();
+
+        apply_config_patch(&mut config, UIConfigPatch::default());
+
+        let after = serde_json::to_value(&config).unwrap();
+        assert_eq!(before, after);
+    }
+
+    // ── parse_entry_id ───────────────────────────────────────────────────────
+
+    #[test]
+    fn parse_entry_id_accepts_valid_uuid() {
+        let id = uuid::Uuid::new_v4();
+        let parsed = parse_entry_id(&id.to_string()).unwrap();
+        assert_eq!(parsed, id);
+    }
+
+    #[test]
+    fn parse_entry_id_accepts_nil_uuid() {
+        let parsed = parse_entry_id("00000000-0000-0000-0000-000000000000").unwrap();
+        assert_eq!(parsed, uuid::Uuid::nil());
+    }
+
+    #[test]
+    fn parse_entry_id_rejects_empty_string() {
+        let err = parse_entry_id("").unwrap_err();
+        assert!(matches!(err, CommandError::NotFound { .. }));
+    }
+
+    #[test]
+    fn parse_entry_id_rejects_garbage() {
+        let err = parse_entry_id("not-a-uuid").unwrap_err();
+        assert!(matches!(err, CommandError::NotFound { .. }));
+        if let CommandError::NotFound { message } = err {
+            assert!(message.contains("invalid entry id"));
+        }
+    }
+
+    #[test]
+    fn parse_entry_id_rejects_uuid_with_trailing_whitespace() {
+        let id = uuid::Uuid::new_v4();
+        let padded = format!("{id} ");
+        assert!(parse_entry_id(&padded).is_err());
+    }
+
+    // ── char_mapping_to_entries ──────────────────────────────────────────────
+
+    #[test]
+    fn char_mapping_to_entries_normal_case_preserves_order() {
+        // Deliberately out-of-order orig ranges: the function must emit
+        // entries in char_map iteration order (by norm index), not sorted by
+        // orig_start.
+        let mapping = CharMapping {
+            original: "orig".to_string(),
+            transformed: "abc".to_string(),
+            char_map: vec![(5, 6), (0, 1), (3, 4)],
+        };
+
+        let entries = char_mapping_to_entries(&mapping);
+        assert_eq!(entries.len(), 3);
+
+        assert_eq!(entries[0].norm_start, 0);
+        assert_eq!(entries[0].norm_end, 1);
+        assert_eq!(entries[0].orig_start, 5);
+        assert_eq!(entries[0].orig_end, 6);
+
+        assert_eq!(entries[1].norm_start, 1);
+        assert_eq!(entries[1].norm_end, 2);
+        assert_eq!(entries[1].orig_start, 0);
+        assert_eq!(entries[1].orig_end, 1);
+
+        assert_eq!(entries[2].norm_start, 2);
+        assert_eq!(entries[2].norm_end, 3);
+        assert_eq!(entries[2].orig_start, 3);
+        assert_eq!(entries[2].orig_end, 4);
+    }
+
+    #[test]
+    fn char_mapping_to_entries_empty_char_map_yields_empty_entries() {
+        let mapping = CharMapping {
+            original: String::new(),
+            transformed: String::new(),
+            char_map: vec![],
+        };
+        assert!(char_mapping_to_entries(&mapping).is_empty());
+    }
+
+    // ── CommandError::from conversions ────────────────────────────────────────
+
+    #[test]
+    fn command_error_from_storage_not_found_maps_to_not_found_with_id() {
+        let id = uuid::Uuid::new_v4();
+        let err: CommandError = StorageError::NotFound(id).into();
+        let value = serde_json::to_value(&err).unwrap();
+        assert_eq!(
+            value,
+            json!({
+                "type": "not_found",
+                "message": format!("entry not found: {id}"),
+            })
+        );
+    }
+
+    #[test]
+    fn command_error_from_storage_other_variant_maps_to_storage_error() {
+        let source = StorageError::NoCacheDir;
+        let expected_message = source.to_string();
+        let err: CommandError = source.into();
+        let value = serde_json::to_value(&err).unwrap();
+        assert_eq!(
+            value,
+            json!({
+                "type": "storage_error",
+                "message": expected_message,
+            })
+        );
+    }
+
+    #[test]
+    fn command_error_from_tts_error_maps_to_synthesis_error() {
+        let source = TtsError::Died;
+        let expected_message = source.to_string();
+        let err: CommandError = source.into();
+        let value = serde_json::to_value(&err).unwrap();
+        assert_eq!(
+            value,
+            json!({
+                "type": "synthesis_error",
+                "message": expected_message,
+            })
+        );
+    }
+
+    #[test]
+    fn command_error_from_tts_ttsd_error_preserves_code_and_message() {
+        let source = TtsError::Ttsd {
+            code: "voice_not_installed".to_string(),
+            message: "voice xenia missing".to_string(),
+        };
+        let expected_message = source.to_string();
+        let err: CommandError = source.into();
+        let value = serde_json::to_value(&err).unwrap();
+        assert_eq!(
+            value,
+            json!({
+                "type": "synthesis_error",
+                "message": expected_message,
+            })
+        );
+        assert!(expected_message.contains("voice_not_installed"));
+        assert!(expected_message.contains("voice xenia missing"));
+    }
+
+    // ── serde: CleanupMode / ClearCacheArgs ───────────────────────────────────
+
+    #[test]
+    fn cleanup_mode_deserializes_size_limit_variant() {
+        let mode: CleanupMode =
+            serde_json::from_value(json!({ "mode": "size_limit", "target_mb": 250 })).unwrap();
+        match mode {
+            CleanupMode::SizeLimit { target_mb } => assert_eq!(target_mb, 250),
+            CleanupMode::All => panic!("expected SizeLimit"),
+        }
+    }
+
+    #[test]
+    fn cleanup_mode_deserializes_all_variant() {
+        let mode: CleanupMode = serde_json::from_value(json!({ "mode": "all" })).unwrap();
+        assert!(matches!(mode, CleanupMode::All));
+    }
+
+    #[test]
+    fn cleanup_mode_rejects_pascal_case_variant_name() {
+        // `rename_all = "snake_case"` on the `mode` tag: the Rust variant
+        // name `SizeLimit` must NOT be accepted on the wire.
+        let result: Result<CleanupMode, _> =
+            serde_json::from_value(json!({ "mode": "SizeLimit", "target_mb": 250 }));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn cleanup_mode_rejects_unknown_tag() {
+        let result: Result<CleanupMode, _> = serde_json::from_value(json!({ "mode": "bogus" }));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn clear_cache_args_delete_texts_defaults_to_false_when_omitted() {
+        let args: ClearCacheArgs =
+            serde_json::from_value(json!({ "mode": { "mode": "all" } })).unwrap();
+        assert!(!args.delete_texts);
+        assert!(matches!(args.mode, CleanupMode::All));
+    }
+
+    #[test]
+    fn clear_cache_args_round_trips_explicit_delete_texts() {
+        let args: ClearCacheArgs = serde_json::from_value(json!({
+            "mode": { "mode": "size_limit", "target_mb": 42 },
+            "delete_texts": true,
+        }))
+        .unwrap();
+        assert!(args.delete_texts);
+        match args.mode {
+            CleanupMode::SizeLimit { target_mb } => assert_eq!(target_mb, 42),
+            CleanupMode::All => panic!("expected SizeLimit"),
+        }
+    }
+
+    // ── set_speed / set_volume boundary contract ──────────────────────────────
+    //
+    // Both commands take `State<'_, AppState>`, which (per `AppState::player:
+    // Arc<Player<tauri::Wry>>`) can only be constructed from a live Tauri
+    // app/webview — there is no pure function to call here, and per the task
+    // scope Tauri-specific commands aren't exercised through mock frameworks.
+    // These tests instead pin down the *documented* contract read from the
+    // source (`set_speed`/`set_volume` in this file): out-of-range values are
+    // rejected with `CommandError::ConfigError`, not silently clamped. If that
+    // ever changes, whoever edits the range literals below should notice they
+    // now disagree with the guard clauses in `set_speed`/`set_volume`.
+
+    /// Pins down current behavior: `set_speed` rejects (does not clamp)
+    /// speeds outside `[0.5, 2.0]`, per its `!(0.5..=2.0).contains(&speed)`
+    /// guard.
+    #[test]
+    fn set_speed_range_contract_is_inclusive_0_5_to_2_0() {
+        let in_range = |speed: f32| (0.5..=2.0).contains(&speed);
+        assert!(in_range(0.5), "lower bound is inclusive");
+        assert!(in_range(2.0), "upper bound is inclusive");
+        assert!(in_range(1.0));
+        assert!(!in_range(0.499_999));
+        assert!(!in_range(2.000_001));
+        assert!(!in_range(-1.0));
+    }
+
+    /// Pins down current behavior: `set_volume` rejects (does not clamp)
+    /// volumes outside `[0.0, 1.0]`, per its `!(0.0..=1.0).contains(&volume)`
+    /// guard.
+    #[test]
+    fn set_volume_range_contract_is_inclusive_0_0_to_1_0() {
+        let in_range = |volume: f32| (0.0..=1.0).contains(&volume);
+        assert!(in_range(0.0), "lower bound is inclusive");
+        assert!(in_range(1.0), "upper bound is inclusive");
+        assert!(in_range(0.5));
+        assert!(!in_range(-0.000_001));
+        assert!(!in_range(1.000_001));
+    }
+}
