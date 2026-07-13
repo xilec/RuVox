@@ -9,21 +9,11 @@ import numpy as np
 import torch
 from scipy.io import wavfile
 
-from ttsd.chunking import MAX_CHUNK_SIZE, sanitize_for_silero, split_into_chunks
+from ttsd.chunking import sanitize_for_silero, split_into_chunks
 from ttsd.protocol import WordTimestamp
 from ttsd.timestamps import estimate_timestamps_chunked
 
 logger = logging.getLogger("ttsd.silero")
-
-# MAX_CHUNK_SIZE / split_into_chunks / sanitize_for_silero now live in ttsd.chunking
-# (torch-free) and are re-exported here for backwards compatibility.
-__all__ = [
-    "MAX_CHUNK_SIZE",
-    "SileroEngine",
-    "SynthesisOutput",
-    "sanitize_for_silero",
-    "split_into_chunks",
-]
 
 
 @dataclass
@@ -76,9 +66,9 @@ class SileroEngine:
 
         assert self._model is not None
 
-        if not text.strip():
-            raise ValueError("text must not be empty")
-
+        # Empty/whitespace-only text is rejected upstream by the protocol layer
+        # (main._handle_synthesize returns a bad_input ErrResponse); the engine
+        # trusts that invariant instead of re-validating it here.
         chunks = split_into_chunks(text)
         logger.debug("Synthesizing %d chars in %d chunks", len(text), len(chunks))
 

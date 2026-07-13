@@ -120,6 +120,11 @@ def main() -> int:
                 _write_response(_handle_shutdown())
                 return 0
             else:
+                # Unreachable today: RequestAdapter's discriminated union rejects
+                # any unknown cmd during validate_json above. Kept as a defensive
+                # fallback so that adding a new request type to the union without a
+                # matching handler surfaces a bad_input response instead of a silent
+                # no-op that would hang the Rust side waiting for a reply.
                 _write_response(
                     ErrResponse(error="bad_input", message=f"unknown cmd: {req.cmd}")  # type: ignore[union-attr]
                 )
