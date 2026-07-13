@@ -106,8 +106,8 @@
           pnpmDeps = pkgs.fetchPnpmDeps {
             pname = "ruvox";
             inherit (finalAttrs) version src;
-            fetcherVersion = 3;
-            hash = "sha256-5lpLq7SoTnKyW6jPS8HfROaC8S7uPefG4NmMNFue4EY=";
+            fetcherVersion = 4;
+            hash = "sha256-iSdrSGnMuOtSwIP+Ut+T2w4E36fBxAhWqhXkQh6lbI4=";
           };
 
           nativeBuildInputs = with pkgs; [
