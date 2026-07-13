@@ -334,27 +334,15 @@ impl TTSPipeline {
         // substrings inside them are not re-matched here.
         {
             let num = &self.number_normalizer;
-            // normalize_date returns its input unchanged on an invalid
-            // month/day/year, so out-of-range matches become no-ops.
-            tracked.sub(re_date_iso(), |caps| {
-                num.normalize_date(caps.get(0).unwrap().as_str())
-            });
-            tracked.sub(re_date_dot(), |caps| {
-                num.normalize_date(caps.get(0).unwrap().as_str())
-            });
+            // normalize_date and normalize_time return their input unchanged on an
+            // invalid calendar/clock value, so out-of-range matches become no-ops
+            // and leave the region and its digits for the number phase.
+            let normalize_date =
+                |caps: &regex::Captures| num.normalize_date(caps.get(0).unwrap().as_str());
+            tracked.sub(re_date_iso(), normalize_date);
+            tracked.sub(re_date_dot(), normalize_date);
             tracked.sub(re_time(), |caps| {
-                let full = caps.get(0).unwrap().as_str();
-                let h: i64 = caps.get(1).unwrap().as_str().parse().unwrap_or(-1);
-                let m: i64 = caps.get(2).unwrap().as_str().parse().unwrap_or(-1);
-                let s: i64 = caps
-                    .get(3)
-                    .map(|g| g.as_str().parse().unwrap_or(-1))
-                    .unwrap_or(0);
-                if (0..=23).contains(&h) && (0..=59).contains(&m) && (0..=59).contains(&s) {
-                    num.normalize_time(full)
-                } else {
-                    full.to_string()
-                }
+                num.normalize_time(caps.get(0).unwrap().as_str())
             });
         }
 
@@ -709,6 +697,15 @@ mod tests {
         let mut p = TTSPipeline::new();
         let input = "Привет мир";
         assert_eq!(p.process(input), "Привет мир");
+    }
+
+    #[test]
+    fn pipeline_invalid_time_falls_through_to_numbers() {
+        // Invariant: normalize_time returns an out-of-range clock value unchanged,
+        // so the time phase is a no-op and does not consume the region. TrackedText
+        // skips no-op replacements, leaving the digits for the number phase to read.
+        let mut p = TTSPipeline::new();
+        assert_eq!(p.process("В 25:00 встреча"), "В двадцать пять:ноль встреча");
     }
 
     #[test]

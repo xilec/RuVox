@@ -962,7 +962,17 @@ impl NumberNormalizer {
     }
 
     /// Convert time string (HH:MM or HH:MM:SS) to Russian words.
+    ///
+    /// Returns the input unchanged when it is not a valid clock time (unparseable
+    /// or an out-of-range hour/minute/second component), mirroring `normalize_date`.
+    /// This keeps the range guard co-located with the parsing so the function is
+    /// self-contained: called in isolation it will not narrate "25:00", and inside
+    /// the pipeline the no-op leaves the region and its digits for the number phase.
     pub fn normalize_time(&self, time_str: &str) -> String {
+        const MAX_HOUR: i64 = 23;
+        const MAX_MINUTE: i64 = 59;
+        const MAX_SECOND: i64 = 59;
+
         let parts: Vec<&str> = time_str.split(':').collect();
         if parts.len() < 2 {
             return time_str.to_string();
@@ -984,6 +994,13 @@ impl NumberNormalizer {
         } else {
             0
         };
+
+        if !((0..=MAX_HOUR).contains(&hours)
+            && (0..=MAX_MINUTE).contains(&minutes)
+            && (0..=MAX_SECOND).contains(&seconds))
+        {
+            return time_str.to_string();
+        }
 
         let mut result_parts: Vec<String> = Vec::new();
 
@@ -1171,6 +1188,16 @@ mod tests {
     #[test_case("23:59" => "двадцать три часа пятьдесят девять минут"; "23_59")]
     #[test_case("10:30:15" => "десять часов тридцать минут пятнадцать секунд"; "with_seconds")]
     #[test_case("08:00:00" => "восемь часов"; "eight_zeros")]
+    // Out-of-range components are returned unchanged: the range guard lives inside
+    // normalize_time, so in the pipeline the no-op leaves digits for the number phase.
+    #[test_case("25:00" => "25:00"; "hour_out_of_range")]
+    #[test_case("99:00" => "99:00"; "hour_way_out_of_range")]
+    #[test_case("14:99" => "14:99"; "minute_out_of_range")]
+    #[test_case("25:99" => "25:99"; "hour_and_minute_out_of_range")]
+    #[test_case("14:30:99" => "14:30:99"; "second_out_of_range")]
+    #[test_case("14:30:60" => "14:30:60"; "second_boundary_60")]
+    #[test_case("24:00" => "24:00"; "hour_boundary_24")]
+    #[test_case("12:60" => "12:60"; "minute_boundary_60")]
     fn time(input: &str) -> String {
         nn().normalize_time(input)
     }
