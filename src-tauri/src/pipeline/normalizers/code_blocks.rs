@@ -464,6 +464,7 @@ fn number_to_russian(n: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test_case::test_case;
 
     fn brief_handler() -> CodeBlockHandler {
         CodeBlockHandler::with_mode(CodeBlockMode::Brief)
@@ -473,156 +474,54 @@ mod tests {
         CodeBlockHandler::with_mode(CodeBlockMode::Full)
     }
 
-    // ── TestCodeBlockBriefMode (14 cases) ──────────────────────────────
+    // ── Brief mode language descriptions (merges former TestCodeBlockBriefMode
+    // and TestLanguageNames — brief_description() ignores `code` entirely, so
+    // both groups exercised the same function keyed only on `language`; the
+    // 5 overlapping codes [python, javascript, typescript, bash, yaml] were
+    // genuine duplicates, now asserted once each with the (stronger) exact
+    // sentence instead of the former `.contains()` check) ──────────────────
 
-    #[test]
-    fn brief_python() {
-        assert_eq!(
-            brief_handler().process_block("print('hello')", Some("python")),
-            "далее следует пример кода на пайтон"
-        );
-    }
-
-    #[test]
-    fn brief_javascript() {
-        assert_eq!(
-            brief_handler().process_block("const x = 1;", Some("javascript")),
-            "далее следует пример кода на джаваскрипт"
-        );
-    }
-
-    #[test]
-    fn brief_typescript() {
-        assert_eq!(
-            brief_handler().process_block("let y: string;", Some("typescript")),
-            "далее следует пример кода на тайпскрипт"
-        );
-    }
-
-    #[test]
-    fn brief_bash() {
-        assert_eq!(
-            brief_handler().process_block("echo hi", Some("bash")),
-            "далее следует пример кода на баш"
-        );
-    }
-
-    #[test]
-    fn brief_sql() {
-        assert_eq!(
-            brief_handler().process_block("SELECT 1", Some("sql")),
-            "далее следует пример кода на эс кью эл"
-        );
-    }
-
-    #[test]
-    fn brief_json() {
-        assert_eq!(
-            brief_handler().process_block("{}", Some("json")),
-            "далее следует пример кода на джейсон"
-        );
-    }
-
-    #[test]
-    fn brief_yaml() {
-        assert_eq!(
-            brief_handler().process_block("key: val", Some("yaml")),
-            "далее следует пример кода на ямл"
-        );
-    }
-
-    #[test]
-    fn brief_html() {
-        assert_eq!(
-            brief_handler().process_block("<p>hi</p>", Some("html")),
-            "далее следует пример кода на эйч ти эм эл"
-        );
-    }
-
-    #[test]
-    fn brief_css() {
-        assert_eq!(
-            brief_handler().process_block("body{}", Some("css")),
-            "далее следует пример кода на си эс эс"
-        );
-    }
-
-    #[test]
-    fn brief_go() {
-        assert_eq!(
-            brief_handler().process_block("func main(){}", Some("go")),
-            "далее следует пример кода на го"
-        );
-    }
-
-    #[test]
-    fn brief_rust() {
-        assert_eq!(
-            brief_handler().process_block("fn main(){}", Some("rust")),
-            "далее следует пример кода на раст"
-        );
-    }
-
-    #[test]
-    fn brief_java() {
-        assert_eq!(
-            brief_handler().process_block("class A{}", Some("java")),
-            "далее следует пример кода на джава"
-        );
-    }
-
-    #[test]
-    fn brief_no_language() {
-        assert_eq!(
-            brief_handler().process_block("x = 1", None),
-            "далее следует блок кода"
-        );
-    }
-
-    #[test]
-    fn brief_empty_language() {
-        assert_eq!(
-            brief_handler().process_block("x = 1", Some("")),
-            "далее следует блок кода"
-        );
+    #[test_case(Some("python") => "далее следует пример кода на пайтон"; "python")]
+    #[test_case(Some("py") => "далее следует пример кода на пайтон"; "py")]
+    #[test_case(Some("javascript") => "далее следует пример кода на джаваскрипт"; "javascript")]
+    #[test_case(Some("js") => "далее следует пример кода на джаваскрипт"; "js")]
+    #[test_case(Some("typescript") => "далее следует пример кода на тайпскрипт"; "typescript")]
+    #[test_case(Some("ts") => "далее следует пример кода на тайпскрипт"; "ts")]
+    #[test_case(Some("bash") => "далее следует пример кода на баш"; "bash")]
+    #[test_case(Some("sh") => "далее следует пример кода на шелл"; "sh")]
+    #[test_case(Some("shell") => "далее следует пример кода на шелл"; "shell")]
+    #[test_case(Some("sql") => "далее следует пример кода на эс кью эл"; "sql")]
+    #[test_case(Some("json") => "далее следует пример кода на джейсон"; "json")]
+    #[test_case(Some("yaml") => "далее следует пример кода на ямл"; "yaml")]
+    #[test_case(Some("yml") => "далее следует пример кода на ямл"; "yml")]
+    #[test_case(Some("html") => "далее следует пример кода на эйч ти эм эл"; "html")]
+    #[test_case(Some("css") => "далее следует пример кода на си эс эс"; "css")]
+    #[test_case(Some("go") => "далее следует пример кода на го"; "go")]
+    #[test_case(Some("rust") => "далее следует пример кода на раст"; "rust")]
+    #[test_case(Some("java") => "далее следует пример кода на джава"; "java")]
+    #[test_case(Some("md") => "далее следует пример кода на маркдаун"; "md")]
+    #[test_case(Some("markdown") => "далее следует пример кода на маркдаун"; "markdown")]
+    #[test_case(Some("cpp") => "далее следует пример кода на си плюс плюс"; "cpp")]
+    #[test_case(Some("c++") => "далее следует пример кода на си плюс плюс"; "cpp_symbol")]
+    #[test_case(Some("cs") => "далее следует пример кода на си шарп"; "cs")]
+    #[test_case(Some("csharp") => "далее следует пример кода на си шарп"; "csharp")]
+    #[test_case(Some("dockerfile") => "далее следует пример кода на докерфайл"; "dockerfile")]
+    #[test_case(Some("makefile") => "далее следует пример кода на мейкфайл"; "makefile")]
+    #[test_case(None => "далее следует блок кода"; "no_language")]
+    #[test_case(Some("") => "далее следует блок кода"; "empty_language")]
+    fn brief_language(language: Option<&str>) -> String {
+        brief_handler().process_block("", language)
     }
 
     // ── TestCodeBlockFullMode (3 cases) ────────────────────────────────
 
-    #[test]
-    fn full_python_def_hello() {
-        let result =
-            full_handler().process_block("def hello():\n    print('world')", Some("python"));
+    #[test_case("def hello():\n    print('world')", Some("python"), &["деф", "хелло", "принт", "ворлд"]; "python_def_hello")]
+    #[test_case("const x = 42;", Some("javascript"), &["конст", "икс", "сорок два"]; "js_const_x")]
+    #[test_case("getUserData(userId)", None, &["гет юзер дата", "юзер ай ди"]; "function_call")]
+    fn full_mode(code: &str, language: Option<&str>, expected_substrings: &[&str]) {
+        let result = full_handler().process_block(code, language);
         let lower = result.to_lowercase();
-        for expected in &["деф", "хелло", "принт", "ворлд"] {
-            assert!(
-                lower.contains(expected),
-                "expected {:?} in {:?}",
-                expected,
-                result
-            );
-        }
-    }
-
-    #[test]
-    fn full_js_const_x() {
-        let result = full_handler().process_block("const x = 42;", Some("javascript"));
-        let lower = result.to_lowercase();
-        for expected in &["конст", "икс", "сорок два"] {
-            assert!(
-                lower.contains(expected),
-                "expected {:?} in {:?}",
-                expected,
-                result
-            );
-        }
-    }
-
-    #[test]
-    fn full_function_call() {
-        let result = full_handler().process_block("getUserData(userId)", None);
-        let lower = result.to_lowercase();
-        for expected in &["гет юзер дата", "юзер ай ди"] {
+        for expected in expected_substrings {
             assert!(
                 lower.contains(expected),
                 "expected {:?} in {:?}",
@@ -634,18 +533,12 @@ mod tests {
 
     // ── TestModeSwitch (4 cases) ────────────────────────────────────────
 
-    #[test]
-    fn mode_switch_to_brief() {
-        let mut h = CodeBlockHandler::with_mode(CodeBlockMode::Full);
-        h.set_mode(CodeBlockMode::Brief);
-        assert_eq!(h.mode(), CodeBlockMode::Brief);
-    }
-
-    #[test]
-    fn mode_switch_to_full() {
-        let mut h = CodeBlockHandler::with_mode(CodeBlockMode::Brief);
-        h.set_mode(CodeBlockMode::Full);
-        assert_eq!(h.mode(), CodeBlockMode::Full);
+    #[test_case(CodeBlockMode::Full, CodeBlockMode::Brief; "to_brief")]
+    #[test_case(CodeBlockMode::Brief, CodeBlockMode::Full; "to_full")]
+    fn mode_switch(initial: CodeBlockMode, set_to: CodeBlockMode) {
+        let mut h = CodeBlockHandler::with_mode(initial);
+        h.set_mode(set_to);
+        assert_eq!(h.mode(), set_to);
     }
 
     #[test]
@@ -669,142 +562,6 @@ mod tests {
             "expected full-mode output, got: {:?}",
             result
         );
-    }
-
-    // ── TestLanguageNames (19 cases) ────────────────────────────────────
-
-    #[test]
-    fn lang_py() {
-        assert!(brief_handler()
-            .process_block("", Some("py"))
-            .contains("пайтон"));
-    }
-
-    #[test]
-    fn lang_python() {
-        assert!(brief_handler()
-            .process_block("", Some("python"))
-            .contains("пайтон"));
-    }
-
-    #[test]
-    fn lang_js() {
-        assert!(brief_handler()
-            .process_block("", Some("js"))
-            .contains("джаваскрипт"));
-    }
-
-    #[test]
-    fn lang_javascript() {
-        assert!(brief_handler()
-            .process_block("", Some("javascript"))
-            .contains("джаваскрипт"));
-    }
-
-    #[test]
-    fn lang_ts() {
-        assert!(brief_handler()
-            .process_block("", Some("ts"))
-            .contains("тайпскрипт"));
-    }
-
-    #[test]
-    fn lang_typescript() {
-        assert!(brief_handler()
-            .process_block("", Some("typescript"))
-            .contains("тайпскрипт"));
-    }
-
-    #[test]
-    fn lang_sh() {
-        assert!(brief_handler()
-            .process_block("", Some("sh"))
-            .contains("шелл"));
-    }
-
-    #[test]
-    fn lang_bash() {
-        assert!(brief_handler()
-            .process_block("", Some("bash"))
-            .contains("баш"));
-    }
-
-    #[test]
-    fn lang_shell() {
-        assert!(brief_handler()
-            .process_block("", Some("shell"))
-            .contains("шелл"));
-    }
-
-    #[test]
-    fn lang_yml() {
-        assert!(brief_handler()
-            .process_block("", Some("yml"))
-            .contains("ямл"));
-    }
-
-    #[test]
-    fn lang_yaml() {
-        assert!(brief_handler()
-            .process_block("", Some("yaml"))
-            .contains("ямл"));
-    }
-
-    #[test]
-    fn lang_md() {
-        assert!(brief_handler()
-            .process_block("", Some("md"))
-            .contains("маркдаун"));
-    }
-
-    #[test]
-    fn lang_markdown() {
-        assert!(brief_handler()
-            .process_block("", Some("markdown"))
-            .contains("маркдаун"));
-    }
-
-    #[test]
-    fn lang_cpp() {
-        assert!(brief_handler()
-            .process_block("", Some("cpp"))
-            .contains("си плюс плюс"));
-    }
-
-    #[test]
-    fn lang_cpp_symbol() {
-        // "c++" contains '+' which is not a \w char, map it directly
-        assert!(brief_handler()
-            .process_block("", Some("c++"))
-            .contains("си плюс плюс"));
-    }
-
-    #[test]
-    fn lang_cs() {
-        assert!(brief_handler()
-            .process_block("", Some("cs"))
-            .contains("си шарп"));
-    }
-
-    #[test]
-    fn lang_csharp() {
-        assert!(brief_handler()
-            .process_block("", Some("csharp"))
-            .contains("си шарп"));
-    }
-
-    #[test]
-    fn lang_dockerfile() {
-        assert!(brief_handler()
-            .process_block("", Some("dockerfile"))
-            .contains("докерфайл"));
-    }
-
-    #[test]
-    fn lang_makefile() {
-        assert!(brief_handler()
-            .process_block("", Some("makefile"))
-            .contains("мейкфайл"));
     }
 
     // ── process() with TrackedText ──────────────────────────────────────

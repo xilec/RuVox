@@ -446,6 +446,7 @@ pub fn transliterate_simple(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test_case::test_case;
 
     fn normalizer() -> EnglishNormalizer {
         EnglishNormalizer::new()
@@ -453,315 +454,220 @@ mod tests {
 
     // ── IT_TERMS dictionary ───────────────────────────────────────────────────
 
-    #[test]
-    fn test_it_terms_git() {
-        let mut en = normalizer();
-        assert_eq!(en.normalize("feature", false), "фича");
-        assert_eq!(en.normalize("branch", false), "бранч");
-        assert_eq!(en.normalize("merge", false), "мёрдж");
-        assert_eq!(en.normalize("commit", false), "коммит");
-        assert_eq!(en.normalize("pull", false), "пулл");
-        assert_eq!(en.normalize("checkout", false), "чекаут");
-        assert_eq!(en.normalize("rebase", false), "рибейз");
-        assert_eq!(en.normalize("stash", false), "стэш");
+    #[test_case("feature" => "фича"; "feature")]
+    #[test_case("branch" => "бранч"; "branch")]
+    #[test_case("merge" => "мёрдж"; "merge")]
+    #[test_case("commit" => "коммит"; "commit")]
+    #[test_case("pull" => "пулл"; "pull")]
+    #[test_case("checkout" => "чекаут"; "checkout")]
+    #[test_case("rebase" => "рибейз"; "rebase")]
+    #[test_case("stash" => "стэш"; "stash")]
+    fn it_terms_git(word: &str) -> String {
+        normalizer().normalize(word, false)
     }
 
-    #[test]
-    fn test_it_terms_dev_process() {
-        let mut en = normalizer();
-        assert_eq!(en.normalize("review", false), "ревью");
-        assert_eq!(en.normalize("deploy", false), "деплой");
-        assert_eq!(en.normalize("release", false), "релиз");
-        assert_eq!(en.normalize("debug", false), "дебаг");
-        assert_eq!(en.normalize("bug", false), "баг");
-        assert_eq!(en.normalize("refactor", false), "рефакторинг");
-        assert_eq!(en.normalize("scrum", false), "скрам");
-        assert_eq!(en.normalize("agile", false), "эджайл");
+    #[test_case("review" => "ревью"; "review")]
+    #[test_case("deploy" => "деплой"; "deploy")]
+    #[test_case("release" => "релиз"; "release")]
+    #[test_case("debug" => "дебаг"; "debug")]
+    #[test_case("bug" => "баг"; "bug")]
+    #[test_case("refactor" => "рефакторинг"; "refactor")]
+    #[test_case("scrum" => "скрам"; "scrum")]
+    #[test_case("agile" => "эджайл"; "agile")]
+    fn it_terms_dev_process(word: &str) -> String {
+        normalizer().normalize(word, false)
     }
 
-    #[test]
-    fn test_it_terms_architecture() {
-        let mut en = normalizer();
-        assert_eq!(en.normalize("framework", false), "фреймворк");
-        assert_eq!(en.normalize("library", false), "лайбрари");
-        assert_eq!(en.normalize("package", false), "пакет");
-        assert_eq!(en.normalize("module", false), "модуль");
-        assert_eq!(en.normalize("function", false), "функция");
-        assert_eq!(en.normalize("method", false), "метод");
-        assert_eq!(en.normalize("class", false), "класс");
-        assert_eq!(en.normalize("object", false), "объект");
-        assert_eq!(en.normalize("interface", false), "интерфейс");
-        assert_eq!(en.normalize("callback", false), "коллбэк");
-        assert_eq!(en.normalize("promise", false), "промис");
-        assert_eq!(en.normalize("handler", false), "хендлер");
-        assert_eq!(en.normalize("listener", false), "листенер");
-        assert_eq!(en.normalize("middleware", false), "мидлвэр");
-        assert_eq!(en.normalize("endpoint", false), "эндпоинт");
-        assert_eq!(en.normalize("router", false), "роутер");
-        assert_eq!(en.normalize("controller", false), "контроллер");
-        assert_eq!(en.normalize("service", false), "сервис");
-        assert_eq!(en.normalize("repository", false), "репозиторий");
+    #[test_case("framework" => "фреймворк"; "framework")]
+    #[test_case("library" => "лайбрари"; "library")]
+    #[test_case("package" => "пакет"; "package")]
+    #[test_case("module" => "модуль"; "module")]
+    #[test_case("function" => "функция"; "function")]
+    #[test_case("method" => "метод"; "method")]
+    #[test_case("class" => "класс"; "class")]
+    #[test_case("object" => "объект"; "object")]
+    #[test_case("interface" => "интерфейс"; "interface")]
+    #[test_case("callback" => "коллбэк"; "callback")]
+    #[test_case("promise" => "промис"; "promise")]
+    #[test_case("handler" => "хендлер"; "handler")]
+    #[test_case("listener" => "листенер"; "listener")]
+    #[test_case("middleware" => "мидлвэр"; "middleware")]
+    #[test_case("endpoint" => "эндпоинт"; "endpoint")]
+    #[test_case("router" => "роутер"; "router")]
+    #[test_case("controller" => "контроллер"; "controller")]
+    #[test_case("service" => "сервис"; "service")]
+    #[test_case("repository" => "репозиторий"; "repository")]
+    fn it_terms_architecture(word: &str) -> String {
+        normalizer().normalize(word, false)
     }
 
-    #[test]
-    fn test_it_terms_data() {
-        let mut en = normalizer();
-        assert_eq!(en.normalize("cache", false), "кэш");
-        assert_eq!(en.normalize("queue", false), "кью");
-        assert_eq!(en.normalize("array", false), "массив");
-        assert_eq!(en.normalize("string", false), "строка");
-        assert_eq!(en.normalize("boolean", false), "булеан");
-        assert_eq!(en.normalize("null", false), "налл");
-        assert_eq!(en.normalize("undefined", false), "андефайнд");
-        assert_eq!(en.normalize("default", false), "дефолт");
-        assert_eq!(en.normalize("index", false), "индекс");
-        assert_eq!(en.normalize("query", false), "квери");
+    #[test_case("cache" => "кэш"; "cache")]
+    #[test_case("queue" => "кью"; "queue")]
+    #[test_case("array" => "массив"; "array")]
+    #[test_case("string" => "строка"; "string")]
+    #[test_case("boolean" => "булеан"; "boolean")]
+    #[test_case("null" => "налл"; "null")]
+    #[test_case("undefined" => "андефайнд"; "undefined")]
+    #[test_case("default" => "дефолт"; "default")]
+    #[test_case("index" => "индекс"; "index")]
+    #[test_case("query" => "квери"; "query")]
+    fn it_terms_data(word: &str) -> String {
+        normalizer().normalize(word, false)
     }
 
-    #[test]
-    fn test_it_terms_infrastructure() {
-        let mut en = normalizer();
-        assert_eq!(en.normalize("docker", false), "докер");
-        assert_eq!(en.normalize("container", false), "контейнер");
-        assert_eq!(en.normalize("kubernetes", false), "кубернетис");
-        assert_eq!(en.normalize("cluster", false), "кластер");
-        assert_eq!(en.normalize("node", false), "нода");
-        assert_eq!(en.normalize("pod", false), "под");
-        assert_eq!(en.normalize("nginx", false), "энджинкс");
-        assert_eq!(en.normalize("backup", false), "бэкап");
-        assert_eq!(en.normalize("client", false), "клиент");
+    #[test_case("docker" => "докер"; "docker")]
+    #[test_case("container" => "контейнер"; "container")]
+    #[test_case("kubernetes" => "кубернетис"; "kubernetes")]
+    #[test_case("cluster" => "кластер"; "cluster")]
+    #[test_case("node" => "нода"; "node")]
+    #[test_case("pod" => "под"; "pod")]
+    #[test_case("nginx" => "энджинкс"; "nginx")]
+    #[test_case("backup" => "бэкап"; "backup")]
+    #[test_case("client" => "клиент"; "client")]
+    fn it_terms_infrastructure(word: &str) -> String {
+        normalizer().normalize(word, false)
     }
 
-    #[test]
-    fn test_it_terms_testing_and_build() {
-        let mut en = normalizer();
-        assert_eq!(en.normalize("test", false), "тест");
-        assert_eq!(en.normalize("mock", false), "мок");
-        assert_eq!(en.normalize("stub", false), "стаб");
-        assert_eq!(en.normalize("spec", false), "спек");
-        assert_eq!(en.normalize("build", false), "билд");
-        assert_eq!(en.normalize("bundle", false), "бандл");
-        assert_eq!(en.normalize("compile", false), "компайл");
-        assert_eq!(en.normalize("webpack", false), "вебпак");
+    #[test_case("test" => "тест"; "test")]
+    #[test_case("mock" => "мок"; "mock")]
+    #[test_case("stub" => "стаб"; "stub")]
+    #[test_case("spec" => "спек"; "spec")]
+    #[test_case("build" => "билд"; "build")]
+    #[test_case("bundle" => "бандл"; "bundle")]
+    #[test_case("compile" => "компайл"; "compile")]
+    #[test_case("webpack" => "вебпак"; "webpack")]
+    fn it_terms_testing_and_build(word: &str) -> String {
+        normalizer().normalize(word, false)
     }
 
-    #[test]
-    fn test_it_terms_languages() {
-        let mut en = normalizer();
-        assert_eq!(en.normalize("python", false), "пайтон");
-        assert_eq!(en.normalize("typescript", false), "тайпскрипт");
-        assert_eq!(en.normalize("rust", false), "раст");
-        assert_eq!(en.normalize("golang", false), "голанг");
-        assert_eq!(en.normalize("kotlin", false), "котлин");
+    #[test_case("python" => "пайтон"; "python")]
+    #[test_case("typescript" => "тайпскрипт"; "typescript")]
+    #[test_case("rust" => "раст"; "rust")]
+    #[test_case("golang" => "голанг"; "golang")]
+    #[test_case("kotlin" => "котлин"; "kotlin")]
+    fn it_terms_languages(word: &str) -> String {
+        normalizer().normalize(word, false)
     }
 
-    #[test]
-    fn test_it_terms_frameworks() {
-        let mut en = normalizer();
-        assert_eq!(en.normalize("react", false), "риакт");
-        assert_eq!(en.normalize("angular", false), "ангуляр");
-        assert_eq!(en.normalize("vue", false), "вью");
-        assert_eq!(en.normalize("svelte", false), "свелт");
-        assert_eq!(en.normalize("next", false), "некст");
-        assert_eq!(en.normalize("express", false), "экспресс");
-        assert_eq!(en.normalize("django", false), "джанго");
-        assert_eq!(en.normalize("flask", false), "фласк");
-        assert_eq!(en.normalize("fastapi", false), "фаст эй пи ай");
-        assert_eq!(en.normalize("laravel", false), "ларавел");
-        assert_eq!(en.normalize("redis", false), "редис");
-        assert_eq!(en.normalize("mongo", false), "монго");
-        assert_eq!(en.normalize("postgres", false), "постгрес");
-        assert_eq!(en.normalize("github", false), "гитхаб");
-        assert_eq!(en.normalize("jira", false), "джира");
-        assert_eq!(en.normalize("slack", false), "слэк");
-        assert_eq!(en.normalize("postman", false), "постман");
+    #[test_case("react" => "риакт"; "react")]
+    #[test_case("angular" => "ангуляр"; "angular")]
+    #[test_case("vue" => "вью"; "vue")]
+    #[test_case("svelte" => "свелт"; "svelte")]
+    #[test_case("next" => "некст"; "next")]
+    #[test_case("express" => "экспресс"; "express")]
+    #[test_case("django" => "джанго"; "django")]
+    #[test_case("flask" => "фласк"; "flask")]
+    #[test_case("fastapi" => "фаст эй пи ай"; "fastapi")]
+    #[test_case("laravel" => "ларавел"; "laravel")]
+    #[test_case("redis" => "редис"; "redis")]
+    #[test_case("mongo" => "монго"; "mongo")]
+    #[test_case("postgres" => "постгрес"; "postgres")]
+    #[test_case("github" => "гитхаб"; "github")]
+    #[test_case("jira" => "джира"; "jira")]
+    #[test_case("slack" => "слэк"; "slack")]
+    #[test_case("postman" => "постман"; "postman")]
+    fn it_terms_frameworks(word: &str) -> String {
+        normalizer().normalize(word, false)
+    }
+
+    #[test_case("c++" => "си плюс плюс"; "cpp")]
+    #[test_case("c#" => "си шарп"; "csharp")]
+    #[test_case("f#" => "эф шарп"; "fsharp")]
+    fn it_terms_special_syntax(word: &str) -> String {
+        normalizer().normalize(word, false)
     }
 
     // ── Case insensitivity ────────────────────────────────────────────────────
 
-    #[test]
-    fn test_case_insensitivity() {
-        let mut en = normalizer();
-        assert_eq!(en.normalize("Feature", false), "фича");
-        assert_eq!(en.normalize("BRANCH", false), "бранч");
-        assert_eq!(en.normalize("Merge", false), "мёрдж");
-        assert_eq!(en.normalize("COMMIT", false), "коммит");
+    #[test_case("Feature" => "фича"; "feature")]
+    #[test_case("BRANCH" => "бранч"; "branch")]
+    #[test_case("Merge" => "мёрдж"; "merge")]
+    #[test_case("COMMIT" => "коммит"; "commit")]
+    #[test_case("Pull Request" => "пулл реквест"; "pull_request_phrase")]
+    #[test_case("CODE REVIEW" => "код ревью"; "code_review_phrase")]
+    fn case_insensitive(word: &str) -> String {
+        normalizer().normalize(word, false)
     }
 
     // ── Multi-word phrases ────────────────────────────────────────────────────
 
-    #[test]
-    fn test_multiword_phrases() {
-        let mut en = normalizer();
-        assert_eq!(en.normalize("pull request", false), "пулл реквест");
-        assert_eq!(en.normalize("merge request", false), "мёрдж реквест");
-        assert_eq!(en.normalize("code review", false), "код ревью");
-        assert_eq!(en.normalize("feature branch", false), "фича бранч");
-        assert_eq!(en.normalize("stack trace", false), "стэк трейс");
-        assert_eq!(en.normalize("daily standup", false), "дейли стендап");
-        assert_eq!(en.normalize("hot fix", false), "хот фикс");
-        assert_eq!(en.normalize("hot reload", false), "хот релоуд");
-        assert_eq!(en.normalize("live reload", false), "лайв релоуд");
-        assert_eq!(en.normalize("dry run", false), "драй ран");
-        assert_eq!(en.normalize("tech debt", false), "тек дет");
-        assert_eq!(en.normalize("code smell", false), "код смелл");
-        assert_eq!(en.normalize("best practice", false), "бест практис");
-        assert_eq!(en.normalize("use case", false), "юз кейс");
-        assert_eq!(en.normalize("edge case", false), "эдж кейс");
+    #[test_case("pull request" => "пулл реквест"; "pull_request")]
+    #[test_case("merge request" => "мёрдж реквест"; "merge_request")]
+    #[test_case("code review" => "код ревью"; "code_review")]
+    #[test_case("feature branch" => "фича бранч"; "feature_branch")]
+    #[test_case("stack trace" => "стэк трейс"; "stack_trace")]
+    #[test_case("daily standup" => "дейли стендап"; "daily_standup")]
+    #[test_case("hot fix" => "хот фикс"; "hot_fix")]
+    #[test_case("hot reload" => "хот релоуд"; "hot_reload")]
+    #[test_case("live reload" => "лайв релоуд"; "live_reload")]
+    #[test_case("dry run" => "драй ран"; "dry_run")]
+    #[test_case("tech debt" => "тек дет"; "tech_debt")]
+    #[test_case("code smell" => "код смелл"; "code_smell")]
+    #[test_case("best practice" => "бест практис"; "best_practice")]
+    #[test_case("use case" => "юз кейс"; "use_case")]
+    #[test_case("edge case" => "эдж кейс"; "edge_case")]
+    fn multiword_phrases(phrase: &str) -> String {
+        normalizer().normalize(phrase, false)
     }
 
-    #[test]
-    fn test_multiword_phrases_case_insensitive() {
-        let mut en = normalizer();
-        assert_eq!(en.normalize("Pull Request", false), "пулл реквест");
-        assert_eq!(en.normalize("CODE REVIEW", false), "код ревью");
+    // ── Transliteration (simple fallback), no duplicate elsewhere ────────────
+
+    #[test_case("ship" => "шип"; "ship")]
+    #[test_case("chip" => "чип"; "chip")]
+    #[test_case("sing" => "синг"; "sing")]
+    #[test_case("back" => "бак"; "back")]
+    #[test_case("phone" => "фоне"; "phone")]
+    #[test_case("see" => "си"; "see")]
+    #[test_case("moon" => "мун"; "moon")]
+    #[test_case("rain" => "рэйн"; "rain")]
+    #[test_case("boy" => "бой"; "boy")]
+    #[test_case("mp3" => "мп3"; "preserves_digits_mp3")]
+    #[test_case("v8" => "в8"; "preserves_digits_v8")]
+    #[test_case("" => ""; "empty")]
+    fn translit_only(word: &str) -> String {
+        transliterate_simple(word)
     }
 
-    // ── Transliteration (simple fallback) ────────────────────────────────────
+    // ── Transliteration fallback: dedup of two call paths ────────────────────
+    //
+    // The same (word, expected) pairs used to be asserted twice: once directly
+    // via `transliterate_simple`, once indirectly via `EnglishNormalizer::normalize`
+    // (these words are not in IT_TERMS, so normalize() falls back to
+    // transliterate_simple() internally). Both invariants are preserved here in
+    // a single table instead of two separate test groups.
 
-    #[test]
-    fn test_translit_push() {
-        // p→п, u→у, sh→ш
-        assert_eq!(transliterate_simple("push"), "пуш");
-    }
-
-    #[test]
-    fn test_translit_fix() {
-        // f→ф, i→и, x→кс
-        assert_eq!(transliterate_simple("fix"), "фикс");
-    }
-
-    #[test]
-    fn test_translit_sprint() {
-        // s→с, p→п, r→р, i→и, n→н, t→т
-        assert_eq!(transliterate_simple("sprint"), "спринт");
-    }
-
-    #[test]
-    fn test_translit_lint() {
-        // l→л, i→и, n→н, t→т
-        assert_eq!(transliterate_simple("lint"), "линт");
-    }
-
-    #[test]
-    fn test_translit_javascript() {
-        // j→дж, a→а, v→в, a→а, s→с, c→к, r→р, i→и, p→п, t→т
-        assert_eq!(transliterate_simple("javascript"), "джаваскрипт");
-    }
-
-    #[test]
-    fn test_translit_swift() {
-        // s→с, w→в, i→и, f→ф, t→т
-        assert_eq!(transliterate_simple("swift"), "свифт");
-    }
-
-    #[test]
-    fn test_translit_java() {
-        // j→дж, a→а, v→в, a→а
-        assert_eq!(transliterate_simple("java"), "джава");
-    }
-
-    #[test]
-    fn test_translit_ruby() {
-        // r→р, u→у, b→б, y→и
-        assert_eq!(transliterate_simple("ruby"), "руби");
-    }
-
-    #[test]
-    fn test_translit_scala() {
-        // s→с, c→к, a→а, l→л, a→а
-        assert_eq!(transliterate_simple("scala"), "скала");
-    }
-
-    #[test]
-    fn test_translit_spring() {
-        // s→с, p→п, r→р, i→и, ng→нг
-        assert_eq!(transliterate_simple("spring"), "спринг");
-    }
-
-    #[test]
-    fn test_translit_gitlab() {
-        // g→г, i→и, t→т, l→л, a→а, b→б
-        assert_eq!(transliterate_simple("gitlab"), "гитлаб");
-    }
-
-    #[test]
-    fn test_translit_figma() {
-        // f→ф, i→и, g→г, m→м, a→а
-        assert_eq!(transliterate_simple("figma"), "фигма");
-    }
-
-    #[test]
-    fn test_translit_kafka() {
-        // k→к, a→а, f→ф, k→к, a→а
-        assert_eq!(transliterate_simple("kafka"), "кафка");
-    }
-
-    #[test]
-    fn test_translit_server() {
-        // s→с, er→ер, v→в, er→ер
-        assert_eq!(transliterate_simple("server"), "сервер");
-    }
-
-    #[test]
-    fn test_translit_digraphs() {
-        // sh, ch, th, ph, ng, ck
-        assert_eq!(transliterate_simple("ship"), "шип");
-        assert_eq!(transliterate_simple("chip"), "чип");
-        assert_eq!(transliterate_simple("sing"), "синг");
-        assert_eq!(transliterate_simple("back"), "бак");
-        assert_eq!(transliterate_simple("phone"), "фоне");
-    }
-
-    #[test]
-    fn test_translit_vowel_digraphs() {
-        assert_eq!(transliterate_simple("see"), "си");
-        assert_eq!(transliterate_simple("moon"), "мун");
-        assert_eq!(transliterate_simple("rain"), "рэйн");
-        assert_eq!(transliterate_simple("boy"), "бой");
-    }
-
-    #[test]
-    fn test_translit_preserves_digits() {
-        // Non-alpha characters pass through verbatim; alpha chars transliterate
-        assert_eq!(transliterate_simple("mp3"), "мп3");
-        assert_eq!(transliterate_simple("v8"), "в8");
-    }
-
-    #[test]
-    fn test_translit_empty() {
-        assert_eq!(transliterate_simple(""), "");
+    #[test_case("push", "пуш"; "push")]
+    #[test_case("fix", "фикс"; "fix")]
+    #[test_case("sprint", "спринт"; "sprint")]
+    #[test_case("lint", "линт"; "lint")]
+    #[test_case("javascript", "джаваскрипт"; "javascript")]
+    #[test_case("swift", "свифт"; "swift")]
+    #[test_case("java", "джава"; "java")]
+    #[test_case("ruby", "руби"; "ruby")]
+    #[test_case("scala", "скала"; "scala")]
+    #[test_case("spring", "спринг"; "spring")]
+    #[test_case("gitlab", "гитлаб"; "gitlab")]
+    #[test_case("figma", "фигма"; "figma")]
+    #[test_case("kafka", "кафка"; "kafka")]
+    #[test_case("server", "сервер"; "server")]
+    fn translit_fallback_matches_normalize(word: &str, expected: &str) {
+        assert_eq!(transliterate_simple(word), expected);
+        assert_eq!(normalizer().normalize(word, false), expected);
     }
 
     // ── Custom terms ──────────────────────────────────────────────────────────
 
-    #[test]
-    fn test_custom_terms_override_it_terms() {
+    #[test_case("api", "апи", &["api", "API"]; "override_it_terms")]
+    #[test_case("foobar", "фубар", &["foobar"]; "new_word")]
+    #[test_case("MyTerm", "майтёрм", &["myterm", "MYTERM"]; "case_insensitive_key")]
+    fn custom_terms(key: &str, value: &str, queries: &[&str]) {
         let mut en = normalizer();
         let mut custom = HashMap::new();
-        custom.insert("api".to_string(), "апи".to_string());
+        custom.insert(key.to_string(), value.to_string());
         en.add_custom_terms(&custom);
-        assert_eq!(en.normalize("api", false), "апи");
-        assert_eq!(en.normalize("API", false), "апи");
-    }
-
-    #[test]
-    fn test_custom_terms_new_word() {
-        let mut en = normalizer();
-        let mut custom = HashMap::new();
-        custom.insert("foobar".to_string(), "фубар".to_string());
-        en.add_custom_terms(&custom);
-        assert_eq!(en.normalize("foobar", false), "фубар");
-    }
-
-    #[test]
-    fn test_custom_terms_case_insensitive_key() {
-        let mut en = normalizer();
-        let mut custom = HashMap::new();
-        custom.insert("MyTerm".to_string(), "майтёрм".to_string());
-        en.add_custom_terms(&custom);
-        assert_eq!(en.normalize("myterm", false), "майтёрм");
-        assert_eq!(en.normalize("MYTERM", false), "майтёрм");
+        for q in queries {
+            assert_eq!(en.normalize(q, false), value);
+        }
     }
 
     // ── Unknown word tracking ─────────────────────────────────────────────────
@@ -815,99 +721,5 @@ mod tests {
     fn test_empty_string() {
         let mut en = normalizer();
         assert_eq!(en.normalize("", false), "");
-    }
-
-    #[test]
-    fn test_it_terms_with_plus_signs() {
-        let mut en = normalizer();
-        assert_eq!(en.normalize("c++", false), "си плюс плюс");
-        assert_eq!(en.normalize("c#", false), "си шарп");
-        assert_eq!(en.normalize("f#", false), "эф шарп");
-    }
-
-    // ── Programming languages resolved via transliteration ───────────────────
-
-    #[test]
-    fn test_normalize_javascript_via_translit() {
-        let mut en = normalizer();
-        assert_eq!(en.normalize("javascript", false), "джаваскрипт");
-    }
-
-    #[test]
-    fn test_normalize_swift_via_translit() {
-        let mut en = normalizer();
-        assert_eq!(en.normalize("swift", false), "свифт");
-    }
-
-    #[test]
-    fn test_normalize_java_via_translit() {
-        let mut en = normalizer();
-        assert_eq!(en.normalize("java", false), "джава");
-    }
-
-    #[test]
-    fn test_normalize_ruby_via_translit() {
-        let mut en = normalizer();
-        assert_eq!(en.normalize("ruby", false), "руби");
-    }
-
-    #[test]
-    fn test_normalize_scala_via_translit() {
-        let mut en = normalizer();
-        assert_eq!(en.normalize("scala", false), "скала");
-    }
-
-    #[test]
-    fn test_normalize_spring_via_translit() {
-        let mut en = normalizer();
-        assert_eq!(en.normalize("spring", false), "спринг");
-    }
-
-    #[test]
-    fn test_normalize_gitlab_via_translit() {
-        let mut en = normalizer();
-        assert_eq!(en.normalize("gitlab", false), "гитлаб");
-    }
-
-    #[test]
-    fn test_normalize_figma_via_translit() {
-        let mut en = normalizer();
-        assert_eq!(en.normalize("figma", false), "фигма");
-    }
-
-    #[test]
-    fn test_normalize_kafka_via_translit() {
-        let mut en = normalizer();
-        assert_eq!(en.normalize("kafka", false), "кафка");
-    }
-
-    #[test]
-    fn test_normalize_server_via_translit() {
-        let mut en = normalizer();
-        assert_eq!(en.normalize("server", false), "сервер");
-    }
-
-    #[test]
-    fn test_normalize_push_via_translit() {
-        let mut en = normalizer();
-        assert_eq!(en.normalize("push", false), "пуш");
-    }
-
-    #[test]
-    fn test_normalize_fix_via_translit() {
-        let mut en = normalizer();
-        assert_eq!(en.normalize("fix", false), "фикс");
-    }
-
-    #[test]
-    fn test_normalize_sprint_via_translit() {
-        let mut en = normalizer();
-        assert_eq!(en.normalize("sprint", false), "спринт");
-    }
-
-    #[test]
-    fn test_normalize_lint_via_translit() {
-        let mut en = normalizer();
-        assert_eq!(en.normalize("lint", false), "линт");
     }
 }

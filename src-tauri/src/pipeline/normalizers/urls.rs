@@ -480,6 +480,7 @@ mod tests {
     use super::super::english::EnglishNormalizer;
     use super::super::numbers::NumberNormalizer;
     use super::*;
+    use test_case::test_case;
 
     fn mk_normalizer() -> (EnglishNormalizer, NumberNormalizer) {
         (EnglishNormalizer::new(), NumberNormalizer::new())
@@ -495,563 +496,124 @@ mod tests {
         URLPathNormalizer::new(en, nn)
     }
 
-    // ---- TestURLNormalization ----
+    // ---- URL normalization ----
 
-    #[test]
-    fn test_url_https_example_com() {
+    #[test_case("https://example.com" => "эйч ти ти пи эс двоеточие слэш слэш example точка ком"; "https_example_com")]
+    #[test_case("http://test.org" => "эйч ти ти пи двоеточие слэш слэш test точка орг"; "http_test_org")]
+    #[test_case("https://github.com/user/repo" => "эйч ти ти пи эс двоеточие слэш слэш github точка ком слэш user слэш repo"; "with_path")]
+    #[test_case("https://docs.python.org/3.11/tutorial" => "эйч ти ти пи эс двоеточие слэш слэш docs точка python точка орг слэш три точка одиннадцать слэш tutorial"; "python_docs_version_path")]
+    #[test_case("https://example.com/file.html" => "эйч ти ти пи эс двоеточие слэш слэш example точка ком слэш file точка html"; "with_file_extension")]
+    #[test_case("https://api.github.com/repos" => "эйч ти ти пи эс двоеточие слэш слэш api точка github точка ком слэш repos"; "subdomain")]
+    #[test_case("http://localhost:8080" => "эйч ти ти пи двоеточие слэш слэш localhost двоеточие восемь тысяч восемьдесят"; "with_port_8080")]
+    #[test_case("http://localhost:3000/api" => "эйч ти ти пи двоеточие слэш слэш localhost двоеточие три тысячи слэш api"; "with_port_3000_and_path")]
+    fn url_normalization(input: &str) -> String {
         let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(
-            n.normalize_url("https://example.com"),
-            "эйч ти ти пи эс двоеточие слэш слэш example точка ком"
-        );
+        norm_no_en(&nn).normalize_url(input)
     }
 
-    #[test]
-    fn test_url_http_test_org() {
+    // ---- Common TLDs ----
+
+    #[test_case("https://example.com", "ком"; "com")]
+    #[test_case("https://example.org", "орг"; "org")]
+    #[test_case("https://example.net", "нет"; "net")]
+    #[test_case("https://example.ru", "ру"; "ru")]
+    #[test_case("https://example.io", "ай оу"; "io")]
+    #[test_case("https://example.dev", "дев"; "dev")]
+    #[test_case("https://example.app", "апп"; "app")]
+    #[test_case("https://example.ai", "эй ай"; "ai")]
+    #[test_case("https://example.co", "ко"; "co")]
+    #[test_case("https://example.me", "ми"; "me")]
+    fn tld(url: &str, expected: &str) {
         let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(
-            n.normalize_url("http://test.org"),
-            "эйч ти ти пи двоеточие слэш слэш test точка орг"
-        );
+        assert!(norm_no_en(&nn).normalize_url(url).contains(expected));
     }
 
-    #[test]
-    fn test_url_with_path() {
+    // ---- Protocols ----
+
+    #[test_case("https://example.com", "эйч ти ти пи эс"; "https")]
+    #[test_case("http://example.com", "эйч ти ти пи"; "http")]
+    #[test_case("ftp://files.example.com", "эф ти пи"; "ftp")]
+    #[test_case("ssh://server.example.com", "эс эс эйч"; "ssh")]
+    #[test_case("git://github.com/repo.git", "гит"; "git")]
+    #[test_case("file:///home/user/doc.txt", "файл"; "file")]
+    fn protocol(url: &str, expected_prefix: &str) {
         let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(
-            n.normalize_url("https://github.com/user/repo"),
-            "эйч ти ти пи эс двоеточие слэш слэш github точка ком слэш user слэш repo"
-        );
+        assert!(norm_no_en(&nn)
+            .normalize_url(url)
+            .starts_with(expected_prefix));
     }
 
-    #[test]
-    fn test_url_python_docs_version_path() {
+    // ---- Email normalization ----
+
+    #[test_case("user@example.com" => "user собака example точка ком"; "simple")]
+    #[test_case("test@mail.ru" => "test собака mail точка ру"; "ru_tld")]
+    #[test_case("john.doe@company.org" => "john точка doe собака company точка орг"; "dot_in_local")]
+    #[test_case("admin@localhost" => "admin собака localhost"; "no_tld")]
+    #[test_case("support@sub.domain.com" => "support собака sub точка domain точка ком"; "subdomain")]
+    #[test_case("name_123@test.io" => "name андерскор сто двадцать три собака test точка ай оу"; "with_numbers_and_underscore")]
+    #[test_case("info-team@company.co" => "info дефис team собака company точка ко"; "with_hyphen")]
+    fn email(input: &str) -> String {
         let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(
-            n.normalize_url("https://docs.python.org/3.11/tutorial"),
-            "эйч ти ти пи эс двоеточие слэш слэш docs точка python точка орг слэш три точка одиннадцать слэш tutorial"
-        );
+        norm_no_en(&nn).normalize_email(input)
     }
 
-    #[test]
-    fn test_url_with_file_extension() {
+    // ---- IP address normalization ----
+
+    #[test_case("192.168.1.1" => "сто девяносто два точка сто шестьдесят восемь точка один точка один"; "192_168_1_1")]
+    #[test_case("127.0.0.1" => "сто двадцать семь точка ноль точка ноль точка один"; "127_0_0_1")]
+    #[test_case("10.0.0.1" => "десять точка ноль точка ноль точка один"; "10_0_0_1")]
+    #[test_case("255.255.255.0" => "двести пятьдесят пять точка двести пятьдесят пять точка двести пятьдесят пять точка ноль"; "255_255_255_0")]
+    #[test_case("8.8.8.8" => "восемь точка восемь точка восемь точка восемь"; "8_8_8_8")]
+    #[test_case("172.16.0.1" => "сто семьдесят два точка шестнадцать точка ноль точка один"; "172_16_0_1")]
+    fn ip(input: &str) -> String {
         let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(
-            n.normalize_url("https://example.com/file.html"),
-            "эйч ти ти пи эс двоеточие слэш слэш example точка ком слэш file точка html"
-        );
+        norm_no_en(&nn).normalize_ip(input)
     }
 
-    #[test]
-    fn test_url_subdomain() {
+    // ---- File path normalization + file extensions (both exercise normalize_filepath) ----
+
+    #[test_case("/home/user/file.txt" => "слэш home слэш user слэш file точка txt"; "unix_home_user_file_txt")]
+    #[test_case("/etc/nginx/nginx.conf" => "слэш etc слэш nginx слэш nginx точка conf"; "nginx_conf")]
+    #[test_case("/var/log/syslog" => "слэш var слэш log слэш syslog"; "var_log_syslog")]
+    #[test_case("~/Documents/report.pdf" => "тильда слэш Documents слэш report точка pdf"; "tilde_documents")]
+    #[test_case("~/.config/settings.json" => "тильда слэш точка config слэш settings точка json"; "tilde_config_hidden")]
+    #[test_case("./src/main.py" => "точка слэш src слэш main точка py"; "relative_dot_slash")]
+    #[test_case("../config/app.yaml" => "точка точка слэш config слэш app точка yaml"; "relative_parent")]
+    #[test_case("C:\\Users\\Admin\\file.txt" => "си двоеточие бэкслэш Users бэкслэш Admin бэкслэш file точка txt"; "windows_c")]
+    #[test_case("D:\\Projects\\code\\main.py" => "ди двоеточие бэкслэш Projects бэкслэш code бэкслэш main точка py"; "windows_d")]
+    #[test_case("main.py" => "main точка py"; "main_py")]
+    #[test_case("index.js" => "index точка js"; "index_js")]
+    #[test_case("styles.css" => "styles точка css"; "styles_css")]
+    #[test_case("config.yaml" => "config точка yaml"; "config_yaml")]
+    #[test_case("data.json" => "data точка json"; "data_json")]
+    #[test_case("README.md" => "README точка md"; "readme_md")]
+    #[test_case("Dockerfile" => "Dockerfile"; "dockerfile_no_ext")]
+    #[test_case("docker-compose.yml" => "docker дефис compose точка yml"; "docker_compose_yml")]
+    #[test_case(".gitignore" => "точка gitignore"; "gitignore")]
+    #[test_case(".env" => "точка env"; "dot_env")]
+    #[test_case("test.spec.ts" => "test точка spec точка ts"; "test_spec_ts")]
+    fn filepath(input: &str) -> String {
         let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(
-            n.normalize_url("https://api.github.com/repos"),
-            "эйч ти ти пи эс двоеточие слэш слэш api точка github точка ком слэш repos"
-        );
+        norm_no_en(&nn).normalize_filepath(input)
     }
 
-    #[test]
-    fn test_url_with_port_8080() {
+    // ---- Complex URLs (multiple expected substrings) ----
+
+    #[test_case("https://example.com/search?q=test", &["example", "search", "q", "test"]; "query_params")]
+    #[test_case("https://docs.example.com/guide#installation", &["docs", "guide", "installation"]; "fragment")]
+    #[test_case("https://api.example.com/v1/users/123/posts", &["api", "v1", "users", "posts"]; "multiple_path_segments")]
+    fn complex_url(url: &str, parts: &[&str]) {
         let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(
-            n.normalize_url("http://localhost:8080"),
-            "эйч ти ти пи двоеточие слэш слэш localhost двоеточие восемь тысяч восемьдесят"
-        );
-    }
-
-    #[test]
-    fn test_url_with_port_3000_and_path() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(
-            n.normalize_url("http://localhost:3000/api"),
-            "эйч ти ти пи двоеточие слэш слэш localhost двоеточие три тысячи слэш api"
-        );
-    }
-
-    // ---- TestCommonTLDs ----
-
-    #[test]
-    fn test_tld_com() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert!(n.normalize_url("https://example.com").contains("ком"));
-    }
-
-    #[test]
-    fn test_tld_org() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert!(n.normalize_url("https://example.org").contains("орг"));
-    }
-
-    #[test]
-    fn test_tld_net() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert!(n.normalize_url("https://example.net").contains("нет"));
-    }
-
-    #[test]
-    fn test_tld_ru() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert!(n.normalize_url("https://example.ru").contains("ру"));
-    }
-
-    #[test]
-    fn test_tld_io() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert!(n.normalize_url("https://example.io").contains("ай оу"));
-    }
-
-    #[test]
-    fn test_tld_dev() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert!(n.normalize_url("https://example.dev").contains("дев"));
-    }
-
-    #[test]
-    fn test_tld_app() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert!(n.normalize_url("https://example.app").contains("апп"));
-    }
-
-    #[test]
-    fn test_tld_ai() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert!(n.normalize_url("https://example.ai").contains("эй ай"));
-    }
-
-    #[test]
-    fn test_tld_co() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert!(n.normalize_url("https://example.co").contains("ко"));
-    }
-
-    #[test]
-    fn test_tld_me() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert!(n.normalize_url("https://example.me").contains("ми"));
-    }
-
-    // ---- TestProtocols ----
-
-    #[test]
-    fn test_protocol_https() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert!(n
-            .normalize_url("https://example.com")
-            .starts_with("эйч ти ти пи эс"));
-    }
-
-    #[test]
-    fn test_protocol_http() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert!(n
-            .normalize_url("http://example.com")
-            .starts_with("эйч ти ти пи"));
-    }
-
-    #[test]
-    fn test_protocol_ftp() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert!(n
-            .normalize_url("ftp://files.example.com")
-            .starts_with("эф ти пи"));
-    }
-
-    #[test]
-    fn test_protocol_ssh() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert!(n
-            .normalize_url("ssh://server.example.com")
-            .starts_with("эс эс эйч"));
-    }
-
-    #[test]
-    fn test_protocol_git() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert!(n
-            .normalize_url("git://github.com/repo.git")
-            .starts_with("гит"));
-    }
-
-    #[test]
-    fn test_protocol_file() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert!(n
-            .normalize_url("file:///home/user/doc.txt")
-            .starts_with("файл"));
-    }
-
-    // ---- TestEmailNormalization ----
-
-    #[test]
-    fn test_email_simple() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(
-            n.normalize_email("user@example.com"),
-            "user собака example точка ком"
-        );
-    }
-
-    #[test]
-    fn test_email_ru_tld() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(
-            n.normalize_email("test@mail.ru"),
-            "test собака mail точка ру"
-        );
-    }
-
-    #[test]
-    fn test_email_dot_in_local() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(
-            n.normalize_email("john.doe@company.org"),
-            "john точка doe собака company точка орг"
-        );
-    }
-
-    #[test]
-    fn test_email_no_tld() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(
-            n.normalize_email("admin@localhost"),
-            "admin собака localhost"
-        );
-    }
-
-    #[test]
-    fn test_email_subdomain() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(
-            n.normalize_email("support@sub.domain.com"),
-            "support собака sub точка domain точка ком"
-        );
-    }
-
-    #[test]
-    fn test_email_with_numbers_and_underscore() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(
-            n.normalize_email("name_123@test.io"),
-            "name андерскор сто двадцать три собака test точка ай оу"
-        );
-    }
-
-    #[test]
-    fn test_email_with_hyphen() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(
-            n.normalize_email("info-team@company.co"),
-            "info дефис team собака company точка ко"
-        );
-    }
-
-    // ---- TestIPAddressNormalization ----
-
-    #[test]
-    fn test_ip_192_168_1_1() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(
-            n.normalize_ip("192.168.1.1"),
-            "сто девяносто два точка сто шестьдесят восемь точка один точка один"
-        );
-    }
-
-    #[test]
-    fn test_ip_127_0_0_1() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(
-            n.normalize_ip("127.0.0.1"),
-            "сто двадцать семь точка ноль точка ноль точка один"
-        );
-    }
-
-    #[test]
-    fn test_ip_10_0_0_1() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(
-            n.normalize_ip("10.0.0.1"),
-            "десять точка ноль точка ноль точка один"
-        );
-    }
-
-    #[test]
-    fn test_ip_255_255_255_0() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(
-            n.normalize_ip("255.255.255.0"),
-            "двести пятьдесят пять точка двести пятьдесят пять точка двести пятьдесят пять точка ноль"
-        );
-    }
-
-    #[test]
-    fn test_ip_8_8_8_8() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(
-            n.normalize_ip("8.8.8.8"),
-            "восемь точка восемь точка восемь точка восемь"
-        );
-    }
-
-    #[test]
-    fn test_ip_172_16_0_1() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(
-            n.normalize_ip("172.16.0.1"),
-            "сто семьдесят два точка шестнадцать точка ноль точка один"
-        );
-    }
-
-    // ---- TestFilePathNormalization ----
-
-    #[test]
-    fn test_path_unix_home_user_file_txt() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(
-            n.normalize_filepath("/home/user/file.txt"),
-            "слэш home слэш user слэш file точка txt"
-        );
-    }
-
-    #[test]
-    fn test_path_nginx_conf() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(
-            n.normalize_filepath("/etc/nginx/nginx.conf"),
-            "слэш etc слэш nginx слэш nginx точка conf"
-        );
-    }
-
-    #[test]
-    fn test_path_var_log_syslog() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(
-            n.normalize_filepath("/var/log/syslog"),
-            "слэш var слэш log слэш syslog"
-        );
-    }
-
-    #[test]
-    fn test_path_tilde_documents() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(
-            n.normalize_filepath("~/Documents/report.pdf"),
-            "тильда слэш Documents слэш report точка pdf"
-        );
-    }
-
-    #[test]
-    fn test_path_tilde_config_hidden() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(
-            n.normalize_filepath("~/.config/settings.json"),
-            "тильда слэш точка config слэш settings точка json"
-        );
-    }
-
-    #[test]
-    fn test_path_relative_dot_slash() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(
-            n.normalize_filepath("./src/main.py"),
-            "точка слэш src слэш main точка py"
-        );
-    }
-
-    #[test]
-    fn test_path_relative_parent() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(
-            n.normalize_filepath("../config/app.yaml"),
-            "точка точка слэш config слэш app точка yaml"
-        );
-    }
-
-    #[test]
-    fn test_path_windows_c() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(
-            n.normalize_filepath("C:\\Users\\Admin\\file.txt"),
-            "си двоеточие бэкслэш Users бэкслэш Admin бэкслэш file точка txt"
-        );
-    }
-
-    #[test]
-    fn test_path_windows_d() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(
-            n.normalize_filepath("D:\\Projects\\code\\main.py"),
-            "ди двоеточие бэкслэш Projects бэкслэш code бэкслэш main точка py"
-        );
-    }
-
-    // ---- TestFileExtensions ----
-
-    #[test]
-    fn test_filename_main_py() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(n.normalize_filepath("main.py"), "main точка py");
-    }
-
-    #[test]
-    fn test_filename_index_js() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(n.normalize_filepath("index.js"), "index точка js");
-    }
-
-    #[test]
-    fn test_filename_styles_css() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(n.normalize_filepath("styles.css"), "styles точка css");
-    }
-
-    #[test]
-    fn test_filename_config_yaml() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(n.normalize_filepath("config.yaml"), "config точка yaml");
-    }
-
-    #[test]
-    fn test_filename_data_json() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(n.normalize_filepath("data.json"), "data точка json");
-    }
-
-    #[test]
-    fn test_filename_readme_md() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(n.normalize_filepath("README.md"), "README точка md");
-    }
-
-    #[test]
-    fn test_filename_dockerfile_no_ext() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(n.normalize_filepath("Dockerfile"), "Dockerfile");
-    }
-
-    #[test]
-    fn test_filename_docker_compose_yml() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(
-            n.normalize_filepath("docker-compose.yml"),
-            "docker дефис compose точка yml"
-        );
-    }
-
-    #[test]
-    fn test_filename_gitignore() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(n.normalize_filepath(".gitignore"), "точка gitignore");
-    }
-
-    #[test]
-    fn test_filename_dot_env() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(n.normalize_filepath(".env"), "точка env");
-    }
-
-    #[test]
-    fn test_filename_test_spec_ts() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        assert_eq!(
-            n.normalize_filepath("test.spec.ts"),
-            "test точка spec точка ts"
-        );
-    }
-
-    // ---- TestComplexURLs ----
-
-    #[test]
-    fn test_complex_url_query_params() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        let result = n.normalize_url("https://example.com/search?q=test");
-        for part in &["example", "search", "q", "test"] {
+        let result = norm_no_en(&nn).normalize_url(url);
+        for part in parts {
             assert!(result.contains(part), "missing '{}' in '{}'", part, result);
         }
     }
 
-    #[test]
-    fn test_complex_url_fragment() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        let result = n.normalize_url("https://docs.example.com/guide#installation");
-        for part in &["docs", "guide", "installation"] {
-            assert!(result.contains(part), "missing '{}' in '{}'", part, result);
-        }
-    }
+    // ---- With EnglishNormalizer (transliteration enabled) ----
 
     #[test]
-    fn test_complex_url_multiple_path_segments() {
-        let (_, nn) = mk_normalizer();
-        let n = norm_no_en(&nn);
-        let result = n.normalize_url("https://api.example.com/v1/users/123/posts");
-        for part in &["api", "v1", "users", "posts"] {
-            assert!(result.contains(part), "missing '{}' in '{}'", part, result);
-        }
-    }
-
-    // ---- Test with EnglishNormalizer (transliteration enabled) ----
-
-    #[test]
-    fn test_url_with_english_normalizer_transliterates() {
+    fn url_with_english_normalizer_transliterates() {
         let (en, nn) = mk_normalizer();
         let n = norm(&en, &nn);
         let result = n.normalize_url("https://github.com/user/repo");
