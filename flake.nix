@@ -112,7 +112,7 @@
 
           nativeBuildInputs = with pkgs; [
             cargo-tauri.hook
-            nodejs_20
+            nodejs_24
             pnpm
             pnpmConfigHook
             pkg-config

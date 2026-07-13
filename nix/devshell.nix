@@ -2,7 +2,7 @@
 #
 # Provides:
 #   - Rust stable (rustc, cargo, rustfmt, clippy)
-#   - Node.js 20 LTS + pnpm
+#   - Node.js 24 LTS + pnpm
 #   - Python 3.12 + uv
 #   - Tauri 2 Linux system deps (webkitgtk_4_1, libsoup_3, ...)
 #   - MPV/libmpv for tauri-plugin-mpv
@@ -28,8 +28,8 @@ pkgs.mkShell {
     clippy
     cargo-tauri
 
-    # ── Node.js LTS (v20) + pnpm ───────────────────────────────────────────
-    nodejs_20
+    # ── Node.js LTS (v24) + pnpm ───────────────────────────────────────────
+    nodejs_24
     pnpm
 
     # ── Python 3.12 + uv (for ttsd subprocess) ────────────────────────────
