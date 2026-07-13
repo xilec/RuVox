@@ -60,6 +60,24 @@ fn re_size() -> &'static Regex {
     })
 }
 
+fn re_date_iso() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"\b(\d{4})-(\d{2})-(\d{2})\b").expect("valid regex"))
+}
+
+fn re_date_dot() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    // European DD.MM.YYYY. A 4-digit year is required so semver-like "1.2.3"
+    // and truncated forms like "10.04." are left for the version/number phases.
+    RE.get_or_init(|| Regex::new(r"\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b").expect("valid regex"))
+}
+
+fn re_time() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    // HH:MM or HH:MM:SS. Two-digit minutes avoid catching ratios like "1:2".
+    RE.get_or_init(|| Regex::new(r"\b(\d{1,2}):(\d{2})(?::(\d{2}))?\b").expect("valid regex"))
+}
+
 fn re_version() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
@@ -308,7 +326,39 @@ impl TTSPipeline {
             });
         }
 
-        // ── Phase 9: Versions (e.g. v1.2.3) ──────────────────────────────────
+        // ── Phase 9: Dates and times ──────────────────────────────────────────
+        // Must precede versions/ranges/numbers so "12.05.2024" and "14:30" are
+        // read as calendar values instead of being torn apart by the version,
+        // range, or bare-number phases. Runs after URLs/emails/IPs/paths
+        // (Phases 7-8), whose regions are already consumed, so date-like
+        // substrings inside them are not re-matched here.
+        {
+            let num = &self.number_normalizer;
+            // normalize_date returns its input unchanged on an invalid
+            // month/day/year, so out-of-range matches become no-ops.
+            tracked.sub(re_date_iso(), |caps| {
+                num.normalize_date(caps.get(0).unwrap().as_str())
+            });
+            tracked.sub(re_date_dot(), |caps| {
+                num.normalize_date(caps.get(0).unwrap().as_str())
+            });
+            tracked.sub(re_time(), |caps| {
+                let full = caps.get(0).unwrap().as_str();
+                let h: i64 = caps.get(1).unwrap().as_str().parse().unwrap_or(-1);
+                let m: i64 = caps.get(2).unwrap().as_str().parse().unwrap_or(-1);
+                let s: i64 = caps
+                    .get(3)
+                    .map(|g| g.as_str().parse().unwrap_or(-1))
+                    .unwrap_or(0);
+                if (0..=23).contains(&h) && (0..=59).contains(&m) && (0..=59).contains(&s) {
+                    num.normalize_time(full)
+                } else {
+                    full.to_string()
+                }
+            });
+        }
+
+        // ── Phase 10: Versions (e.g. v1.2.3) ─────────────────────────────────
         {
             let num = &self.number_normalizer;
             tracked.sub(re_version(), |caps| {
@@ -321,7 +371,7 @@ impl TTSPipeline {
             });
         }
 
-        // ── Phase 10: Ranges (e.g. 10-20) ────────────────────────────────────
+        // ── Phase 11: Ranges (e.g. 10-20) ────────────────────────────────────
         {
             let num = &self.number_normalizer;
             tracked.sub(re_range(), |caps| {
@@ -329,7 +379,7 @@ impl TTSPipeline {
             });
         }
 
-        // ── Phase 11: Percentages ─────────────────────────────────────────────
+        // ── Phase 12: Percentages ─────────────────────────────────────────────
         {
             let num = &self.number_normalizer;
             tracked.sub(re_percentage(), |caps| {
@@ -337,7 +387,7 @@ impl TTSPipeline {
             });
         }
 
-        // ── Phase 12: Operators ───────────────────────────────────────────────
+        // ── Phase 13: Operators ───────────────────────────────────────────────
         // Operators run before symbols so that multi-char operators like "=="
         // are matched before single "=".
         for op in TRACKED_OPERATOR_KEYS {
@@ -345,7 +395,7 @@ impl TTSPipeline {
             tracked.replace(op, &replacement);
         }
 
-        // ── Phase 13: Special symbols (Greek, math, arrows, tilde) ───────────
+        // ── Phase 14: Special symbols (Greek, math, arrows, tilde) ───────────
         for (symbol, replacement) in GREEK_LETTERS
             .iter()
             .chain(MATH_SYMBOLS.iter())
@@ -359,7 +409,7 @@ impl TTSPipeline {
             format!("около {}", caps.get(1).unwrap().as_str())
         });
 
-        // ── Phase 14: Code identifiers ────────────────────────────────────────
+        // ── Phase 15: Code identifiers ────────────────────────────────────────
         {
             let code = &self.code_normalizer;
             tracked.sub(re_camel_lower(), |caps| {
@@ -376,10 +426,10 @@ impl TTSPipeline {
             });
         }
 
-        // ── Phase 15: English words ───────────────────────────────────────────
+        // ── Phase 16: English words ───────────────────────────────────────────
         self.process_english_tracked(&mut tracked);
 
-        // ── Phase 16: Numbers ─────────────────────────────────────────────────
+        // ── Phase 17: Numbers ─────────────────────────────────────────────────
         self.process_numbers_tracked(&mut tracked);
 
         // ── Postprocess ───────────────────────────────────────────────────────
