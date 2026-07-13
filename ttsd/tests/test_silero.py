@@ -7,7 +7,7 @@ in CI without the ML stack.
 
 import pytest
 
-from ttsd.chunking import sanitize_for_silero, split_into_chunks
+from ttsd.chunking import MAX_CHUNK_SIZE, sanitize_for_silero, split_into_chunks
 
 
 def _import_silero_engine():
@@ -37,7 +37,7 @@ def test_silero_load_and_synthesize(tmp_path):
 
 
 @pytest.mark.slow
-def test_silero_second_load_is_noop(tmp_path):
+def test_silero_second_load_is_noop():
     """Calling load() twice must not raise or reset the model."""
     engine = _import_silero_engine()()
     engine.load()
@@ -59,6 +59,24 @@ def test_silero_empty_text_raises(tmp_path):
         )
 
 
+def _assert_covers_source(text: str, chunks: list[tuple[str, int]]) -> None:
+    """Every chunk must sit at its declared start position, stay within
+    MAX_CHUNK_SIZE, and the gaps between (and after) chunks must be
+    whitespace-only — i.e. the chunks collectively cover all non-whitespace
+    content of the source text, in order, with nothing dropped or duplicated.
+    """
+    for chunk_text, start in chunks:
+        assert text[start : start + len(chunk_text)] == chunk_text
+        assert len(chunk_text) <= MAX_CHUNK_SIZE
+
+    for (chunk_text, start), (_, next_start) in zip(chunks, chunks[1:], strict=False):
+        gap = text[start + len(chunk_text) : next_start]
+        assert gap.strip() == ""
+
+    last_text, last_start = chunks[-1]
+    assert text[last_start + len(last_text) :].strip() == ""
+
+
 class TestSplitIntoChunks:
     """Unit tests for split_into_chunks that do not need the model."""
 
@@ -75,6 +93,10 @@ class TestSplitIntoChunks:
         # Every chunk must be non-empty
         for chunk_text, _ in chunks:
             assert chunk_text.strip()
+        _assert_covers_source(text, chunks)
+        # Every split but the last must land right after a sentence boundary.
+        for chunk_text, _ in chunks[:-1]:
+            assert chunk_text.rstrip().endswith(".")
 
     def test_chunks_cover_full_text(self):
         sentence = "Слово слово слово. "
@@ -83,12 +105,14 @@ class TestSplitIntoChunks:
         # The start positions must be ordered
         starts = [s for _, s in chunks]
         assert starts == sorted(starts)
+        _assert_covers_source(text, chunks)
 
     def test_start_positions_non_negative(self):
         text = "A" * 2000
         chunks = split_into_chunks(text)
         for _, start in chunks:
             assert start >= 0
+        _assert_covers_source(text, chunks)
 
 
 class TestSanitizeForSilero:
