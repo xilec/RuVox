@@ -1037,7 +1037,7 @@ mod tests {
     use super::*;
     use test_case::test_case;
 
-    fn nn() -> NumberNormalizer {
+    fn normalizer() -> NumberNormalizer {
         NumberNormalizer::new()
     }
 
@@ -1067,7 +1067,7 @@ mod tests {
     #[test_case("100000" => "сто тысяч"; "hundred_thousand")]
     #[test_case("1000000" => "один миллион"; "one_million")]
     fn integer(input: &str) -> String {
-        nn().normalize_number(input)
+        normalizer().normalize_number(input)
     }
 
     // ---- TestFloats ----
@@ -1083,7 +1083,7 @@ mod tests {
     #[test_case("0,5" => "ноль точка пять"; "comma_zero_five")]
     #[test_case("10,25" => "десять точка два пять"; "comma_ten_25")]
     fn float(input: &str) -> String {
-        nn().normalize_float(input)
+        normalizer().normalize_float(input)
     }
 
     // ---- TestPercentages ----
@@ -1100,7 +1100,7 @@ mod tests {
     #[test_case("0.5%" => "ноль точка пять процентов"; "float_0_5")]
     #[test_case("33.33%" => "тридцать три точка три три процентов"; "float_33_33")]
     fn percentage(input: &str) -> String {
-        nn().normalize_percentage(input)
+        normalizer().normalize_percentage(input)
     }
 
     // ---- TestRanges ----
@@ -1114,7 +1114,7 @@ mod tests {
     #[test_case("10\u{2013}20" => "от десяти до двадцати"; "en_dash")]
     #[test_case("100\u{2014}200" => "от ста до двухсот"; "em_dash")]
     fn range(input: &str) -> String {
-        nn().normalize_range(input)
+        normalizer().normalize_range(input)
     }
 
     // ---- TestSizeUnits ----
@@ -1140,7 +1140,7 @@ mod tests {
     #[test_case("1мб" => "один мегабайт"; "russian_1mb")]
     #[test_case("16гб" => "шестнадцать гигабайт"; "russian_16gb")]
     fn size(input: &str) -> String {
-        nn().normalize_size(input)
+        normalizer().normalize_size(input)
     }
 
     // ---- TestVersions ----
@@ -1158,7 +1158,7 @@ mod tests {
     #[test_case("1.0.0-rc1" => "один точка ноль точка ноль эр си один"; "rc1")]
     #[test_case("3.11.0-beta.1" => "три точка одиннадцать точка ноль бета точка один"; "beta_point")]
     fn version(input: &str) -> String {
-        nn().normalize_version(input)
+        normalizer().normalize_version(input)
     }
 
     // ---- TestDates ----
@@ -1171,7 +1171,7 @@ mod tests {
     #[test_case("2024/01/15" => "пятнадцатое января две тысячи двадцать четвёртого года"; "slash_2024_01_15")]
     #[test_case("15/01/2024" => "пятнадцатое января две тысячи двадцать четвёртого года"; "slash_15_01_2024")]
     fn date(input: &str) -> String {
-        nn().normalize_date(input)
+        normalizer().normalize_date(input)
     }
 
     // ---- TestTimes ----
@@ -1199,6 +1199,6 @@ mod tests {
     #[test_case("24:00" => "24:00"; "hour_boundary_24")]
     #[test_case("12:60" => "12:60"; "minute_boundary_60")]
     fn time(input: &str) -> String {
-        nn().normalize_time(input)
+        normalizer().normalize_time(input)
     }
 }

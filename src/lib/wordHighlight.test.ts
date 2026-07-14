@@ -11,66 +11,95 @@ function ts(start: number, end: number, origStart = 0, origEnd = 0): WordTimesta
 }
 
 describe('findActiveTimestamp', () => {
-  it('returns -1 for an empty timestamp list', () => {
-    expect(findActiveTimestamp([], 0)).toBe(-1);
-  });
+  const severalIntervals = [ts(0, 1), ts(1, 2), ts(2, 3), ts(3, 4), ts(4, 5)];
 
-  it('returns -1 when position is before the first timestamp', () => {
-    const list = [ts(1, 2)];
-    expect(findActiveTimestamp(list, 0)).toBe(-1);
-  });
-
-  it('returns -1 when position is after the last timestamp', () => {
-    const list = [ts(0, 1)];
-    expect(findActiveTimestamp(list, 5)).toBe(-1);
-  });
-
-  it('matches the interval start (inclusive lower bound)', () => {
-    const list = [ts(1, 2)];
-    expect(findActiveTimestamp(list, 1)).toBe(0);
-  });
-
-  it('matches strictly inside the interval', () => {
-    const list = [ts(1, 2)];
-    expect(findActiveTimestamp(list, 1.5)).toBe(0);
-  });
-
-  it('excludes the interval end (upper bound is exclusive)', () => {
-    const list = [ts(1, 2)];
-    expect(findActiveTimestamp(list, 2)).toBe(-1);
-  });
-
-  it('at a contiguous boundary, attributes the shared instant to the later interval', () => {
-    const list = [ts(0, 1), ts(1, 2)];
-    expect(findActiveTimestamp(list, 1)).toBe(1);
-  });
-
-  it('returns -1 for a position that falls in a gap between intervals', () => {
-    const list = [ts(0, 1), ts(2, 3)];
-    expect(findActiveTimestamp(list, 1.5)).toBe(-1);
-  });
-
-  it('finds the correct index among several intervals (start, middle, end)', () => {
-    const list = [ts(0, 1), ts(1, 2), ts(2, 3), ts(3, 4), ts(4, 5)];
-    expect(findActiveTimestamp(list, 0)).toBe(0);
-    expect(findActiveTimestamp(list, 2.5)).toBe(2);
-    expect(findActiveTimestamp(list, 4.999)).toBe(4);
-  });
-
-  it('never matches a zero-duration interval (start === end is unreachable)', () => {
-    const list = [ts(1, 1)];
-    expect(findActiveTimestamp(list, 1)).toBe(-1);
-  });
-
-  it('documents current behavior when timestamps are not sorted ascending', () => {
-    // findActiveTimestamp is a binary search: it assumes timestamps are
-    // sorted ascending by start. If that invariant is violated, a real
-    // match can be missed entirely — here index 2 genuinely contains
-    // position 0.5, but the search prunes it away and returns -1.
-    // This test pins down current (surprising) behavior; it does not
-    // assert that -1 is the "right" answer.
-    const list = [ts(100, 101), ts(102, 103), ts(0, 1), ts(104, 105)];
-    expect(findActiveTimestamp(list, 0.5)).toBe(-1);
+  it.each([
+    {
+      name: 'returns -1 for an empty timestamp list',
+      list: [] as WordTimestamp[],
+      pos: 0,
+      expected: -1,
+    },
+    {
+      name: 'returns -1 when position is before the first timestamp',
+      list: [ts(1, 2)],
+      pos: 0,
+      expected: -1,
+    },
+    {
+      name: 'returns -1 when position is after the last timestamp',
+      list: [ts(0, 1)],
+      pos: 5,
+      expected: -1,
+    },
+    {
+      name: 'matches the interval start (inclusive lower bound)',
+      list: [ts(1, 2)],
+      pos: 1,
+      expected: 0,
+    },
+    {
+      name: 'matches strictly inside the interval',
+      list: [ts(1, 2)],
+      pos: 1.5,
+      expected: 0,
+    },
+    {
+      name: 'excludes the interval end (upper bound is exclusive)',
+      list: [ts(1, 2)],
+      pos: 2,
+      expected: -1,
+    },
+    {
+      name: 'at a contiguous boundary, attributes the shared instant to the later interval',
+      list: [ts(0, 1), ts(1, 2)],
+      pos: 1,
+      expected: 1,
+    },
+    {
+      name: 'returns -1 for a position that falls in a gap between intervals',
+      list: [ts(0, 1), ts(2, 3)],
+      pos: 1.5,
+      expected: -1,
+    },
+    {
+      name: 'finds the interval at the start among several intervals',
+      list: severalIntervals,
+      pos: 0,
+      expected: 0,
+    },
+    {
+      name: 'finds the interval in the middle among several intervals',
+      list: severalIntervals,
+      pos: 2.5,
+      expected: 2,
+    },
+    {
+      name: 'finds the interval at the end among several intervals',
+      list: severalIntervals,
+      pos: 4.999,
+      expected: 4,
+    },
+    {
+      name: 'never matches a zero-duration interval (start === end is unreachable)',
+      list: [ts(1, 1)],
+      pos: 1,
+      expected: -1,
+    },
+    {
+      // findActiveTimestamp is a binary search: it assumes timestamps are
+      // sorted ascending by start. If that invariant is violated, a real
+      // match can be missed entirely — here index 2 genuinely contains
+      // position 0.5, but the search prunes it away and returns -1.
+      // This case pins down current (surprising) behavior; it does not
+      // assert that -1 is the "right" answer.
+      name: 'documents current behavior when timestamps are not sorted ascending',
+      list: [ts(100, 101), ts(102, 103), ts(0, 1), ts(104, 105)],
+      pos: 0.5,
+      expected: -1,
+    },
+  ])('$name', ({ list, pos, expected }) => {
+    expect(findActiveTimestamp(list, pos)).toBe(expected);
   });
 });
 

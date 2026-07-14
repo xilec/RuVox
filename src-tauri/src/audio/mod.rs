@@ -201,6 +201,29 @@ mod tests {
     /// `test_case_rates_match_supported_sample_rates`.
     const TEST_CASE_RATES: [u32; 5] = [8_000, 12_000, 16_000, 24_000, 48_000];
 
+    /// Write a short, well-formed WAV at `path` matching an arbitrary `spec`
+    /// (unlike `write_sine_wav`, which is float/mono-only). Used by the
+    /// `rejects_*` negative tests to build inputs `encode_wav_to_opus` must
+    /// reject before it ever decodes a sample -- silence is fine since the
+    /// content never gets that far.
+    fn write_wav_with_spec(path: &Path, spec: hound::WavSpec) {
+        let mut writer = hound::WavWriter::create(path, spec).expect("create wav");
+        let total_samples = 1000 * spec.channels as usize;
+        match spec.sample_format {
+            hound::SampleFormat::Float => {
+                for _ in 0..total_samples {
+                    writer.write_sample(0.0f32).expect("write sample");
+                }
+            }
+            hound::SampleFormat::Int => {
+                for _ in 0..total_samples {
+                    writer.write_sample(0i16).expect("write sample");
+                }
+            }
+        }
+        writer.finalize().expect("finalize");
+    }
+
     /// Read the `input_sample_rate` field out of an encoded Ogg-Opus file's
     /// OpusHead packet. The packet is: "OggS" page header (27+ bytes) then
     /// segment table, then payload starting with "OpusHead"; the rate is a
@@ -286,11 +309,7 @@ mod tests {
             bits_per_sample: 32,
             sample_format: hound::SampleFormat::Float,
         };
-        let mut writer = hound::WavWriter::create(&wav_path, spec).expect("create wav");
-        for _ in 0..1000 {
-            writer.write_sample(0.0f32).expect("write sample");
-        }
-        writer.finalize().expect("finalize");
+        write_wav_with_spec(&wav_path, spec);
 
         let err =
             encode_wav_to_opus(&wav_path, &opus_path).expect_err("should reject 22.05 kHz wav");
@@ -314,12 +333,7 @@ mod tests {
             bits_per_sample: 32,
             sample_format: hound::SampleFormat::Float,
         };
-        let mut writer = hound::WavWriter::create(&wav_path, spec).expect("create wav");
-        for _ in 0..1000 {
-            writer.write_sample(0.0f32).expect("write sample (L)");
-            writer.write_sample(0.0f32).expect("write sample (R)");
-        }
-        writer.finalize().expect("finalize");
+        write_wav_with_spec(&wav_path, spec);
 
         let err = encode_wav_to_opus(&wav_path, &opus_path).expect_err("should reject stereo wav");
         match err {
@@ -343,11 +357,7 @@ mod tests {
             bits_per_sample: 16,
             sample_format: hound::SampleFormat::Int,
         };
-        let mut writer = hound::WavWriter::create(&wav_path, spec).expect("create wav");
-        for _ in 0..1000 {
-            writer.write_sample(0i16).expect("write sample");
-        }
-        writer.finalize().expect("finalize");
+        write_wav_with_spec(&wav_path, spec);
 
         let err = encode_wav_to_opus(&wav_path, &opus_path)
             .expect_err("should reject 16-bit int PCM wav");

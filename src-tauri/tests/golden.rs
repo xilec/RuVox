@@ -13,6 +13,8 @@ use similar::{ChangeTag, TextDiff};
 use std::fs;
 use std::path::PathBuf;
 
+mod common;
+
 // ── JSON fixture schema ────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
@@ -25,14 +27,7 @@ struct CharMapFixture {
 // ── Fixture discovery ──────────────────────────────────────────────────────────
 
 fn fixtures_dir() -> PathBuf {
-    // Tests can be run from `src-tauri/` or from the workspace root.
-    let from_crate = PathBuf::from("tests/fixtures/pipeline");
-    let from_workspace = PathBuf::from("src-tauri/tests/fixtures/pipeline");
-    if from_crate.exists() {
-        from_crate
-    } else {
-        from_workspace
-    }
+    common::resolve_test_path("tests/fixtures/pipeline")
 }
 
 /// Returns sorted list of case names derived from `*.input.txt` files.

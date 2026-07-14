@@ -424,20 +424,22 @@ impl<R: Runtime> Drop for Player<R> {
 // Pure position logic (extracted so it can be unit-tested without mpv)
 // ---------------------------------------------------------------------------
 
+/// Tolerance for treating `time-pos` as having reached `duration`: mpv's
+/// position poll can lag the true end of file by a small margin.
+const EOF_EPSILON_SEC: f64 = 0.2;
+
 /// Decide whether the emitter should treat the current poll as end-of-file.
 ///
-/// mpv reports three different "end of file" states and we treat all as EOF:
-///   1. `time-pos` is None  — mpv unloaded the file / entered idle,
-///   2. `time-pos` >= duration − 0.2,
-///   3. duration known but `time-pos` stopped advancing (covered implicitly
-///      by #2 since mpv pins time-pos to duration).
+/// EOF is true in either of two cases, both requiring a known duration:
+///   1. `time-pos` is None — mpv unloaded the file / entered idle,
+///   2. `time-pos` >= duration − `EOF_EPSILON_SEC`.
 ///
 /// A None duration is never EOF: without a known length we cannot tell that
 /// playback has ended, so we keep emitting positions.
 fn is_eof(pos: Option<f64>, duration: Option<f64>) -> bool {
     match (pos, duration) {
         (None, Some(_)) => true,
-        (Some(p), Some(d)) if d > 0.0 && p >= d - 0.2 => true,
+        (Some(p), Some(d)) if d > 0.0 && p >= d - EOF_EPSILON_SEC => true,
         _ => false,
     }
 }
@@ -495,9 +497,12 @@ pub fn spawn_position_emitter<R: Runtime + 'static>(player: Arc<Player<R>>, app:
                 if seek_suppressed(Instant::now(), s.seek_suppress_until) {
                     true
                 } else {
-                    // Deadline passed (or none): clear it so the check is cheap
-                    // on subsequent ticks.
-                    s.seek_suppress_until = None;
+                    // Deadline passed: clear it so the check is cheap on
+                    // subsequent ticks. Skip the write entirely when it's
+                    // already None -- the common case once the window closes.
+                    if s.seek_suppress_until.is_some() {
+                        s.seek_suppress_until = None;
+                    }
                     false
                 }
             };
@@ -554,8 +559,8 @@ mod tests {
     /// `is_eof(pos, duration)` decides EOF from mpv's last position poll:
     /// - unknown duration → never EOF (cannot tell the file ended);
     /// - a zero-length duration is guarded off (`d > 0.0`);
-    /// - otherwise EOF once `pos` is `None` (file unloaded) or within 0.2 s of
-    ///   the end.
+    /// - otherwise EOF once `pos` is `None` (file unloaded) or within
+    ///   `EOF_EPSILON_SEC` of the end.
     #[test_case(None, Some(10.0) => true; "none_pos_with_duration")]
     #[test_case(Some(9.8), Some(10.0) => true; "at_threshold")]
     #[test_case(Some(10.0), Some(10.0) => true; "at_duration")]
