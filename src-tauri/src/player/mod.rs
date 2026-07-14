@@ -497,9 +497,12 @@ pub fn spawn_position_emitter<R: Runtime + 'static>(player: Arc<Player<R>>, app:
                 if seek_suppressed(Instant::now(), s.seek_suppress_until) {
                     true
                 } else {
-                    // Deadline passed (or none): clear it so the check is cheap
-                    // on subsequent ticks.
-                    s.seek_suppress_until = None;
+                    // Deadline passed: clear it so the check is cheap on
+                    // subsequent ticks. Skip the write entirely when it's
+                    // already None -- the common case once the window closes.
+                    if s.seek_suppress_until.is_some() {
+                        s.seek_suppress_until = None;
+                    }
                     false
                 }
             };
