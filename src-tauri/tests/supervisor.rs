@@ -22,22 +22,15 @@ use ruvox_tauri_lib::tts::supervisor::{CommandFactory, TtsSupervisor};
 use ruvox_tauri_lib::tts::TtsEngine;
 use tokio::process::Command;
 
+mod common;
+
 /// Resolve the mock script path. `cargo test` may be invoked from either
 /// `src-tauri/` (the manifest dir, default) or the workspace root.
 fn mock_script_path() -> PathBuf {
-    let from_crate = PathBuf::from("tests/fixtures/mock_ttsd_suicide.py");
-    if from_crate.exists() {
-        return from_crate
-            .canonicalize()
-            .expect("canonicalize from-crate path");
-    }
-    let from_workspace = PathBuf::from("src-tauri/tests/fixtures/mock_ttsd_suicide.py");
-    if from_workspace.exists() {
-        return from_workspace
-            .canonicalize()
-            .expect("canonicalize from-workspace path");
-    }
-    panic!("mock_ttsd_suicide.py not found from either crate or workspace root");
+    let path = common::resolve_test_path("tests/fixtures/mock_ttsd_suicide.py");
+    path.canonicalize().unwrap_or_else(|e| {
+        panic!("mock_ttsd_suicide.py not found from either crate or workspace root: {e}")
+    })
 }
 
 fn build_factory() -> CommandFactory {
