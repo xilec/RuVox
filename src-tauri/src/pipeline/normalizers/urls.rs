@@ -513,19 +513,19 @@ mod tests {
 
     // ---- Common TLDs ----
 
-    #[test_case("https://example.com", "ком"; "com")]
-    #[test_case("https://example.org", "орг"; "org")]
-    #[test_case("https://example.net", "нет"; "net")]
-    #[test_case("https://example.ru", "ру"; "ru")]
-    #[test_case("https://example.io", "ай оу"; "io")]
-    #[test_case("https://example.dev", "дев"; "dev")]
-    #[test_case("https://example.app", "апп"; "app")]
-    #[test_case("https://example.ai", "эй ай"; "ai")]
-    #[test_case("https://example.co", "ко"; "co")]
-    #[test_case("https://example.me", "ми"; "me")]
-    fn tld(url: &str, expected: &str) {
+    #[test_case("https://example.com" => "эйч ти ти пи эс двоеточие слэш слэш example точка ком"; "com")]
+    #[test_case("https://example.org" => "эйч ти ти пи эс двоеточие слэш слэш example точка орг"; "org")]
+    #[test_case("https://example.net" => "эйч ти ти пи эс двоеточие слэш слэш example точка нет"; "net")]
+    #[test_case("https://example.ru" => "эйч ти ти пи эс двоеточие слэш слэш example точка ру"; "ru")]
+    #[test_case("https://example.io" => "эйч ти ти пи эс двоеточие слэш слэш example точка ай оу"; "io")]
+    #[test_case("https://example.dev" => "эйч ти ти пи эс двоеточие слэш слэш example точка дев"; "dev")]
+    #[test_case("https://example.app" => "эйч ти ти пи эс двоеточие слэш слэш example точка апп"; "app")]
+    #[test_case("https://example.ai" => "эйч ти ти пи эс двоеточие слэш слэш example точка эй ай"; "ai")]
+    #[test_case("https://example.co" => "эйч ти ти пи эс двоеточие слэш слэш example точка ко"; "co")]
+    #[test_case("https://example.me" => "эйч ти ти пи эс двоеточие слэш слэш example точка ми"; "me")]
+    fn tld(url: &str) -> String {
         let (_, nn) = mk_normalizer();
-        assert!(norm_no_en(&nn).normalize_url(url).contains(expected));
+        norm_no_en(&nn).normalize_url(url)
     }
 
     // ---- Protocols ----
@@ -597,17 +597,18 @@ mod tests {
         norm_no_en(&nn).normalize_filepath(input)
     }
 
-    // ---- Complex URLs (multiple expected substrings) ----
+    // ---- Complex URLs (query, fragment, multi-segment paths) ----
+    //
+    // English words and bare digit segments (e.g. "123") pass through
+    // verbatim here by design: later pipeline phases (English/number
+    // normalizers) pick them up.
 
-    #[test_case("https://example.com/search?q=test", &["example", "search", "q", "test"]; "query_params")]
-    #[test_case("https://docs.example.com/guide#installation", &["docs", "guide", "installation"]; "fragment")]
-    #[test_case("https://api.example.com/v1/users/123/posts", &["api", "v1", "users", "posts"]; "multiple_path_segments")]
-    fn complex_url(url: &str, parts: &[&str]) {
+    #[test_case("https://example.com/search?q=test" => "эйч ти ти пи эс двоеточие слэш слэш example точка ком слэш search вопросительный знак q равно test"; "query_params")]
+    #[test_case("https://docs.example.com/guide#installation" => "эйч ти ти пи эс двоеточие слэш слэш docs точка example точка ком слэш guide решётка installation"; "fragment")]
+    #[test_case("https://api.example.com/v1/users/123/posts" => "эйч ти ти пи эс двоеточие слэш слэш api точка example точка ком слэш v1 слэш users слэш 123 слэш posts"; "multiple_path_segments")]
+    fn complex_url(url: &str) -> String {
         let (_, nn) = mk_normalizer();
-        let result = norm_no_en(&nn).normalize_url(url);
-        for part in parts {
-            assert!(result.contains(part), "missing '{}' in '{}'", part, result);
-        }
+        norm_no_en(&nn).normalize_url(url)
     }
 
     // ---- With EnglishNormalizer (transliteration enabled) ----
@@ -617,9 +618,11 @@ mod tests {
         let (en, nn) = mk_normalizer();
         let n = norm(&en, &nn);
         let result = n.normalize_url("https://github.com/user/repo");
-        // With English normalizer, host parts should be transliterated.
-        // "github" → "гисуб" (transliteration), TLD "com" → "ком"
-        assert!(result.starts_with("эйч ти ти пи эс"));
-        assert!(result.contains("ком"));
+        // With the English normalizer enabled every English segment is
+        // transliterated: github → гитхаб, user → юзер, repo → репо.
+        assert_eq!(
+            result,
+            "эйч ти ти пи эс двоеточие слэш слэш гитхаб точка ком слэш юзер слэш репо"
+        );
     }
 }
