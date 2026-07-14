@@ -1,5 +1,7 @@
 """Unit tests for ttsd.chunking — torch-free, run in CI without the ML stack."""
 
+import pytest
+
 from ttsd.chunking import MAX_CHUNK_SIZE, sanitize_for_silero, split_into_chunks
 
 
@@ -60,15 +62,13 @@ class TestSplitIntoChunks:
 
 
 class TestSanitizeForSilero:
-    def test_newlines_replaced_by_space(self):
-        result = sanitize_for_silero("один\nдва")
-        assert "\n" not in result
-        assert "один два" == result
-
-    def test_multiple_spaces_collapsed(self):
-        result = sanitize_for_silero("один   два")
-        assert result == "один два"
-
-    def test_leading_trailing_stripped(self):
-        result = sanitize_for_silero("  текст  ")
-        assert result == "текст"
+    @pytest.mark.parametrize(
+        "text, expected",
+        [
+            pytest.param("один\nдва", "один два", id="newlines_replaced_by_space"),
+            pytest.param("один   два", "один два", id="multiple_spaces_collapsed"),
+            pytest.param("  текст  ", "текст", id="leading_trailing_stripped"),
+        ],
+    )
+    def test_sanitize(self, text, expected):
+        assert sanitize_for_silero(text) == expected

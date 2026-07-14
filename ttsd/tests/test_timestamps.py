@@ -12,25 +12,20 @@ from ttsd.timestamps import (
 
 
 class TestExtractWords:
-    def test_simple_sentence(self):
-        words = extract_words_with_positions("привет мир")
-        assert len(words) == 2
-        assert words[0] == ("привет", 0, 6)
-        assert words[1] == ("мир", 7, 10)
-
-    def test_punctuation_excluded(self):
-        words = extract_words_with_positions("раз, два, три.")
-        assert [w for w, _, _ in words] == ["раз", "два", "три"]
-
-    def test_empty_string(self):
-        assert extract_words_with_positions("") == []
-
-    def test_only_punctuation(self):
-        assert extract_words_with_positions("...!?") == []
-
-    def test_positions_correct(self):
-        text = "abc def"
+    @pytest.mark.parametrize(
+        "text, expected_words",
+        [
+            pytest.param("привет мир", ["привет", "мир"], id="simple_sentence"),
+            pytest.param("раз, два, три.", ["раз", "два", "три"], id="punctuation_excluded"),
+            pytest.param("", [], id="empty_string"),
+            pytest.param("...!?", [], id="only_punctuation"),
+            pytest.param("abc def", ["abc", "def"], id="positions_correct"),
+        ],
+    )
+    def test_extract_words(self, text, expected_words):
         words = extract_words_with_positions(text)
+        assert [w for w, _, _ in words] == expected_words
+        # Every returned span must round-trip to its own word in the source.
         for word, start, end in words:
             assert text[start:end] == word
 
