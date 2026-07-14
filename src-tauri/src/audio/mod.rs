@@ -194,6 +194,12 @@ fn build_opus_tags() -> Vec<u8> {
 mod tests {
     use super::*;
     use crate::storage::test_util::write_sine_wav;
+    use test_case::test_case;
+
+    /// Rates enumerated as per-rate `#[test_case]` rows below. Kept in sync with
+    /// the production `SUPPORTED_SAMPLE_RATES` constant by
+    /// `test_case_rates_match_supported_sample_rates`.
+    const TEST_CASE_RATES: [u32; 5] = [8_000, 12_000, 16_000, 24_000, 48_000];
 
     /// Read the `input_sample_rate` field out of an encoded Ogg-Opus file's
     /// OpusHead packet. The packet is: "OggS" page header (27+ bytes) then
@@ -217,35 +223,54 @@ mod tests {
 
     /// Every Opus-native sample rate (RFC 6716 §2, `SUPPORTED_SAMPLE_RATES`)
     /// must round-trip through the encoder: a non-empty Ogg stream whose
-    /// OpusHead records the input rate. Table-driven so the 5 rates share one
-    /// assertion path instead of one copy-pasted test per rate.
+    /// OpusHead records the input rate. One `#[test_case]` per rate so a
+    /// failing rate is a named case, not a loop iteration swallowed by the
+    /// first `assert`.
+    #[test_case(8_000; "8kHz")]
+    #[test_case(12_000; "12kHz")]
+    #[test_case(16_000; "16kHz")]
+    #[test_case(24_000; "24kHz")]
+    #[test_case(48_000; "48kHz")]
+    fn encode_wav_produces_valid_opus_at_supported_rate(rate: u32) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let wav_path = dir.path().join("in.wav");
+        let opus_path = dir.path().join("out.opus");
+
+        write_sine_wav(&wav_path, rate, 440.0, 0.25);
+        encode_wav_to_opus(&wav_path, &opus_path)
+            .unwrap_or_else(|e| panic!("encode failed at {rate} Hz: {e}"));
+
+        // 1 s at 32 kbps VOIP yields >1700 bytes even at 8/12 kHz; the
+        // pre-refactor 48 kHz test asserted > 1000, keep that bar so a
+        // header-only or truncated stream can't slip through.
+        let bytes = std::fs::read(&opus_path).expect("read opus");
+        assert!(
+            bytes.len() > 1000,
+            "opus too small at {rate} Hz: {}",
+            bytes.len()
+        );
+
+        let head_rate = read_opus_head_rate(&opus_path);
+        assert_eq!(
+            head_rate, rate,
+            "OpusHead input_sample_rate mismatch at {rate} Hz"
+        );
+    }
+
+    /// Compile-/run-time guard: the literal rates enumerated as `#[test_case]`
+    /// rows above must equal the production `SUPPORTED_SAMPLE_RATES` set, so a
+    /// newly supported rate cannot land without its own per-rate case.
     #[test]
-    fn encode_wav_produces_valid_opus_at_each_supported_rate() {
-        for rate in SUPPORTED_SAMPLE_RATES {
-            let dir = tempfile::tempdir().expect("tempdir");
-            let wav_path = dir.path().join("in.wav");
-            let opus_path = dir.path().join("out.opus");
-
-            write_sine_wav(&wav_path, rate, 440.0, 0.25);
-            encode_wav_to_opus(&wav_path, &opus_path)
-                .unwrap_or_else(|e| panic!("encode failed at {rate} Hz: {e}"));
-
-            // 1 s at 32 kbps VOIP yields >1700 bytes even at 8/12 kHz; the
-            // pre-refactor 48 kHz test asserted > 1000, keep that bar so a
-            // header-only or truncated stream can't slip through.
-            let bytes = std::fs::read(&opus_path).expect("read opus");
-            assert!(
-                bytes.len() > 1000,
-                "opus too small at {rate} Hz: {}",
-                bytes.len()
-            );
-
-            let head_rate = read_opus_head_rate(&opus_path);
-            assert_eq!(
-                head_rate, rate,
-                "OpusHead input_sample_rate mismatch at {rate} Hz"
-            );
-        }
+    fn test_case_rates_match_supported_sample_rates() {
+        let mut cases = TEST_CASE_RATES;
+        let mut supported = SUPPORTED_SAMPLE_RATES;
+        cases.sort_unstable();
+        supported.sort_unstable();
+        assert_eq!(
+            cases.as_slice(),
+            supported.as_slice(),
+            "add a #[test_case] row for every SUPPORTED_SAMPLE_RATES entry"
+        );
     }
 
     /// Rates outside the Opus-native set must be rejected up front.

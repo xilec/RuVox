@@ -532,6 +532,7 @@ pub fn spawn_position_emitter<R: Runtime + 'static>(player: Arc<Player<R>>, app:
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test_case::test_case;
 
     /// Compile-time check: Player::new returns Result (does not panic at type
     /// level).  The body is never executed because we cannot build a real
@@ -541,53 +542,31 @@ mod tests {
     }
 
     /// Smoke: PlayerError variants format correctly.
-    #[test]
-    fn player_error_display() {
-        let e = PlayerError::Init("test init".to_string());
-        assert_eq!(e.to_string(), "mpv init failed: test init");
-
-        let e = PlayerError::Op("test op".to_string());
-        assert_eq!(e.to_string(), "mpv operation failed: test op");
-
-        let e = PlayerError::FileNotFound("/tmp/x.wav".to_string());
-        assert_eq!(e.to_string(), "file not found: /tmp/x.wav");
+    #[test_case(PlayerError::Init("test init".to_string()) => "mpv init failed: test init"; "init")]
+    #[test_case(PlayerError::Op("test op".to_string()) => "mpv operation failed: test op"; "op")]
+    #[test_case(PlayerError::FileNotFound("/tmp/x.wav".to_string()) => "file not found: /tmp/x.wav"; "file_not_found")]
+    fn player_error_display(err: PlayerError) -> String {
+        err.to_string()
     }
 
     // -- is_eof ------------------------------------------------------------
 
-    #[test]
-    fn is_eof_none_pos_with_duration_is_eof() {
-        // mpv unloaded the file / entered idle while a duration was known.
-        assert!(is_eof(None, Some(10.0)));
-    }
-
-    #[test]
-    fn is_eof_pos_at_or_past_threshold_is_eof() {
-        // At exactly duration − 0.2 and beyond.
-        assert!(is_eof(Some(9.8), Some(10.0)));
-        assert!(is_eof(Some(10.0), Some(10.0)));
-        assert!(is_eof(Some(11.0), Some(10.0)));
-    }
-
-    #[test]
-    fn is_eof_pos_before_threshold_is_not_eof() {
-        // Just short of duration − 0.2 keeps playing.
-        assert!(!is_eof(Some(9.79), Some(10.0)));
-        assert!(!is_eof(Some(0.0), Some(10.0)));
-    }
-
-    #[test]
-    fn is_eof_unknown_duration_is_never_eof() {
-        // Without a duration we cannot decide the file ended.
-        assert!(!is_eof(None, None));
-        assert!(!is_eof(Some(5.0), None));
-    }
-
-    #[test]
-    fn is_eof_zero_duration_is_not_eof() {
-        // d > 0.0 guard: a zero-length duration must not be treated as EOF
-        // for a real position poll.
-        assert!(!is_eof(Some(0.0), Some(0.0)));
+    /// `is_eof(pos, duration)` decides EOF from mpv's last position poll:
+    /// - unknown duration → never EOF (cannot tell the file ended);
+    /// - a zero-length duration is guarded off (`d > 0.0`);
+    /// - otherwise EOF once `pos` is `None` (file unloaded) or within 0.2 s of
+    ///   the end.
+    #[test_case(None, Some(10.0) => true; "none_pos_with_duration")]
+    #[test_case(Some(9.8), Some(10.0) => true; "at_threshold")]
+    #[test_case(Some(10.0), Some(10.0) => true; "at_duration")]
+    #[test_case(Some(11.0), Some(10.0) => true; "past_duration")]
+    #[test_case(Some(9.79), Some(10.0) => false; "just_before_threshold")]
+    #[test_case(Some(0.0), Some(10.0) => false; "start_of_file")]
+    #[test_case(None, None => false; "unknown_duration_no_pos")]
+    #[test_case(Some(5.0), None => false; "unknown_duration_with_pos")]
+    #[test_case(Some(0.0), Some(0.0) => false; "zero_duration")]
+    fn is_eof_cases(pos: Option<f64>, duration: Option<f64>) -> bool {
+        is_eof(pos, duration)
     }
 
     // -- seek_suppressed ---------------------------------------------------
