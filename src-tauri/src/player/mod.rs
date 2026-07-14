@@ -424,6 +424,10 @@ impl<R: Runtime> Drop for Player<R> {
 // Pure position logic (extracted so it can be unit-tested without mpv)
 // ---------------------------------------------------------------------------
 
+/// Tolerance for treating `time-pos` as having reached `duration`: mpv's
+/// position poll can lag the true end of file by a small margin.
+const EOF_EPSILON_SEC: f64 = 0.2;
+
 /// Decide whether the emitter should treat the current poll as end-of-file.
 ///
 /// EOF is true in either of two cases, both requiring a known duration:
@@ -432,10 +436,6 @@ impl<R: Runtime> Drop for Player<R> {
 ///
 /// A None duration is never EOF: without a known length we cannot tell that
 /// playback has ended, so we keep emitting positions.
-/// Tolerance for treating `time-pos` as having reached `duration`: mpv's
-/// position poll can lag the true end of file by a small margin.
-const EOF_EPSILON_SEC: f64 = 0.2;
-
 fn is_eof(pos: Option<f64>, duration: Option<f64>) -> bool {
     match (pos, duration) {
         (None, Some(_)) => true,
