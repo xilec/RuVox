@@ -426,11 +426,9 @@ impl<R: Runtime> Drop for Player<R> {
 
 /// Decide whether the emitter should treat the current poll as end-of-file.
 ///
-/// mpv reports three different "end of file" states and we treat all as EOF:
-///   1. `time-pos` is None  — mpv unloaded the file / entered idle,
-///   2. `time-pos` >= duration − 0.2,
-///   3. duration known but `time-pos` stopped advancing (covered implicitly
-///      by #2 since mpv pins time-pos to duration).
+/// EOF is true in either of two cases, both requiring a known duration:
+///   1. `time-pos` is None — mpv unloaded the file / entered idle,
+///   2. `time-pos` >= duration − `EOF_EPSILON_SEC`.
 ///
 /// A None duration is never EOF: without a known length we cannot tell that
 /// playback has ended, so we keep emitting positions.
