@@ -604,7 +604,7 @@ mod tests {
         let h = CodeBlockHandler::with_mode(CodeBlockMode::Brief);
         h.process(&mut tracked);
         let result = tracked.text();
-        // TODO: keep `.contains()` here until the duplicate-block bug is fixed.
+        // TODO(#84): keep `.contains()` here until the duplicate-block bug is fixed.
         // Actual output is "\nдалее следует пример кода на пайтон\n\nдалее
         // следует пример кода на пайтон" — BOTH blocks come out brief, even
         // though the first is preceded by a `full` directive. Cause:
