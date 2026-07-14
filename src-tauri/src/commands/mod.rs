@@ -1128,6 +1128,7 @@ mod synthesis_tests {
 mod tests {
     use super::*;
     use std::collections::HashMap;
+    use test_case::test_case;
 
     // ── apply_config_patch ──────────────────────────────────────────────────
 
@@ -1367,39 +1368,27 @@ mod tests {
 
     // ── parse_entry_id ───────────────────────────────────────────────────────
 
-    #[test]
-    fn parse_entry_id_accepts_valid_uuid() {
-        let id = uuid::Uuid::new_v4();
-        let parsed = parse_entry_id(&id.to_string()).unwrap();
-        assert_eq!(parsed, id);
+    /// Well-formed UUID strings round-trip: `parse_entry_id` returns the same
+    /// UUID `Uuid::parse_str` would. Covers the nil UUID and a v4-shaped value.
+    #[test_case("00000000-0000-0000-0000-000000000000"; "nil")]
+    #[test_case("550e8400-e29b-41d4-a716-446655440000"; "v4")]
+    fn parse_entry_id_accepts_valid(input: &str) {
+        let parsed = parse_entry_id(input).unwrap();
+        assert_eq!(parsed, uuid::Uuid::parse_str(input).unwrap());
     }
 
-    #[test]
-    fn parse_entry_id_accepts_nil_uuid() {
-        let parsed = parse_entry_id("00000000-0000-0000-0000-000000000000").unwrap();
-        assert_eq!(parsed, uuid::Uuid::nil());
-    }
-
-    #[test]
-    fn parse_entry_id_rejects_empty_string() {
-        let err = parse_entry_id("").unwrap_err();
-        assert!(matches!(err, CommandError::NotFound { .. }));
-    }
-
-    #[test]
-    fn parse_entry_id_rejects_garbage() {
-        let err = parse_entry_id("not-a-uuid").unwrap_err();
+    /// Malformed ids are rejected as `CommandError::NotFound` whose message
+    /// (`invalid entry id '{s}': …`, per `parse_entry_id`) names the input.
+    /// Trailing whitespace is significant: the parser does not trim.
+    #[test_case(""; "empty")]
+    #[test_case("not-a-uuid"; "garbage")]
+    #[test_case("00000000-0000-0000-0000-000000000000 "; "trailing_whitespace")]
+    fn parse_entry_id_rejects(input: &str) {
+        let err = parse_entry_id(input).unwrap_err();
         assert!(matches!(err, CommandError::NotFound { .. }));
         if let CommandError::NotFound { message } = err {
             assert!(message.contains("invalid entry id"));
         }
-    }
-
-    #[test]
-    fn parse_entry_id_rejects_uuid_with_trailing_whitespace() {
-        let id = uuid::Uuid::new_v4();
-        let padded = format!("{id} ");
-        assert!(parse_entry_id(&padded).is_err());
     }
 
     // ── char_mapping_to_entries ──────────────────────────────────────────────
@@ -1446,57 +1435,50 @@ mod tests {
 
     // ── CommandError::from conversions ────────────────────────────────────────
 
-    #[test]
-    fn command_error_from_storage_not_found_maps_to_not_found_with_id() {
-        let id = uuid::Uuid::new_v4();
-        let err: CommandError = StorageError::NotFound(id).into();
-        let value = serde_json::to_value(&err).unwrap();
-        assert_eq!(
-            value,
-            json!({
-                "type": "not_found",
-                "message": format!("entry not found: {id}"),
-            })
-        );
-    }
-
-    #[test]
-    fn command_error_from_storage_other_variant_maps_to_storage_error() {
-        let source = StorageError::NoCacheDir;
-        let expected_message = source.to_string();
+    /// `From<StorageError>`: `NotFound` maps to the `not_found` type (with the
+    /// entry id carried into the message), every other variant to
+    /// `storage_error` with the source error's `Display` as the message.
+    #[test_case(
+        StorageError::NotFound(uuid::Uuid::nil()),
+        "not_found",
+        "entry not found: 00000000-0000-0000-0000-000000000000";
+        "not_found_carries_id"
+    )]
+    #[test_case(
+        StorageError::NoCacheDir,
+        "storage_error",
+        "cache dir unavailable: dirs::cache_dir() returned None";
+        "other_variant"
+    )]
+    fn command_error_from_storage(
+        source: StorageError,
+        expected_type: &str,
+        expected_message: &str,
+    ) {
         let err: CommandError = source.into();
         let value = serde_json::to_value(&err).unwrap();
         assert_eq!(
             value,
             json!({
-                "type": "storage_error",
+                "type": expected_type,
                 "message": expected_message,
             })
         );
     }
 
-    #[test]
-    fn command_error_from_tts_error_maps_to_synthesis_error() {
-        let source = TtsError::Died;
-        let expected_message = source.to_string();
-        let err: CommandError = source.into();
-        let value = serde_json::to_value(&err).unwrap();
-        assert_eq!(
-            value,
-            json!({
-                "type": "synthesis_error",
-                "message": expected_message,
-            })
-        );
-    }
-
-    #[test]
-    fn command_error_from_tts_ttsd_error_preserves_code_and_message() {
-        let source = TtsError::Ttsd {
+    /// `From<TtsError>`: every variant maps to `synthesis_error` carrying the
+    /// source error's `Display`. The literal `Ttsd` expectation pins that both
+    /// `code` and `message` survive into the wire message.
+    #[test_case(TtsError::Died, "ttsd subprocess has exited"; "died")]
+    #[test_case(
+        TtsError::Ttsd {
             code: "voice_not_installed".to_string(),
             message: "voice xenia missing".to_string(),
-        };
-        let expected_message = source.to_string();
+        },
+        "ttsd error [voice_not_installed]: voice xenia missing";
+        "ttsd_preserves_code_and_message"
+    )]
+    fn command_error_from_tts(source: TtsError, expected_message: &str) {
         let err: CommandError = source.into();
         let value = serde_json::to_value(&err).unwrap();
         assert_eq!(
@@ -1506,41 +1488,29 @@ mod tests {
                 "message": expected_message,
             })
         );
-        assert!(expected_message.contains("voice_not_installed"));
-        assert!(expected_message.contains("voice xenia missing"));
     }
 
     // ── serde: CleanupMode / ClearCacheArgs ───────────────────────────────────
 
-    #[test]
-    fn cleanup_mode_deserializes_size_limit_variant() {
-        let mode: CleanupMode =
-            serde_json::from_value(json!({ "mode": "size_limit", "target_mb": 250 })).unwrap();
-        match mode {
-            CleanupMode::SizeLimit { target_mb } => assert_eq!(target_mb, 250),
-            CleanupMode::All => panic!("expected SizeLimit"),
+    /// Accepted `CleanupMode` payloads deserialize to the right variant:
+    /// `size_limit` carries `target_mb` (mapped to `Some`), `all` has no
+    /// payload (mapped to `None`).
+    #[test_case(json!({ "mode": "size_limit", "target_mb": 250 }) => Some(250); "size_limit")]
+    #[test_case(json!({ "mode": "all" }) => None; "all")]
+    fn cleanup_mode_deserializes(value: serde_json::Value) -> Option<u32> {
+        match serde_json::from_value::<CleanupMode>(value).unwrap() {
+            CleanupMode::SizeLimit { target_mb } => Some(target_mb),
+            CleanupMode::All => None,
         }
     }
 
-    #[test]
-    fn cleanup_mode_deserializes_all_variant() {
-        let mode: CleanupMode = serde_json::from_value(json!({ "mode": "all" })).unwrap();
-        assert!(matches!(mode, CleanupMode::All));
-    }
-
-    #[test]
-    fn cleanup_mode_rejects_pascal_case_variant_name() {
-        // `rename_all = "snake_case"` on the `mode` tag: the Rust variant
-        // name `SizeLimit` must NOT be accepted on the wire.
-        let result: Result<CleanupMode, _> =
-            serde_json::from_value(json!({ "mode": "SizeLimit", "target_mb": 250 }));
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn cleanup_mode_rejects_unknown_tag() {
-        let result: Result<CleanupMode, _> = serde_json::from_value(json!({ "mode": "bogus" }));
-        assert!(result.is_err());
+    /// Malformed `mode` tags are rejected: the Rust variant name `SizeLimit`
+    /// (the tag is `rename_all = "snake_case"`) and any unknown tag are both
+    /// invalid on the wire.
+    #[test_case(json!({ "mode": "SizeLimit", "target_mb": 250 }); "pascal_case_variant_name")]
+    #[test_case(json!({ "mode": "bogus" }); "unknown_tag")]
+    fn cleanup_mode_rejects(value: serde_json::Value) {
+        assert!(serde_json::from_value::<CleanupMode>(value).is_err());
     }
 
     #[test]
