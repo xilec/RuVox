@@ -515,20 +515,11 @@ mod tests {
 
     // ── TestCodeBlockFullMode (3 cases) ────────────────────────────────
 
-    #[test_case("def hello():\n    print('world')", Some("python"), &["деф", "хелло", "принт", "ворлд"]; "python_def_hello")]
-    #[test_case("const x = 42;", Some("javascript"), &["конст", "икс", "сорок два"]; "js_const_x")]
-    #[test_case("getUserData(userId)", None, &["гет юзер дата", "юзер ай ди"]; "function_call")]
-    fn full_mode(code: &str, language: Option<&str>, expected_substrings: &[&str]) {
-        let result = full_handler().process_block(code, language);
-        let lower = result.to_lowercase();
-        for expected in expected_substrings {
-            assert!(
-                lower.contains(expected),
-                "expected {:?} in {:?}",
-                expected,
-                result
-            );
-        }
+    #[test_case("def hello():\n    print('world')", Some("python") => "деф хелло открывающая скобка закрывающая скобка двоеточие принт открывающая скобка ворлд закрывающая скобка"; "python_def_hello")]
+    #[test_case("const x = 42;", Some("javascript") => "конст икс равно сорок два точка с запятой"; "js_const_x")]
+    #[test_case("getUserData(userId)", None => "гет юзер дата открывающая скобка юзер ай ди закрывающая скобка"; "function_call")]
+    fn full_mode(code: &str, language: Option<&str>) -> String {
+        full_handler().process_block(code, language)
     }
 
     // ── TestModeSwitch (4 cases) ────────────────────────────────────────
@@ -556,12 +547,10 @@ mod tests {
         let h = CodeBlockHandler::with_mode(CodeBlockMode::Brief);
         h.process(&mut tracked);
         let result = tracked.text();
-        // Brief would give "далее следует пример кода на пайтон"; Full should contain "принт".
-        assert!(
-            result.contains("принт"),
-            "expected full-mode output, got: {:?}",
-            result
-        );
+        // Brief would give "далее следует пример кода на пайтон"; the `full`
+        // directive upgrades the block to Full, so the code is read verbatim.
+        // Leading "\n" is where the removed directive line used to be.
+        assert_eq!(result, "\nпринт открывающая скобка хи закрывающая скобка");
     }
 
     // ── process() with TrackedText ──────────────────────────────────────
@@ -573,15 +562,10 @@ mod tests {
         let h = CodeBlockHandler::with_mode(CodeBlockMode::Brief);
         h.process(&mut tracked);
         let result = tracked.text();
-        assert!(
-            result.contains("далее следует пример кода на пайтон"),
-            "got: {:?}",
-            result
-        );
-        assert!(
-            !result.contains("```"),
-            "backticks should be gone, got: {:?}",
-            result
+        // Exact form also proves the backticks are gone (no "```" substring).
+        assert_eq!(
+            result,
+            "Смотри:\nдалее следует пример кода на пайтон\nКонец."
         );
     }
 
@@ -592,11 +576,7 @@ mod tests {
         let h = CodeBlockHandler::with_mode(CodeBlockMode::Brief);
         h.process(&mut tracked);
         let result = tracked.text();
-        assert!(
-            result.contains("Тут мермэйд диаграмма"),
-            "got: {:?}",
-            result
-        );
+        assert_eq!(result, "Диаграмма:\nТут мермэйд диаграмма\nКонец.");
     }
 
     #[test]
@@ -606,16 +586,11 @@ mod tests {
         let h = CodeBlockHandler::with_mode(CodeBlockMode::Brief);
         h.process(&mut tracked);
         let result = tracked.text();
-        // Full mode should contain "принт" and "ворлд"
-        assert!(
-            result.contains("принт"),
-            "expected full mode, got: {:?}",
-            result
-        );
-        assert!(
-            result.contains("ворлд"),
-            "expected full mode, got: {:?}",
-            result
+        // Full-mode reading of print('world'); the leading "\n" is where the
+        // removed directive line used to be.
+        assert_eq!(
+            result,
+            "\nпринт открывающая скобка ворлд закрывающая скобка"
         );
     }
 
@@ -629,7 +604,17 @@ mod tests {
         let h = CodeBlockHandler::with_mode(CodeBlockMode::Brief);
         h.process(&mut tracked);
         let result = tracked.text();
-        // Second block should be brief
+        // TODO(#84): keep `.contains()` here until the duplicate-block bug is fixed.
+        // Actual output is "\nдалее следует пример кода на пайтон\n\nдалее
+        // следует пример кода на пайтон" — BOTH blocks come out brief, even
+        // though the first is preceded by a `full` directive. Cause:
+        // CodeBlockHandler::process() replaces blocks via literal
+        // TrackedText::replace(), which substitutes ALL occurrences, so two
+        // byte-identical code blocks both receive the replacement computed
+        // for whichever block is processed first (the second, brief one).
+        // With distinct block contents the modes are applied correctly.
+        // Pinning the buggy output with assert_eq! would freeze the wrong
+        // behaviour; only the second (brief) block is asserted here.
         assert!(
             result.contains("далее следует пример кода на пайтон"),
             "got: {:?}",
