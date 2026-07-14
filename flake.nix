@@ -97,6 +97,18 @@
           cargoRoot = "src-tauri";
           buildAndTestSubdir = "src-tauri";
 
+          # espeak-rs-sys 0.2.0 finds the system libsonic via CMake's
+          # find_library() and links it into the static espeak-ng target
+          # with `target_link_libraries(... PRIVATE ${SONIC_LIB})`. CMake
+          # does not propagate PRIVATE link libraries of a STATIC target to
+          # consumers, so build.rs (which only inspects $OUT_DIR/lib/*.a for
+          # link-lib directives) never emits `cargo:rustc-link-lib=sonic`,
+          # and the final Rust binary fails to link with undefined
+          # references to sonic* symbols. Pass -lsonic explicitly; its
+          # search path is already provided by buildInputs' `sonic` via
+          # NIX_LDFLAGS.
+          env.RUSTFLAGS = "-C link-arg=-lsonic";
+
           # Pin pname here independently of withSilero — the pnpm
           # lockfile and the on-disk content of fetched deps are
           # identical for slim and full, so we want a single shared
@@ -107,7 +119,7 @@
             pname = "ruvox";
             inherit (finalAttrs) version src;
             fetcherVersion = 4;
-            hash = "sha256-iSdrSGnMuOtSwIP+Ut+T2w4E36fBxAhWqhXkQh6lbI4=";
+            hash = "sha256-P4a38V9MXKY6YyuKkAXdEIuYfrmwd7fMVJI7P2UcXwM=";
           };
 
           nativeBuildInputs = with pkgs; [
