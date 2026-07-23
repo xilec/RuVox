@@ -56,7 +56,6 @@
   /* Brand mark uses a bright violet on purpose: blue is reserved for
      Mantine's interactive affordances (buttons, sliders, etc.), so the logo
      gets a non-interactive accent that reads as "branding" rather than
-     "click me". The hex matches src-tauri/icons/source.svg so the in-app
-     mark and the desktop/taskbar icon stay visually identical. */
-  color: #9d4edd;
+     "click me". */
+  color: var(--ruvox-brand);
 }

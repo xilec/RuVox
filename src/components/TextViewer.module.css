@@ -1,7 +1,7 @@
 .content {
   font-family: var(--mantine-font-family);
-  font-size: 17px;
-  line-height: 1.6;
+  font-size: var(--ruvox-reading-font-size);
+  line-height: var(--ruvox-reading-line-height);
   padding: 1rem;
 }
 
@@ -20,7 +20,7 @@
 }
 
 .content pre {
-  background: light-dark(#f4f4f4, #1a1a1a);
+  background: var(--ruvox-pre-bg);
   padding: 0.75rem;
   border-radius: 0.25rem;
   overflow-x: auto;
@@ -32,7 +32,7 @@
 }
 
 .content :not(pre) > code {
-  background: light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.1));
+  background: var(--ruvox-code-bg);
   padding: 0 0.25em;
   border-radius: 0.2rem;
 }
@@ -59,13 +59,13 @@
 
 .content th,
 .content td {
-  border: 1px solid light-dark(#d0d0d0, #3a3a3a);
+  border: 1px solid var(--ruvox-table-border);
   padding: 0.4em 0.6em;
   text-align: left;
 }
 
 .content th {
-  background: light-dark(#f0f0f0, #2a2a2a);
+  background: var(--ruvox-table-header-bg);
   font-weight: 600;
 }
 
@@ -86,10 +86,7 @@
 
 /* Applied by wordHighlight.ts to the span matching the current playback position */
 :global(.word-highlight) {
-  background-color: light-dark(
-    rgba(255, 213, 0, 0.45),
-    rgba(255, 213, 0, 0.3)
-  );
+  background-color: var(--ruvox-highlight-bg);
   border-radius: 2px;
   transition: background-color 80ms ease-out;
 }

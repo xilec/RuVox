@@ -115,6 +115,9 @@ nix develop -c bash -c "cd ttsd && uv run python -m pytest"                # Pyt
 - Notifications: `@mantine/notifications`.
 - Hooks: `@mantine/hooks`.
 - Modals: `@mantine/modals` (`modals.openConfirmModal` etc.).
+- Before UI changes, check the "Design tokens" section in [docs/ui.md](docs/ui.md).
+- Use `--mantine-*` / `--ruvox-*` tokens; no hardcoded hex/px in CSS Modules where a token exists.
+- New reusable token or UI pattern → update `docs/ui.md` in the same change.
 
 ### State
 

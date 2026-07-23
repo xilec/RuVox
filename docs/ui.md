@@ -122,12 +122,36 @@ src/
 
 See [preview-dialog.md](preview-dialog.md). Floating non-modal window via `react-rnd` + Mantine Portal.
 
+## Design tokens
+
+Two places, split by what Mantine covers:
+
+- **`src/theme.ts`** — `createTheme(...)`: the anchor for Mantine token overrides (colors, spacing, radius scales). Currently only `primaryColor: 'blue'` is set explicitly; everything else stays at Mantine defaults.
+- **`src/globals.css` `:root`** — `--ruvox-*` custom properties for what Mantine has no scale for:
+
+| Token | Meaning |
+|-------|---------|
+| `--ruvox-brand` | Brand mark violet. Must match `src-tauri/icons/source.svg`. |
+| `--ruvox-highlight-bg` | Word-highlight background during playback |
+| `--ruvox-pre-bg` / `--ruvox-code-bg` | Code surfaces in rendered markdown/HTML |
+| `--ruvox-table-border` / `--ruvox-table-header-bg` | Table chrome in rendered content |
+| `--ruvox-reading-font-size` / `--ruvox-reading-line-height` | Reading text in TextViewer |
+| `--ruvox-preview-z` / `--ruvox-preview-shadow` | Floating preview window chrome |
+
+Rules:
+
+- **Accent discipline:** blue is reserved for interactive affordances (buttons, sliders, links); violet is brand-only, never used on clickable elements.
+- **No literal hex/px in CSS Modules where a token exists** — use `--mantine-*` or `--ruvox-*`. One-off measurements tied to a specific layout quirk are allowed inline only with a "why" comment (e.g. the 74 px header, the 9 px play-button lift in `Player.module.css`).
+- **Typography:** `html { font-size: 17px }` scales every rem-based Mantine token (HiDPI workaround, see `globals.css`); reading text is 17 px / 1.6 via `--ruvox-reading-*`.
+- **States** come from Mantine defaults: `--mantine-color-default-hover`, `--mantine-color-default-border`, dimmed text via `--mantine-color-dimmed`.
+- **New reusable value → new token.** If a color/size is used in 2+ places or has a semantic role, add a `--ruvox-*` var (or a theme override) and a row here, in the same change.
+
 ## Styling
 
 - **CSS Modules** (`*.module.css`) + the `classNames` prop. No `sx`, `createStyles`, or emotion.
-- Mantine CSS variables (`--mantine-spacing-*`, `--mantine-color-default-hover`, `--mantine-radius-sm`).
-- Light/dark via the native CSS `light-dark()` (for the `.word-highlight` background).
-- Global CSS — only `@mantine/core/styles.css` in `main.tsx`.
+- Mantine CSS variables (`--mantine-spacing-*`, `--mantine-color-default-hover`, `--mantine-radius-sm`) and app tokens (`--ruvox-*`) — see "Design tokens" above.
+- Light/dark via the native CSS `light-dark()` (used inside `--ruvox-*` token definitions).
+- Global CSS — `@mantine/core/styles.css` + `src/globals.css` (HiDPI font scaling + `--ruvox-*` tokens) in `main.tsx`.
 
 ## State management
 

@@ -6,6 +6,7 @@ import { ModalsProvider } from '@mantine/modals';
 import { Notifications } from '@mantine/notifications';
 import { AppShell } from './components/AppShell';
 import { setupNotificationBridge } from './lib/notificationBridge';
+import { theme } from './theme';
 
 export function App() {
   useEffect(() => {
@@ -32,7 +33,7 @@ export function App() {
   }, []);
 
   return (
-    <MantineProvider defaultColorScheme="auto">
+    <MantineProvider theme={theme} defaultColorScheme="auto">
       <ModalsProvider>
         <Notifications />
         <AppShell />
