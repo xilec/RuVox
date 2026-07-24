@@ -36,9 +36,9 @@ lint:
     pnpm typecheck
     bash -c "cd ttsd && uv run ruff check"
 
-# Validate OpenSpec specs (and in-flight changes, if any)
+# Validate OpenSpec specs (specs only; in-flight changes are validated by their own cycle)
 validate:
-    pnpm dlx @fission-ai/openspec validate --specs --strict
+    pnpm dlx @fission-ai/openspec@1.6.0 validate --specs --strict
 
 # Production build, slim (Piper only)
 build:

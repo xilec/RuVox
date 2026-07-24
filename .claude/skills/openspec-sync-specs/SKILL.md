@@ -10,6 +10,8 @@ metadata:
   generatedBy: "1.6.0"
 ---
 
+> **Note:** In this repo all tooling runs via `nix develop -c ...`; the openspec CLI is invoked as `nix develop -c pnpm dlx @fission-ai/openspec <cmd>` (it is not installed in package.json).
+
 Sync delta specs from a change to main specs.
 
 This is an **agent-driven** operation - you will read delta specs and directly edit main specs to apply the changes. This allows intelligent merging (e.g., adding a scenario without copying the entire requirement).

@@ -22,6 +22,8 @@ Craft rules (layout, test quality, duplication, idiom, correctness) live in
   refactor, docs, test, build}. Subject and body in English. No AI-assistant
   attribution ("Co-Authored-By", "Generated with", etc.) — ever, in any GitHub
   text.
+- Comments only when WHY is non-obvious (hidden invariant, workaround for a
+  known bug). Do not comment WHAT.
 
 ## Toolchain
 
@@ -102,7 +104,7 @@ Craft rules (layout, test quality, duplication, idiom, correctness) live in
   fixtures — a pipeline bug fix adds a fixture reproducing it).
 - `pnpm typecheck` and `pnpm test:unit`.
 - `cd ttsd && uv run ruff check && uv run python -m pytest`.
-- `pnpm dlx @fission-ai/openspec validate --specs --strict` when specs change.
+- `pnpm dlx @fission-ai/openspec@1.6.0 validate --specs --strict` when specs change.
 
 > Implemented behavior is defined by the specs under `openspec/specs/` — the
 > source of truth; on conflict with other docs, specs win. Tooling/architecture

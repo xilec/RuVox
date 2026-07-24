@@ -155,4 +155,4 @@ jobs:
       # Static drift-gate for the spec source of truth: invalid spec/change
       # files (bad requirement/scenario format) fail the build. No LLM
       # involved — this is the openspec CLI's schema validator.
-      - run: pnpm dlx @fission-ai/openspec validate --specs --strict
+      - run: pnpm dlx @fission-ai/openspec@1.6.0 validate --specs --strict
