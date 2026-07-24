@@ -15,6 +15,7 @@ jobs:
       typescript: ${{ steps.filter.outputs.typescript }}
       ttsd: ${{ steps.filter.outputs.ttsd }}
       nix: ${{ steps.filter.outputs.nix }}
+      openspec: ${{ steps.filter.outputs.openspec }}
     steps:
       - uses: actions/checkout@v5
       - uses: dorny/paths-filter@v4
@@ -39,6 +40,9 @@ jobs:
               - 'flake.nix'
               - 'flake.lock'
               - 'nix/devshell.nix'
+              - '.github/workflows/ci.yml'
+            openspec:
+              - 'openspec/**'
               - '.github/workflows/ci.yml'
 
   rust:
@@ -134,3 +138,21 @@ jobs:
             echo "::error::full .#ruvox-with-silero derivation does not pull in ttsd"
             exit 1
           }
+
+  openspec:
+    name: OpenSpec (validate specs)
+    needs: changes
+    if: needs.changes.outputs.openspec == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+      # Static drift-gate for the spec source of truth: invalid spec/change
+      # files (bad requirement/scenario format) fail the build. No LLM
+      # involved — this is the openspec CLI's schema validator.
+      - run: pnpm dlx @fission-ai/openspec validate --specs --strict
