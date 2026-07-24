@@ -11,7 +11,7 @@
 - **Shell:** Tauri 2 (Rust-based desktop shell with native webview)
 - **Frontend:** React 18 + TypeScript 5 + Mantine 8
 - **Backend:** Rust (text normalization pipeline, storage, TTS subprocess manager, player wrapper)
-- **TTS engine:** Python subprocess `ttsd` wrapping Silero TTS (runs as a sidecar process)
+- **TTS engine:** Piper (primary, native Rust) + optional Python subprocess `ttsd` wrapping Silero TTS
 
 **Goal** unchanged: normalize technical text (API, URLs, code identifiers, numbers) before passing it to Silero TTS, which cannot read English or special characters.
 
@@ -28,6 +28,7 @@
 | File / Section | Description |
 |----------------|-------------|
 | [openspec/](openspec/) | Behavior specs (`specs/`, source of truth) and change proposals — see "Spec-driven workflow" |
+| [ai/rules/](ai/rules/) | Hard rules ([conventions](ai/rules/conventions.md)) and craft standard ([code-quality](ai/rules/code-quality.md)) — pulled on demand by skills and the reviewer |
 | [docs/install.md](docs/install.md) | Building from source without Nix |
 | [docs/development.md](docs/development.md) | Dev environment, commands, debugging |
 | [docs/contributing.md](docs/contributing.md) | Contribution rules (dictionaries, style) |
@@ -42,10 +43,14 @@
 ```bash
 nix develop -c pnpm install                                                # frontend deps
 nix develop -c pnpm tauri dev                                              # run the app
-nix develop -c cargo test --manifest-path src-tauri/Cargo.toml             # Rust tests
-nix develop -c pnpm typecheck                                              # TS typecheck
-nix develop -c bash -c "cd ttsd && uv run python -m pytest"                # Python subprocess tests
+nix develop -c just test                                                   # all tests (Rust + TS + Python)
+nix develop -c just lint                                                   # all static checks
 ```
+
+`justfile` is the single entry point for routine commands (`just --list`); inside
+the shell call `just <recipe>` directly. Pre-commit hooks (lefthook) run fmt,
+clippy, typecheck and ruff — commit from inside `nix develop` so they find the
+toolchain.
 
 ## Project layout
 
@@ -68,11 +73,14 @@ nix develop -c bash -c "cd ttsd && uv run python -m pytest"                # Pyt
 │       ├── timestamps.py  # Word-level timestamp estimation
 │       ├── protocol.py    # request/response types
 │       └── main.py        # main stdin→stdout JSON loop
+├── ai/rules/         # conventions.md + code-quality.md — hard rules & craft standard
 ├── docs/             # Project documentation (process docs; behavior specs live in openspec/)
 ├── openspec/         # OpenSpec: specs/ (behavior source of truth), changes/ (proposals), config.yaml
 ├── scripts/          # Utility scripts
 ├── nix/
 │   └── devshell.nix  # Nix dev environment (Rust + Node + Python), wired into flake.nix
+├── justfile          # Task runner (single entry point for routine commands)
+├── lefthook.yml      # Pre-commit hooks (fmt, clippy, typecheck, ruff)
 └── flake.nix         # Production build: `.#ruvox` (slim, Piper only) and `.#ruvox-with-silero` (full, Piper + ttsd Python sidecar)
 ```
 
@@ -80,97 +88,47 @@ nix develop -c bash -c "cd ttsd && uv run python -m pytest"                # Pyt
 
 This repo uses [OpenSpec](https://github.com/Fission-AI/OpenSpec). `openspec/specs/` is the **single source of truth** for current behavior; `openspec/changes/` holds in-flight proposals; `openspec/changes/archive/` is the audit history (it replaces the old ADR log — tooling/architecture rationale lives in `openspec/config.yaml` `context`).
 
-- Any non-trivial change goes through OpenSpec: proposal → delta spec → implement → archive. Trivial fixes (typos, one-liners) may go directly.
+- Any non-trivial behavior change goes through OpenSpec: proposal → delta spec → implement → archive. Trivial fixes (typos, one-liners) may go directly.
 - **Primary path is the CLI:** `nix develop -c pnpm dlx @fission-ai/openspec <cmd>` (`list`, `show`, `validate`, `new`, `archive`, …). Slash commands (`/opsx:*` in Claude Code, `/skill:openspec-*` in Kimi Code) are convenience wrappers around the same CLI.
 - Before changing behavior, read the relevant spec in `openspec/specs/`. Specs are updated by archiving a change with delta specs — do not edit `openspec/specs/` directly.
 - Project context and per-artifact rules for artifact generation live in `openspec/config.yaml`.
+- **Archive before PR:** the PR carries the implementation + the archived change + the synced specs together (see the worktree workflow below).
+
+## Branch & merge workflow
+
+General branch/workspace rules live in the global `~/.agents/AGENTS.md` (work in the current workspace by default; one branch per task off fresh `origin/main`; never commit directly to `main`; worktree — `tmp/wt/<task>/` — only when isolation is needed, e.g. parallel agents). The project layer on top:
+
+1. **Full OpenSpec cycle on the branch.** Propose → implement → **archive** the change (archiving syncs the delta specs into `openspec/specs/`).
+2. **PR only after archive.** Once the change is archived and specs are synced, open a pull request to `main` (it carries implementation + archive + synced specs together). Before opening it, run the **pre-PR gate**:
+   1. **Commit clean.** The branch is fully committed — every commit message drafted and approved per the GitHub-text rules.
+   2. **Run `ruvox-reviewer`** (read-only, non-blocking) over the branch's diff vs. the merge base on `origin/main`; **and** — *only if `tasks.md` carries a manual-test task* — start the app and hand the user a checklist for the manual pass.
+   3. **Fix loop.** Fold accepted findings into the same branch as commits; note deferrals as issues.
+   4. **Final approval → PR.** On the user's go-ahead, draft the PR description and open the PR.
+3. **Merge method: merge commit** (not squash, not rebase).
+4. **Who merges.** The agent opens the PR (title/body via draft approval) and merges it once CI is green, unless the user said they'll merge themselves. `git push` always requires separate confirmation.
+5. **Lightweight paths:**
+   - **CI/tooling changes** go through a PR but may skip the OpenSpec change. The pre-PR gate still applies.
+   - **Trivial docs / typo fixes** may skip both the OpenSpec change and the PR: push the task branch straight to remote `main` via `git push origin HEAD:main` (fast-forward only). If rejected because `origin/main` moved, rebase the task branch onto fresh `origin/main` and push again.
+
+The only sanctioned ways anything reaches `main` are a PR (points 2–4) or the fast-forward branch push for trivial fixes (point 5). After the merge, clean up: worktree tasks → remove the worktree + local branch and delete the remote branch; workspace tasks → delete the merged branch (local + remote).
 
 ## Development rules
 
-### General
+Hard rules and the craft standard live in `ai/rules/` and are **pulled on demand** (the OpenSpec skills read them while proposing/implementing; `ruvox-reviewer` enforces them while reviewing) instead of being duplicated here:
 
-- Code (identifiers, comments) is in English. User-facing strings (UI, notifications, logs visible to the user) are in Russian.
-- No emoji in code or commit messages.
-- Commit format: `<type>(<module>): <short desc>`, where `type` ∈ `{feat, fix, chore, refactor, docs, test, build}`. Commit messages (subject + body) must be in **English**.
-- **Forbidden:** "Co-Authored-By: Claude …" or any mention of Claude in commits.
-- Comments only when WHY is non-obvious (hidden invariant, workaround for a known bug). Do not comment WHAT.
+- [ai/rules/conventions.md](ai/rules/conventions.md) — language, toolchain, architecture boundaries, the TTS constraint, Rust/TS/Mantine/Python hard rules, testing gates.
+- [ai/rules/code-quality.md](ai/rules/code-quality.md) — craft standard: file layout, tests, duplication, idiom, security, correctness.
 
-### Documentation language
+The load-bearing summary: code and comments in English, user-facing UI strings in Russian; no emoji; commits `<type>(<module>): <desc>` in English with no AI attribution; every GitHub-bound text (commit, PR, issue, comment) is drafted and approved first; `git push` confirmed separately; all tooling via `nix develop -c`.
 
-- The primary language for everything in the repo is English: `docs/`, `README.md`, `AGENTS.md`, `CLAUDE.md`, GitHub issues, PR descriptions, code comments.
-- The only translated artifact is `README.ru.md` (Russian localization of `README.md`). Whenever `README.md` changes, `README.ru.md` must be updated in the same PR.
-- User-facing UI strings (notifications, button labels, dialog text) stay in Russian — the product targets a Russian-speaking audience.
-
-### Rust
-
-- Edition 2021 (or newer if a dependency requires it).
-- `tracing` for logging, `thiserror` for domain errors, `anyhow::Result` only at boundaries.
-- No `unwrap` in production paths — use `?` + typed errors.
-- `cargo fmt` and `cargo clippy` must be clean.
-
-### TypeScript / React
-
-- `strict: true` in tsconfig. Avoid `any` unless absolutely necessary.
-- Function components only. Do not use `React.FC`.
-- Hooks-first. No class components.
-- Prettier for formatting.
-
-### Mantine 8
-
-- Styling via CSS Modules and the `classNames` prop.
-- **Forbidden:** `sx`, `createStyles`, emotion, any legacy from Mantine 6/7.
-- Forms: `@mantine/form` (not react-hook-form, not Formik).
-- Notifications: `@mantine/notifications`.
-- Hooks: `@mantine/hooks`.
-- Modals: `@mantine/modals` (`modals.openConfirmModal` etc.).
-- Before UI changes, check the design-tokens requirement in [openspec/specs/ui/spec.md](openspec/specs/ui/spec.md).
-- Use `--mantine-*` / `--ruvox-*` tokens; no hardcoded hex/px in CSS Modules where a token exists.
-- New reusable token or UI pattern → update the `ui` spec via an OpenSpec change in the same PR.
-
-### State
-
-- No Redux. For global state use Zustand or React context. By default — props + `useState`.
-- React Query is not needed — Tauri `invoke` fits naturally into `useEffect` + `useState`.
-
-### Routing
-
-- No router for now. Dialogs go through `@mantine/modals`.
-
-### Python (ttsd)
-
-- Python 3.12, managed by `uv`.
-- Logs to stderr; JSON requests on stdin, JSON responses on stdout.
-- `ruff check` and `pytest` must be green.
-
-## TTS Pipeline: notes
-
-### Mermaid diagrams
-
-Mermaid blocks (` ```mermaid ... ``` `) **are not narrated**. The pipeline replaces them with the marker `"Тут мермэйд диаграмма"` to indicate that a diagram is present. The user can pause playback and inspect the diagram in the UI.
-
-### English text
-
-Silero TTS **cannot read English**. All English text must be transliterated to Cyrillic before being passed to the TTS engine:
-
-- Wherever English may appear (URLs, code, headings, etc.), a **transliteration fallback** is mandatory.
-- If text processing leaves English words behind, they must remain available for further normalization by the English normalizer.
-
-### Pipeline implementation
-
-The pipeline lives in `src-tauri/src/pipeline/` (Rust). Correctness is verified by golden fixtures in `src-tauri/tests/fixtures/pipeline/`.
+When a CI step, script flag, or workaround exists because of a specific incident, leave a comment explaining why it is load-bearing (see the slim/full gate in `.github/workflows/ci.yml`, the `shellHook` comments in `nix/devshell.nix`).
 
 ## Tests
 
 ```bash
-# Rust (all tests)
-nix develop -c cargo test --manifest-path src-tauri/Cargo.toml
-
-# Rust pipeline golden tests
-nix develop -c cargo test --manifest-path src-tauri/Cargo.toml --test golden
-
-# Python subprocess
-nix develop -c bash -c "cd ttsd && uv run python -m pytest"
-
-# TypeScript
-nix develop -c pnpm typecheck
+nix develop -c just test                                                   # everything
+nix develop -c cargo test --manifest-path src-tauri/Cargo.toml             # Rust (incl. golden pipeline fixtures)
+nix develop -c pnpm typecheck                                              # TS typecheck
+nix develop -c pnpm test:unit                                              # TS unit tests
+nix develop -c bash -c "cd ttsd && uv run python -m pytest"                # Python subprocess tests
 ```
