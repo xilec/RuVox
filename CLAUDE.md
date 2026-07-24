@@ -1,3 +1,3 @@
 @AGENTS.md
 
-See docs/decisions.md for rationale behind non-obvious tooling/architecture choices (e.g. pnpm vs bun).
+See openspec/config.yaml (`context`) for tooling/architecture rationale and openspec/changes/archive/ for the decision history of shipped changes.

@@ -1,20 +1,25 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+# Project context — shown to AI when creating artifacts.
+context: |
+  Project: RuVox 2.0 — desktop app for narrating technical Russian-language texts.
+  Stack: Tauri 2 shell (Rust + native webview), React 18 + TypeScript 5 + Mantine 8
+  frontend, Rust backend (normalization pipeline, storage, ttsd subprocess manager,
+  mpv player wrapper), Python 3.12 `ttsd` sidecar wrapping Silero TTS (uv-managed).
+  Key constraint: Silero TTS cannot read English or special characters — the
+  normalization pipeline must transliterate all English text to Cyrillic before TTS.
+  All tooling runs via `nix develop -c "..."` (cargo/pnpm/uv exist only in the dev shell).
+  Code and comments in English; user-facing UI strings in Russian. No emoji.
+  Commit format: `<type>(<module>): <desc>`, English.
+  Package manager: pnpm (chosen over bun for Nix build reproducibility:
+  `pnpm.fetchDeps` fixed-output derivation in flake.nix, diffable text lockfile,
+  mature nixpkgs packaging, no Node runtime replacement; bun's install speed
+  advantage is negated by the Nix store cache).
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+# Per-artifact rules.
+rules:
+  specs:
+    - Use Given/When/Then format for scenarios
+    - Reference existing behavior and patterns before inventing new ones
+  proposal:
+    - Always include a "Non-goals" section

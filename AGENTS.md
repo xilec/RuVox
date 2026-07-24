@@ -27,12 +27,12 @@
 
 | File / Section | Description |
 |----------------|-------------|
+| [openspec/](openspec/) | Behavior specs (`specs/`, source of truth) and change proposals — see "Spec-driven workflow" |
 | [docs/ipc-contract.md](docs/ipc-contract.md) | IPC contract: Tauri commands, events, ttsd protocol |
 | [docs/storage-schema.md](docs/storage-schema.md) | Storage schema: history.json, timestamps, config |
 | [docs/pipeline.md](docs/pipeline.md) | Text normalization stages |
 | [docs/ui.md](docs/ui.md) | Frontend structure |
 | [docs/use-cases.md](docs/use-cases.md) | User scenarios |
-| [docs/decisions.md](docs/decisions.md) | Rationale log for non-obvious tooling/architecture choices |
 | [docs/preview-dialog.md](docs/preview-dialog.md) | Normalization preview dialog |
 
 ## Quick start
@@ -70,12 +70,22 @@ nix develop -c bash -c "cd ttsd && uv run python -m pytest"                # Pyt
 │       ├── timestamps.py  # Word-level timestamp estimation
 │       ├── protocol.py    # request/response types
 │       └── main.py        # main stdin→stdout JSON loop
-├── docs/             # Project documentation
+├── docs/             # Project documentation (process docs; behavior specs live in openspec/)
+├── openspec/         # OpenSpec: specs/ (behavior source of truth), changes/ (proposals), config.yaml
 ├── scripts/          # Utility scripts
 ├── nix/
 │   └── devshell.nix  # Nix dev environment (Rust + Node + Python), wired into flake.nix
 └── flake.nix         # Production build: `.#ruvox` (slim, Piper only) and `.#ruvox-with-silero` (full, Piper + ttsd Python sidecar)
 ```
+
+## Spec-driven workflow (OpenSpec)
+
+This repo uses [OpenSpec](https://github.com/Fission-AI/OpenSpec). `openspec/specs/` is the **single source of truth** for current behavior; `openspec/changes/` holds in-flight proposals; `openspec/changes/archive/` is the audit history (it replaces the old ADR log — tooling/architecture rationale lives in `openspec/config.yaml` `context`).
+
+- Any non-trivial change goes through OpenSpec: proposal → delta spec → implement → archive. Trivial fixes (typos, one-liners) may go directly.
+- **Primary path is the CLI:** `nix develop -c pnpm dlx @fission-ai/openspec <cmd>` (`list`, `show`, `validate`, `new`, `archive`, …). Slash commands (`/opsx:*` in Claude Code, `/skill:openspec-*` in Kimi Code) are convenience wrappers around the same CLI.
+- Before changing behavior, read the relevant spec in `openspec/specs/`. Specs are updated by archiving a change with delta specs — do not edit `openspec/specs/` directly.
+- Project context and per-artifact rules for artifact generation live in `openspec/config.yaml`.
 
 ## Development rules
 
