@@ -11,6 +11,7 @@ context: |
   All tooling runs via `nix develop -c "..."` (cargo/pnpm/uv exist only in the dev shell).
   Code and comments in English; user-facing UI strings in Russian. No emoji.
   Commit format: `<type>(<module>): <desc>`, English.
+  Hard rules: ai/rules/conventions.md; craft standard: ai/rules/code-quality.md.
   Package manager: pnpm (chosen over bun for Nix build reproducibility:
   `pnpm.fetchDeps` fixed-output derivation in flake.nix, diffable text lockfile,
   mature nixpkgs packaging, no Node runtime replacement; bun's install speed
@@ -18,8 +19,15 @@ context: |
 
 # Per-artifact rules.
 rules:
+  proposal:
+    - Always include a "Non-goals" section
+    - Keep one reviewable change per proposal; split otherwise
   specs:
     - Use Given/When/Then format for scenarios
     - Reference existing behavior and patterns before inventing new ones
-  proposal:
-    - Always include a "Non-goals" section
+    - Every scenario must be implementable as a single unit test or golden fixture
+  design:
+    - Record rejected alternatives with the reason, not just the chosen option
+  tasks:
+    - Include an explicit validation group (tests, typecheck, lint) at the end
+    - Each task must be completable in one working session
