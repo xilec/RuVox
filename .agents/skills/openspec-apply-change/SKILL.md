@@ -5,6 +5,8 @@ whenToUse: Use when the user wants to start implementing, continue implementatio
 ---
 
 > **Note:** In this repo all tooling runs via `nix develop -c ...`; the openspec CLI is invoked as `nix develop -c pnpm dlx @fission-ai/openspec <cmd>` (it is not installed in package.json).
+>
+> Before implementing, read `ai/rules/conventions.md` (hard rules) and `ai/rules/code-quality.md` (craft standard) — write code to them; `ruvox-reviewer` checks the diff against them before the PR.
 
 Implement tasks from an OpenSpec change.
 
