@@ -1,0 +1,17 @@
+# Pre-commit hooks — run inside `nix develop` (the toolchain exists only there).
+# Installed automatically by the devshell shellHook (`lefthook install`).
+pre-commit:
+  parallel: true
+  commands:
+    cargo-fmt:
+      glob: "src-tauri/**/*.rs"
+      run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+    cargo-clippy:
+      glob: "src-tauri/**/*.rs"
+      run: cargo clippy --manifest-path src-tauri/Cargo.toml --no-deps -- -D warnings
+    typescript:
+      glob: "src/**/*.{ts,tsx}"
+      run: pnpm typecheck
+    ruff:
+      glob: "ttsd/**/*.py"
+      run: bash -c "cd ttsd && uv run ruff check"

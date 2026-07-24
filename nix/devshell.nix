@@ -36,6 +36,10 @@ pkgs.mkShell {
     python312
     uv
 
+    # ── Task runner + pre-commit hooks ─────────────────────────────────────
+    just
+    lefthook
+
     # ── Build tools ────────────────────────────────────────────────────────
     pkg-config
     cmake
@@ -207,6 +211,10 @@ pkgs.mkShell {
     # for the production bundle; in dev we set them manually.
     export XDG_DATA_DIRS="${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:${pkgs.hicolor-icon-theme}/share:$XDG_DATA_DIRS"
 
+    # Install pre-commit hooks (idempotent; silently skipped outside a git
+    # checkout or when lefthook.yml is absent)
+    lefthook install > /dev/null 2>&1 || true
+
     echo "RuVox 2.0 development environment"
     echo "  Rust:   $(rustc --version)"
     echo "  Node:   $(node --version)"
@@ -216,10 +224,10 @@ pkgs.mkShell {
     echo "  tauri:  $(cargo tauri --version)"
     echo ""
     echo "Commands:"
+    echo "  just --list              — all routine tasks (test, lint, dev, build)"
+    echo "  just test / just lint    — run all tests / all static checks"
     echo "  cargo tauri dev          — start Tauri dev server"
-    echo "  cargo tauri build        — production build"
     echo "  pnpm install             — install frontend deps"
-    echo "  pnpm typecheck           — TypeScript typecheck"
     echo "  uv run python -m ttsd    — run TTS subprocess"
     echo ""
   '';
