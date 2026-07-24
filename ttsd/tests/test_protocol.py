@@ -107,7 +107,7 @@ class TestOkSynthesize:
         assert resp.duration_sec == 12.34
 
     def test_ok_synthesize_json_matches_contract(self) -> None:
-        """Serialized shape must match docs/ipc-contract.md Layer 3."""
+        """Serialized shape must match openspec/specs/ttsd-protocol/spec.md."""
         ts = WordTimestamp(word="привет", start=0.0, end=0.5, original_pos=(0, 6))
         resp = OkSynthesize(timestamps=[ts], duration_sec=0.9)
         data = resp.model_dump()

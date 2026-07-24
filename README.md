@@ -82,8 +82,7 @@ cd ttsd && uv run python -m pytest                              # Python subproc
 |------|-------------|
 | [AGENTS.md](AGENTS.md) | Development rules, project structure, conventions |
 | [docs/install.md](docs/install.md) | Building from source on Linux without Nix (Ubuntu 24.04+) |
-| [docs/ipc-contract.md](docs/ipc-contract.md) | Tauri commands, events, ttsd protocol |
-| [docs/storage-schema.md](docs/storage-schema.md) | `history.json` schema, timestamps, config |
+| [openspec/specs/](openspec/specs/) | Behavior specs (OpenSpec): IPC, storage, pipeline, UI, playback |
 | [CHANGELOG.md](CHANGELOG.md) | Change history |
 
 ## License

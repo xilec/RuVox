@@ -28,12 +28,10 @@
 | File / Section | Description |
 |----------------|-------------|
 | [openspec/](openspec/) | Behavior specs (`specs/`, source of truth) and change proposals — see "Spec-driven workflow" |
-| [docs/ipc-contract.md](docs/ipc-contract.md) | IPC contract: Tauri commands, events, ttsd protocol |
-| [docs/storage-schema.md](docs/storage-schema.md) | Storage schema: history.json, timestamps, config |
-| [docs/pipeline.md](docs/pipeline.md) | Text normalization stages |
-| [docs/ui.md](docs/ui.md) | Frontend structure |
-| [docs/use-cases.md](docs/use-cases.md) | User scenarios |
-| [docs/preview-dialog.md](docs/preview-dialog.md) | Normalization preview dialog |
+| [docs/install.md](docs/install.md) | Building from source without Nix |
+| [docs/development.md](docs/development.md) | Dev environment, commands, debugging |
+| [docs/contributing.md](docs/contributing.md) | Contribution rules (dictionaries, style) |
+| [docs/index.md](docs/index.md) | Documentation index |
 
 ## Quick start
 
@@ -125,9 +123,9 @@ This repo uses [OpenSpec](https://github.com/Fission-AI/OpenSpec). `openspec/spe
 - Notifications: `@mantine/notifications`.
 - Hooks: `@mantine/hooks`.
 - Modals: `@mantine/modals` (`modals.openConfirmModal` etc.).
-- Before UI changes, check the "Design tokens" section in [docs/ui.md](docs/ui.md).
+- Before UI changes, check the design-tokens requirement in [openspec/specs/ui/spec.md](openspec/specs/ui/spec.md).
 - Use `--mantine-*` / `--ruvox-*` tokens; no hardcoded hex/px in CSS Modules where a token exists.
-- New reusable token or UI pattern → update `docs/ui.md` in the same change.
+- New reusable token or UI pattern → update the `ui` spec via an OpenSpec change in the same PR.
 
 ### State
 

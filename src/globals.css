@@ -15,7 +15,7 @@ body {
 
 /* App-level design tokens (--ruvox-*). Mantine-scale values come from
    --mantine-* vars / theme overrides in src/theme.ts; tokens below cover
-   what Mantine has no scale for. See docs/ui.md ("Design tokens"). */
+   what Mantine has no scale for. See openspec/specs/ui/spec.md (design tokens). */
 :root {
   /* Brand mark color. Must stay in sync with src-tauri/icons/source.svg so
      the in-app logo and the desktop/taskbar icon look identical. Blue is

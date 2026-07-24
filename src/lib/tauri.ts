@@ -3,7 +3,7 @@ import { listen as tauriListen, type Event, type UnlistenFn } from '@tauri-apps/
 
 export type { UnlistenFn };
 
-// --- Shared types (mirror docs/ipc-contract.md) ---
+// --- Shared types (mirror openspec/specs/ipc-commands/spec.md) ---
 
 export type EntryId = string;
 

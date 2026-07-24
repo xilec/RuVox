@@ -1,4 +1,4 @@
-"""Pydantic v2 models for the ttsd JSON protocol (Layer 3 of docs/ipc-contract.md).
+"""Pydantic v2 models for the ttsd JSON protocol (see openspec/specs/ttsd-protocol/spec.md).
 
 Design note: we use separate response classes (OkWarmup, OkSynthesize, OkShutdown) instead
 of a single OkResponse with optional fields. This keeps response types self-documenting and

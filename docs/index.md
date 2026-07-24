@@ -45,20 +45,17 @@ Silero TTS cannot correctly pronounce:
 - [task_history.md](../task_history.md) — task execution log.
 - [CHANGELOG.md](../CHANGELOG.md) — version chronology.
 
-### Reference
+### Behavior specs (OpenSpec)
 
-- [IPC contract](ipc-contract.md) — Tauri commands, events, ttsd JSON protocol.
-- [Storage schema](storage-schema.md) — `history.json`, `config.json`, `{uuid}.timestamps.json`, `{uuid}.opus`.
-- [Normalization pipeline](pipeline.md) — processing stages, normalizers, golden tests.
-- [UI components](ui.md) — React app structure, components, styling.
-- [Preview dialog (FF 1.1)](preview-dialog.md) — behavior, settings, interaction flow.
+Current behavior is specified in [openspec/specs/](../openspec/specs/) — the single source of truth:
 
-### Use cases and development
+- **Backend:** `text-pipeline`, `position-mapping`, `storage`, `ipc-commands`, `ttsd-protocol`
+- **Frontend / UX:** `ui`, `preview-dialog`, `queue-lifecycle`, `playback`, `text-display`, `word-highlight`, `tray`
 
-- [Use cases](use-cases.md) — user scenarios: adding text, plain/markdown modes, mermaid, word highlight.
+### Development
+
 - [Development](development.md) — environment, commands, debugging.
 - [Contributing](contributing.md) — how to add a term to the dictionary, commit and style rules.
-- [Decisions](decisions.md) — rationale log for non-obvious tooling/architecture choices (e.g. pnpm vs bun).
 
 ## License
 
