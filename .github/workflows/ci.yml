@@ -152,6 +152,15 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 20
+      # Cache the pnpm store so `pnpm dlx` doesn't re-download the openspec
+      # CLI on every run (the job installs no repo dependencies).
+      - name: Locate pnpm store
+        id: pnpm-store
+        run: echo "dir=$(pnpm store path)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.dir }}
+          key: ${{ runner.os }}-pnpm-store-openspec
       # Static drift-gate for the spec source of truth: invalid spec/change
       # files (bad requirement/scenario format) fail the build. No LLM
       # involved — this is the openspec CLI's schema validator.

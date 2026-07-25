@@ -48,8 +48,9 @@ nix develop -c just lint                                                   # all
 ```
 
 `justfile` is the single entry point for routine commands (`just --list`); inside
-the shell call `just <recipe>` directly. Pre-commit hooks (lefthook) run fmt,
-clippy, typecheck and ruff — commit from inside `nix develop` so they find the
+the shell call `just <recipe>` directly. Git hooks (lefthook) run fmt and ruff
+pre-commit, clippy and typecheck pre-push — commit and push from inside
+`nix develop` so they find the
 toolchain.
 
 ## Project layout
@@ -80,7 +81,7 @@ toolchain.
 ├── nix/
 │   └── devshell.nix  # Nix dev environment (Rust + Node + Python), wired into flake.nix
 ├── justfile          # Task runner (single entry point for routine commands)
-├── lefthook.yml      # Pre-commit hooks (fmt, clippy, typecheck, ruff)
+├── lefthook.yml      # Git hooks (fmt/ruff pre-commit, clippy/typecheck pre-push)
 └── flake.nix         # Production build: `.#ruvox` (slim, Piper only) and `.#ruvox-with-silero` (full, Piper + ttsd Python sidecar)
 ```
 
@@ -102,7 +103,7 @@ General branch/workspace rules live in the global `~/.agents/AGENTS.md` (work in
 1. **Full OpenSpec cycle on the branch.** Propose → implement → **archive** the change (archiving syncs the delta specs into `openspec/specs/`).
 2. **PR only after archive.** Once the change is archived and specs are synced, open a pull request to `main` (it carries implementation + archive + synced specs together). Before opening it, run the **pre-PR gate**:
    1. **Commit clean.** The branch is fully committed — every commit message drafted and approved per the GitHub-text rules.
-   2. **Run `ruvox-reviewer`** (read-only, non-blocking) over the branch's diff vs. the merge base on `origin/main`; **and** — *only if `tasks.md` carries a manual-test task* — start the app and hand the user a checklist for the manual pass.
+   2. **Run `ruvox-reviewer`** (read-only, non-blocking) over the branch's diff vs. the merge base on `origin/main` — skip it for docs-only diffs or diffs under ~50 changed lines (the gate stays where the risk is); **and** — *only if `tasks.md` carries a manual-test task* — start the app and hand the user a checklist for the manual pass.
    3. **Fix loop.** Fold accepted findings into the same branch as commits; note deferrals as issues.
    4. **Final approval → PR.** On the user's go-ahead, draft the PR description and open the PR.
 3. **Merge method: merge commit** (not squash, not rebase).

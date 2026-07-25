@@ -35,8 +35,9 @@ Craft rules (layout, test quality, duplication, idiom, correctness) live in
   GSettings correctly (see tauri #7354).
 - Package manager: pnpm (rationale in `openspec/config.yaml` context). Python
   tooling: `uv` only — no `pip`, no `python -m venv`.
-- Pre-commit hooks run via lefthook (`lefthook.yml`): fmt, clippy, typecheck,
-  ruff. Commit from inside `nix develop` so the hooks can find the toolchain.
+- Pre-commit hooks run via lefthook (`lefthook.yml`): fmt and ruff on commit,
+  clippy and typecheck on push. Commit and push from inside `nix develop` so
+  the hooks can find the toolchain.
 
 ## Architecture boundaries
 
