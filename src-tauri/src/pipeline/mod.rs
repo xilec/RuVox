@@ -615,11 +615,11 @@ impl TTSPipeline {
             .collect();
 
         // Apply replacements via TrackedText in reverse order.
+        // Must be by byte range: a literal `replace` would also hit occurrences of
+        // the word embedded in longer tokens (e.g. "use" inside "user"), corrupting
+        // them before their own turn to be replaced.
         for (start, end, replacement) in matches.into_iter().rev() {
-            let original = &snapshot[start..end];
-            if replacement != original {
-                tracked.replace(original, &replacement);
-            }
+            tracked.replace_byte_range(start, end, &replacement);
         }
     }
 
@@ -663,11 +663,10 @@ impl TTSPipeline {
             .collect();
 
         // Apply in reverse order so byte offsets stay valid.
+        // Must be by byte range: a literal `replace` would also hit the digit run
+        // embedded in a longer number (e.g. "42" inside "142"), corrupting it.
         for (start, end, replacement) in matches.into_iter().rev() {
-            let original = &snapshot[start..end];
-            if replacement != original {
-                tracked.replace(original, &replacement);
-            }
+            tracked.replace_byte_range(start, end, &replacement);
         }
     }
 }
@@ -751,5 +750,31 @@ mod tests {
         assert!(!result.starts_with(char::is_whitespace));
         assert!(!result.ends_with(char::is_whitespace));
         assert_eq!(mapping.char_map.len(), result.chars().count());
+    }
+
+    #[test]
+    fn pipeline_english_word_embedded_in_earlier_word() {
+        // Regression: replacements were applied via literal `TrackedText::replace`,
+        // which hit the shorter word embedded in an earlier longer token
+        // ("use" inside "user"), leaving Latin debris for Silero.
+        let mut p = TTSPipeline::new();
+        assert_eq!(p.process("user use"), "юзер юз");
+        assert_eq!(p.process("use user"), "юз юзер");
+        assert_eq!(p.process("tests test"), "тестс тест");
+        assert_eq!(p.process("test tests"), "тест тестс");
+    }
+
+    #[test]
+    fn pipeline_number_embedded_in_earlier_number() {
+        // Regression (#75): same literal-replace bug in the numbers phase —
+        // "1" replaced inside "10", "42" inside "142".
+        let mut p = TTSPipeline::new();
+        assert_eq!(p.process("10:1"), "десять:один");
+        assert_eq!(
+            p.process("Счёт 10:1 в нашу пользу."),
+            "Счёт десять:один в нашу пользу."
+        );
+        assert_eq!(p.process("142 42"), "сто сорок два сорок два");
+        assert_eq!(p.process("42 142"), "сорок два сто сорок два");
     }
 }
