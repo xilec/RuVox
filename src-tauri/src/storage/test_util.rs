@@ -59,6 +59,45 @@ pub(crate) fn add_entry_at(
     entry
 }
 
+/// Apply `mutate` to a clone of `entry` and persist the result via
+/// [`StorageService::update_entry`]. Purely in-memory: no audio or
+/// timestamp files are written, so the entry may deliberately end up
+/// pointing at a missing file — unlike [`make_ready_entry`], which writes
+/// real files. Use this when a test needs an exact field combination (e.g.
+/// a dangling `audio_path` or the runtime-only `Playing` status).
+pub(crate) fn update_entry_with(
+    svc: &StorageService,
+    entry: &TextEntry,
+    mutate: impl FnOnce(&mut TextEntry),
+) {
+    let mut updated = entry.clone();
+    mutate(&mut updated);
+    svc.update_entry(updated).unwrap();
+}
+
+/// Write a minimal `history.json` fixture into `cache_dir`, creating the
+/// `audio/` subdir alongside (as the real on-disk layout has), so that
+/// [`StorageService::with_cache_dir`] loads it. Each tuple is
+/// `(id, original_text, status)`; `created_at` is fixed and `audio_path`
+/// stays null.
+pub(crate) fn write_history(cache_dir: &Path, version: u32, entries: &[(&str, &str, &str)]) {
+    std::fs::create_dir_all(cache_dir.join("audio")).unwrap();
+    let entries_json: Vec<serde_json::Value> = entries
+        .iter()
+        .map(|(id, text, status)| {
+            serde_json::json!({
+                "id": id,
+                "original_text": text,
+                "status": status,
+                "created_at": "2025-01-01T00:00:00.000000",
+                "audio_path": null,
+            })
+        })
+        .collect();
+    let history = serde_json::json!({ "version": version, "entries": entries_json });
+    std::fs::write(cache_dir.join("history.json"), history.to_string()).unwrap();
+}
+
 /// Create an entry already populated with on-disk audio + timestamps of the
 /// requested sizes, using `Local::now()` as `created_at`. Suitable when a
 /// test doesn't assert anything about ordering between entries.
