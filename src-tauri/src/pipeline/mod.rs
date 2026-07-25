@@ -143,7 +143,9 @@ fn re_kebab() -> &'static Regex {
 
 fn re_english_words() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"\b([A-Za-z][A-Za-z]+)\b").expect("valid regex"))
+    // Single letters included: a lone "x" or "I" must also become speakable
+    // Cyrillic (read by letter name in process_english_tracked).
+    RE.get_or_init(|| Regex::new(r"\b([A-Za-z]+)\b").expect("valid regex"))
 }
 
 fn re_number() -> &'static Regex {
@@ -596,9 +598,15 @@ impl TTSPipeline {
                 let word = m.as_str();
                 let word_lower = word.to_lowercase();
 
-                // Priority: IT_TERMS → custom terms → abbreviations → transliterate
+                // Priority: single letter by name → IT_TERMS → custom terms →
+                // abbreviations → transliterate
                 use crate::pipeline::normalizers::english::IT_TERMS;
-                let replacement = if let Some(v) = IT_TERMS.get(word_lower.as_str()) {
+                let replacement = if word.len() == 1 {
+                    // Lone letters are read by English letter name via the same
+                    // table as code identifiers ("x" → "икс"), not
+                    // transliterated, and are not tracked as unknown words.
+                    self.code_normalizer.spell_abbreviation(word)
+                } else if let Some(v) = IT_TERMS.get(word_lower.as_str()) {
                     v.to_string()
                 } else if word.chars().all(|c| c.is_ascii_uppercase()) && word.len() >= 2 {
                     self.abbrev_normalizer.normalize(word)
@@ -831,5 +839,26 @@ mod tests {
         );
         assert_eq!(p.process("142 42"), "сто сорок два сорок два");
         assert_eq!(p.process("42 142"), "сорок два сто сорок два");
+    }
+
+    #[test]
+    fn pipeline_single_latin_letters_read_by_name() {
+        // Lone letters used to stay Latin (re_english_words required 2+
+        // letters) and were silently dropped by Silero.
+        let mut p = TTSPipeline::new();
+        assert_eq!(
+            p.process("Переменная x равна 5"),
+            "Переменная икс равна пять"
+        );
+        assert_eq!(p.process("пункты a и I"), "пункты эй и ай");
+    }
+
+    #[test]
+    fn pipeline_single_letters_not_tracked_as_unknown() {
+        // Letter-name spelling is a dictionary lookup, not a transliteration
+        // fallback — it must not enter the unknown-words map.
+        let mut p = TTSPipeline::new();
+        p.process("Переменная x равна 5");
+        assert!(p.english_normalizer.get_unknown_words().is_empty());
     }
 }

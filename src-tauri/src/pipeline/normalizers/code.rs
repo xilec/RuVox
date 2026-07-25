@@ -593,7 +593,10 @@ impl CodeIdentifierNormalizer {
     }
 
     /// Spell abbreviation letter-by-letter using English letter names.
-    fn spell_abbreviation(&self, abbrev: &str) -> String {
+    ///
+    /// Also used by the pipeline's English phase for lone single letters in
+    /// prose, so "x" sounds the same inside an identifier and standalone.
+    pub fn spell_abbreviation(&self, abbrev: &str) -> String {
         let letter_names: &[(&str, &str)] = &[
             ("A", "эй"),
             ("B", "би"),
