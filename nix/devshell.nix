@@ -40,6 +40,9 @@ pkgs.mkShell {
     just
     lefthook
 
+    # ── Dependency auditing (advisories, licenses, duplicates) ─────────────
+    cargo-deny
+
     # ── Build tools ────────────────────────────────────────────────────────
     pkg-config
     cmake

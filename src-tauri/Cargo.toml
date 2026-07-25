@@ -3,8 +3,8 @@ name = "ruvox-tauri"
 version = "0.2.0"
 description = "RuVox — desktop app for reading technical texts aloud"
 authors = []
-license = ""
-repository = ""
+license = "GPL-3.0-only"
+repository = "https://github.com/xilec/RuVox"
 edition = "2021"
 rust-version = "1.80"
 
