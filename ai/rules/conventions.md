@@ -35,9 +35,9 @@ Craft rules (layout, test quality, duplication, idiom, correctness) live in
   GSettings correctly (see tauri #7354).
 - Package manager: pnpm (rationale in `openspec/config.yaml` context). Python
   tooling: `uv` only — no `pip`, no `python -m venv`.
-- Pre-commit hooks run via lefthook (`lefthook.yml`): fmt and ruff on commit,
-  clippy and typecheck on push. Commit and push from inside `nix develop` so
-  the hooks can find the toolchain.
+- Pre-commit hooks run via lefthook (`lefthook.yml`): fmt and ruff on commit;
+  clippy, typecheck, eslint and knip on push. Commit and push from inside
+  `nix develop` so the hooks can find the toolchain.
 
 ## Architecture boundaries
 
@@ -101,6 +101,10 @@ Craft rules (layout, test quality, duplication, idiom, correctness) live in
 
 ## Testing gates
 
+- `just lint` runs all static checks: `cargo fmt --check`, `clippy -D warnings`,
+  `cargo deny check` (RustSec advisories, license whitelist — `src-tauri/deny.toml`),
+  `eslint` (typescript-eslint recommended-type-checked + react-hooks), `knip`
+  (dead code/unused deps), `tsc --noEmit`, `ruff`.
 - `cargo test --manifest-path src-tauri/Cargo.toml` (incl. pipeline golden
   fixtures — a pipeline bug fix adds a fixture reproducing it).
 - `pnpm typecheck` and `pnpm test:unit`.

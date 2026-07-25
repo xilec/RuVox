@@ -17,3 +17,7 @@ pre-push:
       run: cargo clippy --manifest-path src-tauri/Cargo.toml --no-deps -- -D warnings
     typescript:
       run: pnpm typecheck
+    eslint:
+      run: pnpm lint
+    knip:
+      run: pnpm knip

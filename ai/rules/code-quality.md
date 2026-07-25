@@ -87,8 +87,9 @@ How to decompose code across files — optimized for two axes at once.
 
 ## Rust & TS idiom
 
-Complements the automated gates (`clippy`, `tsc --strict`, `ruff`) — these are
-the idioms that compile and lint clean but are still non-idiomatic or risky.
+Complements the automated gates (`clippy`, `tsc --strict`, `eslint`, `knip`,
+`ruff`) — these are the idioms that compile and lint clean but are still
+non-idiomatic or risky.
 
 **Rust**
 - Don't swallow `Result` (`let _ = fallible()`); propagate with `?` or handle
