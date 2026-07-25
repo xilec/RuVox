@@ -161,6 +161,13 @@ impl TrackedText {
     /// Replace all literal occurrences of `from` with `to`, tracking positions.
     ///
     /// Equivalent to Python `TrackedText.replace(old, new)`.
+    ///
+    /// WARNING: this is an unbounded replace-all — it also hits `from` embedded
+    /// in longer tokens ("use" inside "user", "42" inside "142"). Phases that
+    /// collect boundary-checked matches must apply them via
+    /// [`Self::replace_byte_range`] instead (see #75, #84, #109). Literal
+    /// `replace` is reserved for constant patterns where every occurrence must
+    /// be substituted (quotes, dashes, operators, symbols, C++/C#/F# terms).
     pub fn replace(&mut self, from: &str, to: &str) {
         let pattern =
             regex::Regex::new(&regex::escape(from)).expect("regex::escape produces valid pattern");
