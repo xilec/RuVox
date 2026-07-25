@@ -517,7 +517,9 @@ fn remove_file_if_exists(path: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::test_util::{add_entry_at, make_service, write_sine_wav};
+    use crate::storage::test_util::{
+        add_entry_at, make_service, update_entry_with, write_history, write_sine_wav,
+    };
     use tempfile::TempDir;
 
     #[test]
@@ -572,10 +574,10 @@ mod tests {
         assert!(audio_path.exists());
 
         // Update entry with audio path.
-        let mut updated = entry.clone();
-        updated.audio_path = Some(audio_filename.clone());
-        updated.status = EntryStatus::Ready;
-        svc.update_entry(updated).unwrap();
+        update_entry_with(&svc, &entry, |e| {
+            e.audio_path = Some(audio_filename.clone());
+            e.status = EntryStatus::Ready;
+        });
 
         svc.delete_entry(&id).unwrap();
 
@@ -606,9 +608,7 @@ mod tests {
         let filename = svc.save_audio(&id, b"OggS fake").unwrap();
         assert_eq!(filename, format!("{id}.opus"));
 
-        let mut updated = entry.clone();
-        updated.audio_path = Some(filename);
-        svc.update_entry(updated).unwrap();
+        update_entry_with(&svc, &entry, |e| e.audio_path = Some(filename));
 
         let path = svc.get_audio_path(&id).unwrap();
         assert!(path.exists());
@@ -638,9 +638,7 @@ mod tests {
         let filename = svc.save_timestamps(&id, &words).unwrap();
         assert_eq!(filename, format!("{id}.timestamps.json"));
 
-        let mut updated = entry.clone();
-        updated.timestamps_path = Some(filename);
-        svc.update_entry(updated).unwrap();
+        update_entry_with(&svc, &entry, |e| e.timestamps_path = Some(filename));
 
         let loaded = svc.load_timestamps(&id).unwrap().unwrap();
         assert_eq!(loaded.len(), 2);
@@ -775,11 +773,11 @@ mod tests {
             )
             .unwrap();
 
-        let mut updated = entry.clone();
-        updated.audio_path = Some(audio_filename.clone());
-        updated.timestamps_path = Some(ts_filename.clone());
-        updated.status = EntryStatus::Ready;
-        svc.update_entry(updated).unwrap();
+        update_entry_with(&svc, &entry, |e| {
+            e.audio_path = Some(audio_filename.clone());
+            e.timestamps_path = Some(ts_filename.clone());
+            e.status = EntryStatus::Ready;
+        });
 
         svc.delete_audio(&id).unwrap();
 
@@ -827,10 +825,10 @@ mod tests {
         let wav_path = svc.cache_dir().join("audio").join(&wav_filename);
         write_sine_wav(&wav_path, 48_000, 440.0, 0.2);
 
-        let mut updated = entry.clone();
-        updated.audio_path = Some(wav_filename.clone());
-        updated.status = EntryStatus::Ready;
-        svc.update_entry(updated).unwrap();
+        update_entry_with(&svc, &entry, |e| {
+            e.audio_path = Some(wav_filename.clone());
+            e.status = EntryStatus::Ready;
+        });
 
         let stats = svc.migrate_wav_audio_to_opus();
         assert_eq!(stats.considered, 1);
@@ -853,10 +851,10 @@ mod tests {
         let id = entry.id;
 
         let audio_filename = svc.save_audio(&id, b"OggS fake").unwrap();
-        let mut updated = entry.clone();
-        updated.audio_path = Some(audio_filename);
-        updated.status = EntryStatus::Playing;
-        svc.update_entry(updated).unwrap();
+        update_entry_with(&svc, &entry, |e| {
+            e.audio_path = Some(audio_filename);
+            e.status = EntryStatus::Playing;
+        });
 
         let raw = fs::read_to_string(dir.path().join("history.json")).unwrap();
         let persisted: HistoryFile = serde_json::from_str(&raw).unwrap();
@@ -874,21 +872,15 @@ mod tests {
     fn interrupted_synthesis_resets_to_pending() {
         let dir = TempDir::new().unwrap();
         let cache = dir.path().to_path_buf();
-        fs::create_dir_all(cache.join("audio")).unwrap();
-
-        let history_json = r#"{
-            "version": 1,
-            "entries": [
-                {
-                    "id": "00000000-0000-0000-0000-000000000002",
-                    "original_text": "interrupted",
-                    "status": "processing",
-                    "created_at": "2025-01-01T00:00:00.000000",
-                    "audio_path": null
-                }
-            ]
-        }"#;
-        fs::write(cache.join("history.json"), history_json).unwrap();
+        write_history(
+            &cache,
+            1,
+            &[(
+                "00000000-0000-0000-0000-000000000002",
+                "interrupted",
+                "processing",
+            )],
+        );
 
         let svc = StorageService::with_cache_dir(cache.clone()).unwrap();
         let id: Uuid = "00000000-0000-0000-0000-000000000002".parse().unwrap();
@@ -906,21 +898,15 @@ mod tests {
     fn newer_schema_version_loads_anyway() {
         let dir = TempDir::new().unwrap();
         let cache = dir.path().to_path_buf();
-        fs::create_dir_all(cache.join("audio")).unwrap();
-
-        let history_json = r#"{
-            "version": 99,
-            "entries": [
-                {
-                    "id": "00000000-0000-0000-0000-000000000003",
-                    "original_text": "from the future",
-                    "status": "pending",
-                    "created_at": "2025-01-01T00:00:00.000000",
-                    "audio_path": null
-                }
-            ]
-        }"#;
-        fs::write(cache.join("history.json"), history_json).unwrap();
+        write_history(
+            &cache,
+            99,
+            &[(
+                "00000000-0000-0000-0000-000000000003",
+                "from the future",
+                "pending",
+            )],
+        );
 
         let svc = StorageService::with_cache_dir(cache).unwrap();
         let all = svc.get_all_entries();
@@ -954,20 +940,20 @@ mod tests {
 
         // Entry A references a `.wav` that does not exist on disk.
         let missing = svc.add_entry("missing wav".to_string()).unwrap();
-        let mut missing_updated = missing.clone();
-        missing_updated.audio_path = Some(format!("{}.wav", missing.id));
-        missing_updated.status = EntryStatus::Ready;
-        svc.update_entry(missing_updated).unwrap();
+        update_entry_with(&svc, &missing, |e| {
+            e.audio_path = Some(format!("{}.wav", missing.id));
+            e.status = EntryStatus::Ready;
+        });
 
         // Entry B has a real `.wav` to transcode.
         let real = svc.add_entry("real wav".to_string()).unwrap();
         let wav_filename = format!("{}.wav", real.id);
         let wav_path = svc.cache_dir().join("audio").join(&wav_filename);
         write_sine_wav(&wav_path, 48_000, 440.0, 0.2);
-        let mut real_updated = real.clone();
-        real_updated.audio_path = Some(wav_filename);
-        real_updated.status = EntryStatus::Ready;
-        svc.update_entry(real_updated).unwrap();
+        update_entry_with(&svc, &real, |e| {
+            e.audio_path = Some(wav_filename);
+            e.status = EntryStatus::Ready;
+        });
 
         let stats = svc.migrate_wav_audio_to_opus();
         assert_eq!(stats.considered, 2);
@@ -1000,9 +986,9 @@ mod tests {
         assert!(svc.load_timestamps(&id).unwrap().is_none());
 
         // timestamps_path set, but the file does not exist.
-        let mut updated = entry.clone();
-        updated.timestamps_path = Some(format!("{id}.timestamps.json"));
-        svc.update_entry(updated).unwrap();
+        update_entry_with(&svc, &entry, |e| {
+            e.timestamps_path = Some(format!("{id}.timestamps.json"));
+        });
         assert!(svc.load_timestamps(&id).unwrap().is_none());
 
         // Unknown entry id.
@@ -1016,9 +1002,9 @@ mod tests {
         let (svc, _dir) = make_service();
         let entry = svc.add_entry("already opus".to_string()).unwrap();
         let id = entry.id;
-        let mut updated = entry.clone();
-        updated.audio_path = Some(format!("{id}.opus"));
-        svc.update_entry(updated).unwrap();
+        update_entry_with(&svc, &entry, |e| {
+            e.audio_path = Some(format!("{id}.opus"));
+        });
 
         let stats = svc.migrate_wav_audio_to_opus();
         assert_eq!(stats.considered, 0);
