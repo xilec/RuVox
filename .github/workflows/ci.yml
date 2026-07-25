@@ -32,6 +32,8 @@ jobs:
               - 'tsconfig.json'
               - 'vite.config.ts'
               - 'index.html'
+              - 'eslint.config.js'
+              - 'knip.json'
               - '.github/workflows/ci.yml'
             ttsd:
               - 'ttsd/**'

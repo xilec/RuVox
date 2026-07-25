@@ -27,8 +27,8 @@ const PURIFY_CONFIG: DOMPurifyConfig = {
  * code inside Markdown.
  */
 export function renderHtml(raw: string): string {
-  // DOMPurify.sanitize with RETURN_DOM=false (default) returns a string; the
-  // TrustedHTML union type requires an explicit cast through unknown first.
+  // DOMPurify.sanitize with RETURN_DOM=false (default) narrows the return
+  // type to string via the config overload.
   const clean = DOMPurify.sanitize(raw, { ...PURIFY_CONFIG, RETURN_DOM: false });
   return highlightCodeBlocks(clean);
 }
