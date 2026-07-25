@@ -844,6 +844,171 @@ mod tests {
         assert!(!wav_path.exists(), "source .wav should be removed");
     }
 
+    /// The `Playing` status is runtime-only: persisting history while an
+    /// entry plays must write `"ready"` to disk (see the `EntryStatus` doc).
+    #[test]
+    fn playing_status_is_never_persisted() {
+        let (svc, dir) = make_service();
+        let entry = svc.add_entry("playing test".to_string()).unwrap();
+        let id = entry.id;
+
+        let audio_filename = svc.save_audio(&id, b"OggS fake").unwrap();
+        let mut updated = entry.clone();
+        updated.audio_path = Some(audio_filename);
+        updated.status = EntryStatus::Playing;
+        svc.update_entry(updated).unwrap();
+
+        let raw = fs::read_to_string(dir.path().join("history.json")).unwrap();
+        let persisted: HistoryFile = serde_json::from_str(&raw).unwrap();
+        assert_eq!(persisted.entries.len(), 1);
+        assert_eq!(persisted.entries[0].status, EntryStatus::Ready);
+
+        // On reload the entry comes back as Ready (its audio file exists).
+        let svc2 = StorageService::with_cache_dir(dir.path().to_path_buf()).unwrap();
+        assert_eq!(svc2.get_entry(&id).unwrap().status, EntryStatus::Ready);
+    }
+
+    /// An entry stuck in `processing` (the process died mid-synthesis) must
+    /// be reset to `pending` on load, and the corrected history re-persisted.
+    #[test]
+    fn interrupted_synthesis_resets_to_pending() {
+        let dir = TempDir::new().unwrap();
+        let cache = dir.path().to_path_buf();
+        fs::create_dir_all(cache.join("audio")).unwrap();
+
+        let history_json = r#"{
+            "version": 1,
+            "entries": [
+                {
+                    "id": "00000000-0000-0000-0000-000000000002",
+                    "original_text": "interrupted",
+                    "status": "processing",
+                    "created_at": "2025-01-01T00:00:00.000000",
+                    "audio_path": null
+                }
+            ]
+        }"#;
+        fs::write(cache.join("history.json"), history_json).unwrap();
+
+        let svc = StorageService::with_cache_dir(cache.clone()).unwrap();
+        let id: Uuid = "00000000-0000-0000-0000-000000000002".parse().unwrap();
+        assert_eq!(svc.get_entry(&id).unwrap().status, EntryStatus::Pending);
+
+        // The fix must be persisted back to disk.
+        let raw = fs::read_to_string(cache.join("history.json")).unwrap();
+        let persisted: HistoryFile = serde_json::from_str(&raw).unwrap();
+        assert_eq!(persisted.entries[0].status, EntryStatus::Pending);
+    }
+
+    /// A history file with a newer schema version is loaded anyway (the
+    /// version check only logs a warning) — best-effort forward compatibility.
+    #[test]
+    fn newer_schema_version_loads_anyway() {
+        let dir = TempDir::new().unwrap();
+        let cache = dir.path().to_path_buf();
+        fs::create_dir_all(cache.join("audio")).unwrap();
+
+        let history_json = r#"{
+            "version": 99,
+            "entries": [
+                {
+                    "id": "00000000-0000-0000-0000-000000000003",
+                    "original_text": "from the future",
+                    "status": "pending",
+                    "created_at": "2025-01-01T00:00:00.000000",
+                    "audio_path": null
+                }
+            ]
+        }"#;
+        fs::write(cache.join("history.json"), history_json).unwrap();
+
+        let svc = StorageService::with_cache_dir(cache).unwrap();
+        let all = svc.get_all_entries();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].original_text, "from the future");
+        assert_eq!(all[0].status, EntryStatus::Pending);
+    }
+
+    /// Cyrillic text must be written verbatim: UTF-8, no `\uXXXX` escapes,
+    /// no BOM.
+    #[test]
+    fn history_writes_cyrillic_unescaped() {
+        let (svc, dir) = make_service();
+        svc.add_entry("Привет, мир!".to_string()).unwrap();
+
+        let bytes = fs::read(dir.path().join("history.json")).unwrap();
+        assert!(
+            !bytes.starts_with(&[0xEF, 0xBB, 0xBF]),
+            "history.json must not start with a UTF-8 BOM"
+        );
+        let raw = String::from_utf8(bytes).unwrap();
+        assert!(raw.contains("Привет, мир!"), "got: {raw}");
+        assert!(!raw.contains("\\u"), "Cyrillic must not be escaped: {raw}");
+    }
+
+    /// A missing source `.wav` must be counted and skipped without aborting
+    /// the sweep: the remaining entries still migrate.
+    #[test]
+    fn migrate_wav_audio_to_opus_skips_missing_and_continues() {
+        let (svc, _dir) = make_service();
+
+        // Entry A references a `.wav` that does not exist on disk.
+        let missing = svc.add_entry("missing wav".to_string()).unwrap();
+        let mut missing_updated = missing.clone();
+        missing_updated.audio_path = Some(format!("{}.wav", missing.id));
+        missing_updated.status = EntryStatus::Ready;
+        svc.update_entry(missing_updated).unwrap();
+
+        // Entry B has a real `.wav` to transcode.
+        let real = svc.add_entry("real wav".to_string()).unwrap();
+        let wav_filename = format!("{}.wav", real.id);
+        let wav_path = svc.cache_dir().join("audio").join(&wav_filename);
+        write_sine_wav(&wav_path, 48_000, 440.0, 0.2);
+        let mut real_updated = real.clone();
+        real_updated.audio_path = Some(wav_filename);
+        real_updated.status = EntryStatus::Ready;
+        svc.update_entry(real_updated).unwrap();
+
+        let stats = svc.migrate_wav_audio_to_opus();
+        assert_eq!(stats.considered, 2);
+        assert_eq!(stats.skipped_missing, 1);
+        assert_eq!(stats.migrated, 1);
+        assert_eq!(stats.failed, 0);
+
+        let after_real = svc.get_entry(&real.id).unwrap();
+        let new_filename = after_real.audio_path.expect("audio_path must remain set");
+        assert!(new_filename.ends_with(".opus"), "got {new_filename}");
+
+        // The skipped entry keeps its `.wav` reference untouched.
+        let after_missing = svc.get_entry(&missing.id).unwrap();
+        assert_eq!(
+            after_missing.audio_path,
+            Some(format!("{}.wav", missing.id))
+        );
+    }
+
+    /// Loading timestamps for an entry without a timestamps file must return
+    /// `None` without an error — for a null `timestamps_path`, a path whose
+    /// file is gone, and an unknown entry id alike.
+    #[test]
+    fn load_timestamps_missing_file_returns_none() {
+        let (svc, _dir) = make_service();
+        let entry = svc.add_entry("no timestamps".to_string()).unwrap();
+        let id = entry.id;
+
+        // No timestamps_path at all.
+        assert!(svc.load_timestamps(&id).unwrap().is_none());
+
+        // timestamps_path set, but the file does not exist.
+        let mut updated = entry.clone();
+        updated.timestamps_path = Some(format!("{id}.timestamps.json"));
+        svc.update_entry(updated).unwrap();
+        assert!(svc.load_timestamps(&id).unwrap().is_none());
+
+        // Unknown entry id.
+        assert!(svc.load_timestamps(&Uuid::new_v4()).unwrap().is_none());
+    }
+
     /// Re-running the migration after everything is already `.opus` must be
     /// a no-op (no entries considered, no files touched).
     #[test]
