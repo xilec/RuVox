@@ -1,0 +1,8 @@
+<!-- ruvox-code: full -->
+```python
+print('world')
+```
+<!-- ruvox-code: brief -->
+```python
+print('world')
+```
