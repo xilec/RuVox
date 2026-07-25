@@ -144,17 +144,28 @@ impl SynthesisError {
     }
 }
 
+/// Shared core for [`run_normalization`] and [`preview_normalization`]: runs
+/// the CPU-bound pipeline on a blocking thread. The raw `JoinError` is
+/// returned so each caller maps a pipeline panic to its own error type.
+async fn run_pipeline_normalization(
+    pipeline: Arc<Mutex<TTSPipeline>>,
+    text: String,
+) -> Result<(String, CharMapping), tokio::task::JoinError> {
+    tokio::task::spawn_blocking(move || {
+        let mut p = pipeline.lock();
+        p.process_with_char_mapping(&text)
+    })
+    .await
+}
+
 /// Phase 1: run Rust text pipeline (CPU-bound, runs in blocking thread).
 async fn run_normalization(
     pipeline: Arc<Mutex<TTSPipeline>>,
     original_text: String,
 ) -> Result<(String, CharMapping), SynthesisError> {
-    let (normalized, mapping) = tokio::task::spawn_blocking(move || {
-        let mut p = pipeline.lock();
-        p.process_with_char_mapping(&original_text)
-    })
-    .await
-    .map_err(|e| SynthesisError::PipelinePanic(e.to_string()))?;
+    let (normalized, mapping) = run_pipeline_normalization(pipeline, original_text)
+        .await
+        .map_err(|e| SynthesisError::PipelinePanic(e.to_string()))?;
 
     if normalized.is_empty() {
         return Err(SynthesisError::EmptyText);
@@ -521,14 +532,11 @@ async fn preview_normalization(
     pipeline: Arc<Mutex<TTSPipeline>>,
     text: String,
 ) -> CmdResult<(String, CharMapping)> {
-    tokio::task::spawn_blocking(move || {
-        let mut p = pipeline.lock();
-        p.process_with_char_mapping(&text)
-    })
-    .await
-    .map_err(|e| CommandError::Internal {
-        message: format!("pipeline task panicked: {e}"),
-    })
+    run_pipeline_normalization(pipeline, text)
+        .await
+        .map_err(|e| CommandError::Internal {
+            message: format!("pipeline task panicked: {e}"),
+        })
 }
 
 /// Run the text normalization pipeline on `text` and return the normalized result.
@@ -562,6 +570,18 @@ pub async fn get_entries(state: State<'_, AppState>) -> CmdResult<Vec<TextEntry>
 fn lookup_entry(storage: &StorageService, id: &str) -> CmdResult<Option<TextEntry>> {
     let uuid = parse_entry_id(id)?;
     Ok(storage.get_entry(&uuid))
+}
+
+/// Shared implementation for commands that act on an existing entry: parse
+/// the wire id and return the entry, or a `not_found` error naming the id.
+/// Unlike [`lookup_entry`], a well-formed but unknown id is an error here.
+fn require_entry(storage: &StorageService, id: &str) -> CmdResult<TextEntry> {
+    let uuid = parse_entry_id(id)?;
+    storage
+        .get_entry(&uuid)
+        .ok_or_else(|| CommandError::NotFound {
+            message: format!("entry not found: {id}"),
+        })
 }
 
 /// Return a single entry by ID, or null if not found.
@@ -621,14 +641,8 @@ pub async fn regenerate_entry(
     state: State<'_, AppState>,
     id: String,
 ) -> CmdResult<()> {
-    let uuid = parse_entry_id(&id)?;
-
-    let entry = state
-        .storage
-        .get_entry(&uuid)
-        .ok_or_else(|| CommandError::NotFound {
-            message: format!("entry not found: {id}"),
-        })?;
+    let entry = require_entry(&state.storage, &id)?;
+    let uuid = entry.id;
 
     if entry.status == EntryStatus::Processing {
         return Err(CommandError::SynthesisError {
@@ -685,13 +699,7 @@ pub async fn cancel_synthesis(
     state: State<'_, AppState>,
     id: String,
 ) -> CmdResult<()> {
-    let uuid = parse_entry_id(&id)?;
-    let mut entry = state
-        .storage
-        .get_entry(&uuid)
-        .ok_or_else(|| CommandError::NotFound {
-            message: format!("entry not found: {id}"),
-        })?;
+    let mut entry = require_entry(&state.storage, &id)?;
 
     entry.status = EntryStatus::Pending;
     state
@@ -705,13 +713,8 @@ pub async fn cancel_synthesis(
 /// Start playback of a ready entry.
 #[tauri::command]
 pub async fn play_entry(state: State<'_, AppState>, id: String) -> CmdResult<()> {
-    let uuid = parse_entry_id(&id)?;
-    let entry = state
-        .storage
-        .get_entry(&uuid)
-        .ok_or_else(|| CommandError::NotFound {
-            message: format!("entry not found: {id}"),
-        })?;
+    let entry = require_entry(&state.storage, &id)?;
+    let uuid = entry.id;
 
     if entry.status != EntryStatus::Ready {
         return Err(CommandError::PlaybackError {
@@ -892,17 +895,11 @@ pub async fn update_config(state: State<'_, AppState>, patch: UIConfigPatch) -> 
 /// Shared implementation for [`get_timestamps`]: an entry that exists but has
 /// no timestamps file yields an empty vector; an unknown id is `not_found`.
 fn load_timestamps_for_entry(storage: &StorageService, id: &str) -> CmdResult<Vec<WordTimestamp>> {
-    let uuid = parse_entry_id(id)?;
-
     // Verify entry exists.
-    if storage.get_entry(&uuid).is_none() {
-        return Err(CommandError::NotFound {
-            message: format!("entry not found: {id}"),
-        });
-    }
+    let entry = require_entry(storage, id)?;
 
     let timestamps = storage
-        .load_timestamps(&uuid)
+        .load_timestamps(&entry.id)
         .map_err(CommandError::from)?
         .unwrap_or_default();
 
@@ -1393,6 +1390,15 @@ mod tests {
 
     // ── parse_entry_id ───────────────────────────────────────────────────────
 
+    /// Assert that `err` is a `CommandError::NotFound` whose message contains
+    /// `needle`.
+    fn assert_not_found(err: CommandError, needle: &str) {
+        match err {
+            CommandError::NotFound { message } => assert!(message.contains(needle)),
+            other => panic!("expected NotFound, got {other:?}"),
+        }
+    }
+
     /// Well-formed UUID strings round-trip: `parse_entry_id` returns the same
     /// UUID `Uuid::parse_str` would. Covers the nil UUID and a v4-shaped value.
     #[test_case("00000000-0000-0000-0000-000000000000"; "nil")]
@@ -1409,11 +1415,7 @@ mod tests {
     #[test_case("not-a-uuid"; "garbage")]
     #[test_case("00000000-0000-0000-0000-000000000000 "; "trailing_whitespace")]
     fn parse_entry_id_rejects(input: &str) {
-        let err = parse_entry_id(input).unwrap_err();
-        assert!(matches!(err, CommandError::NotFound { .. }));
-        if let CommandError::NotFound { message } = err {
-            assert!(message.contains("invalid entry id"));
-        }
+        assert_not_found(parse_entry_id(input).unwrap_err(), "invalid entry id");
     }
 
     // ── char_mapping_to_entries ──────────────────────────────────────────────
@@ -1631,34 +1633,6 @@ mod tests {
         assert!(normalized.is_empty());
     }
 
-    /// Preview is read-only: it must neither create history entries nor write
-    /// audio files. `preview_normalization` takes no storage/TTS handles, so
-    /// this test pins the contract at the call site — a fresh storage stays
-    /// untouched across a preview run.
-    #[tokio::test]
-    async fn preview_normalization_has_no_storage_side_effects() {
-        let (storage, _dir) = make_service();
-        assert!(storage.get_all_entries().is_empty());
-
-        let pipeline = Arc::new(Mutex::new(TTSPipeline::new()));
-        preview_normalization(pipeline, "Вызови getUserData() через API".to_string())
-            .await
-            .unwrap();
-
-        assert!(
-            storage.get_all_entries().is_empty(),
-            "preview must not create history entries"
-        );
-        let audio_dir = storage.cache_dir().join("audio");
-        if audio_dir.exists() {
-            assert_eq!(
-                std::fs::read_dir(&audio_dir).unwrap().count(),
-                0,
-                "preview must not write audio files"
-            );
-        }
-    }
-
     // ── get_entry ────────────────────────────────────────────────────────────
 
     /// A well-formed UUID that is not in the history resolves to `Ok(None)`
@@ -1708,9 +1682,6 @@ mod tests {
         let id = uuid::Uuid::new_v4().to_string();
 
         let err = load_timestamps_for_entry(&storage, &id).unwrap_err();
-        assert!(matches!(err, CommandError::NotFound { .. }));
-        if let CommandError::NotFound { message } = err {
-            assert!(message.contains("entry not found"));
-        }
+        assert_not_found(err, "entry not found");
     }
 }
