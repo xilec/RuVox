@@ -175,7 +175,7 @@ export function TextViewer({ entry }: Props) {
       }
     }
 
-    events
+    void events
       .playbackStarted(async ({ entry_id }) => {
         try {
           const ts = await commands.getTimestamps(entry_id);
@@ -192,7 +192,7 @@ export function TextViewer({ entry }: Props) {
         unlistenStarted = fn;
       });
 
-    events
+    void events
       .playbackPosition(({ position_sec, entry_id }) => {
         const container = containerRef.current;
         if (!container) return;
@@ -220,19 +220,19 @@ export function TextViewer({ entry }: Props) {
         unlistenPosition = fn;
       });
 
-    events
+    void events
       .playbackStopped(resetHighlight)
       .then((fn) => {
         unlistenStopped = fn;
       });
 
-    events
+    void events
       .playbackFinished(resetHighlight)
       .then((fn) => {
         unlistenFinished = fn;
       });
 
-    events
+    void events
       .playbackPaused(() => {
         // Keep highlight visible while paused; do not reset.
       })

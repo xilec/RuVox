@@ -20,7 +20,3 @@ export const PIPER_VOICES: readonly PiperVoice[] = [
 ];
 
 export const DEFAULT_PIPER_VOICE = 'ruslan';
-
-export function lookupPiperVoice(id: string): PiperVoice | undefined {
-  return PIPER_VOICES.find((v) => v.id === id);
-}

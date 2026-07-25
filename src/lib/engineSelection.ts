@@ -3,22 +3,9 @@
 // here so it can be unit-tested with Vitest in isolation from the Tauri shell.
 
 import { DEFAULT_PIPER_VOICE } from './piperVoices';
-import type { EngineKind, UIConfig } from './tauri';
+import type { AvailableEngines, EngineKind, UIConfig } from './tauri';
 
-export interface EngineAvailability {
-  /** Whether the engine can be selected from the UI. Phase 3 of #42 wires
-   *  this to a runtime probe of the ttsd / Python stack; in Phase 2 Silero
-   *  is unconditionally `false` and Piper is unconditionally `true`. */
-  available: boolean;
-  /** Russian-language explanation shown in a tooltip / Alert when
-   *  `available` is `false`. Null when the engine is available. */
-  reason: string | null;
-}
-
-export interface AvailabilityMap {
-  piper: EngineAvailability;
-  silero: EngineAvailability;
-}
+export type AvailabilityMap = AvailableEngines;
 
 export interface EngineFormState {
   engine: EngineKind;
