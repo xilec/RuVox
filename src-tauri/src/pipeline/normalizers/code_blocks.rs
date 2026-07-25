@@ -211,14 +211,11 @@ impl CodeBlockHandler {
 
         // Apply replacements via TrackedText in reverse order (right-to-left)
         // so that byte offsets remain valid after each substitution.
+        // Must be by byte range: a literal `replace` substitutes ALL
+        // occurrences of the matched text, so byte-identical blocks would all
+        // receive the replacement computed for the first processed one (#84).
         for (start, end, replacement) in blocks.into_iter().rev() {
-            // Extract the slice safely; it may already have been consumed if
-            // an earlier (larger) block covered this range.
-            if end > snapshot.len() || start > end {
-                continue;
-            }
-            let original_slice = &snapshot[start..end];
-            tracked.replace(original_slice, &replacement);
+            tracked.replace_byte_range(start, end, &replacement);
         }
 
         // Remove mode-switch directives from the output (they are control markers,
@@ -604,21 +601,13 @@ mod tests {
         let h = CodeBlockHandler::with_mode(CodeBlockMode::Brief);
         h.process(&mut tracked);
         let result = tracked.text();
-        // TODO(#84): keep `.contains()` here until the duplicate-block bug is fixed.
-        // Actual output is "\nдалее следует пример кода на пайтон\n\nдалее
-        // следует пример кода на пайтон" — BOTH blocks come out brief, even
-        // though the first is preceded by a `full` directive. Cause:
-        // CodeBlockHandler::process() replaces blocks via literal
-        // TrackedText::replace(), which substitutes ALL occurrences, so two
-        // byte-identical code blocks both receive the replacement computed
-        // for whichever block is processed first (the second, brief one).
-        // With distinct block contents the modes are applied correctly.
-        // Pinning the buggy output with assert_eq! would freeze the wrong
-        // behaviour; only the second (brief) block is asserted here.
-        assert!(
-            result.contains("далее следует пример кода на пайтон"),
-            "got: {:?}",
-            result
+        // Regression (#84): two byte-identical blocks with different effective
+        // modes must each get their own replacement — the first block is read
+        // in full, the second described briefly. Leading "\n"s are where the
+        // removed directive lines used to be.
+        assert_eq!(
+            result,
+            "\nпринт открывающая скобка ворлд закрывающая скобка\n\nдалее следует пример кода на пайтон"
         );
     }
 }
