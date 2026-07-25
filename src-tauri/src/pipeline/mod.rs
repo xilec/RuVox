@@ -747,48 +747,9 @@ mod tests {
         assert_eq!(direct, mapped);
     }
 
-    // ── Pre-normalization (quotes, dashes, whitespace collapse) ─────────────
-
-    #[test]
-    fn pipeline_guillemets_become_straight_quotes() {
-        let mut p = TTSPipeline::new();
-        assert_eq!(p.process("«текст»"), "\"текст\"");
-    }
-
-    #[test]
-    fn pipeline_curly_quotes_normalized() {
-        let mut p = TTSPipeline::new();
-        assert_eq!(
-            p.process("\u{201c}кавычки\u{201d} и \u{2018}апострофы\u{2019}"),
-            "\"кавычки\" и 'апострофы'"
-        );
-    }
-
-    #[test]
-    fn pipeline_em_and_en_dashes_become_hyphen() {
-        let mut p = TTSPipeline::new();
-        assert_eq!(
-            p.process("Один \u{2013} два \u{2014} три"),
-            "Один - два - три"
-        );
-    }
-
-    #[test]
-    fn pipeline_blank_lines_collapse_to_two_newlines() {
-        let mut p = TTSPipeline::new();
-        assert_eq!(
-            p.process("Первый абзац.\n\n\n\nВторой абзац."),
-            "Первый абзац.\n\nВторой абзац."
-        );
-    }
-
-    // ── Tilde before a number ────────────────────────────────────────────────
-
-    #[test]
-    fn pipeline_tilde_before_number_becomes_okolo() {
-        let mut p = TTSPipeline::new();
-        assert_eq!(p.process("~46 секунд"), "около 46 секунд");
-    }
+    // Pre-normalization (quotes, dashes, whitespace collapse, tilde) is covered
+    // solely by golden fixtures: quotes_dashes, whitespace_newline_collapse,
+    // tilde_approx (src-tauri/tests/fixtures/pipeline/).
 
     // ── Numbers adjacent to letters ──────────────────────────────────────────
 
