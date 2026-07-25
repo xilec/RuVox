@@ -288,6 +288,22 @@ mod tests {
     }
 
     #[test]
+    fn config_unknown_keys_are_ignored() {
+        // Default serde behaviour: unknown keys are silently dropped, not an
+        // error — newer builds may write fields this build does not know.
+        let json = r#"{
+            "speaker": "aidar",
+            "brand_new_future_field": {"nested": true},
+            "another_unknown": 42
+        }"#;
+        let c: UIConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(c.speaker, "aidar");
+        // Everything else falls back to the defaults.
+        assert_eq!(c.sample_rate, 48000);
+        assert_eq!(c.engine, "piper");
+    }
+
+    #[test]
     fn config_patch_all_none_default() {
         let p = UIConfigPatch::default();
         assert!(p.speaker.is_none());
