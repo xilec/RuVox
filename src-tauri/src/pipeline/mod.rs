@@ -346,16 +346,13 @@ impl TTSPipeline {
             });
         }
 
-        // ── Phase 10: Versions (e.g. v1.2.3) ─────────────────────────────────
+        // ── Phase 10: Percentages ─────────────────────────────────────────────
+        // Must precede versions: re_version matches a bare "12.5" inside "12.5%",
+        // so running versions first would consume the number and leave a bare "%".
         {
             let num = &self.number_normalizer;
-            tracked.sub(re_version(), |caps| {
-                let v = caps.get(0).unwrap().as_str();
-                if v.contains('.') {
-                    num.normalize_version(v)
-                } else {
-                    v.to_string()
-                }
+            tracked.sub(re_percentage(), |caps| {
+                num.normalize_percentage(caps.get(0).unwrap().as_str())
             });
         }
 
@@ -367,11 +364,16 @@ impl TTSPipeline {
             });
         }
 
-        // ── Phase 12: Percentages ─────────────────────────────────────────────
+        // ── Phase 12: Versions (e.g. v1.2.3) ─────────────────────────────────
         {
             let num = &self.number_normalizer;
-            tracked.sub(re_percentage(), |caps| {
-                num.normalize_percentage(caps.get(0).unwrap().as_str())
+            tracked.sub(re_version(), |caps| {
+                let v = caps.get(0).unwrap().as_str();
+                if v.contains('.') {
+                    num.normalize_version(v)
+                } else {
+                    v.to_string()
+                }
             });
         }
 
