@@ -103,6 +103,29 @@ def test_write_response_emits_json_line(monkeypatch):
     assert json.loads(written) == {"ok": True}
 
 
+class _FlushTrackingStdout(io.StringIO):
+    """A StringIO stdout that records each flush() call."""
+
+    def __init__(self):
+        super().__init__()
+        self.flush_count = 0
+
+    def flush(self) -> None:
+        self.flush_count += 1
+        super().flush()
+
+
+def test_write_response_flushes_after_each_line(monkeypatch):
+    # ttsd-protocol requires each NDJSON response to be flushed immediately,
+    # otherwise the Rust side blocks waiting for a buffered reply.
+    out = _FlushTrackingStdout()
+    monkeypatch.setattr(ttsd_main.sys, "stdout", out)
+    ttsd_main._write_response(ttsd_main.OkShutdown())
+    ttsd_main._write_response(ttsd_main.OkShutdown())
+    assert out.flush_count == 2
+    assert len([line for line in out.getvalue().splitlines() if line.strip()]) == 2
+
+
 def test_setup_logging_runs():
     # Should not raise; configures a stderr handler.
     ttsd_main._setup_logging()
