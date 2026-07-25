@@ -739,6 +739,61 @@ mod tests {
         assert_eq!(direct, mapped);
     }
 
+    // ── Pre-normalization (quotes, dashes, whitespace collapse) ─────────────
+
+    #[test]
+    fn pipeline_guillemets_become_straight_quotes() {
+        let mut p = TTSPipeline::new();
+        assert_eq!(p.process("«текст»"), "\"текст\"");
+    }
+
+    #[test]
+    fn pipeline_curly_quotes_normalized() {
+        let mut p = TTSPipeline::new();
+        assert_eq!(
+            p.process("\u{201c}кавычки\u{201d} и \u{2018}апострофы\u{2019}"),
+            "\"кавычки\" и 'апострофы'"
+        );
+    }
+
+    #[test]
+    fn pipeline_em_and_en_dashes_become_hyphen() {
+        let mut p = TTSPipeline::new();
+        assert_eq!(
+            p.process("Один \u{2013} два \u{2014} три"),
+            "Один - два - три"
+        );
+    }
+
+    #[test]
+    fn pipeline_blank_lines_collapse_to_two_newlines() {
+        let mut p = TTSPipeline::new();
+        assert_eq!(
+            p.process("Первый абзац.\n\n\n\nВторой абзац."),
+            "Первый абзац.\n\nВторой абзац."
+        );
+    }
+
+    // ── Tilde before a number ────────────────────────────────────────────────
+
+    #[test]
+    fn pipeline_tilde_before_number_becomes_okolo() {
+        let mut p = TTSPipeline::new();
+        assert_eq!(p.process("~46 секунд"), "около 46 секунд");
+    }
+
+    // ── Numbers adjacent to letters ──────────────────────────────────────────
+
+    #[test]
+    fn pipeline_number_adjacent_to_letter_not_expanded() {
+        // Digits glued to a Latin letter belong to the code-identifier phase,
+        // so the number phase must leave leftovers like v1 / x2 / app2 alone.
+        let mut p = TTSPipeline::new();
+        assert_eq!(p.process("Запусти v1 сейчас"), "Запусти v1 сейчас");
+        assert_eq!(p.process("Координата x2 равна"), "Координата x2 равна");
+        assert_eq!(p.process("Файл app2 лежит тут"), "Файл app2 лежит тут");
+    }
+
     #[test]
     fn trim_fixup_handles_multibyte_input() {
         // Regression: char_map is indexed by codepoints, but the trim
