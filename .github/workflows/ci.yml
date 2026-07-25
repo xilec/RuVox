@@ -72,7 +72,7 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
-          arguments: --manifest-path src-tauri/Cargo.toml
+          manifest-path: src-tauri/Cargo.toml
       - run: cargo test --manifest-path src-tauri/Cargo.toml --all-features
 
   typescript:
