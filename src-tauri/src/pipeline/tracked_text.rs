@@ -257,72 +257,10 @@ impl TrackedText {
             .collect();
 
         // Process in reverse order so positions don't shift under us.
+        // All no-op / overlap checks and position bookkeeping live in
+        // replace_byte_range — keep them in one home.
         for (byte_start, byte_end, new_text) in matches.into_iter().rev() {
-            let old_text = &self.current[byte_start..byte_end];
-
-            // Skip no-op replacements.
-            if new_text == old_text {
-                continue;
-            }
-
-            // Convert byte positions to codepoint positions.
-            let char_start = byte_to_char_idx(&self.current, byte_start);
-            let char_end = byte_to_char_idx(&self.current, byte_end);
-
-            // Check if any codepoint in the match is inside an existing replacement.
-            let mut match_touches_replacement = false;
-            for pos in char_start..char_end {
-                if self.is_current_char_pos_inside_replacement(pos) {
-                    match_touches_replacement = true;
-                    break;
-                }
-            }
-            if match_touches_replacement {
-                continue;
-            }
-
-            // Map current codepoint positions to original codepoint positions.
-            let orig_start = self.current_to_original(char_start);
-            let orig_end = if char_end > char_start {
-                self.current_to_original(char_end - 1) + 1
-            } else {
-                orig_start
-            };
-
-            // Skip if this range overlaps an existing replacement in original coords.
-            if self
-                .find_containing_replacement(orig_start, orig_end)
-                .is_some()
-            {
-                continue;
-            }
-
-            // Record replacement.
-            self.replacements.push(Replacement {
-                orig_start,
-                orig_end,
-                new_text: new_text.clone(),
-            });
-
-            // Insert at front (Python inserts at index 0 when processing in reverse).
-            self.offset_entries.insert(
-                0,
-                OffsetEntry {
-                    current_pos: char_start,
-                    orig_start,
-                    orig_end,
-                    new_len: char_len(&new_text),
-                },
-            );
-            self.sorted_entries_cache = None;
-
-            // Apply replacement to current text.
-            self.current = format!(
-                "{}{}{}",
-                &self.current[..byte_start],
-                new_text,
-                &self.current[byte_end..]
-            );
+            self.replace_byte_range(byte_start, byte_end, &new_text);
         }
     }
 
