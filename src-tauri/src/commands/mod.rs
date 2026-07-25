@@ -510,6 +510,27 @@ pub async fn add_clipboard_entry(
     ingest_text(app, &state, text, play_when_ready)
 }
 
+/// Pure normalization step behind [`preview_normalize`]: runs the pipeline on
+/// a blocking thread and returns the normalized text together with its char
+/// mapping. Unlike [`run_normalization`], empty input is not an error — the
+/// preview dialog must show even an empty normalization result.
+///
+/// Takes no storage/TTS handles, so a preview can never create history
+/// entries or kick off synthesis.
+async fn preview_normalization(
+    pipeline: Arc<Mutex<TTSPipeline>>,
+    text: String,
+) -> CmdResult<(String, CharMapping)> {
+    tokio::task::spawn_blocking(move || {
+        let mut p = pipeline.lock();
+        p.process_with_char_mapping(&text)
+    })
+    .await
+    .map_err(|e| CommandError::Internal {
+        message: format!("pipeline task panicked: {e}"),
+    })
+}
+
 /// Run the text normalization pipeline on `text` and return the normalized result.
 ///
 /// Used by the preview dialog (FF 1.1) to show original ↔ normalized side-by-side
@@ -519,17 +540,8 @@ pub async fn preview_normalize(
     state: State<'_, AppState>,
     text: String,
 ) -> CmdResult<PreviewNormalizeResult> {
-    let pipeline = Arc::clone(&state.pipeline);
-    let result = tokio::task::spawn_blocking(move || {
-        let mut p = pipeline.lock();
-        p.process_with_char_mapping(&text)
-    })
-    .await
-    .map_err(|e| CommandError::Internal {
-        message: format!("pipeline task panicked: {e}"),
-    })?;
-
-    let (normalized, _char_mapping) = result;
+    let (normalized, _char_mapping) =
+        preview_normalization(Arc::clone(&state.pipeline), text).await?;
     Ok(PreviewNormalizeResult { normalized })
 }
 
@@ -544,11 +556,18 @@ pub async fn get_entries(state: State<'_, AppState>) -> CmdResult<Vec<TextEntry>
     Ok(state.storage.get_all_entries())
 }
 
+/// Shared implementation for [`get_entry`]: parse the wire id and look it up.
+/// An unknown but well-formed id yields `Ok(None)` (serialized as `null`),
+/// a malformed one a `not_found` error (see [`parse_entry_id`]).
+fn lookup_entry(storage: &StorageService, id: &str) -> CmdResult<Option<TextEntry>> {
+    let uuid = parse_entry_id(id)?;
+    Ok(storage.get_entry(&uuid))
+}
+
 /// Return a single entry by ID, or null if not found.
 #[tauri::command]
 pub async fn get_entry(state: State<'_, AppState>, id: String) -> CmdResult<Option<TextEntry>> {
-    let uuid = parse_entry_id(&id)?;
-    Ok(state.storage.get_entry(&uuid))
+    lookup_entry(&state.storage, &id)
 }
 
 /// Delete an entry and its audio + timestamps files.
@@ -870,28 +889,33 @@ pub async fn update_config(state: State<'_, AppState>, patch: UIConfigPatch) -> 
         .map_err(CommandError::from)
 }
 
+/// Shared implementation for [`get_timestamps`]: an entry that exists but has
+/// no timestamps file yields an empty vector; an unknown id is `not_found`.
+fn load_timestamps_for_entry(storage: &StorageService, id: &str) -> CmdResult<Vec<WordTimestamp>> {
+    let uuid = parse_entry_id(id)?;
+
+    // Verify entry exists.
+    if storage.get_entry(&uuid).is_none() {
+        return Err(CommandError::NotFound {
+            message: format!("entry not found: {id}"),
+        });
+    }
+
+    let timestamps = storage
+        .load_timestamps(&uuid)
+        .map_err(CommandError::from)?
+        .unwrap_or_default();
+
+    Ok(timestamps)
+}
+
 /// Load and return word timestamps for an entry.
 #[tauri::command]
 pub async fn get_timestamps(
     state: State<'_, AppState>,
     id: String,
 ) -> CmdResult<Vec<WordTimestamp>> {
-    let uuid = parse_entry_id(&id)?;
-
-    // Verify entry exists.
-    if state.storage.get_entry(&uuid).is_none() {
-        return Err(CommandError::NotFound {
-            message: format!("entry not found: {id}"),
-        });
-    }
-
-    let timestamps = state
-        .storage
-        .load_timestamps(&uuid)
-        .map_err(CommandError::from)?
-        .unwrap_or_default();
-
-    Ok(timestamps)
+    load_timestamps_for_entry(&state.storage, &id)
 }
 
 /// What "fits in the cache" means for this clear_cache invocation.
@@ -1127,6 +1151,7 @@ mod synthesis_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::test_util::make_service;
     use std::collections::HashMap;
     use test_case::test_case;
 
@@ -1572,5 +1597,120 @@ mod tests {
         assert!(in_range(0.5));
         assert!(!in_range(-0.000_001));
         assert!(!in_range(1.000_001));
+    }
+
+    // ── preview_normalize ────────────────────────────────────────────────────
+
+    /// The preview returns the normalized text together with a char mapping
+    /// whose `transformed` matches the returned text and whose `char_map`
+    /// covers every codepoint of it (the `CharMapping` invariant).
+    #[tokio::test]
+    async fn preview_normalization_returns_normalized_text_and_mapping() {
+        let pipeline = Arc::new(Mutex::new(TTSPipeline::new()));
+        let input = "Привет, мир 42!".to_string();
+
+        let (normalized, mapping) = preview_normalization(pipeline, input.clone())
+            .await
+            .unwrap();
+
+        assert!(!normalized.is_empty());
+        assert_eq!(mapping.original, input);
+        assert_eq!(mapping.transformed, normalized);
+        assert_eq!(mapping.char_map.len(), normalized.chars().count());
+    }
+
+    /// Unlike `run_normalization` (which flags empty input as
+    /// `SynthesisError::EmptyText`), the preview path must not fail on empty
+    /// text — the dialog shows whatever the pipeline produced.
+    #[tokio::test]
+    async fn preview_normalization_allows_empty_text() {
+        let pipeline = Arc::new(Mutex::new(TTSPipeline::new()));
+        let (normalized, _mapping) = preview_normalization(pipeline, String::new())
+            .await
+            .unwrap();
+        assert!(normalized.is_empty());
+    }
+
+    /// Preview is read-only: it must neither create history entries nor write
+    /// audio files. `preview_normalization` takes no storage/TTS handles, so
+    /// this test pins the contract at the call site — a fresh storage stays
+    /// untouched across a preview run.
+    #[tokio::test]
+    async fn preview_normalization_has_no_storage_side_effects() {
+        let (storage, _dir) = make_service();
+        assert!(storage.get_all_entries().is_empty());
+
+        let pipeline = Arc::new(Mutex::new(TTSPipeline::new()));
+        preview_normalization(pipeline, "Вызови getUserData() через API".to_string())
+            .await
+            .unwrap();
+
+        assert!(
+            storage.get_all_entries().is_empty(),
+            "preview must not create history entries"
+        );
+        let audio_dir = storage.cache_dir().join("audio");
+        if audio_dir.exists() {
+            assert_eq!(
+                std::fs::read_dir(&audio_dir).unwrap().count(),
+                0,
+                "preview must not write audio files"
+            );
+        }
+    }
+
+    // ── get_entry ────────────────────────────────────────────────────────────
+
+    /// A well-formed UUID that is not in the history resolves to `Ok(None)`
+    /// (serialized as `null` on the wire), not to an error.
+    #[test]
+    fn lookup_entry_returns_none_for_unknown_valid_id() {
+        let (storage, _dir) = make_service();
+        let id = uuid::Uuid::new_v4().to_string();
+
+        let result = lookup_entry(&storage, &id).unwrap();
+        assert!(result.is_none());
+    }
+
+    /// Sanity counterpart to the miss case: an existing id round-trips to the
+    /// stored entry.
+    #[test]
+    fn lookup_entry_returns_entry_for_known_id() {
+        let (storage, _dir) = make_service();
+        let entry = storage.add_entry("привет".to_string()).unwrap();
+
+        let found = lookup_entry(&storage, &entry.id.to_string())
+            .unwrap()
+            .expect("entry just added must be found");
+        assert_eq!(found.id, entry.id);
+        assert_eq!(found.original_text, "привет");
+    }
+
+    // ── get_timestamps ───────────────────────────────────────────────────────
+
+    /// An entry that exists but has no timestamps file on disk yields the
+    /// documented empty result: `load_timestamps` returns `None`, which the
+    /// command maps to an empty vector via `unwrap_or_default`.
+    #[test]
+    fn load_timestamps_for_entry_returns_empty_vec_when_no_timestamps_file() {
+        let (storage, _dir) = make_service();
+        let entry = storage.add_entry("текст без аудио".to_string()).unwrap();
+
+        let timestamps = load_timestamps_for_entry(&storage, &entry.id.to_string()).unwrap();
+        assert!(timestamps.is_empty());
+    }
+
+    /// An unknown (but well-formed) id is rejected as `not_found` before any
+    /// file lookup happens.
+    #[test]
+    fn load_timestamps_for_entry_errors_for_unknown_id() {
+        let (storage, _dir) = make_service();
+        let id = uuid::Uuid::new_v4().to_string();
+
+        let err = load_timestamps_for_entry(&storage, &id).unwrap_err();
+        assert!(matches!(err, CommandError::NotFound { .. }));
+        if let CommandError::NotFound { message } = err {
+            assert!(message.contains("entry not found"));
+        }
     }
 }
