@@ -166,7 +166,7 @@ export function QueueList() {
   }, []);
 
   useEffect(() => {
-    loadEntries();
+    void loadEntries();
   }, [loadEntries]);
 
   useTauriEvents([

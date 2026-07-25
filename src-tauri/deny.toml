@@ -1,0 +1,50 @@
+# cargo-deny configuration. Run from src-tauri/: `cargo deny check`
+# (or `just lint` / the rust CI job). Gates: RustSec advisories, license
+# whitelist, duplicate/wildcard versions.
+
+[advisories]
+# All vulnerability/unsound advisories are errors by default in cargo-deny
+# 0.20; ignore specific ones via `ignore` with a reason.
+unmaintained = "workspace"
+yanked = "warn"
+ignore = [
+  # quick-xml 0.39.4 enters via wayland-protocols-wlr → wayland-scanner,
+  # which parses only the vendored Wayland protocol XML at BUILD time — no
+  # untrusted input reaches it, so these DoS advisories are not exploitable
+  # here. The runtime XML user in the tree already has the patched 0.41.0.
+  { id = "RUSTSEC-2026-0194", reason = "build-time-only use over vendored Wayland protocol XML (wayland-scanner); not reachable with untrusted input" },
+  { id = "RUSTSEC-2026-0195", reason = "build-time-only use over vendored Wayland protocol XML (wayland-scanner); not reachable with untrusted input" },
+]
+
+[licenses]
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "BSL-1.0",
+  "CC0-1.0",
+  "CDLA-Permissive-2.0",
+  "ISC",
+  "MIT-0",
+  "MPL-2.0",
+  "Unicode-3.0",
+  "Zlib",
+]
+confidence-threshold = 0.8
+
+# Our own crate is GPL-3.0 by project policy (see LICENSE.md); the allow
+# list above covers third-party dependencies.
+[[licenses.exceptions]]
+crate = "ruvox-tauri"
+allow = ["GPL-3.0-only"]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "warn"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-git = []

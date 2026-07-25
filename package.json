@@ -11,6 +11,8 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "knip": "knip",
     "test:unit": "vitest run",
     "test:unit:watch": "vitest"
   },
@@ -26,7 +28,6 @@
     "dompurify": "^3.4.12",
     "highlight.js": "^11.11.1",
     "markdown-it": "^14.3.0",
-    "markdown-it-highlightjs": "^4.3.0",
     "mermaid": "^11.16.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -34,14 +35,19 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@tauri-apps/cli": "^2.11.4",
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^22.20.1",
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.7.0",
+    "eslint": "^10.7.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "jsdom": "^25.0.1",
+    "knip": "^6.29.0",
     "typescript": "^5.9.3",
+    "typescript-eslint": "^8.65.0",
     "vite": "^6.4.3",
     "vitest": "^2.1.9"
   }

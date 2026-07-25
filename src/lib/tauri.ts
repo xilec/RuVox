@@ -30,12 +30,17 @@ export interface WordTimestamp {
   original_pos: [number, number];
 }
 
-export type Theme = 'light' | 'dark' | 'auto';
+type Theme = 'light' | 'dark' | 'auto';
 
 export type EngineKind = 'piper' | 'silero';
 
-export interface EngineAvailability {
+interface EngineAvailability {
+  /** Whether the engine can be selected from the UI. Phase 3 of #42 wires
+   *  this to a runtime probe of the ttsd / Python stack; in Phase 2 Silero
+   *  is unconditionally `false` and Piper is unconditionally `true`. */
   available: boolean;
+  /** Russian-language explanation shown in a tooltip / Alert when
+   *  `available` is `false`. Null when the engine is available. */
   reason: string | null;
 }
 

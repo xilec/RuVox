@@ -29,10 +29,13 @@ test-ts:
 test-python:
     bash -c "cd ttsd && uv run python -m pytest"
 
-# All static checks (fmt, clippy, typecheck, ruff)
+# All static checks (fmt, clippy, deny, eslint, knip, typecheck, ruff)
 lint:
     cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
     cargo clippy --manifest-path src-tauri/Cargo.toml --no-deps -- -D warnings
+    cargo deny --manifest-path src-tauri/Cargo.toml check
+    pnpm lint
+    pnpm knip
     pnpm typecheck
     bash -c "cd ttsd && uv run ruff check"
 

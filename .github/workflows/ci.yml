@@ -32,6 +32,8 @@ jobs:
               - 'tsconfig.json'
               - 'vite.config.ts'
               - 'index.html'
+              - 'eslint.config.js'
+              - 'knip.json'
               - '.github/workflows/ci.yml'
             ttsd:
               - 'ttsd/**'
@@ -67,6 +69,10 @@ jobs:
           workspaces: src-tauri
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml --no-deps -- -D warnings
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+          manifest-path: src-tauri/Cargo.toml
       - run: cargo test --manifest-path src-tauri/Cargo.toml --all-features
 
   typescript:
@@ -84,6 +90,8 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm knip
       - run: pnpm typecheck
       - run: pnpm test:unit
 

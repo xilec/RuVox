@@ -1,0 +1,8 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignore": [
+    // Utility scripts for external tools (KWin scripting, screenshots) —
+    // used by shell, invisible to knip's static analysis.
+    "scripts/**"
+  ]
+}

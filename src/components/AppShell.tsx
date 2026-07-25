@@ -7,7 +7,6 @@ import {
   CloseButton,
   useMantineColorScheme,
 } from '@mantine/core';
-import type { MantineColorScheme } from '@mantine/core';
 import { useHotkeys } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { useState, useEffect, useRef } from 'react';
@@ -86,7 +85,7 @@ export function AppShell() {
       // Mantine's color-scheme manager is the source of truth for the UI;
       // sync it to the persisted backend theme on first load so the saved
       // choice survives across launches.
-      setColorScheme(cfg.theme as MantineColorScheme);
+      setColorScheme(cfg.theme);
     }).catch(() => {
       // Config load failure is non-fatal; preview will be skipped
     });
@@ -168,7 +167,7 @@ export function AppShell() {
     setPending(true);
     // finalText reflects user edits from the preview dialog; fall back to the
     // captured clipboard text if the user didn't edit or cleared the field.
-    doAddEntry(finalText || previewText, playWhenReady);
+    void doAddEntry(finalText || previewText, playWhenReady);
   }
 
   function handlePreviewCancel() {

@@ -97,6 +97,5 @@ function renderError(node: HTMLElement, source: string, error: unknown): void {
   pre.textContent = source;
   wrapper.append(hint, pre);
   node.replaceChildren(wrapper);
-  // eslint-disable-next-line no-console
   console.error('mermaid render error:', error);
 }

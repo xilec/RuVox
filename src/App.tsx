@@ -11,7 +11,7 @@ import { theme } from './theme';
 export function App() {
   useEffect(() => {
     let cleanup: (() => void) | undefined;
-    setupNotificationBridge().then((fn) => {
+    void setupNotificationBridge().then((fn) => {
       cleanup = fn;
     });
 
