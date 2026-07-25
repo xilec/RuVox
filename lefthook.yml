@@ -1,0 +1,19 @@
+# Git hooks — run inside `nix develop` (the toolchain exists only there).
+# Installed automatically by the devshell shellHook (`lefthook install`).
+# Split: fast checks gate the commit, heavy checks gate the push.
+pre-commit:
+  parallel: true
+  commands:
+    cargo-fmt:
+      glob: "src-tauri/**/*.rs"
+      run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+    ruff:
+      glob: "ttsd/**/*.py"
+      run: bash -c "cd ttsd && uv run ruff check"
+pre-push:
+  parallel: true
+  commands:
+    cargo-clippy:
+      run: cargo clippy --manifest-path src-tauri/Cargo.toml --no-deps -- -D warnings
+    typescript:
+      run: pnpm typecheck

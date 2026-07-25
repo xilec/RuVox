@@ -5,6 +5,8 @@ whenToUse: Use when the user wants to quickly describe what they want to build a
 ---
 
 > **Note:** In this repo all tooling runs via `nix develop -c ...`; the openspec CLI is invoked as `nix develop -c pnpm dlx @fission-ai/openspec <cmd>` (it is not installed in package.json).
+>
+> Before generating artifacts, read `ai/rules/conventions.md` (hard rules) and `ai/rules/code-quality.md` (craft standard) — proposals and specs must comply with them.
 
 Propose a new change - create the change and generate all artifacts in one step.
 

@@ -10,6 +10,10 @@ metadata:
   generatedBy: "1.6.0"
 ---
 
+> **Note:** In this repo all tooling runs via `nix develop -c ...`; the openspec CLI is invoked as `nix develop -c pnpm dlx @fission-ai/openspec <cmd>` (it is not installed in package.json).
+>
+> Before implementing, read `ai/rules/conventions.md` (hard rules) and `ai/rules/code-quality.md` (craft standard) — write code to them; `ruvox-reviewer` checks the diff against them before the PR.
+
 Implement tasks from an OpenSpec change.
 
 **Store selection:** If the user names a store (a store is a standalone OpenSpec repo registered on this machine) or the work lives in one, run `openspec store list --json` to discover registered store ids, then pass `--store <id>` on the commands that read or write specs and changes (`new change`, `status`, `instructions`, `list`, `show`, `validate`, `archive`, `doctor`, `context`). Other commands do not take the flag. Hints printed by commands already carry the flag; keep it on follow-ups. Without a store, commands act on the nearest local `openspec/` root.
