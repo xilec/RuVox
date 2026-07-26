@@ -253,9 +253,12 @@ Command requirement in `ipc-commands`). On detection it SHALL:
 1. Log a warning and emit `ttsd_restarting` (`{}`).
 2. Make the respawn single-flight (concurrent callers share one respawn).
 3. Try to spawn a fresh ttsd up to 3 times with backoff delays of 1 s, 3 s, 5 s.
-4. After a successful respawn, run `warmup` in the background re-emitting
-   `model_loading` → `model_loaded` / `model_error`, and retry the failed
-   request against the new handle.
+4. After a successful respawn, run `warmup` re-emitting
+   `model_loading` → `model_loaded` / `model_error`, and send the retried
+   failed request — as well as any request that arrives while the fresh
+   process is still warming up — to the new process only after that warmup
+   completes; if the warmup fails, requests proceed and surface ttsd's own
+   error.
 5. After all attempts fail, emit `tts_fatal { message }` and surface the spawn
    error to the caller; the next request SHALL trigger a fresh respawn attempt
    so the system can still recover later.
@@ -273,7 +276,14 @@ state via the normal command-error path.
 - WHEN the next request hits `TtsError::Died`
 - THEN `ttsd_restarting` is emitted, a new process is spawned within the
   backoff schedule, warmup replays the model lifecycle events, and the
-  request is retried against the new process
+  request is retried against the new process after the warmup completes
+
+#### Scenario: request during post-respawn warmup waits
+
+- GIVEN a freshly respawned ttsd whose warmup has not completed yet
+- WHEN a synthesize request arrives
+- THEN the request waits for the warmup to finish instead of failing with
+  `model_not_loaded`, and completes against the warmed-up process
 
 #### Scenario: respawn after cancellation kill
 

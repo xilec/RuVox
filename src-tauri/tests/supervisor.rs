@@ -271,3 +271,72 @@ async fn kill_current_terminates_in_flight_request_and_respawns() {
         "did not expect tts_fatal in {names:?}",
     );
 }
+
+/// A request issued right after a kill must wait for the post-respawn
+/// warmup instead of failing with `model_not_loaded`. The mock rejects
+/// `synthesize` until it receives `warmup`, and its warmup answer is delayed
+/// (MOCK_TTSD_WARMUP_DELAY_SEC) so that a retry that does not wait would
+/// deterministically hit `model_not_loaded`. Success here — without the test
+/// ever calling warmup for the respawned process — proves the retry waited
+/// for the supervisor's background warmup.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn retry_after_kill_waits_for_post_respawn_warmup() {
+    let script = common::resolve_test_path("tests/fixtures/mock_ttsd_warmup_gate.py")
+        .canonicalize()
+        .unwrap_or_else(|e| panic!("mock_ttsd_warmup_gate.py not found: {e}"));
+
+    let out_dir = tempfile::TempDir::new().expect("tempdir for warmup-gate test");
+    let out_wav = out_dir.path().join("warmup-gate-out.wav");
+
+    let factory: CommandFactory = Arc::new(move || {
+        let mut cmd = Command::new("python3");
+        cmd.arg(&script).env("MOCK_TTSD_WARMUP_DELAY_SEC", "0.5");
+        cmd
+    });
+
+    let (emitter, log) = recording_emitter();
+    let sup = TtsSupervisor::spawn(factory, emitter).expect("initial spawn ok");
+
+    // Warm up the initial process (mirrors the app's explicit startup
+    // warmup). The point of the test is that NOBODY calls warmup for the
+    // respawned process — only the supervisor's background task does.
+    sup.warmup().await.expect("initial warmup should succeed");
+
+    // Kill the process while idle; the next request observes Died and goes
+    // through the respawn path.
+    sup.kill_current().await;
+
+    let output = tokio::time::timeout(
+        Duration::from_secs(20),
+        sup.synthesize(
+            "hello".to_string(),
+            "xenia".to_string(),
+            48_000,
+            out_wav.to_string_lossy().into_owned(),
+            None,
+        ),
+    )
+    .await
+    .expect("request hung — retry did not finish after respawn")
+    .expect("synthesize should succeed after the post-respawn warmup completes");
+    assert_eq!(output.timestamps.len(), 0);
+
+    let log = log.lock().unwrap();
+    let names: Vec<&str> = log.iter().map(|(n, _)| n.as_str()).collect();
+    assert!(
+        names.contains(&"ttsd_restarting"),
+        "expected ttsd_restarting in {names:?}",
+    );
+    assert!(
+        names.contains(&"model_loading"),
+        "expected post-respawn model_loading in {names:?}",
+    );
+    assert!(
+        names.contains(&"model_loaded"),
+        "expected post-respawn model_loaded in {names:?}",
+    );
+    assert!(
+        !names.contains(&"tts_fatal"),
+        "did not expect tts_fatal in {names:?}",
+    );
+}
