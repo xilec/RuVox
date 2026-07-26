@@ -97,6 +97,96 @@ async fn supervisor_respawns_after_subprocess_suicide() {
     );
 }
 
+/// After a respawn the supervisor must replay the model lifecycle events
+/// (`model_loading` → `model_loaded`) in a background warmup, per the
+/// "Auto-Restart on Subprocess Death" requirement of the ttsd-protocol spec:
+/// the UI mirrors the fresh process's state without a separate code path.
+/// `TtsSupervisor::spawn` itself never warms up, so any lifecycle events in
+/// the log can only come from the post-respawn warmup.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn respawn_reemits_model_lifecycle_events() {
+    let factory = build_factory();
+    let (emitter, log) = recording_emitter();
+    let sup = TtsSupervisor::spawn(factory, emitter).expect("initial spawn ok");
+
+    let out_dir = tempfile::TempDir::new().expect("tempdir for mock wav outputs");
+    let out_wav_1 = out_dir.path().join("ruvox-mock-out-1.wav");
+    let out_wav_2 = out_dir.path().join("ruvox-mock-out-2.wav");
+
+    sup.synthesize(
+        "hello".to_string(),
+        "xenia".to_string(),
+        48_000,
+        out_wav_1.to_string_lossy().into_owned(),
+        None,
+    )
+    .await
+    .expect("first synthesize should succeed");
+
+    // Triggers the mock's suicide → Died → respawn → background warmup.
+    sup.synthesize(
+        "world".to_string(),
+        "xenia".to_string(),
+        48_000,
+        out_wav_2.to_string_lossy().into_owned(),
+        None,
+    )
+    .await
+    .expect("second synthesize should succeed via respawn");
+
+    // The post-respawn warmup runs in a background task; poll the event log
+    // until the lifecycle completes (the mock answers warmup instantly, so
+    // this converges fast even on slow CI).
+    let wait_for_loaded = async {
+        loop {
+            {
+                let log = log.lock().unwrap();
+                if log.iter().any(|(n, _)| n == "model_loaded") {
+                    break;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    };
+    tokio::time::timeout(Duration::from_secs(10), wait_for_loaded)
+        .await
+        .expect("model_loaded was not re-emitted after respawn");
+
+    let log = log.lock().unwrap();
+    let names: Vec<&str> = log.iter().map(|(n, _)| n.as_str()).collect();
+    let pos = |name: &str| {
+        names
+            .iter()
+            .position(|n| *n == name)
+            .unwrap_or_else(|| panic!("expected {name} in {names:?}"))
+    };
+    let restarting = pos("ttsd_restarting");
+    let loading = pos("model_loading");
+    let loaded = pos("model_loaded");
+    assert!(
+        restarting < loading && loading < loaded,
+        "expected ttsd_restarting < model_loading < model_loaded, got {names:?}",
+    );
+    assert_eq!(
+        names.iter().filter(|n| **n == "model_loading").count(),
+        1,
+        "model_loading must be re-emitted exactly once, got {names:?}",
+    );
+    assert_eq!(
+        names.iter().filter(|n| **n == "model_loaded").count(),
+        1,
+        "model_loaded must be re-emitted exactly once, got {names:?}",
+    );
+    assert!(
+        !names.contains(&"model_error"),
+        "did not expect model_error in {names:?}",
+    );
+    assert!(
+        !names.contains(&"tts_fatal"),
+        "did not expect tts_fatal in {names:?}",
+    );
+}
+
 /// `kill_current` must terminate a ttsd stuck on an in-flight request, and
 /// the killed request must be retried transparently against a respawned
 /// process. The sleepy mock's first process blocks for 30 s on synthesize
