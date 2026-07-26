@@ -378,6 +378,13 @@ impl TtsEngine for TtsSupervisor {
         .await
     }
 
+    /// Forward to the inherent [`TtsSupervisor::kill_current`] so callers
+    /// behind `Arc<dyn TtsEngine>` (e.g. `EngineSwitcher`) can reach it
+    /// without storing the concrete supervisor alongside the trait object.
+    async fn kill_current(&self) {
+        TtsSupervisor::kill_current(self).await;
+    }
+
     /// Graceful shutdown. Does *not* respawn on Died — at this point we are
     /// tearing down anyway.
     async fn shutdown(&self) -> Result<(), TtsError> {

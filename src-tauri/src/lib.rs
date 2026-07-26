@@ -220,32 +220,28 @@ fn build_engine<R: Runtime>(
     let want_silero = config.engine == "silero";
     let silero_available = want_silero && tts::availability::probe(&ttsd_dir).silero.available;
 
-    let (initial_engine, initial_kind, initial_voice, initial_silero) = if silero_available {
+    let (initial_engine, initial_kind, initial_voice) = if silero_available {
         match try_build_silero(&ttsd_dir, Arc::clone(&emitter)) {
             Ok(sup) => {
-                let engine: Arc<dyn tts::TtsEngine> = sup.clone();
-                (engine, tts::EngineKind::Silero, None, Some(sup))
+                let engine: Arc<dyn tts::TtsEngine> = sup;
+                (engine, tts::EngineKind::Silero, None)
             }
             Err(e) => {
                 tracing::warn!("Silero probe passed but spawn failed ({e}); falling back to Piper");
-                let (engine, kind, voice) =
-                    build_piper_initial(&voices_dir, &config.piper_voice, &emitter);
-                (engine, kind, voice, None)
+                build_piper_initial(&voices_dir, &config.piper_voice, &emitter)
             }
         }
     } else {
         if want_silero {
             tracing::info!("Silero requested in config but unavailable; serving Piper this run");
         }
-        let (engine, kind, voice) = build_piper_initial(&voices_dir, &config.piper_voice, &emitter);
-        (engine, kind, voice, None)
+        build_piper_initial(&voices_dir, &config.piper_voice, &emitter)
     };
 
     let switcher = Arc::new(tts::EngineSwitcher::new(
         initial_engine,
         initial_kind,
         initial_voice,
-        initial_silero,
         voices_dir.clone(),
         ttsd_dir.clone(),
         Arc::clone(&emitter),
