@@ -430,10 +430,26 @@ impl<R: Runtime> Drop for Player<R> {
 /// [`Player`] is the production implementation (mpv subprocess, generic over
 /// the Tauri runtime). Tests substitute a fake that records calls and scripts
 /// positions, so playback commands and the position-emitter loop can run
-/// without mpv, a window, or a display. Methods mirror [`Player`]'s public
-/// API one-to-one; behavior contracts are documented on the corresponding
-/// [`Player`] methods.
+/// without mpv, a window, or a display. Behavior contracts are documented on
+/// the corresponding [`Player`] methods.
+///
+/// The methods fall into three groups:
+///
+/// - **Playback control** (`load` … `set_volume`) — the command layer's
+///   surface (`play_entry`, `pause_playback`, `seek_to`, …), plus the mpv
+///   lifecycle hooks the tray and the exit handler use.
+/// - **State queries** (`position_sec` … `is_playing`) — read by commands
+///   (which entry is loaded) and polled by the position emitter.
+/// - **Position-emitter internals** (`clear_is_playing`,
+///   `seek_suppression_active`) — exist only because the emitter loop is
+///   generic over this trait; commands never call them. Splitting them into
+///   a second trait was considered and rejected: the emitter shares the
+///   query methods with the command layer, so a second trait would
+///   duplicate those methods and force dual-`Arc` plumbing through
+///   `AppState` without actually narrowing either surface.
 pub trait PlayerBackend: Send + Sync {
+    // ── Playback control (commands, tray, exit handler) ─────────────
+
     /// See [`Player::load`].
     fn load(&self, path: &Path, entry_id: String) -> Result<()>;
     /// See [`Player::play`].
@@ -450,6 +466,9 @@ pub trait PlayerBackend: Send + Sync {
     fn set_speed(&self, speed: f32) -> Result<()>;
     /// See [`Player::set_volume`].
     fn set_volume(&self, volume: f32) -> Result<()>;
+
+    // ── State queries (commands + position emitter) ─────────────────
+
     /// See [`Player::position_sec`].
     fn position_sec(&self) -> Option<f64>;
     /// See [`Player::duration_sec`].
@@ -462,6 +481,8 @@ pub trait PlayerBackend: Send + Sync {
     fn ensure_mpv_alive(&self) -> Result<()>;
     /// See [`Player::mark_destroyed`].
     fn mark_destroyed(&self);
+
+    // ── Position-emitter internals (never called by commands) ───────
 
     /// Flip the internal playing flag off without emitting any event.  Used
     /// by the position emitter's EOF path, which emits `playback_finished` /
