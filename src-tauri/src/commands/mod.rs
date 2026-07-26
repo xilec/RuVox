@@ -4,6 +4,7 @@
 //! typed JSON objects (`{ "type": "...", "message": "..." }`) which the frontend
 //! can pattern-match on.
 
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -11,6 +12,7 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tauri::{AppHandle, Emitter, Runtime, State};
+use tokio::task::AbortHandle;
 use tracing::{info, warn};
 
 use crate::pipeline::tracked_text::CharMapping;
@@ -108,6 +110,8 @@ pub fn spawn_synthesis_pub<R: Runtime + 'static>(
     emitter: crate::tts::supervisor::Emitter,
     player: Arc<dyn crate::player::PlayerBackend>,
     pipeline: Arc<parking_lot::Mutex<crate::pipeline::TTSPipeline>>,
+    synthesis_tasks: Arc<Mutex<HashMap<EntryId, AbortHandle>>>,
+    synthesize_entered: Arc<Mutex<HashSet<EntryId>>>,
     entry_id: EntryId,
     play_when_ready: bool,
 ) {
@@ -119,6 +123,8 @@ pub fn spawn_synthesis_pub<R: Runtime + 'static>(
         emitter,
         player,
         pipeline,
+        synthesis_tasks,
+        synthesize_entered,
         entry_id,
         play_when_ready,
     );
@@ -204,11 +210,13 @@ fn mark_processing<R: Runtime>(
 /// [`crate::tts::piper::download::download_voice`] and retries once. The
 /// retry runs only on Piper because Silero is bundled — its Python venv
 /// already includes the model.
+#[allow(clippy::too_many_arguments)]
 async fn synthesize_audio(
     tts: &dyn TtsEngine,
     storage: &StorageService,
     piper_voices_dir: &std::path::Path,
     emitter: &crate::tts::supervisor::Emitter,
+    synthesize_entered: &Mutex<HashSet<EntryId>>,
     entry_id: &EntryId,
     normalized: String,
     mapping: &CharMapping,
@@ -234,6 +242,10 @@ async fn synthesize_audio(
         config.piper_voice.clone()
     };
 
+    // Track the entry as "inside the TTS stage" so `cancel_synthesis` knows
+    // the ttsd subprocess must be killed. If the task is aborted at this
+    // await, `cancel_synthesis` removes the marker itself.
+    synthesize_entered.lock().insert(*entry_id);
     let attempt = tts
         .synthesize(
             normalized.clone(),
@@ -243,6 +255,7 @@ async fn synthesize_audio(
             tts_char_mapping.clone(),
         )
         .await;
+    synthesize_entered.lock().remove(entry_id);
 
     let output = match attempt {
         Ok(o) => o,
@@ -253,15 +266,18 @@ async fn synthesize_audio(
             crate::tts::piper::download::download_voice(piper_voices_dir, &voice, emitter)
                 .await
                 .map_err(|e| SynthesisError::TtsFailed(e.to_string()))?;
-            tts.synthesize(
-                normalized,
-                voice,
-                config.sample_rate,
-                out_wav,
-                tts_char_mapping,
-            )
-            .await
-            .map_err(|e| SynthesisError::TtsFailed(e.to_string()))?
+            synthesize_entered.lock().insert(*entry_id);
+            let retry = tts
+                .synthesize(
+                    normalized,
+                    voice,
+                    config.sample_rate,
+                    out_wav,
+                    tts_char_mapping,
+                )
+                .await;
+            synthesize_entered.lock().remove(entry_id);
+            retry.map_err(|e| SynthesisError::TtsFailed(e.to_string()))?
         }
         Err(e) => return Err(SynthesisError::TtsFailed(e.to_string())),
     };
@@ -323,8 +339,80 @@ async fn finalize_audio_files(
     (ts_filename, audio_filename)
 }
 
-/// Phase 6: mark entry `Ready` with audio + timestamp paths and emit
-/// `entry_updated`. Vanishing entries (deleted mid-synthesis) silently abort.
+/// Stale-completion guard: a synthesis completion or failure applies only
+/// while the entry is still `processing`. A cancelled entry is already back
+/// at `pending`, so its late result must be discarded instead of
+/// resurrecting it to `ready` / `error`.
+fn completion_is_current(status: EntryStatus) -> bool {
+    status == EntryStatus::Processing
+}
+
+/// Best-effort removal of the audio/timestamp files a discarded late result
+/// wrote into the audio dir. Missing files are fine (e.g. the Opus transcode
+/// never ran on the failure path).
+fn discard_late_files<I: IntoIterator<Item = String>>(storage: &StorageService, names: I) {
+    let audio_dir = storage.cache_dir().join("audio");
+    for name in names {
+        let path = audio_dir.join(name);
+        match std::fs::remove_file(&path) {
+            Ok(()) => (),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
+            Err(e) => warn!("failed to remove stale result file {}: {e}", path.display()),
+        }
+    }
+}
+
+/// Phase 6 core (no Tauri handles, so the stale guard is unit-testable):
+/// mark the entry `Ready` with audio + timestamp paths — but only if it is
+/// still `processing`. A late completion for a non-`processing` entry is
+/// discarded together with the files it just wrote. Returns `true` when the
+/// result was applied.
+fn apply_ready_if_current(
+    storage: &StorageService,
+    entry_id: &EntryId,
+    output: &SynthesizeOutput,
+    ts_filename: Option<String>,
+    audio_filename: &str,
+) -> bool {
+    let Some(mut entry) = storage.get_entry(entry_id) else {
+        // Vanished mid-synthesis (deleted) — drop the late files too.
+        discard_late_files(
+            storage,
+            [Some(audio_filename.to_string()), ts_filename]
+                .into_iter()
+                .flatten(),
+        );
+        return false;
+    };
+    if !completion_is_current(entry.status) {
+        info!(
+            "discarding stale completion for {entry_id} (status: {:?})",
+            entry.status
+        );
+        discard_late_files(
+            storage,
+            [Some(audio_filename.to_string()), ts_filename]
+                .into_iter()
+                .flatten(),
+        );
+        return false;
+    }
+
+    entry.status = EntryStatus::Ready;
+    entry.audio_path = Some(audio_filename.to_string());
+    entry.timestamps_path = ts_filename;
+    entry.duration_sec = Some(output.duration_sec);
+    entry.audio_generated_at = Some(chrono::Local::now().naive_local());
+
+    if let Err(e) = storage.update_entry(entry) {
+        warn!("failed to update entry to ready: {e}");
+    }
+    true
+}
+
+/// Phase 6: apply the synthesis result and, when it was applied, emit
+/// `entry_updated`. Returns whether the entry reached `ready` — the caller
+/// gates autoplay on it.
 fn mark_ready_and_emit<R: Runtime>(
     storage: &StorageService,
     app: &AppHandle<R>,
@@ -332,21 +420,15 @@ fn mark_ready_and_emit<R: Runtime>(
     output: &SynthesizeOutput,
     ts_filename: Option<String>,
     audio_filename: &str,
-) {
-    let Some(mut entry) = storage.get_entry(entry_id) else {
-        return;
-    };
-    entry.status = EntryStatus::Ready;
-    entry.audio_path = Some(audio_filename.to_string());
-    entry.timestamps_path = ts_filename;
-    entry.duration_sec = Some(output.duration_sec);
-    entry.audio_generated_at = Some(chrono::Local::now().naive_local());
-
-    if let Err(e) = storage.update_entry(entry.clone()) {
-        warn!("failed to update entry to ready: {e}");
+) -> bool {
+    let applied = apply_ready_if_current(storage, entry_id, output, ts_filename, audio_filename);
+    if applied {
+        if let Some(entry) = storage.get_entry(entry_id) {
+            emit_entry_updated(app, &entry);
+        }
+        info!("synthesis complete: entry_id={entry_id}");
     }
-    emit_entry_updated(app, &entry);
-    info!("synthesis complete: entry_id={entry_id}");
+    applied
 }
 
 /// Phase 7: kick off auto-play. Errors are logged and swallowed — failed
@@ -360,6 +442,11 @@ fn autoplay(player: &dyn crate::player::PlayerBackend, audio_path: PathBuf, entr
 }
 
 /// Run the full synthesis pipeline for `entry_id` in a background task.
+///
+/// The task's `AbortHandle` is registered in `synthesis_tasks` so
+/// `cancel_synthesis` can abort it; a detached reaper removes the task's
+/// registry entry once it terminates, taking care not to remove a newer
+/// task's handle for the same entry.
 #[allow(clippy::too_many_arguments)]
 fn spawn_synthesis<R: Runtime + 'static>(
     app: AppHandle<R>,
@@ -369,60 +456,153 @@ fn spawn_synthesis<R: Runtime + 'static>(
     emitter: crate::tts::supervisor::Emitter,
     player: Arc<dyn crate::player::PlayerBackend>,
     pipeline: Arc<Mutex<TTSPipeline>>,
+    synthesis_tasks: Arc<Mutex<HashMap<EntryId, AbortHandle>>>,
+    synthesize_entered: Arc<Mutex<HashSet<EntryId>>>,
     entry_id: EntryId,
     play_when_ready: bool,
 ) {
-    tokio::spawn(async move {
-        let Some(entry) = storage.get_entry(&entry_id) else {
-            warn!("synthesis task: entry {entry_id} vanished before synthesis started");
-            return;
-        };
+    let entered_for_task = Arc::clone(&synthesize_entered);
+    let tasks_for_cleanup = Arc::clone(&synthesis_tasks);
+    let entered_for_cleanup = Arc::clone(&synthesize_entered);
+    let handle = tokio::spawn(async move {
+        async {
+            let Some(entry) = storage.get_entry(&entry_id) else {
+                warn!("synthesis task: entry {entry_id} vanished before synthesis started");
+                return;
+            };
 
-        let result: Result<(), SynthesisError> = async {
-            let (normalized, mapping) =
-                run_normalization(Arc::clone(&pipeline), entry.original_text.clone()).await?;
-            mark_processing(&storage, &app, &entry_id, &normalized);
-            let (output, out_wav_path, wav_filename) = synthesize_audio(
-                tts.as_ref(),
-                &storage,
-                &piper_voices_dir,
-                &emitter,
-                &entry_id,
-                normalized,
-                &mapping,
-            )
-            .await?;
-            let (ts_filename, audio_filename) =
-                finalize_audio_files(&storage, &entry_id, &output, out_wav_path, &wav_filename)
-                    .await;
-            mark_ready_and_emit(
-                &storage,
-                &app,
-                &entry_id,
-                &output,
-                ts_filename,
-                &audio_filename,
-            );
-            if play_when_ready {
-                let path = storage.cache_dir().join("audio").join(&audio_filename);
-                autoplay(player.as_ref(), path, &entry_id);
+            let result: Result<(), SynthesisError> = async {
+                let (normalized, mapping) =
+                    run_normalization(Arc::clone(&pipeline), entry.original_text.clone()).await?;
+                mark_processing(&storage, &app, &entry_id, &normalized);
+                let (output, out_wav_path, wav_filename) = synthesize_audio(
+                    tts.as_ref(),
+                    &storage,
+                    &piper_voices_dir,
+                    &emitter,
+                    &entered_for_task,
+                    &entry_id,
+                    normalized,
+                    &mapping,
+                )
+                .await?;
+                let (ts_filename, audio_filename) =
+                    finalize_audio_files(&storage, &entry_id, &output, out_wav_path, &wav_filename)
+                        .await;
+                let applied = mark_ready_and_emit(
+                    &storage,
+                    &app,
+                    &entry_id,
+                    &output,
+                    ts_filename,
+                    &audio_filename,
+                );
+                if applied && play_when_ready {
+                    let path = storage.cache_dir().join("audio").join(&audio_filename);
+                    autoplay(player.as_ref(), path, &entry_id);
+                }
+                Ok(())
             }
-            Ok(())
+            .await;
+
+            if let Err(err) = result {
+                let msg = err.user_message();
+                tracing::error!("synthesis failed for {entry_id}: {msg}");
+                // Normalization-stage failures arrive while the entry is
+                // legitimately still `pending` (mark_processing runs after
+                // normalization), so the stale guard only applies to
+                // TTS-stage failures.
+                let require_processing = matches!(err, SynthesisError::TtsFailed(_));
+                let applied = set_entry_error(&storage, &app, &entry_id, &msg, require_processing);
+                if applied {
+                    if let SynthesisError::TtsFailed(tts_msg) = err {
+                        let _ = app.emit(
+                            "tts_error",
+                            json!({ "entry_id": entry_id.to_string(), "message": tts_msg }),
+                        );
+                    }
+                }
+            }
         }
         .await;
+    });
 
-        if let Err(err) = result {
-            let msg = err.user_message();
-            tracing::error!("synthesis failed for {entry_id}: {msg}");
-            set_entry_error(&storage, &app, &entry_id, &msg);
-            if let SynthesisError::TtsFailed(tts_msg) = err {
-                let _ = app.emit(
-                    "tts_error",
-                    json!({ "entry_id": entry_id.to_string(), "message": tts_msg }),
-                );
+    // Registry cleanup runs in a reaper that awaits the task's JoinHandle:
+    // only then is the task's registered handle truly `is_finished()`, which
+    // lets the cleanup distinguish its own handle from a newer live one — a
+    // task spawned later for the same entry (e.g. by regenerate_entry) must
+    // stay cancellable. The reaper is detached (its JoinHandle dropped).
+    let abort_handle = handle.abort_handle();
+    drop(tokio::spawn(async move {
+        let result = handle.await;
+        cleanup_finished_handle(&tasks_for_cleanup, &entry_id);
+        // `synthesize_entered` is unmarked right after the synthesize await
+        // on the normal path and by `cancel_synthesis` on the abort path;
+        // only a panic can leave the entry marked, so only then clean up.
+        if let Err(e) = &result {
+            if e.is_panic() {
+                entered_for_cleanup.lock().remove(&entry_id);
             }
         }
-    });
+    }));
+
+    let already_finished = abort_handle.is_finished();
+    let mut tasks = synthesis_tasks.lock();
+    tasks.insert(entry_id, abort_handle);
+    if already_finished {
+        // The task already finished and its reaper already ran — don't
+        // leave a stale handle behind.
+        tasks.remove(&entry_id);
+    }
+}
+
+/// Remove `entry_id` from the abort registry only if the registered handle
+/// has already finished — i.e. it belongs to the completed task being
+/// cleaned up, not to a newer live task for the same entry.
+fn cleanup_finished_handle(tasks: &Mutex<HashMap<EntryId, AbortHandle>>, entry_id: &EntryId) {
+    let mut tasks = tasks.lock();
+    if tasks.get(entry_id).is_some_and(AbortHandle::is_finished) {
+        tasks.remove(entry_id);
+    }
+}
+
+/// Core of [`set_entry_error`] without Tauri handles: flip the entry to
+/// `error`. With `require_processing` the stale-completion guard applies —
+/// a failure arriving for an entry that left `processing` (e.g. cancelled
+/// back to `pending`) is discarded together with the files the late request
+/// may have written. Normalization-stage failures pass `false` because the
+/// entry is legitimately still `pending` before `mark_processing` runs.
+/// Returns `true` when the error was applied.
+fn apply_error_if_current(
+    storage: &StorageService,
+    entry_id: &EntryId,
+    message: &str,
+    require_processing: bool,
+) -> bool {
+    let Some(mut entry) = storage.get_entry(entry_id) else {
+        return false;
+    };
+    if require_processing && !completion_is_current(entry.status) {
+        info!(
+            "discarding stale failure for {entry_id} (status: {:?})",
+            entry.status
+        );
+        // The exact filename is unknown on the failure path (a dying ttsd
+        // may have left a partial WAV); remove every candidate.
+        discard_late_files(
+            storage,
+            [
+                format!("{entry_id}.wav"),
+                format!("{entry_id}.opus"),
+                format!("{entry_id}.timestamps.json"),
+            ],
+        );
+        return false;
+    }
+    entry.status = EntryStatus::Error;
+    entry.error_message = Some(message.to_string());
+    let _ = storage.update_entry(entry);
+    true
 }
 
 fn set_entry_error<R: Runtime>(
@@ -430,13 +610,15 @@ fn set_entry_error<R: Runtime>(
     app: &AppHandle<R>,
     entry_id: &EntryId,
     message: &str,
-) {
-    if let Some(mut entry) = storage.get_entry(entry_id) {
-        entry.status = EntryStatus::Error;
-        entry.error_message = Some(message.to_string());
-        let _ = storage.update_entry(entry.clone());
-        emit_entry_updated(app, &entry);
+    require_processing: bool,
+) -> bool {
+    let applied = apply_error_if_current(storage, entry_id, message, require_processing);
+    if applied {
+        if let Some(entry) = storage.get_entry(entry_id) {
+            emit_entry_updated(app, &entry);
+        }
     }
+    applied
 }
 
 // ── Commands ───────────────────────────────────────────────────────────────────
@@ -469,6 +651,8 @@ fn ingest_text<R: Runtime>(
         Arc::clone(&state.emitter),
         Arc::clone(&state.player),
         Arc::clone(&state.pipeline),
+        Arc::clone(&state.synthesis_tasks),
+        Arc::clone(&state.synthesize_entered),
         entry_id,
         play_when_ready,
     );
@@ -679,6 +863,8 @@ pub async fn regenerate_entry<R: Runtime>(
         Arc::clone(&state.emitter),
         Arc::clone(&state.player),
         Arc::clone(&state.pipeline),
+        Arc::clone(&state.synthesis_tasks),
+        Arc::clone(&state.synthesize_entered),
         uuid,
         false,
     );
@@ -686,22 +872,58 @@ pub async fn regenerate_entry<R: Runtime>(
     Ok(())
 }
 
-/// Cancel an in-progress or queued synthesis job.
-/// Currently marks entry as pending (mid-request abort is not supported since
-/// the TTS supervisor serialises all requests into a single channel).
+/// Core of [`cancel_synthesis`] without Tauri handles: abort the entry's
+/// synthesis task (if registered) and flip the entry back to `pending`.
+/// Returns the updated entry plus whether the task had entered the TTS
+/// stage — the caller kills ttsd only in that case.
+fn cancel_entry(
+    storage: &StorageService,
+    synthesis_tasks: &Mutex<HashMap<EntryId, AbortHandle>>,
+    synthesize_entered: &Mutex<HashSet<EntryId>>,
+    id: &str,
+) -> CmdResult<(TextEntry, bool)> {
+    let mut entry = require_entry(storage, id)?;
+    let uuid = entry.id;
+
+    // An aborted task is destroyed at its next yield point and never runs
+    // its own registry cleanup, so both keys are removed here. Aborting an
+    // already-finished (but not yet cleaned-up) handle is a no-op.
+    if let Some(handle) = synthesis_tasks.lock().remove(&uuid) {
+        handle.abort();
+    }
+    let entered_tts = synthesize_entered.lock().remove(&uuid);
+
+    entry.status = EntryStatus::Pending;
+    storage
+        .update_entry(entry.clone())
+        .map_err(CommandError::from)?;
+    Ok((entry, entered_tts))
+}
+
+/// Cancel an in-progress or queued synthesis job: abort the entry's
+/// synthesis task and flip the entry back to `pending`. If the task had
+/// already entered the TTS stage, the current ttsd subprocess is killed too
+/// (the supervisor transparently respawns it on the next request). A late
+/// completion belonging to the cancelled entry is discarded by the
+/// stale-completion guard in `apply_ready_if_current` /
+/// `apply_error_if_current`.
 #[tauri::command]
 pub async fn cancel_synthesis<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
     id: String,
 ) -> CmdResult<()> {
-    let mut entry = require_entry(&state.storage, &id)?;
+    let (entry, entered_tts) = cancel_entry(
+        &state.storage,
+        &state.synthesis_tasks,
+        &state.synthesize_entered,
+        &id,
+    )?;
 
-    entry.status = EntryStatus::Pending;
-    state
-        .storage
-        .update_entry(entry.clone())
-        .map_err(CommandError::from)?;
+    if entered_tts {
+        state.engine_switcher.kill_current_ttsd().await;
+    }
+
     emit_entry_updated(&app, &entry);
     Ok(())
 }
@@ -1138,6 +1360,245 @@ mod synthesis_tests {
             SynthesisError::TtsFailed("ttsd died".into()).user_message(),
             "ttsd died",
         );
+    }
+
+    // ── Stale-completion guard ───────────────────────────────────────────
+
+    /// The guard decision is pure: only `processing` lets a late result
+    /// through; every other status discards it.
+    #[test]
+    fn completion_guard_only_allows_processing() {
+        assert!(completion_is_current(EntryStatus::Processing));
+        for status in [
+            EntryStatus::Pending,
+            EntryStatus::Ready,
+            EntryStatus::Playing,
+            EntryStatus::Error,
+        ] {
+            assert!(!completion_is_current(status), "{status:?} must be stale");
+        }
+    }
+
+    fn fake_output() -> SynthesizeOutput {
+        SynthesizeOutput {
+            timestamps: Vec::new(),
+            duration_sec: 1.0,
+        }
+    }
+
+    fn set_status(storage: &StorageService, entry: &TextEntry, status: EntryStatus) {
+        let mut updated = entry.clone();
+        updated.status = status;
+        storage.update_entry(updated).unwrap();
+    }
+
+    /// A late completion for a non-`processing` entry changes no status and
+    /// removes the audio/timestamp files it just wrote.
+    #[test]
+    fn stale_ready_completion_is_discarded_with_files() {
+        let (storage, _dir) = make_service();
+        let entry = storage.add_entry("текст".to_string()).unwrap(); // pending
+        let id = entry.id;
+        let audio_dir = storage.cache_dir().join("audio");
+        let audio_name = format!("{id}.opus");
+        let ts_name = format!("{id}.timestamps.json");
+        std::fs::write(audio_dir.join(&audio_name), b"opus").unwrap();
+        std::fs::write(audio_dir.join(&ts_name), b"{}").unwrap();
+
+        let applied = apply_ready_if_current(
+            &storage,
+            &id,
+            &fake_output(),
+            Some(ts_name.clone()),
+            &audio_name,
+        );
+
+        assert!(!applied);
+        let stored = storage.get_entry(&id).unwrap();
+        assert_eq!(stored.status, EntryStatus::Pending);
+        assert!(stored.audio_path.is_none());
+        assert!(stored.timestamps_path.is_none());
+        assert!(!audio_dir.join(&audio_name).exists());
+        assert!(!audio_dir.join(&ts_name).exists());
+    }
+
+    /// The happy path: a completion arriving while the entry is `processing`
+    /// applies and populates the ready fields.
+    #[test]
+    fn ready_completion_applies_while_processing() {
+        let (storage, _dir) = make_service();
+        let entry = storage.add_entry("текст".to_string()).unwrap();
+        set_status(&storage, &entry, EntryStatus::Processing);
+        let id = entry.id;
+
+        let applied = apply_ready_if_current(
+            &storage,
+            &id,
+            &fake_output(),
+            Some(format!("{id}.timestamps.json")),
+            &format!("{id}.opus"),
+        );
+
+        assert!(applied);
+        let stored = storage.get_entry(&id).unwrap();
+        assert_eq!(stored.status, EntryStatus::Ready);
+        assert_eq!(
+            stored.audio_path.as_deref(),
+            Some(format!("{id}.opus").as_str())
+        );
+        assert_eq!(stored.duration_sec, Some(1.0));
+        assert!(stored.audio_generated_at.is_some());
+    }
+
+    /// A late TTS-stage failure for a non-`processing` entry changes no
+    /// status and removes the candidate files a dying ttsd may have written.
+    #[test]
+    fn stale_failure_is_discarded_with_candidate_files() {
+        let (storage, _dir) = make_service();
+        let entry = storage.add_entry("текст".to_string()).unwrap(); // pending
+        let id = entry.id;
+        let wav = storage.cache_dir().join("audio").join(format!("{id}.wav"));
+        std::fs::write(&wav, b"partial").unwrap();
+
+        let applied = apply_error_if_current(&storage, &id, "ttsd died", true);
+
+        assert!(!applied);
+        let stored = storage.get_entry(&id).unwrap();
+        assert_eq!(stored.status, EntryStatus::Pending);
+        assert!(stored.error_message.is_none());
+        assert!(!wav.exists());
+    }
+
+    /// A TTS-stage failure while the entry is `processing` applies normally.
+    #[test]
+    fn tts_failure_applies_while_processing() {
+        let (storage, _dir) = make_service();
+        let entry = storage.add_entry("текст".to_string()).unwrap();
+        set_status(&storage, &entry, EntryStatus::Processing);
+
+        let applied = apply_error_if_current(&storage, &entry.id, "ttsd died", true);
+
+        assert!(applied);
+        let stored = storage.get_entry(&entry.id).unwrap();
+        assert_eq!(stored.status, EntryStatus::Error);
+        assert_eq!(stored.error_message.as_deref(), Some("ttsd died"));
+    }
+
+    /// Normalization-stage failures arrive while the entry is legitimately
+    /// still `pending` — they must not be discarded by the guard.
+    #[test]
+    fn normalization_failure_applies_from_pending() {
+        let (storage, _dir) = make_service();
+        let entry = storage.add_entry("текст".to_string()).unwrap(); // pending
+
+        let applied = apply_error_if_current(&storage, &entry.id, "empty", false);
+
+        assert!(applied);
+        let stored = storage.get_entry(&entry.id).unwrap();
+        assert_eq!(stored.status, EntryStatus::Error);
+        assert_eq!(stored.error_message.as_deref(), Some("empty"));
+    }
+
+    // ── cancel_entry ───────────────────────────────────────────────────────
+
+    /// Cancelling an unknown id fails with `not_found` and touches nothing.
+    #[test]
+    fn cancel_entry_unknown_id_is_not_found() {
+        let (storage, _dir) = make_service();
+        let tasks = Mutex::new(HashMap::new());
+        let entered = Mutex::new(HashSet::new());
+
+        let err = cancel_entry(
+            &storage,
+            &tasks,
+            &entered,
+            &uuid::Uuid::new_v4().to_string(),
+        )
+        .unwrap_err();
+        match err {
+            CommandError::NotFound { message } => assert!(message.contains("entry not found")),
+            other => panic!("expected NotFound, got {other:?}"),
+        }
+    }
+
+    /// Cancel flips the entry to `pending`, removes both registry keys, and
+    /// the registered task is actually aborted.
+    #[tokio::test]
+    async fn cancel_entry_aborts_registered_task_and_sets_pending() {
+        let (storage, _dir) = make_service();
+        let entry = storage.add_entry("текст".to_string()).unwrap();
+        set_status(&storage, &entry, EntryStatus::Processing);
+        let id = entry.id;
+
+        let tasks: Mutex<HashMap<EntryId, AbortHandle>> = Mutex::new(HashMap::new());
+        let entered: Mutex<HashSet<EntryId>> = Mutex::new(HashSet::new());
+        let sleeper = tokio::spawn(async {
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+        });
+        tasks.lock().insert(id, sleeper.abort_handle());
+        entered.lock().insert(id);
+
+        let (updated, entered_tts) =
+            cancel_entry(&storage, &tasks, &entered, &id.to_string()).unwrap();
+
+        assert_eq!(updated.status, EntryStatus::Pending);
+        assert!(entered_tts, "entry was marked as inside the TTS stage");
+        assert!(tasks.lock().is_empty());
+        assert!(entered.lock().is_empty());
+        assert_eq!(storage.get_entry(&id).unwrap().status, EntryStatus::Pending);
+
+        let join_err = sleeper.await.unwrap_err();
+        assert!(join_err.is_cancelled());
+    }
+
+    /// An entry that never reached the TTS stage reports `entered_tts =
+    /// false`, so the caller does not kill ttsd.
+    #[tokio::test]
+    async fn cancel_entry_without_tts_stage_reports_false() {
+        let (storage, _dir) = make_service();
+        let entry = storage.add_entry("текст".to_string()).unwrap();
+        set_status(&storage, &entry, EntryStatus::Processing);
+        let id = entry.id;
+
+        let tasks: Mutex<HashMap<EntryId, AbortHandle>> = Mutex::new(HashMap::new());
+        let entered: Mutex<HashSet<EntryId>> = Mutex::new(HashSet::new());
+        let sleeper = tokio::spawn(async {
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+        });
+        tasks.lock().insert(id, sleeper.abort_handle());
+
+        let (_updated, entered_tts) =
+            cancel_entry(&storage, &tasks, &entered, &id.to_string()).unwrap();
+
+        assert!(!entered_tts);
+        let join_err = sleeper.await.unwrap_err();
+        assert!(join_err.is_cancelled());
+    }
+
+    /// Registry cleanup removes only finished handles: a live handle (a
+    /// newer task spawned for the same entry) must survive, otherwise the
+    /// newer task would become uncancellable.
+    #[tokio::test]
+    async fn cleanup_finished_handle_removes_only_finished_handles() {
+        let tasks: Mutex<HashMap<EntryId, AbortHandle>> = Mutex::new(HashMap::new());
+        let id = uuid::Uuid::new_v4();
+
+        // Finished handle (the completed task's own) → removed.
+        let done = tokio::spawn(async {});
+        let done_abort = done.abort_handle();
+        done.await.unwrap();
+        tasks.lock().insert(id, done_abort);
+        cleanup_finished_handle(&tasks, &id);
+        assert!(tasks.lock().is_empty());
+
+        // Live handle (a newer task for the same entry) → kept.
+        let live = tokio::spawn(async {
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+        });
+        tasks.lock().insert(id, live.abort_handle());
+        cleanup_finished_handle(&tasks, &id);
+        assert!(tasks.lock().contains_key(&id));
+        live.abort();
     }
 }
 

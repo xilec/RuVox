@@ -6,9 +6,7 @@ Covers how text entries enter the queue (clipboard add flow, with or without
 the normalization preview dialog), how their synthesis status progresses, and
 how the queue is presented in the UI: entry list rendering, sorting, search,
 per-entry actions, deletion, and the resizable queue panel.
-
 ## Requirements
-
 ### Requirement: Clipboard add flow
 
 The system SHALL read text from the system clipboard when the user activates
@@ -51,7 +49,11 @@ system SHALL emit an `entry_updated` event. When the entry was added with
 `play_when_ready = true`, the system SHALL start playback automatically once
 the entry reaches `ready`; auto-play failures MUST NOT flip the entry into
 `error`. The `playing` status is transient only — the storage layer
-normalizes `playing` back to `ready` on save.
+normalizes `playing` back to `ready` on save. `cancel_synthesis` SHALL move
+an entry from `processing` back to `pending`; a synthesis completion or
+failure arriving for an entry that is no longer `processing` SHALL be
+discarded without changing its status (see the Synthesis Cancellation
+Command requirement in `ipc-commands`).
 
 #### Scenario: Successful synthesis
 
@@ -72,6 +74,20 @@ normalizes `playing` back to `ready` on save.
 - GIVEN an entry added with `play_when_ready = true`
 - WHEN the entry reaches status `ready`
 - THEN playback of the entry's audio starts automatically
+
+#### Scenario: Cancellation returns the entry to pending
+
+- GIVEN an entry in status `processing`
+- WHEN `cancel_synthesis` runs
+- THEN the entry status becomes `pending` and the entry can be regenerated
+  later
+
+#### Scenario: Stale completion does not change status
+
+- GIVEN an entry that left `processing` (cancelled back to `pending`)
+- WHEN its late synthesis completion or failure arrives
+- THEN the entry status is left unchanged and the late result's files are
+  removed
 
 ### Requirement: Queue list rendering
 
@@ -165,3 +181,4 @@ border, clamping the width between 180 px and 70% of the window width.
 - WHEN the user drags the right border of the navbar
 - THEN the navbar width follows the pointer, never going below 180 px or
   above 70% of the window width
+

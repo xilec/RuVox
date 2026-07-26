@@ -14,6 +14,7 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use ruvox_tauri_lib::tts::supervisor::test_helpers::recording_emitter;
 use ruvox_tauri_lib::tts::supervisor::{CommandFactory, TtsSupervisor};
@@ -84,6 +85,91 @@ async fn supervisor_respawns_after_subprocess_suicide() {
     assert_eq!(second.timestamps.len(), 0);
 
     // Supervisor must have emitted ttsd_restarting at least once.
+    let log = log.lock().unwrap();
+    let names: Vec<&str> = log.iter().map(|(n, _)| n.as_str()).collect();
+    assert!(
+        names.contains(&"ttsd_restarting"),
+        "expected ttsd_restarting in {names:?}",
+    );
+    assert!(
+        !names.contains(&"tts_fatal"),
+        "did not expect tts_fatal in {names:?}",
+    );
+}
+
+/// `kill_current` must terminate a ttsd stuck on an in-flight request, and
+/// the killed request must be retried transparently against a respawned
+/// process. The sleepy mock's first process blocks for 30 s on synthesize
+/// (creating a marker file first); any respawned process sees the marker
+/// and replies instantly, so finishing well under 30 s proves the first
+/// process was really killed, not merely outlived.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn kill_current_terminates_in_flight_request_and_respawns() {
+    let script = common::resolve_test_path("tests/fixtures/mock_ttsd_sleepy.py")
+        .canonicalize()
+        .unwrap_or_else(|e| panic!("mock_ttsd_sleepy.py not found: {e}"));
+
+    let out_dir = tempfile::TempDir::new().expect("tempdir for kill_current test");
+    let marker = out_dir.path().join("first-process-sleeping");
+    let out_wav = out_dir.path().join("kill-out.wav");
+
+    let marker_for_factory = marker.clone();
+    let factory: CommandFactory = Arc::new(move || {
+        let mut cmd = Command::new("python3");
+        cmd.arg(&script)
+            .env("MOCK_TTSD_SLEEP_MARKER", &marker_for_factory);
+        cmd
+    });
+
+    let (emitter, log) = recording_emitter();
+    let sup = Arc::new(TtsSupervisor::spawn(factory, emitter).expect("initial spawn ok"));
+
+    // Kick off a request that the mock will sleep on until killed.
+    let sup_for_task = Arc::clone(&sup);
+    let out_wav_str = out_wav.to_string_lossy().into_owned();
+    let inflight = tokio::spawn(async move {
+        sup_for_task
+            .synthesize(
+                "hello".to_string(),
+                "xenia".to_string(),
+                48_000,
+                out_wav_str,
+                None,
+            )
+            .await
+    });
+
+    // Wait until the mock has actually entered its sleep: it creates the
+    // marker file at exactly that point, so this is a real synchronization
+    // signal (unlike a fixed sleep, which is flaky on slow CI — killing
+    // before the marker exists would make the respawned process "first"
+    // again and it would sleep another 30 s).
+    let wait_for_marker = async {
+        while !marker.exists() {
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    };
+    tokio::time::timeout(Duration::from_secs(10), wait_for_marker)
+        .await
+        .expect("mock never entered its sleep (marker file did not appear)");
+
+    sup.kill_current().await;
+
+    // with_retry observes Died, respawns via ensure_respawned (1s backoff on
+    // the first attempt) and retries against the fresh process. Bound the
+    // whole thing well under the mock's 30 s sleep.
+    let output = tokio::time::timeout(Duration::from_secs(20), inflight)
+        .await
+        .expect("in-flight request hung — kill_current did not terminate the mock")
+        .expect("in-flight task panicked")
+        .expect("request should succeed after transparent respawn");
+    assert_eq!(output.timestamps.len(), 0);
+
+    assert!(
+        marker.exists(),
+        "the first process should have entered its sleep (marker missing)"
+    );
+
     let log = log.lock().unwrap();
     let names: Vec<&str> = log.iter().map(|(n, _)| n.as_str()).collect();
     assert!(

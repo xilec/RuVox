@@ -317,6 +317,9 @@ pub fn build_test_app() -> TestApp {
         Arc::clone(&stub),
         EngineKind::Piper,
         Some("stub-voice".to_string()),
+        // No Silero supervisor in tests: `kill_current_ttsd` degrades to a
+        // no-op, which is all the harness needs.
+        None,
         voices_dir.path().to_path_buf(),
         ttsd_dir.path().to_path_buf(),
         Arc::clone(&emitter),
@@ -334,6 +337,8 @@ pub fn build_test_app() -> TestApp {
         pipeline: Arc::new(ParkingMutex::new(TTSPipeline::new())),
         tray_cmd_tx: None,
         user_quit: Arc::new(AtomicBool::new(false)),
+        synthesis_tasks: Arc::new(ParkingMutex::new(std::collections::HashMap::new())),
+        synthesize_entered: Arc::new(ParkingMutex::new(std::collections::HashSet::new())),
     });
 
     TestApp {
