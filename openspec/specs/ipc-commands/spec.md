@@ -9,9 +9,7 @@ Tauri events the backend emits to the frontend via `listen("event_name", handler
 This covers command signatures, typed error format, shared data types, and event
 payloads as currently implemented. The backend-to-Python protocol is specified
 separately in `ttsd-protocol`.
-
 ## Requirements
-
 ### Requirement: Command Error Format
 
 All fallible Tauri commands SHALL return errors as a typed JSON object
@@ -219,16 +217,51 @@ rejected with `synthesis_error` to avoid racing the in-flight task.
 
 ### Requirement: Synthesis Cancellation Command
 
-The system SHALL provide `cancel_synthesis(id)` which sets the entry status
-back to `pending` and emits `entry_updated`. The current implementation does
-NOT abort an in-flight TTS request — the TTS supervisor serializes all requests
-through a single channel, so a running synthesis continues to completion; only
-the entry status is reset. A missing entry fails with `not_found`.
+The system SHALL provide `cancel_synthesis(id)` which actually stops the
+entry's synthesis work and sets the entry status back to `pending`, emitting
+`entry_updated`. Cancellation SHALL abort the entry's spawned synthesis task
+via a per-entry abort registry. If the cancelled entry had already entered
+the TTS stage, the system SHALL additionally terminate the current ttsd
+subprocess; recovery then follows the ttsd-protocol auto-restart procedure,
+and requests belonging to other entries are retried transparently. A late
+completion or failure belonging to a cancelled entry SHALL be discarded: the
+entry MUST NOT flip to `ready` or `error`, any audio/timestamp files written
+by the late completion SHALL be removed, no further `entry_updated` for that
+completion is emitted, and no autoplay starts. A missing entry fails with
+`not_found`.
 
 #### Scenario: cancel a queued synthesis
-- GIVEN an entry with status `processing`
+
+- GIVEN an entry with status `processing` whose request has not yet reached
+  ttsd
 - WHEN `cancel_synthesis` is invoked
-- THEN the entry status becomes `pending` and `entry_updated` is emitted
+- THEN the synthesis task is aborted, the entry status becomes `pending`,
+  `entry_updated` is emitted, and the ttsd subprocess keeps running (no
+  restart)
+
+#### Scenario: cancel an in-flight synthesis
+
+- GIVEN an entry with status `processing` whose request is being synthesized
+  by ttsd
+- WHEN `cancel_synthesis` is invoked
+- THEN the synthesis task is aborted, the ttsd subprocess is terminated, the
+  supervisor restarts it per the auto-restart procedure, and the entry
+  status becomes `pending`
+
+#### Scenario: late completion is discarded
+
+- GIVEN an entry that was cancelled back to `pending` while its request was
+  in flight
+- WHEN the orphaned request completes
+- THEN the entry remains `pending`, the generated audio/timestamp files are
+  removed, no `entry_updated` with `ready` is emitted, and no autoplay
+  starts
+
+#### Scenario: cancel a missing entry
+
+- GIVEN no entry with the given id
+- WHEN `cancel_synthesis` is invoked
+- THEN the command fails with `not_found`
 
 ### Requirement: Playback Control Commands
 
@@ -376,19 +409,31 @@ whenever an entry is created or any of its fields change: on ingestion
 synthesis completes (`ready`, audio/timestamps paths and `duration_sec` set),
 when synthesis fails (`error`, `error_message` set), after `delete_audio`,
 `regenerate_entry`, `cancel_synthesis`, and after `clear_cache` for each reset
-entry. The backend SHALL emit `entry_removed` with payload `{ id }` when an
-entry is removed from history by a bulk operation; the frontend MUST drop the
-entry from local state without expecting any `entry_updated` follow-up.
+entry. A discarded late completion (after cancellation) SHALL NOT emit
+`entry_updated` with `ready` or `error`. The backend SHALL emit
+`entry_removed` with payload `{ id }` when an entry is removed from history
+by a bulk operation; the frontend MUST drop the entry from local state
+without expecting any `entry_updated` follow-up.
 
 #### Scenario: synthesis progress is reflected via entry_updated
+
 - GIVEN a newly ingested entry
 - WHEN background synthesis runs to completion
-- THEN the frontend receives `entry_updated` with `pending`, then `processing`, then `ready` carrying the audio path and duration
+- THEN the frontend receives `entry_updated` with `pending`, then
+  `processing`, then `ready` carrying the audio path and duration
+
+#### Scenario: no ready event after cancellation
+
+- GIVEN an entry cancelled back to `pending`
+- WHEN its orphaned synthesis completes
+- THEN no `entry_updated` carrying `ready` is emitted for that completion
 
 #### Scenario: bulk removal notification
+
 - GIVEN `clear_cache` removed an entry from history
 - WHEN the `entry_removed` event arrives
-- THEN the payload is `{ id: "<uuid>" }` and no `entry_updated` follows for that entry
+- THEN the payload is `{ id: "<uuid>" }` and no `entry_updated` follows for
+  that entry
 
 ### Requirement: Synthesis Failure Event
 
@@ -462,3 +507,4 @@ During `download_piper_voice` the backend SHALL emit:
 - GIVEN a voice that is not installed
 - WHEN `download_piper_voice` runs
 - THEN `voice_download_started` fires first, `voice_download_progress` events carry cumulative byte counts per file, and a terminal `voice_download_finished` with `ok: true` completes the sequence
+
