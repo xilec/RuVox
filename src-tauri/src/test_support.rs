@@ -24,7 +24,7 @@ use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use parking_lot::Mutex as ParkingMutex;
@@ -40,6 +40,11 @@ use crate::storage::service::StorageService;
 use crate::tts::engine::EngineKind;
 use crate::tts::supervisor::test_helpers::recording_emitter;
 use crate::tts::{CharMappingEntry, EngineSwitcher, SynthesizeOutput, TtsEngine, TtsError};
+
+// The polling helper lives in `tts::supervisor::test_helpers`, shared with
+// the integration tests under `tests/`; re-exported so command tests import
+// the whole harness from one place.
+pub use crate::tts::supervisor::test_helpers::wait_until;
 
 // ---------------------------------------------------------------------------
 // StubEngine
@@ -381,32 +386,6 @@ pub fn build_test_app() -> TestApp {
         _storage_dir: storage_dir,
         _voices_dir: voices_dir,
         _ttsd_dir: ttsd_dir,
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Async waiting
-// ---------------------------------------------------------------------------
-
-/// Poll `predicate` (every 10 ms) until it holds or `timeout` elapses.
-///
-/// Background synthesis runs via `tokio::spawn`, so a command returning
-/// `Ok` does *not* mean the side effects (entry status flip, events) have
-/// landed yet — tests must await them. Panics naming `what` on timeout.
-pub async fn wait_until<F>(what: &str, timeout: Duration, mut predicate: F)
-where
-    F: FnMut() -> bool,
-{
-    let start = Instant::now();
-    loop {
-        if predicate() {
-            return;
-        }
-        assert!(
-            start.elapsed() < timeout,
-            "timed out after {timeout:?} waiting for {what}"
-        );
-        tokio::time::sleep(Duration::from_millis(10)).await;
     }
 }
 

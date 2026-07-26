@@ -16,7 +16,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use ruvox_tauri_lib::tts::supervisor::test_helpers::recording_emitter;
+use ruvox_tauri_lib::tts::supervisor::test_helpers::{recording_emitter, wait_until};
 use ruvox_tauri_lib::tts::supervisor::{CommandFactory, TtsSupervisor};
 // Bring the trait into scope so `sup.synthesize(...)` resolves to its
 // `TtsEngine` impl methods.
@@ -137,20 +137,12 @@ async fn respawn_reemits_model_lifecycle_events() {
     // The post-respawn warmup runs in a background task; poll the event log
     // until the lifecycle completes (the mock answers warmup instantly, so
     // this converges fast even on slow CI).
-    let wait_for_loaded = async {
-        loop {
-            {
-                let log = log.lock().unwrap();
-                if log.iter().any(|(n, _)| n == "model_loaded") {
-                    break;
-                }
-            }
-            tokio::time::sleep(Duration::from_millis(25)).await;
-        }
-    };
-    tokio::time::timeout(Duration::from_secs(10), wait_for_loaded)
-        .await
-        .expect("model_loaded was not re-emitted after respawn");
+    wait_until(
+        "model_loaded re-emitted after respawn",
+        Duration::from_secs(10),
+        || log.lock().unwrap().iter().any(|(n, _)| n == "model_loaded"),
+    )
+    .await;
 
     let log = log.lock().unwrap();
     let names: Vec<&str> = log.iter().map(|(n, _)| n.as_str()).collect();
@@ -234,14 +226,12 @@ async fn kill_current_terminates_in_flight_request_and_respawns() {
     // signal (unlike a fixed sleep, which is flaky on slow CI — killing
     // before the marker exists would make the respawned process "first"
     // again and it would sleep another 30 s).
-    let wait_for_marker = async {
-        while !marker.exists() {
-            tokio::time::sleep(Duration::from_millis(25)).await;
-        }
-    };
-    tokio::time::timeout(Duration::from_secs(10), wait_for_marker)
-        .await
-        .expect("mock never entered its sleep (marker file did not appear)");
+    wait_until(
+        "mock to enter its sleep (marker file)",
+        Duration::from_secs(10),
+        || marker.exists(),
+    )
+    .await;
 
     sup.kill_current().await;
 
