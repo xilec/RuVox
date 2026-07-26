@@ -395,28 +395,28 @@ fn apply_ready_if_current(
     ts_filename: Option<String>,
     audio_filename: &str,
 ) -> bool {
-    let Some(mut entry) = storage.get_entry(entry_id) else {
-        // Vanished mid-synthesis (deleted) — drop the late files too.
+    // A late result whose entry vanished or left `processing` is dropped
+    // together with the files it just wrote.
+    let discard = |ts_filename: Option<String>| {
         discard_late_files(
             storage,
             [Some(audio_filename.to_string()), ts_filename]
                 .into_iter()
                 .flatten(),
         );
-        return false;
+        false
+    };
+
+    let Some(mut entry) = storage.get_entry(entry_id) else {
+        // Vanished mid-synthesis (deleted).
+        return discard(ts_filename);
     };
     if !completion_is_current(entry.status) {
         info!(
             "discarding stale completion for {entry_id} (status: {:?})",
             entry.status
         );
-        discard_late_files(
-            storage,
-            [Some(audio_filename.to_string()), ts_filename]
-                .into_iter()
-                .flatten(),
-        );
-        return false;
+        return discard(ts_filename);
     }
 
     entry.status = EntryStatus::Ready;
