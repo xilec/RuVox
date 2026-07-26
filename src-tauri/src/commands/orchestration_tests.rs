@@ -1,0 +1,460 @@
+//! Command-orchestration tests (issue #104) on the `MockRuntime` harness
+//! (`crate::test_support`): real command handlers against a managed
+//! [`AppState`] with real storage (TempDir), a stub TTS engine, and a
+//! fake player. Background synthesis runs in spawned tasks, so state
+//! transitions are awaited with `wait_until` instead of being assumed.
+
+use super::*;
+use crate::player::PlayerBackend;
+use crate::test_support::{build_test_app, record_events, wait_until, PlayerCall, TestApp};
+use crate::tts::engine::EngineKind;
+use std::time::Duration;
+
+const TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Absolute path of the storage audio directory for this test app.
+fn audio_dir(t: &TestApp) -> PathBuf {
+    t.state().storage.cache_dir().join("audio")
+}
+
+/// Add an entry through the real ingestion command and wait until the
+/// background synthesis (StubEngine) has marked it `ready`.
+async fn add_ready_entry(t: &TestApp) -> String {
+    let id = add_text_entry(
+        t.app.handle().clone(),
+        t.state(),
+        "текст для озвучки".to_string(),
+        false,
+    )
+    .await
+    .unwrap();
+    wait_until("entry ready", TIMEOUT, || {
+        let uuid: uuid::Uuid = id.parse().unwrap();
+        t.state()
+            .storage
+            .get_entry(&uuid)
+            .is_some_and(|e| e.status == EntryStatus::Ready)
+    })
+    .await;
+    id
+}
+
+// ── delete_entry ─────────────────────────────────────────────────────
+
+/// Deleting the currently-playing entry stops playback before removing
+/// the entry and its files. (The `playback_stopped` event itself is
+/// emitted by the real `Player::stop` — `FakePlayer` deliberately emits
+/// no events, so the assertion is on the recorded `stop` control call.)
+#[tokio::test(flavor = "multi_thread")]
+async fn delete_entry_stops_playback_and_removes_entry_and_files() {
+    let t = build_test_app();
+    let id = add_ready_entry(&t).await;
+    let uuid: uuid::Uuid = id.parse().unwrap();
+    let dir = audio_dir(&t);
+    let audio_file = dir.join(format!("{uuid}.wav"));
+    let ts_file = dir.join(format!("{uuid}.timestamps.json"));
+    assert!(audio_file.exists());
+    assert!(ts_file.exists());
+
+    play_entry(t.state(), id.clone()).await.unwrap();
+    assert_eq!(t.player.current_entry_id().as_deref(), Some(id.as_str()));
+    assert!(t.player.is_playing());
+
+    delete_entry(t.state(), id.clone()).await.unwrap();
+
+    // stop() was issued, after playback had started.
+    let calls = t.player.calls();
+    let play_idx = calls
+        .iter()
+        .position(|c| matches!(c, PlayerCall::Play))
+        .unwrap();
+    let stop_idx = calls
+        .iter()
+        .position(|c| matches!(c, PlayerCall::Stop))
+        .expect("delete_entry must stop the playing entry");
+    assert!(stop_idx > play_idx);
+    assert!(!t.player.is_playing());
+
+    assert!(t.state().storage.get_entry(&uuid).is_none());
+    assert!(!audio_file.exists());
+    assert!(!ts_file.exists());
+}
+
+/// Deleting an entry that is *not* the playing one leaves playback alone.
+#[tokio::test(flavor = "multi_thread")]
+async fn delete_entry_of_other_entry_keeps_playback_running() {
+    let t = build_test_app();
+    let playing = add_ready_entry(&t).await;
+    let other = add_ready_entry(&t).await;
+
+    play_entry(t.state(), playing.clone()).await.unwrap();
+    delete_entry(t.state(), other.clone()).await.unwrap();
+
+    assert!(t
+        .player
+        .calls()
+        .iter()
+        .all(|c| !matches!(c, PlayerCall::Stop)));
+    assert!(t.player.is_playing());
+    assert_eq!(
+        t.player.current_entry_id().as_deref(),
+        Some(playing.as_str())
+    );
+}
+
+// ── regenerate_entry ─────────────────────────────────────────────────
+
+/// Happy path: the old audio file is dropped, the entry is flagged
+/// `was_regenerated` (and emitted), and a fresh synthesis brings it back
+/// to `ready` with newly written audio.
+#[tokio::test(flavor = "multi_thread")]
+async fn regenerate_entry_replaces_audio_and_resynthesizes() {
+    let t = build_test_app();
+    let id = add_ready_entry(&t).await;
+    let uuid: uuid::Uuid = id.parse().unwrap();
+    let audio_file = audio_dir(&t).join(format!("{uuid}.wav"));
+    // Sentinel content: proves the new file was written from scratch,
+    // not just left over from the first synthesis.
+    std::fs::write(&audio_file, b"old-marker").unwrap();
+
+    let events = record_events(&t.app, &["entry_updated"]);
+    regenerate_entry(t.app.handle().clone(), t.state(), id.clone())
+        .await
+        .unwrap();
+
+    wait_until("entry ready again", TIMEOUT, || {
+        t.state()
+            .storage
+            .get_entry(&uuid)
+            .is_some_and(|e| e.status == EntryStatus::Ready)
+    })
+    .await;
+
+    assert_eq!(
+        std::fs::read(&audio_file).unwrap().as_slice(),
+        b"stub audio"
+    );
+
+    let entry = t.state().storage.get_entry(&uuid).unwrap();
+    assert!(entry.was_regenerated);
+    assert!(entry.error_message.is_none());
+
+    // The command emitted entry_updated carrying was_regenerated: true.
+    let log = events.lock().unwrap();
+    assert!(log
+        .iter()
+        .any(|(_, p)| p["entry"]["id"] == id && p["entry"]["was_regenerated"] == true));
+}
+
+/// Regeneration is rejected while the entry is `processing`; the
+/// in-flight synthesis must continue undisturbed.
+#[tokio::test(flavor = "multi_thread")]
+async fn regenerate_entry_rejects_processing_entry_and_synthesis_continues() {
+    let t = build_test_app();
+    t.engine.block_synthesis();
+    let id = add_text_entry(
+        t.app.handle().clone(),
+        t.state(),
+        "текст".to_string(),
+        false,
+    )
+    .await
+    .unwrap();
+    let uuid: uuid::Uuid = id.parse().unwrap();
+    wait_until("entry processing", TIMEOUT, || {
+        t.state()
+            .storage
+            .get_entry(&uuid)
+            .is_some_and(|e| e.status == EntryStatus::Processing)
+    })
+    .await;
+
+    let err = regenerate_entry(t.app.handle().clone(), t.state(), id.clone())
+        .await
+        .unwrap_err();
+    match err {
+        CommandError::SynthesisError { message } => {
+            assert!(message.contains("уже синтезируется"))
+        }
+        other => panic!("expected SynthesisError, got {other:?}"),
+    }
+
+    // Releasing the gate lets the original synthesis finish normally.
+    t.engine.release_synthesis();
+    wait_until("entry ready after gate release", TIMEOUT, || {
+        t.state()
+            .storage
+            .get_entry(&uuid)
+            .is_some_and(|e| e.status == EntryStatus::Ready)
+    })
+    .await;
+}
+
+// ── cancel_synthesis (new #129 semantics) ─────────────────────────────
+
+/// Cancelling an in-flight synthesis aborts the spawned task, flips the
+/// entry back to `pending` (emitting `entry_updated`), and clears both
+/// registries. Nothing is resurrected afterwards: no `ready` event, no
+/// autoplay — even though the entry was added with `play_when_ready`.
+#[tokio::test(flavor = "multi_thread")]
+async fn cancel_synthesis_aborts_in_flight_task_and_keeps_entry_pending() {
+    let t = build_test_app();
+    t.engine.block_synthesis();
+    let events = record_events(&t.app, &["entry_updated"]);
+    let id = add_text_entry(t.app.handle().clone(), t.state(), "текст".to_string(), true)
+        .await
+        .unwrap();
+    let uuid: uuid::Uuid = id.parse().unwrap();
+    // Deterministic "inside the TTS stage": the marker is set right
+    // before the (blocked) engine await.
+    wait_until("entry entered TTS stage", TIMEOUT, || {
+        t.state().synthesize_entered.lock().contains(&uuid)
+    })
+    .await;
+
+    cancel_synthesis(t.app.handle().clone(), t.state(), id.clone())
+        .await
+        .unwrap();
+
+    let entry = t.state().storage.get_entry(&uuid).unwrap();
+    assert_eq!(entry.status, EntryStatus::Pending);
+    assert!(t.state().synthesis_tasks.lock().is_empty());
+    assert!(t.state().synthesize_entered.lock().is_empty());
+
+    // The last entry_updated is the reset to pending.
+    {
+        let log = events.lock().unwrap();
+        let (_, payload) = log
+            .iter()
+            .rev()
+            .find(|(n, _)| n == "entry_updated")
+            .unwrap();
+        assert_eq!(payload["entry"]["id"], id);
+        assert_eq!(payload["entry"]["status"], "pending");
+    }
+
+    // The task was aborted at the blocked await: releasing the gate
+    // changes nothing — no ready event and no autoplay.
+    t.engine.release_synthesis();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let log = events.lock().unwrap();
+    assert!(log.iter().all(|(_, p)| p["entry"]["status"] != "ready"));
+    assert!(t.player.calls().is_empty());
+}
+
+/// Cancelling an idle (pending, no synthesis task) entry succeeds and
+/// simply re-confirms `pending` with an `entry_updated` event.
+#[tokio::test(flavor = "multi_thread")]
+async fn cancel_synthesis_on_idle_entry_succeeds_and_stays_pending() {
+    let t = build_test_app();
+    let entry = t.state().storage.add_entry("текст".to_string()).unwrap();
+    let id = entry.id.to_string();
+
+    let events = record_events(&t.app, &["entry_updated"]);
+    cancel_synthesis(t.app.handle().clone(), t.state(), id.clone())
+        .await
+        .unwrap();
+
+    let stored = t.state().storage.get_entry(&entry.id).unwrap();
+    assert_eq!(stored.status, EntryStatus::Pending);
+    let log = events.lock().unwrap();
+    assert!(log
+        .iter()
+        .any(|(_, p)| p["entry"]["id"] == id && p["entry"]["status"] == "pending"));
+}
+
+// ── play_entry ───────────────────────────────────────────────────────
+
+/// A non-ready (pending) entry is rejected with `playback_error` and the
+/// player is never touched.
+#[tokio::test(flavor = "multi_thread")]
+async fn play_entry_rejects_non_ready_entry() {
+    let t = build_test_app();
+    let entry = t.state().storage.add_entry("текст".to_string()).unwrap();
+
+    let err = play_entry(t.state(), entry.id.to_string())
+        .await
+        .unwrap_err();
+    match err {
+        CommandError::PlaybackError { message } => assert!(message.contains("not ready")),
+        other => panic!("expected PlaybackError, got {other:?}"),
+    }
+    assert!(t.player.calls().is_empty());
+}
+
+/// A ready entry is loaded (full audio path + entry id) and played.
+#[tokio::test(flavor = "multi_thread")]
+async fn play_entry_loads_audio_and_starts_playback() {
+    let t = build_test_app();
+    let id = add_ready_entry(&t).await;
+
+    play_entry(t.state(), id.clone()).await.unwrap();
+
+    let expected_path = audio_dir(&t).join(format!("{id}.wav"));
+    let calls = t.player.calls();
+    assert_eq!(calls.len(), 2);
+    match &calls[0] {
+        PlayerCall::Load(path, entry_id) => {
+            assert_eq!(path, &expected_path);
+            assert_eq!(entry_id, &id);
+        }
+        other => panic!("expected Load first, got {other:?}"),
+    }
+    assert!(matches!(calls[1], PlayerCall::Play));
+    assert_eq!(t.player.current_entry_id().as_deref(), Some(id.as_str()));
+    assert!(t.player.is_playing());
+}
+
+// ── update_config rollback ───────────────────────────────────────────
+
+/// A failed engine switch (deterministic `engine_unknown` for "nemo")
+/// aborts `update_config` with `config_error`: the previous config stays
+/// on disk and the active engine is untouched.
+#[tokio::test(flavor = "multi_thread")]
+async fn update_config_failed_engine_switch_preserves_previous_config() {
+    let t = build_test_app();
+    let before = get_config(t.state()).await.unwrap();
+    assert_eq!(before.engine, "piper");
+
+    let patch = UIConfigPatch {
+        engine: Some("nemo".to_string()),
+        ..Default::default()
+    };
+    let err = update_config(t.state(), patch).await.unwrap_err();
+    match err {
+        CommandError::ConfigError { message } => {
+            assert!(message.contains("не удалось переключить движок"))
+        }
+        other => panic!("expected ConfigError, got {other:?}"),
+    }
+
+    let after = get_config(t.state()).await.unwrap();
+    assert_eq!(
+        serde_json::to_value(&after).unwrap(),
+        serde_json::to_value(&before).unwrap(),
+        "config must be unchanged after a failed engine switch"
+    );
+    assert_eq!(t.state().tts.kind(), EngineKind::Piper);
+}
+
+// ── events ───────────────────────────────────────────────────────────
+
+/// `delete_audio` drops the audio/timestamps files, resets the entry to
+/// `pending`, and emits `entry_updated` with the reset entry.
+#[tokio::test(flavor = "multi_thread")]
+async fn delete_audio_resets_entry_and_emits_entry_updated() {
+    let t = build_test_app();
+    let id = add_ready_entry(&t).await;
+    let uuid: uuid::Uuid = id.parse().unwrap();
+    let dir = audio_dir(&t);
+    let audio_file = dir.join(format!("{uuid}.wav"));
+    let ts_file = dir.join(format!("{uuid}.timestamps.json"));
+
+    let events = record_events(&t.app, &["entry_updated"]);
+    delete_audio(t.app.handle().clone(), t.state(), id.clone())
+        .await
+        .unwrap();
+
+    let entry = t.state().storage.get_entry(&uuid).unwrap();
+    assert_eq!(entry.status, EntryStatus::Pending);
+    assert!(entry.audio_path.is_none());
+    assert!(entry.timestamps_path.is_none());
+    assert!(entry.duration_sec.is_none());
+    assert!(!audio_file.exists());
+    assert!(!ts_file.exists());
+
+    let log = events.lock().unwrap();
+    let (name, payload) = log.last().unwrap();
+    assert_eq!(name, "entry_updated");
+    assert_eq!(payload["entry"]["id"], id);
+    assert_eq!(payload["entry"]["status"], "pending");
+    assert!(payload["entry"]["audio_path"].is_null());
+}
+
+/// A TTS-stage failure flips the entry to `error` and emits
+/// `entry_updated` (status `error`) *before* `tts_error` — the ordering
+/// the spec's "Synthesis Failure Event" requirement pins.
+#[tokio::test(flavor = "multi_thread")]
+async fn tts_failure_emits_entry_updated_error_then_tts_error() {
+    let t = build_test_app();
+    t.engine.fail_with("stub synthesis boom");
+    let events = record_events(&t.app, &["entry_updated", "tts_error"]);
+
+    let id = add_text_entry(
+        t.app.handle().clone(),
+        t.state(),
+        "текст".to_string(),
+        false,
+    )
+    .await
+    .unwrap();
+    let uuid: uuid::Uuid = id.parse().unwrap();
+    // Wait on the event, not the storage status: the status flips to
+    // `error` *before* the events are emitted, so polling the status
+    // would race the emits. `tts_error` is emitted last, so once it is
+    // in the log every preceding event is too.
+    wait_until("tts_error emitted", TIMEOUT, || {
+        events.lock().unwrap().iter().any(|(n, _)| n == "tts_error")
+    })
+    .await;
+
+    let entry = t.state().storage.get_entry(&uuid).unwrap();
+    assert_eq!(entry.status, EntryStatus::Error);
+    assert!(entry
+        .error_message
+        .as_deref()
+        .unwrap_or_default()
+        .contains("stub synthesis boom"));
+
+    let log = events.lock().unwrap();
+    let err_idx = log
+        .iter()
+        .position(|(n, p)| n == "entry_updated" && p["entry"]["status"] == "error")
+        .expect("entry_updated with status error must be emitted");
+    let tts_idx = log
+        .iter()
+        .position(|(n, _)| n == "tts_error")
+        .expect("tts_error must be emitted");
+    assert!(err_idx < tts_idx, "entry_updated(error) precedes tts_error");
+    assert_eq!(log[tts_idx].1["entry_id"], id);
+    assert!(log[tts_idx].1["message"]
+        .as_str()
+        .unwrap()
+        .contains("stub synthesis boom"));
+}
+
+/// `seek_to` forwards the absolute position to the player. (The
+/// immediate `playback_position` emit lives in the real `Player::seek`,
+/// which needs mpv; `FakePlayer` emits no events by design. The emitter
+/// loop's own output is covered by
+/// `test_support::tests::position_emitter_ticks_then_finishes_at_eof`.)
+#[tokio::test(flavor = "multi_thread")]
+async fn seek_to_forwards_absolute_seek_to_player() {
+    let t = build_test_app();
+    seek_to(t.state(), 2.0).await.unwrap();
+    assert!(t
+        .player
+        .calls()
+        .iter()
+        .any(|c| matches!(c, PlayerCall::Seek(p) if (*p - 2.0).abs() < f64::EPSILON)));
+}
+
+// ── preview_normalize (restored from the plan journal: removed as a
+//    tautological helper test in #124, reinstated at command level) ────
+
+/// The preview runs the real pipeline through the real command with a
+/// managed `AppState` and leaves no trace: no history entry, no audio
+/// files, no spawned synthesis task.
+#[tokio::test(flavor = "multi_thread")]
+async fn preview_normalize_returns_text_without_history_or_audio_side_effects() {
+    let t = build_test_app();
+
+    let result = preview_normalize(t.state(), "Вызови getUserData() через API".to_string())
+        .await
+        .unwrap();
+    assert!(!result.normalized.is_empty());
+
+    assert!(get_entries(t.state()).await.unwrap().is_empty());
+    assert_eq!(std::fs::read_dir(audio_dir(&t)).unwrap().count(), 0);
+    assert!(t.state().synthesis_tasks.lock().is_empty());
+}

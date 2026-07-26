@@ -20,10 +20,9 @@
 //! 2. go through the IPC router with [`tauri::test::get_ipc_response`], which
 //!    additionally pins command-name routing and the JSON wire contract.
 
-// The harness is scaffold (issue #103): the proof tests at the bottom
-// exercise only part of its API — the rest (`record_events`, `wait_until`,
-// `FakePlayer` scripting, `TestApp` fields) is consumed by the follow-up
-// command/event test issues.
+// Some helpers are consumed only by the command-orchestration tests in
+// `commands::orchestration_tests` and the proof tests at the bottom; keep the
+// allowance so harness additions for future test issues compile unused.
 #![allow(dead_code)]
 
 use std::collections::VecDeque;
@@ -55,7 +54,44 @@ use crate::tts::{CharMappingEntry, EngineSwitcher, SynthesizeOutput, TtsEngine, 
 /// `out_wav` (the synthesis pipeline only needs *some* bytes there; the Opus
 /// transcode is best-effort and keeps the WAV on failure) and returns a
 /// fixed-duration output. Never touches the network, ONNX, or a subprocess.
-pub struct StubEngine;
+///
+/// Two knobs steer `synthesize` off the happy path, both settable after the
+/// app is built (via [`TestApp::engine`]):
+///
+/// - [`StubEngine::fail_with`]: every call fails with a `TtsError` carrying
+///   the message — drives the TTS-failure event path (`tts_error`).
+/// - [`StubEngine::block_synthesis`] / [`StubEngine::release_synthesis`]:
+///   calls park on a one-shot gate until released, giving tests a
+///   deterministic "synthesis in flight" window for `cancel_synthesis` and
+///   `regenerate_entry`-rejection scenarios.
+#[derive(Default)]
+pub struct StubEngine {
+    fail_with: ParkingMutex<Option<String>>,
+    gate: ParkingMutex<Option<Arc<tokio::sync::Notify>>>,
+}
+
+impl StubEngine {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Make every subsequent `synthesize` call fail with `message`.
+    pub fn fail_with(&self, message: &str) {
+        *self.fail_with.lock() = Some(message.to_string());
+    }
+
+    /// Block subsequent `synthesize` calls until [`StubEngine::release_synthesis`].
+    pub fn block_synthesis(&self) {
+        *self.gate.lock() = Some(Arc::new(tokio::sync::Notify::new()));
+    }
+
+    /// Unblock every `synthesize` call parked since [`StubEngine::block_synthesis`].
+    pub fn release_synthesis(&self) {
+        if let Some(gate) = self.gate.lock().take() {
+            gate.notify_waiters();
+        }
+    }
+}
 
 #[async_trait]
 impl TtsEngine for StubEngine {
@@ -77,6 +113,16 @@ impl TtsEngine for StubEngine {
         out_wav: String,
         _char_mapping: Option<Vec<CharMappingEntry>>,
     ) -> Result<SynthesizeOutput, TtsError> {
+        let gate = self.gate.lock().clone();
+        if let Some(gate) = gate {
+            gate.notified().await;
+        }
+        if let Some(message) = self.fail_with.lock().clone() {
+            return Err(TtsError::Ttsd {
+                code: "stub_failure".to_string(),
+                message,
+            });
+        }
         std::fs::write(&out_wav, b"stub audio").map_err(TtsError::Ipc)?;
         Ok(SynthesizeOutput {
             timestamps: Vec::new(),
@@ -282,6 +328,9 @@ pub fn record_events(app: &App<MockRuntime>, event_names: &[&str]) -> EventLog {
 pub struct TestApp {
     pub app: App<MockRuntime>,
     pub player: Arc<FakePlayer>,
+    /// The stub TTS engine behind the switcher — steer `synthesize` via its
+    /// knobs (`fail_with`, `block_synthesis`).
+    pub engine: Arc<StubEngine>,
     /// Events emitted through the state's `emitter` (engine layer).
     pub engine_events: EventLog,
     _storage_dir: TempDir,
@@ -312,7 +361,8 @@ pub fn build_test_app() -> TestApp {
 
     let (emitter, engine_events) = recording_emitter();
 
-    let stub: Arc<dyn TtsEngine> = Arc::new(StubEngine);
+    let engine = Arc::new(StubEngine::new());
+    let stub: Arc<dyn TtsEngine> = engine.clone();
     let switcher = Arc::new(EngineSwitcher::new(
         Arc::clone(&stub),
         EngineKind::Piper,
@@ -344,6 +394,7 @@ pub fn build_test_app() -> TestApp {
     TestApp {
         app,
         player,
+        engine,
         engine_events,
         _storage_dir: storage_dir,
         _voices_dir: voices_dir,
@@ -433,5 +484,71 @@ mod tests {
 
         let entries = res.expect("get_entries IPC call failed");
         assert!(entries.is_empty());
+    }
+
+    /// The position-emitter loop (production code in `player`) driven by a
+    /// scripted [`FakePlayer`]: while playing, each 100 ms tick pops one
+    /// scripted position into a `playback_position` event; once the script is
+    /// exhausted `position_sec()` yields `None`, which — with a known
+    /// duration — the loop treats as EOF and closes out with
+    /// `playback_finished` + `playback_stopped`, clearing the playing flag.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn position_emitter_ticks_then_finishes_at_eof() {
+        let t = build_test_app();
+        t.player
+            .load(std::path::Path::new("/audio.wav"), "entry-1".to_string())
+            .unwrap();
+        t.player.play().unwrap();
+        t.player.set_duration_sec(Some(1.0));
+        t.player.script_positions([Some(0.1), Some(0.2), Some(0.3)]);
+
+        let events = record_events(
+            &t.app,
+            &["playback_position", "playback_finished", "playback_stopped"],
+        );
+        crate::player::spawn_position_emitter(t.player.clone(), t.app.handle().clone());
+
+        wait_until("playback_finished", Duration::from_secs(5), || {
+            events
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|(name, _)| name == "playback_finished")
+        })
+        .await;
+
+        let log = events.lock().unwrap();
+        let positions: Vec<f64> = log
+            .iter()
+            .filter(|(name, _)| name == "playback_position")
+            .map(|(_, payload)| payload["position_sec"].as_f64().unwrap())
+            .collect();
+        assert_eq!(positions, vec![0.1, 0.2, 0.3]);
+        assert!(log
+            .iter()
+            .all(|(_, payload)| payload.get("entry_id").map_or(true, |id| id == "entry-1")));
+
+        // EOF ordering: playback_finished immediately before playback_stopped.
+        let finished_idx = log
+            .iter()
+            .position(|(name, _)| name == "playback_finished")
+            .unwrap();
+        assert_eq!(log[finished_idx + 1].0, "playback_stopped");
+        assert_eq!(
+            log[finished_idx].1,
+            serde_json::json!({ "entry_id": "entry-1" })
+        );
+        drop(log);
+
+        // The loop cleared the flag, so playback_finished fires exactly once.
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        assert!(!t.player.is_playing());
+        let log = events.lock().unwrap();
+        assert_eq!(
+            log.iter()
+                .filter(|(name, _)| name == "playback_finished")
+                .count(),
+            1
+        );
     }
 }
