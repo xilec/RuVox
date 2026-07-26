@@ -7,7 +7,7 @@ use parking_lot::Mutex;
 use tokio::task::AbortHandle;
 
 use crate::pipeline::TTSPipeline;
-use crate::player::Player;
+use crate::player::PlayerBackend;
 use crate::storage::schema::EntryId;
 use crate::storage::service::StorageService;
 use crate::tray::TrayCmd;
@@ -16,9 +16,9 @@ use crate::tts::{EngineSwitcher, TtsEngine};
 
 /// Application-wide state held in `tauri::State<AppState>`.
 ///
-/// Uses the concrete `tauri::Wry` runtime so that `AppState` is non-generic
-/// and can be registered with `app.manage()` without ambiguity in
-/// `tauri::generate_handler!`.
+/// Runtime-agnostic by design (no `AppHandle` / `Player<R>` generics), so the
+/// same state can be registered with `app.manage()` both in the production
+/// `Wry` app and in the `MockRuntime` test harness.
 pub struct AppState {
     pub storage: Arc<StorageService>,
     /// TTS engine — actually an [`EngineSwitcher`], exposed as a trait object
@@ -39,7 +39,9 @@ pub struct AppState {
     /// Frontend emitter shared with the engine layer. Held here so the
     /// download path can reuse it without rebuilding the closure.
     pub emitter: Emitter,
-    pub player: Arc<Player<tauri::Wry>>,
+    /// Audio player behind an object-safe trait so tests can substitute a
+    /// fake (no mpv subprocess / window). Production holds `Player<Wry>`.
+    pub player: Arc<dyn PlayerBackend>,
     pub pipeline: Arc<Mutex<TTSPipeline>>,
     /// Sender for tray menu commands (read_now / read_later).
     /// `None` before the background loop is started in `setup()`.

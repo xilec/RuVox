@@ -99,18 +99,11 @@ fn invoke_add_clipboard_entry<R: Runtime>(app: &AppHandle<R>, play_when_ready: b
         }
     };
 
-    // Retrieve the Wry-typed AppHandle stored in AppState's player.
-    // We obtain it by casting through a channel: spawn a task on the Tokio runtime
-    // and pass the player's handle (which is already Wry-typed) from the managed state.
-    //
-    // Since AppState stores `Player<Wry>`, the player's `app` field is `AppHandle<Wry>`.
-    // We need an `AppHandle<Wry>` for spawn_synthesis_pub. The player already holds one,
-    // but there's no public accessor for it. As a pragmatic solution we use a dedicated
-    // tray command channel stored in AppState.
-    //
-    // For now, use the tray-owned AppHandle and clone it to Wry via the command sender
-    // stored in AppState (added below). This is a placeholder until the tray_tx channel
-    // is wired; fall back to emitting a tray event that the frontend forwards.
+    // The menu handler cannot call the `add_clipboard_entry` Tauri command
+    // directly (commands need a webview invoke context), so it forwards the
+    // request through the tray command channel stored in AppState. The
+    // background loop started in `setup()` performs the clipboard read and
+    // kicks off synthesis.
     if let Some(sender) = state.tray_cmd_tx.as_ref() {
         let _ = sender.try_send(TrayCmd { play_when_ready });
     } else {

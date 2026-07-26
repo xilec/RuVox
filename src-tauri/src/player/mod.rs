@@ -421,6 +421,138 @@ impl<R: Runtime> Drop for Player<R> {
 }
 
 // ---------------------------------------------------------------------------
+// PlayerBackend trait (object-safe seam for tests)
+// ---------------------------------------------------------------------------
+
+/// Object-safe view of the audio player, held by `AppState` and consumed by
+/// commands, the tray, and the position emitter.
+///
+/// [`Player`] is the production implementation (mpv subprocess, generic over
+/// the Tauri runtime). Tests substitute a fake that records calls and scripts
+/// positions, so playback commands and the position-emitter loop can run
+/// without mpv, a window, or a display. Methods mirror [`Player`]'s public
+/// API one-to-one; behavior contracts are documented on the corresponding
+/// [`Player`] methods.
+pub trait PlayerBackend: Send + Sync {
+    /// See [`Player::load`].
+    fn load(&self, path: &Path, entry_id: String) -> Result<()>;
+    /// See [`Player::play`].
+    fn play(&self) -> Result<()>;
+    /// See [`Player::pause`].
+    fn pause(&self) -> Result<()>;
+    /// See [`Player::resume`].
+    fn resume(&self) -> Result<()>;
+    /// See [`Player::stop`].
+    fn stop(&self) -> Result<()>;
+    /// See [`Player::seek`].
+    fn seek(&self, position_sec: f64) -> Result<()>;
+    /// See [`Player::set_speed`].
+    fn set_speed(&self, speed: f32) -> Result<()>;
+    /// See [`Player::set_volume`].
+    fn set_volume(&self, volume: f32) -> Result<()>;
+    /// See [`Player::position_sec`].
+    fn position_sec(&self) -> Option<f64>;
+    /// See [`Player::duration_sec`].
+    fn duration_sec(&self) -> Option<f64>;
+    /// See [`Player::current_entry_id`].
+    fn current_entry_id(&self) -> Option<String>;
+    /// See [`Player::is_playing`].
+    fn is_playing(&self) -> bool;
+    /// See [`Player::ensure_mpv_alive`].
+    fn ensure_mpv_alive(&self) -> Result<()>;
+    /// See [`Player::mark_destroyed`].
+    fn mark_destroyed(&self);
+
+    /// Flip the internal playing flag off without emitting any event.  Used
+    /// by the position emitter's EOF path, which emits `playback_finished` /
+    /// `playback_stopped` itself and only needs the flag cleared so the next
+    /// tick stops polling.
+    fn clear_is_playing(&self);
+
+    /// True while a seek-suppress window is still open (see [`Player::seek`]
+    /// for the rationale).  An expired window is cleared as a side effect so
+    /// subsequent checks are cheap.  The position emitter calls this once per
+    /// tick.
+    fn seek_suppression_active(&self) -> bool;
+}
+
+impl<R: Runtime> PlayerBackend for Player<R> {
+    fn load(&self, path: &Path, entry_id: String) -> Result<()> {
+        Player::load(self, path, entry_id)
+    }
+
+    fn play(&self) -> Result<()> {
+        Player::play(self)
+    }
+
+    fn pause(&self) -> Result<()> {
+        Player::pause(self)
+    }
+
+    fn resume(&self) -> Result<()> {
+        Player::resume(self)
+    }
+
+    fn stop(&self) -> Result<()> {
+        Player::stop(self)
+    }
+
+    fn seek(&self, position_sec: f64) -> Result<()> {
+        Player::seek(self, position_sec)
+    }
+
+    fn set_speed(&self, speed: f32) -> Result<()> {
+        Player::set_speed(self, speed)
+    }
+
+    fn set_volume(&self, volume: f32) -> Result<()> {
+        Player::set_volume(self, volume)
+    }
+
+    fn position_sec(&self) -> Option<f64> {
+        Player::position_sec(self)
+    }
+
+    fn duration_sec(&self) -> Option<f64> {
+        Player::duration_sec(self)
+    }
+
+    fn current_entry_id(&self) -> Option<String> {
+        Player::current_entry_id(self)
+    }
+
+    fn is_playing(&self) -> bool {
+        Player::is_playing(self)
+    }
+
+    fn ensure_mpv_alive(&self) -> Result<()> {
+        Player::ensure_mpv_alive(self)
+    }
+
+    fn mark_destroyed(&self) {
+        Player::mark_destroyed(self)
+    }
+
+    fn clear_is_playing(&self) {
+        self.state.lock().is_playing = false;
+    }
+
+    fn seek_suppression_active(&self) -> bool {
+        let mut s = self.state.lock();
+        if seek_suppressed(Instant::now(), s.seek_suppress_until) {
+            return true;
+        }
+        // Deadline passed: clear it so the check is cheap on subsequent
+        // ticks. Skip the write entirely when it's already None -- the
+        // common case once the window closes.
+        if s.seek_suppress_until.is_some() {
+            s.seek_suppress_until = None;
+        }
+        false
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Pure position logic (extracted so it can be unit-tested without mpv)
 // ---------------------------------------------------------------------------
 
@@ -458,7 +590,14 @@ fn seek_suppressed(now: Instant, deadline: Option<Instant>) -> bool {
 /// Spawns a Tokio task that emits `playback_position` every 100 ms while
 /// something is playing.  Also detects EOF (position ≥ duration) and emits
 /// `playback_finished` + `playback_stopped`.
-pub fn spawn_position_emitter<R: Runtime + 'static>(player: Arc<Player<R>>, app: AppHandle<R>) {
+///
+/// Generic over [`PlayerBackend`] (not the concrete [`Player`]) so tests can
+/// drive the loop with a scripted fake player; the loop logic itself is
+/// unchanged.
+pub fn spawn_position_emitter<R: Runtime + 'static>(
+    player: Arc<dyn PlayerBackend>,
+    app: AppHandle<R>,
+) {
     // tauri::async_runtime::spawn works inside the setup hook where the
     // bare tokio runtime context is not yet active.
     tauri::async_runtime::spawn(async move {
@@ -485,28 +624,14 @@ pub fn spawn_position_emitter<R: Runtime + 'static>(player: Arc<Player<R>>, app:
                 debug!("playback finished: entry_id={entry_id}");
                 let _ = app.emit("playback_finished", json!({ "entry_id": entry_id }));
                 let _ = app.emit("playback_stopped", json!({}));
-                player.state.lock().is_playing = false;
+                player.clear_is_playing();
                 continue;
             }
 
             // Suppress emits while mpv is still catching up to a recent seek
             // target (see Player::seek for the rationale).  EOF above has
             // already been handled, so skipping ticks here is safe.
-            let suppressed = {
-                let mut s = player.state.lock();
-                if seek_suppressed(Instant::now(), s.seek_suppress_until) {
-                    true
-                } else {
-                    // Deadline passed: clear it so the check is cheap on
-                    // subsequent ticks. Skip the write entirely when it's
-                    // already None -- the common case once the window closes.
-                    if s.seek_suppress_until.is_some() {
-                        s.seek_suppress_until = None;
-                    }
-                    false
-                }
-            };
-            if suppressed {
+            if player.seek_suppression_active() {
                 continue;
             }
 
