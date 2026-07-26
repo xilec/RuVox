@@ -16,7 +16,14 @@
 //! - After every successful respawn the supervisor kicks off `warmup` in the
 //!   background and re-emits `model_loading` / `model_loaded` (or
 //!   `model_error`) so the UI can mirror the lifecycle without a separate
-//!   code path.
+//!   code path. The fresh handle is installed in the slot together with a
+//!   per-generation readiness signal ([`watch::Receiver<WarmupState>`]) fed
+//!   by that warmup task, and `with_retry` waits for it (state !=
+//!   `WarmingUp`) before sending any operation to the new process — real
+//!   Silero ttsd rejects `synthesize` with `model_not_loaded` until warmup
+//!   completes, so retrying immediately would fail despite a successful
+//!   recovery. After a failed warmup operations proceed anyway and surface
+//!   ttsd's own error instead of waiting forever.
 //!
 //! Only [`TtsError::Died`] triggers a respawn. Protocol errors
 //! (`TtsError::Ttsd`) and `TtsError::Timeout` are propagated as-is — they do
@@ -28,7 +35,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use serde_json::json;
 use tokio::process::Command;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{watch, Mutex, RwLock};
 use tokio::time::sleep;
 use tracing::{error, info, warn};
 
@@ -44,6 +51,14 @@ const BACKOFFS: [Duration; 3] = [
     Duration::from_secs(5),
 ];
 
+/// Upper bound for waiting on the post-respawn warmup in `with_retry`.
+/// Silero model load takes seconds to tens of seconds, so 10 minutes is
+/// generous. On expiry the operation proceeds anyway — the request either
+/// surfaces ttsd's own error or times out in the driver, exactly as a failed
+/// warmup would. This guards against a ttsd process that stays alive but
+/// hangs during model load (state stuck in `WarmingUp` forever).
+const WARMUP_WAIT_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+
 /// Emitter callback — abstracts away `tauri::AppHandle` so the supervisor
 /// can be unit/integration-tested without a Tauri runtime.
 pub type Emitter = Arc<dyn Fn(&str, serde_json::Value) + Send + Sync>;
@@ -52,10 +67,32 @@ pub type Emitter = Arc<dyn Fn(&str, serde_json::Value) + Send + Sync>;
 /// spawn attempt — must be idempotent.
 pub type CommandFactory = Arc<dyn Fn() -> Command + Send + Sync>;
 
+/// Readiness of the post-respawn warmup for one generation of the ttsd
+/// process. Stored per handle so a waiter never confuses an old generation's
+/// readiness with the current one.
+#[derive(Debug, Clone)]
+enum WarmupState {
+    /// The background warmup task is still running (model load in progress).
+    WarmingUp,
+    /// Warmup completed; the process accepts `synthesize`.
+    Ready,
+    /// Warmup failed. Operations proceed anyway and surface ttsd's own error
+    /// (e.g. `model_not_loaded`) — no infinite wait, honest error propagation.
+    Failed(String),
+}
+
+/// The live subprocess plus the readiness signal of its post-respawn warmup.
+/// Cloning is cheap (`Arc` + `watch::Receiver`).
+#[derive(Clone)]
+struct LiveHandle {
+    proc: Arc<TtsSubprocess>,
+    ready: watch::Receiver<WarmupState>,
+}
+
 pub struct TtsSupervisor {
     /// Current live handle. `None` only between a failed respawn and the
     /// next successful one.
-    current: RwLock<Option<Arc<TtsSubprocess>>>,
+    current: RwLock<Option<LiveHandle>>,
     /// Held only across respawn attempts to make them single-flight.
     respawn_lock: Mutex<()>,
     factory: CommandFactory,
@@ -71,18 +108,60 @@ impl TtsSupervisor {
     pub fn spawn(factory: CommandFactory, emitter: Emitter) -> Result<Self, TtsError> {
         let cmd = factory();
         let initial = TtsSubprocess::spawn(cmd)?;
+        // Startup semantics are unchanged: the initial handle is `Ready`
+        // immediately — requests are not gated on the app's explicit startup
+        // warmup (`spawn_initial_warmup`), exactly as before. The sender is
+        // dropped on purpose: nothing will ever flip this generation's state.
+        let (_tx, ready) = watch::channel(WarmupState::Ready);
         Ok(Self {
-            current: RwLock::new(Some(Arc::new(initial))),
+            current: RwLock::new(Some(LiveHandle {
+                proc: Arc::new(initial),
+                ready,
+            })),
             respawn_lock: Mutex::new(()),
             factory,
             emitter,
         })
     }
 
-    /// Return the current handle, cloning the inner `Arc` so the read lock
-    /// is released immediately. `None` means we are between respawns.
-    async fn current_handle(&self) -> Option<Arc<TtsSubprocess>> {
+    /// Return the current handle (cheap clone) so the read lock is released
+    /// immediately. `None` means we are between respawns.
+    async fn current_handle(&self) -> Option<LiveHandle> {
         self.current.read().await.clone()
+    }
+
+    /// Wait until the handle's post-respawn warmup leaves [`WarmupState::WarmingUp`].
+    /// Both `Ready` and `Failed` let the operation proceed — after a failed
+    /// warmup ttsd's own error (e.g. `model_not_loaded`) is the honest signal
+    /// to surface. No-op for the initial handle (installed as `Ready`).
+    /// The wait is bounded by [`WARMUP_WAIT_TIMEOUT`]: on expiry the
+    /// operation proceeds anyway (see the constant's doc).
+    async fn await_ready(mut ready: watch::Receiver<WarmupState>) {
+        let wait = async {
+            while matches!(*ready.borrow(), WarmupState::WarmingUp) {
+                if ready.changed().await.is_err() {
+                    // The warmup task was dropped without publishing a final
+                    // state; proceed rather than wait forever.
+                    break;
+                }
+            }
+        };
+        if tokio::time::timeout(WARMUP_WAIT_TIMEOUT, wait)
+            .await
+            .is_err()
+        {
+            warn!(
+                target: "tts::supervisor",
+                "timed out waiting for post-respawn warmup — proceeding; ttsd will surface its own error"
+            );
+            return;
+        }
+        if let WarmupState::Failed(message) = &*ready.borrow() {
+            warn!(
+                target: "tts::supervisor",
+                "post-respawn warmup failed ({message}) — proceeding; ttsd will surface its own error"
+            );
+        }
     }
 
     /// Run an operation against the current ttsd handle, respawning on
@@ -103,10 +182,14 @@ impl TtsSupervisor {
                 }
             };
 
-            match op(handle.clone()).await {
+            // A freshly respawned process is still loading its model; wait
+            // for its warmup before sending anything (see `await_ready`).
+            Self::await_ready(handle.ready.clone()).await;
+
+            match op(Arc::clone(&handle.proc)).await {
                 Err(TtsError::Died) => {
                     info!(target: "tts::supervisor", "operation hit Died — attempting respawn");
-                    self.ensure_respawned(Some(&handle)).await?;
+                    self.ensure_respawned(Some(&handle.proc)).await?;
                     // Loop and retry with the freshly-installed handle.
                 }
                 other => return other,
@@ -126,7 +209,7 @@ impl TtsSupervisor {
         // were waiting on the mutex?
         if let Some(dead) = dead {
             if let Some(current) = self.current.read().await.as_ref() {
-                if !Arc::ptr_eq(current, dead) {
+                if !Arc::ptr_eq(&current.proc, dead) {
                     return Ok(());
                 }
             }
@@ -150,16 +233,24 @@ impl TtsSupervisor {
             match TtsSubprocess::spawn(cmd) {
                 Ok(fresh) => {
                     let fresh = Arc::new(fresh);
+                    // The fresh process still needs its model loaded. Install
+                    // it as WarmingUp together with the readiness receiver;
+                    // the background warmup task flips the state at the end
+                    // and with_retry waits on it before sending requests.
+                    let (state_tx, ready) = watch::channel(WarmupState::WarmingUp);
                     {
                         let mut slot = self.current.write().await;
-                        *slot = Some(Arc::clone(&fresh));
+                        *slot = Some(LiveHandle {
+                            proc: Arc::clone(&fresh),
+                            ready,
+                        });
                     }
                     info!(
                         target: "tts::supervisor",
                         "respawn attempt {} succeeded",
                         attempt + 1
                     );
-                    self.spawn_warmup(fresh);
+                    self.spawn_warmup(fresh, Some(state_tx));
                     return Ok(());
                 }
                 Err(e) => {
@@ -195,16 +286,23 @@ impl TtsSupervisor {
     pub async fn kill_current(&self) {
         if let Some(handle) = self.current_handle().await {
             info!(target: "tts::supervisor", "kill_current: terminating ttsd subprocess");
-            handle.kill_now();
+            handle.proc.kill_now();
         }
     }
 
     /// Run `warmup` against the freshly-spawned handle in a background task,
     /// mirroring the `model_loading` → `model_loaded` / `model_error`
-    /// lifecycle that startup uses. Failures here do not invalidate the
-    /// handle; ttsd treats warmup as idempotent and the next synthesize will
-    /// retrigger model load on the Python side.
-    fn spawn_warmup(&self, handle: Arc<TtsSubprocess>) {
+    /// lifecycle that startup uses. `state_tx` (present for post-respawn
+    /// warmups) is the readiness signal waited on by `with_retry`: it is
+    /// flipped to `Ready`/`Failed` when the warmup settles. Failures here do
+    /// not invalidate the handle; requests then proceed and surface ttsd's
+    /// own error (ttsd does NOT auto-load the model on synthesize — it
+    /// rejects it with `model_not_loaded`).
+    fn spawn_warmup(
+        &self,
+        handle: Arc<TtsSubprocess>,
+        state_tx: Option<watch::Sender<WarmupState>>,
+    ) {
         let emitter = Arc::clone(&self.emitter);
         tokio::spawn(async move {
             emitter("model_loading", json!({}));
@@ -212,10 +310,16 @@ impl TtsSupervisor {
                 Ok(()) => {
                     info!(target: "tts::supervisor", "post-respawn warmup ok");
                     emitter("model_loaded", json!({}));
+                    if let Some(tx) = &state_tx {
+                        let _ = tx.send(WarmupState::Ready);
+                    }
                 }
                 Err(e) => {
                     warn!(target: "tts::supervisor", "post-respawn warmup failed: {e}");
                     emitter("model_error", json!({ "message": e.to_string() }));
+                    if let Some(tx) = &state_tx {
+                        let _ = tx.send(WarmupState::Failed(e.to_string()));
+                    }
                 }
             }
         });
@@ -240,7 +344,9 @@ impl TtsEngine for TtsSupervisor {
     /// callers don't need to duplicate the lifecycle plumbing.
     async fn spawn_initial_warmup(&self) {
         if let Some(handle) = self.current_handle().await {
-            self.spawn_warmup(handle);
+            // The initial handle is already `Ready` (startup semantics), so
+            // no readiness signal to flip here.
+            self.spawn_warmup(handle.proc, None);
         }
     }
 
@@ -279,7 +385,7 @@ impl TtsEngine for TtsSupervisor {
             Some(h) => h,
             None => return Ok(()),
         };
-        handle.shutdown().await
+        handle.proc.shutdown().await
     }
 }
 
@@ -346,7 +452,7 @@ mod tests {
         let sup = TtsSupervisor::spawn(factory, emitter).expect("initial spawn ok");
 
         let dead = sup.current_handle().await.expect("handle present");
-        let res = sup.ensure_respawned(Some(&dead)).await;
+        let res = sup.ensure_respawned(Some(&dead.proc)).await;
         assert!(res.is_err(), "respawn should have failed");
 
         let log = log.lock().unwrap();
@@ -381,7 +487,7 @@ mod tests {
         let mut tasks = Vec::new();
         for _ in 0..4 {
             let sup = Arc::clone(&sup);
-            let dead = Arc::clone(&dead);
+            let dead = Arc::clone(&dead.proc);
             tasks.push(tokio::spawn(async move {
                 sup.ensure_respawned(Some(&dead)).await
             }));
@@ -431,5 +537,82 @@ mod tests {
             !names.contains(&"ttsd_restarting"),
             "non-Died error must not trigger a restart, got events: {names:?}"
         );
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn op_is_not_attempted_while_warming_up() {
+        // `tail -f /dev/null` accepts stdin writes but never reads them and
+        // never prints anything on stdout, so the post-respawn warmup against
+        // it deterministically never completes and the fresh handle stays in
+        // `WarmingUp` forever. The retried operation must not run while that
+        // is the case. (Not `cat`: cat echoes stdin back, which would
+        // complete the warmup with a JSON error and flip the state to
+        // `Failed`, making this test race.)
+        let factory: CommandFactory = Arc::new(|| {
+            let mut cmd = Command::new("tail");
+            cmd.arg("-f").arg("/dev/null");
+            cmd
+        });
+        let (emitter, _log) = recording_emitter();
+        let sup = TtsSupervisor::spawn(factory, emitter).expect("initial spawn ok");
+
+        let dead = sup.current_handle().await.expect("handle present");
+        sup.ensure_respawned(Some(&dead.proc))
+            .await
+            .expect("respawn ok");
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let calls_clone = Arc::clone(&calls);
+        let op_task = tokio::spawn(async move {
+            let _: Result<(), TtsError> = sup
+                .with_retry(move |_h| {
+                    calls_clone.fetch_add(1, Ordering::SeqCst);
+                    async { Ok(()) }
+                })
+                .await;
+        });
+
+        // Let the retry loop run several turns; the op must not fire while
+        // the fresh handle is still warming up. (The paused clock does not
+        // auto-advance here because this task always has work to do, so the
+        // WARMUP_WAIT_TIMEOUT timer inside await_ready cannot fire.)
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            0,
+            "op ran while the handle was still WarmingUp"
+        );
+        op_task.abort();
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn await_ready_gives_up_after_timeout() {
+        // Sender alive but never sends (as when ttsd hangs during model
+        // load): the wait must still terminate via WARMUP_WAIT_TIMEOUT so
+        // requests proceed instead of blocking forever. With a paused clock
+        // and nothing else to do, tokio auto-advances straight to the timer.
+        let (_tx, ready) = watch::channel(WarmupState::WarmingUp);
+        TtsSupervisor::await_ready(ready).await;
+    }
+
+    #[tokio::test]
+    async fn await_ready_returns_after_failed_warmup() {
+        // A failed warmup must not deadlock the retry loop: waiters are
+        // released so the operation can run and surface ttsd's own error.
+        let (tx, ready) = watch::channel(WarmupState::WarmingUp);
+        tx.send(WarmupState::Failed("model load blew up".to_string()))
+            .expect("receiver alive");
+        TtsSupervisor::await_ready(ready).await;
+    }
+
+    #[tokio::test]
+    async fn await_ready_is_noop_for_initial_ready_handle() {
+        // The initial handle is installed as Ready (startup semantics) — no
+        // waiting happens even though its sender is long gone.
+        let (tx, ready) = watch::channel(WarmupState::Ready);
+        drop(tx);
+        TtsSupervisor::await_ready(ready).await;
     }
 }
