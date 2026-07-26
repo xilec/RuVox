@@ -301,6 +301,17 @@ fn spawn_tray_handler<R: Runtime + 'static>(
     let (tray_tx, mut tray_rx) = tokio::sync::mpsc::channel::<TrayCmd>(16);
 
     tauri::async_runtime::spawn(async move {
+        let deps = SynthesisDeps {
+            app: app.clone(),
+            storage: Arc::clone(&storage),
+            tts: Arc::clone(&tts),
+            piper_voices_dir,
+            emitter,
+            player,
+            pipeline,
+            synthesis_tasks,
+            synthesize_entered,
+        };
         while let Some(cmd) = tray_rx.recv().await {
             // Read clipboard on a blocking thread (required on Linux).
             let text_result = tokio::task::spawn_blocking(|| {
@@ -336,19 +347,7 @@ fn spawn_tray_handler<R: Runtime + 'static>(
             let entry_id = entry.id;
             let _ = app.emit("entry_updated", json!({ "entry": entry }));
 
-            spawn_synthesis_pub(
-                app.clone(),
-                Arc::clone(&storage),
-                Arc::clone(&tts),
-                piper_voices_dir.clone(),
-                Arc::clone(&emitter),
-                Arc::clone(&player),
-                Arc::clone(&pipeline),
-                Arc::clone(&synthesis_tasks),
-                Arc::clone(&synthesize_entered),
-                entry_id,
-                cmd.play_when_ready,
-            );
+            spawn_synthesis(deps.clone(), entry_id, cmd.play_when_ready);
         }
     });
 

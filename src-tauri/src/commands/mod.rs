@@ -100,34 +100,55 @@ fn char_mapping_to_entries(mapping: &CharMapping) -> Vec<CharMappingEntry> {
 
 // ── Background synthesis ───────────────────────────────────────────────────────
 
-/// Public alias used by the tray module to avoid duplicating the synthesis logic.
-#[allow(clippy::too_many_arguments)]
-pub fn spawn_synthesis_pub<R: Runtime + 'static>(
-    app: AppHandle<R>,
-    storage: Arc<StorageService>,
-    tts: Arc<dyn TtsEngine>,
-    piper_voices_dir: PathBuf,
-    emitter: crate::tts::supervisor::Emitter,
-    player: Arc<dyn crate::player::PlayerBackend>,
-    pipeline: Arc<parking_lot::Mutex<crate::pipeline::TTSPipeline>>,
-    synthesis_tasks: Arc<Mutex<HashMap<EntryId, AbortHandle>>>,
-    synthesize_entered: Arc<Mutex<HashSet<EntryId>>>,
-    entry_id: EntryId,
-    play_when_ready: bool,
-) {
-    spawn_synthesis(
-        app,
-        storage,
-        tts,
-        piper_voices_dir,
-        emitter,
-        player,
-        pipeline,
-        synthesis_tasks,
-        synthesize_entered,
-        entry_id,
-        play_when_ready,
-    );
+/// Everything [`spawn_synthesis`] needs, snapshotted in one shot so call
+/// sites stay one line. Built from the managed state via
+/// [`SynthesisDeps::from_state`] in commands; the tray handler (which runs
+/// before the state exists) fills the struct literal directly.
+pub struct SynthesisDeps<R: Runtime> {
+    pub app: AppHandle<R>,
+    pub storage: Arc<StorageService>,
+    pub tts: Arc<dyn TtsEngine>,
+    pub piper_voices_dir: PathBuf,
+    pub emitter: crate::tts::supervisor::Emitter,
+    pub player: Arc<dyn crate::player::PlayerBackend>,
+    pub pipeline: Arc<Mutex<TTSPipeline>>,
+    pub synthesis_tasks: Arc<Mutex<HashMap<EntryId, AbortHandle>>>,
+    pub synthesize_entered: Arc<Mutex<HashSet<EntryId>>>,
+}
+
+// Manual impl: `#[derive(Clone)]` would add an `R: Clone` bound, which
+// `Runtime` does not guarantee (every field is cheap-Clone regardless).
+impl<R: Runtime> Clone for SynthesisDeps<R> {
+    fn clone(&self) -> Self {
+        Self {
+            app: self.app.clone(),
+            storage: Arc::clone(&self.storage),
+            tts: Arc::clone(&self.tts),
+            piper_voices_dir: self.piper_voices_dir.clone(),
+            emitter: Arc::clone(&self.emitter),
+            player: Arc::clone(&self.player),
+            pipeline: Arc::clone(&self.pipeline),
+            synthesis_tasks: Arc::clone(&self.synthesis_tasks),
+            synthesize_entered: Arc::clone(&self.synthesize_entered),
+        }
+    }
+}
+
+impl<R: Runtime> SynthesisDeps<R> {
+    /// Snapshot the synthesis-relevant pieces of the managed app state.
+    pub fn from_state(app: &AppHandle<R>, state: &AppState) -> Self {
+        Self {
+            app: app.clone(),
+            storage: Arc::clone(&state.storage),
+            tts: Arc::clone(&state.tts),
+            piper_voices_dir: state.piper_voices_dir.clone(),
+            emitter: Arc::clone(&state.emitter),
+            player: Arc::clone(&state.player),
+            pipeline: Arc::clone(&state.pipeline),
+            synthesis_tasks: Arc::clone(&state.synthesis_tasks),
+            synthesize_entered: Arc::clone(&state.synthesize_entered),
+        }
+    }
 }
 
 /// Distinct failure points for a synthesis task. Each variant maps to the
@@ -447,20 +468,22 @@ fn autoplay(player: &dyn crate::player::PlayerBackend, audio_path: PathBuf, entr
 /// `cancel_synthesis` can abort it; a detached reaper removes the task's
 /// registry entry once it terminates, taking care not to remove a newer
 /// task's handle for the same entry.
-#[allow(clippy::too_many_arguments)]
-fn spawn_synthesis<R: Runtime + 'static>(
-    app: AppHandle<R>,
-    storage: Arc<StorageService>,
-    tts: Arc<dyn TtsEngine>,
-    piper_voices_dir: PathBuf,
-    emitter: crate::tts::supervisor::Emitter,
-    player: Arc<dyn crate::player::PlayerBackend>,
-    pipeline: Arc<Mutex<TTSPipeline>>,
-    synthesis_tasks: Arc<Mutex<HashMap<EntryId, AbortHandle>>>,
-    synthesize_entered: Arc<Mutex<HashSet<EntryId>>>,
+pub fn spawn_synthesis<R: Runtime + 'static>(
+    deps: SynthesisDeps<R>,
     entry_id: EntryId,
     play_when_ready: bool,
 ) {
+    let SynthesisDeps {
+        app,
+        storage,
+        tts,
+        piper_voices_dir,
+        emitter,
+        player,
+        pipeline,
+        synthesis_tasks,
+        synthesize_entered,
+    } = deps;
     let entered_for_task = Arc::clone(&synthesize_entered);
     let tasks_for_cleanup = Arc::clone(&synthesis_tasks);
     let entered_for_cleanup = Arc::clone(&synthesize_entered);
@@ -644,15 +667,7 @@ fn ingest_text<R: Runtime>(
     emit_entry_updated(&app, &entry);
 
     spawn_synthesis(
-        app,
-        Arc::clone(&state.storage),
-        Arc::clone(&state.tts),
-        state.piper_voices_dir.clone(),
-        Arc::clone(&state.emitter),
-        Arc::clone(&state.player),
-        Arc::clone(&state.pipeline),
-        Arc::clone(&state.synthesis_tasks),
-        Arc::clone(&state.synthesize_entered),
+        SynthesisDeps::from_state(&app, state),
         entry_id,
         play_when_ready,
     );
@@ -855,19 +870,7 @@ pub async fn regenerate_entry<R: Runtime>(
         .map_err(CommandError::from)?;
     emit_entry_updated(&app, &entry);
 
-    spawn_synthesis(
-        app,
-        Arc::clone(&state.storage),
-        Arc::clone(&state.tts),
-        state.piper_voices_dir.clone(),
-        Arc::clone(&state.emitter),
-        Arc::clone(&state.player),
-        Arc::clone(&state.pipeline),
-        Arc::clone(&state.synthesis_tasks),
-        Arc::clone(&state.synthesize_entered),
-        uuid,
-        false,
-    );
+    spawn_synthesis(SynthesisDeps::from_state(&app, &state), uuid, false);
 
     Ok(())
 }
