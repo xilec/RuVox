@@ -378,6 +378,13 @@ impl TtsEngine for TtsSupervisor {
         .await
     }
 
+    /// Forward to the inherent [`TtsSupervisor::kill_current`] so callers
+    /// behind `Arc<dyn TtsEngine>` (e.g. `EngineSwitcher`) can reach it
+    /// without storing the concrete supervisor alongside the trait object.
+    async fn kill_current(&self) {
+        TtsSupervisor::kill_current(self).await;
+    }
+
     /// Graceful shutdown. Does *not* respawn on Died — at this point we are
     /// tearing down anyway.
     async fn shutdown(&self) -> Result<(), TtsError> {
@@ -389,13 +396,15 @@ impl TtsEngine for TtsSupervisor {
     }
 }
 
-/// Helpers shared between unit tests in this module and integration tests
-/// in `tests/supervisor.rs`. Gated on `cfg(test)` (always available to unit
-/// tests in this crate) and `feature = "test-helpers"` (so integration test
-/// crates can opt in without leaking helpers into release builds).
+/// Helpers shared between unit tests in this crate (`test_support`, module
+/// tests) and integration tests in `tests/`. Gated on `cfg(test)` (always
+/// available to unit tests in this crate) and `feature = "test-helpers"`
+/// (so integration test crates can opt in without leaking helpers into
+/// release builds).
 #[cfg(any(test, feature = "test-helpers"))]
 pub mod test_helpers {
     use super::*;
+    use std::time::{Duration, Instant};
 
     pub type EventLog = Arc<std::sync::Mutex<Vec<(String, serde_json::Value)>>>;
 
@@ -407,6 +416,29 @@ pub mod test_helpers {
             log_clone.lock().unwrap().push((name.to_string(), payload));
         });
         (emitter, log)
+    }
+
+    /// Poll `predicate` (every 10 ms) until it holds or `timeout` elapses.
+    ///
+    /// Async side effects (spawned synthesis, background respawn warmup)
+    /// land after the triggering call returns, so a successful return does
+    /// *not* mean they have happened yet — tests must await them. Panics
+    /// naming `what` on timeout.
+    pub async fn wait_until<F>(what: &str, timeout: Duration, mut predicate: F)
+    where
+        F: FnMut() -> bool,
+    {
+        let start = Instant::now();
+        loop {
+            if predicate() {
+                return;
+            }
+            assert!(
+                start.elapsed() < timeout,
+                "timed out after {timeout:?} waiting for {what}"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
     }
 }
 

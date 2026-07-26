@@ -70,6 +70,12 @@ pub trait TtsEngine: Send + Sync {
         char_mapping: Option<Vec<CharMappingEntry>>,
     ) -> Result<SynthesizeOutput, TtsError>;
 
+    /// Forcibly terminate the engine's current in-flight work (for Silero,
+    /// the ttsd subprocess). Default is a no-op: engines with no external
+    /// subprocess (Piper, test stubs) have nothing to kill. Called by
+    /// `cancel_synthesis` when the cancelled entry had entered the TTS stage.
+    async fn kill_current(&self) {}
+
     /// Graceful shutdown. After this call the engine should release model
     /// memory / subprocess handles and refuse subsequent requests.
     async fn shutdown(&self) -> Result<(), TtsError>;

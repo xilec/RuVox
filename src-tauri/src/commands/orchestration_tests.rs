@@ -17,6 +17,42 @@ fn audio_dir(t: &TestApp) -> PathBuf {
     t.state().storage.cache_dir().join("audio")
 }
 
+/// Parse the id string returned by the commands into the storage UUID.
+fn entry_uuid(id: &str) -> uuid::Uuid {
+    id.parse().unwrap()
+}
+
+/// Paths of an entry's audio file and timestamps sidecar in the storage
+/// audio directory.
+fn audio_paths(t: &TestApp, uuid: &uuid::Uuid) -> (PathBuf, PathBuf) {
+    let dir = audio_dir(t);
+    (
+        dir.join(format!("{uuid}.wav")),
+        dir.join(format!("{uuid}.timestamps.json")),
+    )
+}
+
+/// Wait until the entry reaches `status` in storage.
+async fn wait_entry_status(t: &TestApp, uuid: &uuid::Uuid, status: EntryStatus) {
+    wait_until(&format!("entry status {status:?}"), TIMEOUT, || {
+        t.state()
+            .storage
+            .get_entry(uuid)
+            .is_some_and(|e| e.status == status)
+    })
+    .await;
+}
+
+/// Payload of the most recent `entry_updated` event in the log.
+fn last_entry_updated(log: &[(String, serde_json::Value)]) -> serde_json::Value {
+    log.iter()
+        .rev()
+        .find(|(n, _)| n == "entry_updated")
+        .unwrap_or_else(|| panic!("no entry_updated event in {log:?}"))
+        .1
+        .clone()
+}
+
 /// Add an entry through the real ingestion command and wait until the
 /// background synthesis (StubEngine) has marked it `ready`.
 async fn add_ready_entry(t: &TestApp) -> String {
@@ -28,14 +64,7 @@ async fn add_ready_entry(t: &TestApp) -> String {
     )
     .await
     .unwrap();
-    wait_until("entry ready", TIMEOUT, || {
-        let uuid: uuid::Uuid = id.parse().unwrap();
-        t.state()
-            .storage
-            .get_entry(&uuid)
-            .is_some_and(|e| e.status == EntryStatus::Ready)
-    })
-    .await;
+    wait_entry_status(t, &entry_uuid(&id), EntryStatus::Ready).await;
     id
 }
 
@@ -49,10 +78,8 @@ async fn add_ready_entry(t: &TestApp) -> String {
 async fn delete_entry_stops_playback_and_removes_entry_and_files() {
     let t = build_test_app();
     let id = add_ready_entry(&t).await;
-    let uuid: uuid::Uuid = id.parse().unwrap();
-    let dir = audio_dir(&t);
-    let audio_file = dir.join(format!("{uuid}.wav"));
-    let ts_file = dir.join(format!("{uuid}.timestamps.json"));
+    let uuid = entry_uuid(&id);
+    let (audio_file, ts_file) = audio_paths(&t, &uuid);
     assert!(audio_file.exists());
     assert!(ts_file.exists());
 
@@ -111,8 +138,8 @@ async fn delete_entry_of_other_entry_keeps_playback_running() {
 async fn regenerate_entry_replaces_audio_and_resynthesizes() {
     let t = build_test_app();
     let id = add_ready_entry(&t).await;
-    let uuid: uuid::Uuid = id.parse().unwrap();
-    let audio_file = audio_dir(&t).join(format!("{uuid}.wav"));
+    let uuid = entry_uuid(&id);
+    let (audio_file, _) = audio_paths(&t, &uuid);
     // Sentinel content: proves the new file was written from scratch,
     // not just left over from the first synthesis.
     std::fs::write(&audio_file, b"old-marker").unwrap();
@@ -122,13 +149,7 @@ async fn regenerate_entry_replaces_audio_and_resynthesizes() {
         .await
         .unwrap();
 
-    wait_until("entry ready again", TIMEOUT, || {
-        t.state()
-            .storage
-            .get_entry(&uuid)
-            .is_some_and(|e| e.status == EntryStatus::Ready)
-    })
-    .await;
+    wait_entry_status(&t, &uuid, EntryStatus::Ready).await;
 
     assert_eq!(
         std::fs::read(&audio_file).unwrap().as_slice(),
@@ -160,14 +181,8 @@ async fn regenerate_entry_rejects_processing_entry_and_synthesis_continues() {
     )
     .await
     .unwrap();
-    let uuid: uuid::Uuid = id.parse().unwrap();
-    wait_until("entry processing", TIMEOUT, || {
-        t.state()
-            .storage
-            .get_entry(&uuid)
-            .is_some_and(|e| e.status == EntryStatus::Processing)
-    })
-    .await;
+    let uuid = entry_uuid(&id);
+    wait_entry_status(&t, &uuid, EntryStatus::Processing).await;
 
     let err = regenerate_entry(t.app.handle().clone(), t.state(), id.clone())
         .await
@@ -181,13 +196,7 @@ async fn regenerate_entry_rejects_processing_entry_and_synthesis_continues() {
 
     // Releasing the gate lets the original synthesis finish normally.
     t.engine.release_synthesis();
-    wait_until("entry ready after gate release", TIMEOUT, || {
-        t.state()
-            .storage
-            .get_entry(&uuid)
-            .is_some_and(|e| e.status == EntryStatus::Ready)
-    })
-    .await;
+    wait_entry_status(&t, &uuid, EntryStatus::Ready).await;
 }
 
 // ── cancel_synthesis (new #129 semantics) ─────────────────────────────
@@ -204,7 +213,7 @@ async fn cancel_synthesis_aborts_in_flight_task_and_keeps_entry_pending() {
     let id = add_text_entry(t.app.handle().clone(), t.state(), "текст".to_string(), true)
         .await
         .unwrap();
-    let uuid: uuid::Uuid = id.parse().unwrap();
+    let uuid = entry_uuid(&id);
     // Deterministic "inside the TTS stage": the marker is set right
     // before the (blocked) engine await.
     wait_until("entry entered TTS stage", TIMEOUT, || {
@@ -224,11 +233,7 @@ async fn cancel_synthesis_aborts_in_flight_task_and_keeps_entry_pending() {
     // The last entry_updated is the reset to pending.
     {
         let log = events.lock().unwrap();
-        let (_, payload) = log
-            .iter()
-            .rev()
-            .find(|(n, _)| n == "entry_updated")
-            .unwrap();
+        let payload = last_entry_updated(&log);
         assert_eq!(payload["entry"]["id"], id);
         assert_eq!(payload["entry"]["status"], "pending");
     }
@@ -290,7 +295,7 @@ async fn play_entry_loads_audio_and_starts_playback() {
 
     play_entry(t.state(), id.clone()).await.unwrap();
 
-    let expected_path = audio_dir(&t).join(format!("{id}.wav"));
+    let (expected_path, _) = audio_paths(&t, &entry_uuid(&id));
     let calls = t.player.calls();
     assert_eq!(calls.len(), 2);
     match &calls[0] {
@@ -345,10 +350,8 @@ async fn update_config_failed_engine_switch_preserves_previous_config() {
 async fn delete_audio_resets_entry_and_emits_entry_updated() {
     let t = build_test_app();
     let id = add_ready_entry(&t).await;
-    let uuid: uuid::Uuid = id.parse().unwrap();
-    let dir = audio_dir(&t);
-    let audio_file = dir.join(format!("{uuid}.wav"));
-    let ts_file = dir.join(format!("{uuid}.timestamps.json"));
+    let uuid = entry_uuid(&id);
+    let (audio_file, ts_file) = audio_paths(&t, &uuid);
 
     let events = record_events(&t.app, &["entry_updated"]);
     delete_audio(t.app.handle().clone(), t.state(), id.clone())
@@ -364,8 +367,7 @@ async fn delete_audio_resets_entry_and_emits_entry_updated() {
     assert!(!ts_file.exists());
 
     let log = events.lock().unwrap();
-    let (name, payload) = log.last().unwrap();
-    assert_eq!(name, "entry_updated");
+    let payload = last_entry_updated(&log);
     assert_eq!(payload["entry"]["id"], id);
     assert_eq!(payload["entry"]["status"], "pending");
     assert!(payload["entry"]["audio_path"].is_null());
@@ -388,7 +390,7 @@ async fn tts_failure_emits_entry_updated_error_then_tts_error() {
     )
     .await
     .unwrap();
-    let uuid: uuid::Uuid = id.parse().unwrap();
+    let uuid = entry_uuid(&id);
     // Wait on the event, not the storage status: the status flips to
     // `error` *before* the events are emitted, so polling the status
     // would race the emits. `tts_error` is emitted last, so once it is
@@ -457,4 +459,92 @@ async fn preview_normalize_returns_text_without_history_or_audio_side_effects() 
     assert!(get_entries(t.state()).await.unwrap().is_empty());
     assert_eq!(std::fs::read_dir(audio_dir(&t)).unwrap().count(), 0);
     assert!(t.state().synthesis_tasks.lock().is_empty());
+}
+
+// ── set_speed / set_volume range guards ──────────────────────────────
+
+/// The real `set_speed` command accepts the documented inclusive range
+/// [0.5, 2.0], forwards each value to the player, and persists the last
+/// one to `speech_rate`.
+#[tokio::test(flavor = "multi_thread")]
+async fn set_speed_accepts_inclusive_bounds_and_persists() {
+    let t = build_test_app();
+
+    for speed in [0.5_f32, 1.0, 2.0] {
+        set_speed(t.state(), speed).await.unwrap();
+    }
+
+    let speeds: Vec<f32> = t
+        .player
+        .calls()
+        .iter()
+        .filter_map(|c| match c {
+            PlayerCall::SetSpeed(s) => Some(*s),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(speeds, vec![0.5, 1.0, 2.0]);
+    assert_eq!(t.state().storage.load_config().unwrap().speech_rate, 2.0);
+}
+
+/// Speeds outside [0.5, 2.0] are rejected with `config_error` (not
+/// clamped) and never reach the player.
+#[tokio::test(flavor = "multi_thread")]
+async fn set_speed_rejects_out_of_range() {
+    let t = build_test_app();
+
+    for speed in [0.499_999_f32, 2.000_001, -1.0] {
+        let err = set_speed(t.state(), speed).await.unwrap_err();
+        assert!(
+            matches!(err, CommandError::ConfigError { .. }),
+            "speed {speed} must be rejected with config_error, got {err:?}"
+        );
+    }
+    assert!(t
+        .player
+        .calls()
+        .iter()
+        .all(|c| !matches!(c, PlayerCall::SetSpeed(_))));
+}
+
+/// The real `set_volume` command accepts the documented inclusive range
+/// [0.0, 1.0] and forwards each value to the player.
+#[tokio::test(flavor = "multi_thread")]
+async fn set_volume_accepts_inclusive_bounds() {
+    let t = build_test_app();
+
+    for volume in [0.0_f32, 0.5, 1.0] {
+        set_volume(t.state(), volume).await.unwrap();
+    }
+
+    let volumes: Vec<f32> = t
+        .player
+        .calls()
+        .iter()
+        .filter_map(|c| match c {
+            PlayerCall::SetVolume(v) => Some(*v),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(volumes, vec![0.0, 0.5, 1.0]);
+}
+
+/// Volumes outside [0.0, 1.0] are rejected with `config_error` (not
+/// clamped) and never reach the player.
+#[tokio::test(flavor = "multi_thread")]
+async fn set_volume_rejects_out_of_range() {
+    let t = build_test_app();
+
+    for volume in [-0.000_001_f32, 1.000_001, -1.0] {
+        let err = set_volume(t.state(), volume).await.unwrap_err();
+        assert!(
+            matches!(err, CommandError::ConfigError { .. }),
+            "volume {volume} must be rejected with config_error, got {err:?}"
+        );
+    }
+    assert!(t
+        .player
+        .calls()
+        .iter()
+        .all(|c| !matches!(c, PlayerCall::SetVolume(_))));
 }

@@ -220,32 +220,28 @@ fn build_engine<R: Runtime>(
     let want_silero = config.engine == "silero";
     let silero_available = want_silero && tts::availability::probe(&ttsd_dir).silero.available;
 
-    let (initial_engine, initial_kind, initial_voice, initial_silero) = if silero_available {
+    let (initial_engine, initial_kind, initial_voice) = if silero_available {
         match try_build_silero(&ttsd_dir, Arc::clone(&emitter)) {
             Ok(sup) => {
-                let engine: Arc<dyn tts::TtsEngine> = sup.clone();
-                (engine, tts::EngineKind::Silero, None, Some(sup))
+                let engine: Arc<dyn tts::TtsEngine> = sup;
+                (engine, tts::EngineKind::Silero, None)
             }
             Err(e) => {
                 tracing::warn!("Silero probe passed but spawn failed ({e}); falling back to Piper");
-                let (engine, kind, voice) =
-                    build_piper_initial(&voices_dir, &config.piper_voice, &emitter);
-                (engine, kind, voice, None)
+                build_piper_initial(&voices_dir, &config.piper_voice, &emitter)
             }
         }
     } else {
         if want_silero {
             tracing::info!("Silero requested in config but unavailable; serving Piper this run");
         }
-        let (engine, kind, voice) = build_piper_initial(&voices_dir, &config.piper_voice, &emitter);
-        (engine, kind, voice, None)
+        build_piper_initial(&voices_dir, &config.piper_voice, &emitter)
     };
 
     let switcher = Arc::new(tts::EngineSwitcher::new(
         initial_engine,
         initial_kind,
         initial_voice,
-        initial_silero,
         voices_dir.clone(),
         ttsd_dir.clone(),
         Arc::clone(&emitter),
@@ -305,6 +301,17 @@ fn spawn_tray_handler<R: Runtime + 'static>(
     let (tray_tx, mut tray_rx) = tokio::sync::mpsc::channel::<TrayCmd>(16);
 
     tauri::async_runtime::spawn(async move {
+        let deps = SynthesisDeps {
+            app: app.clone(),
+            storage: Arc::clone(&storage),
+            tts: Arc::clone(&tts),
+            piper_voices_dir,
+            emitter,
+            player,
+            pipeline,
+            synthesis_tasks,
+            synthesize_entered,
+        };
         while let Some(cmd) = tray_rx.recv().await {
             // Read clipboard on a blocking thread (required on Linux).
             let text_result = tokio::task::spawn_blocking(|| {
@@ -340,19 +347,7 @@ fn spawn_tray_handler<R: Runtime + 'static>(
             let entry_id = entry.id;
             let _ = app.emit("entry_updated", json!({ "entry": entry }));
 
-            spawn_synthesis_pub(
-                app.clone(),
-                Arc::clone(&storage),
-                Arc::clone(&tts),
-                piper_voices_dir.clone(),
-                Arc::clone(&emitter),
-                Arc::clone(&player),
-                Arc::clone(&pipeline),
-                Arc::clone(&synthesis_tasks),
-                Arc::clone(&synthesize_entered),
-                entry_id,
-                cmd.play_when_ready,
-            );
+            spawn_synthesis(deps.clone(), entry_id, cmd.play_when_ready);
         }
     });
 
