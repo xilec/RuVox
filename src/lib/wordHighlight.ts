@@ -3,6 +3,19 @@ import type { WordTimestamp } from './tauri';
 const HIGHLIGHT_CLASS = 'word-highlight';
 
 /**
+ * Whether word highlighting works for the given viewer format.
+ *
+ * Plain and markdown both emit data-orig-* word spans; HTML mode uses
+ * HtmlCharSpan sentinel (0/0), so there is nothing to highlight against.
+ * TODO(U5): emit a proper char-mapping from the HTML pipeline.
+ */
+export function highlightingEnabled(
+  format: 'plain' | 'markdown' | 'html',
+): boolean {
+  return format !== 'html';
+}
+
+/**
  * Binary search: find the index of the timestamp active at `positionSec`.
  * Returns -1 if no timestamp covers this position.
  */

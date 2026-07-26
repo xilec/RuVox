@@ -18,8 +18,9 @@ import {
   findActiveTimestamp,
   applyHighlight,
   clearHighlight,
+  highlightingEnabled,
 } from '../lib/wordHighlight';
-import { wrapWordsWithOrigPos } from '../lib/wordSpans';
+import { plainToWordHtml } from '../lib/plainTextHtml';
 import classes from './TextViewer.module.css';
 
 // TODO(B1/F4): add `format: "plain" | "markdown" | "html"` to TextEntry schema
@@ -205,8 +206,7 @@ export function TextViewer({ entry }: Props) {
 
         // Plain mode now emits data-orig-* word spans, so highlighting works.
         // HTML mode still uses HtmlCharSpan sentinel (0/0) — disabled below.
-        // TODO(U5): emit a proper char-mapping from the HTML pipeline.
-        if (format === 'html') return;
+        if (!highlightingEnabled(format)) return;
 
         const newIdx = findActiveTimestamp(timestamps, position_sec);
         const prevIdx = activeIdxRef.current;
@@ -301,17 +301,3 @@ export function TextViewer({ entry }: Props) {
   );
 }
 
-function plainToWordHtml(s: string): string {
-  // Split on newlines so we can insert <br> between lines while still
-  // wrapping each word in a data-orig-* span.  Offsets track the position of
-  // each line within the original source text.
-  const lines = s.split('\n');
-  const parts: string[] = [];
-  let offset = 0;
-  for (let i = 0; i < lines.length; i += 1) {
-    parts.push(wrapWordsWithOrigPos(lines[i], offset));
-    offset += lines[i].length + 1; // +1 for the consumed \n
-    if (i < lines.length - 1) parts.push('<br>');
-  }
-  return parts.join('');
-}
