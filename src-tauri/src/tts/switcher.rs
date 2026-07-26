@@ -37,6 +37,10 @@ struct Slot {
     /// Currently-loaded Piper voice id, when the active engine is Piper.
     /// Used to decide whether a `piper_voice` change requires a rebuild.
     piper_voice: Option<String>,
+    /// Concrete supervisor while the active engine is Silero. Reaches
+    /// [`TtsSupervisor::kill_current`] through the `Arc<dyn TtsEngine>`
+    /// type erasure for `cancel_synthesis`. `None` while Piper is active.
+    silero: Option<Arc<TtsSupervisor>>,
 }
 
 const KIND_PIPER: u8 = 0;
@@ -60,11 +64,14 @@ impl EngineSwitcher {
     /// Construct a switcher around an already-built initial engine. The
     /// caller must pass `initial_kind` matching the engine's `kind()` and,
     /// when the engine is Piper, the voice id its `default_voice` was
-    /// constructed with.
+    /// constructed with. When the initial engine is Silero,
+    /// `initial_silero` must carry the same supervisor behind `initial` so
+    /// [`EngineSwitcher::kill_current_ttsd`] can reach it.
     pub fn new(
         initial: Arc<dyn TtsEngine>,
         initial_kind: EngineKind,
         initial_piper_voice: Option<String>,
+        initial_silero: Option<Arc<TtsSupervisor>>,
         piper_voices_dir: PathBuf,
         ttsd_dir: PathBuf,
         emitter: Emitter,
@@ -73,6 +80,7 @@ impl EngineSwitcher {
             inner: RwLock::new(Slot {
                 engine: initial,
                 piper_voice: initial_piper_voice,
+                silero: initial_silero,
             }),
             kind: AtomicU8::new(kind_to_u8(initial_kind)),
             piper_voices_dir,
@@ -105,17 +113,19 @@ impl EngineSwitcher {
             return Ok(());
         }
 
-        let (new_engine, new_voice) = match target_kind {
+        let (new_engine, new_voice, new_silero) = match target_kind {
             EngineKind::Piper => {
                 let engine = self.build_piper(target_piper_voice.to_string());
                 (
                     engine as Arc<dyn TtsEngine>,
                     Some(target_piper_voice.to_string()),
+                    None,
                 )
             }
             EngineKind::Silero => {
-                let engine = self.build_silero()?;
-                (engine as Arc<dyn TtsEngine>, None)
+                let supervisor = self.build_silero()?;
+                let engine: Arc<dyn TtsEngine> = supervisor.clone();
+                (engine, None, Some(supervisor))
             }
         };
 
@@ -123,6 +133,7 @@ impl EngineSwitcher {
             let mut slot = self.inner.write().await;
             slot.engine = Arc::clone(&new_engine);
             slot.piper_voice = new_voice;
+            slot.silero = new_silero;
         }
         self.kind.store(kind_to_u8(target_kind), Ordering::SeqCst);
 
@@ -152,6 +163,17 @@ impl EngineSwitcher {
 
     async fn current_engine(&self) -> Arc<dyn TtsEngine> {
         Arc::clone(&self.inner.read().await.engine)
+    }
+
+    /// Terminate the current ttsd subprocess when Silero is the active
+    /// engine; no-op for Piper (in-process synthesis has no subprocess to
+    /// kill). See [`TtsSupervisor::kill_current`]. Called by
+    /// `cancel_synthesis` when the cancelled entry had entered the TTS stage.
+    pub async fn kill_current_ttsd(&self) {
+        let silero = self.inner.read().await.silero.clone();
+        if let Some(supervisor) = silero {
+            supervisor.kill_current().await;
+        }
     }
 }
 
@@ -223,6 +245,7 @@ mod tests {
             initial,
             EngineKind::Piper,
             Some("ruslan".to_string()),
+            None,
             voices_dir,
             ttsd_dir,
             emitter,

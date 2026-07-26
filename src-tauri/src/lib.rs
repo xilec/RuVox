@@ -7,6 +7,7 @@ pub mod storage;
 pub mod tray;
 pub mod tts;
 
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -216,28 +217,32 @@ fn build_engine<R: Runtime>(
     let want_silero = config.engine == "silero";
     let silero_available = want_silero && tts::availability::probe(&ttsd_dir).silero.available;
 
-    let (initial_engine, initial_kind, initial_voice) = if silero_available {
+    let (initial_engine, initial_kind, initial_voice, initial_silero) = if silero_available {
         match try_build_silero(&ttsd_dir, Arc::clone(&emitter)) {
             Ok(sup) => {
-                let engine: Arc<dyn tts::TtsEngine> = sup;
-                (engine, tts::EngineKind::Silero, None)
+                let engine: Arc<dyn tts::TtsEngine> = sup.clone();
+                (engine, tts::EngineKind::Silero, None, Some(sup))
             }
             Err(e) => {
                 tracing::warn!("Silero probe passed but spawn failed ({e}); falling back to Piper");
-                build_piper_initial(&voices_dir, &config.piper_voice, &emitter)
+                let (engine, kind, voice) =
+                    build_piper_initial(&voices_dir, &config.piper_voice, &emitter);
+                (engine, kind, voice, None)
             }
         }
     } else {
         if want_silero {
             tracing::info!("Silero requested in config but unavailable; serving Piper this run");
         }
-        build_piper_initial(&voices_dir, &config.piper_voice, &emitter)
+        let (engine, kind, voice) = build_piper_initial(&voices_dir, &config.piper_voice, &emitter);
+        (engine, kind, voice, None)
     };
 
     let switcher = Arc::new(tts::EngineSwitcher::new(
         initial_engine,
         initial_kind,
         initial_voice,
+        initial_silero,
         voices_dir.clone(),
         ttsd_dir.clone(),
         Arc::clone(&emitter),
@@ -290,6 +295,8 @@ fn spawn_tray_handler<R: Runtime + 'static>(
     emitter: tts::supervisor::Emitter,
     player: Arc<Player<R>>,
     pipeline: Arc<Mutex<TTSPipeline>>,
+    synthesis_tasks: Arc<Mutex<HashMap<storage::schema::EntryId, tokio::task::AbortHandle>>>,
+    synthesize_entered: Arc<Mutex<HashSet<storage::schema::EntryId>>>,
     app: AppHandle<R>,
 ) -> tokio::sync::mpsc::Sender<TrayCmd> {
     let (tray_tx, mut tray_rx) = tokio::sync::mpsc::channel::<TrayCmd>(16);
@@ -338,6 +345,8 @@ fn spawn_tray_handler<R: Runtime + 'static>(
                 Arc::clone(&emitter),
                 Arc::clone(&player),
                 Arc::clone(&pipeline),
+                Arc::clone(&synthesis_tasks),
+                Arc::clone(&synthesize_entered),
                 entry_id,
                 cmd.play_when_ready,
             );
@@ -377,6 +386,8 @@ pub fn run() {
             }
 
             let pipeline = Arc::new(Mutex::new(TTSPipeline::new()));
+            let synthesis_tasks = Arc::new(Mutex::new(HashMap::new()));
+            let synthesize_entered = Arc::new(Mutex::new(HashSet::new()));
             let tray_tx = spawn_tray_handler(
                 Arc::clone(&storage),
                 Arc::clone(&tts),
@@ -384,6 +395,8 @@ pub fn run() {
                 Arc::clone(&emitter),
                 Arc::clone(&player),
                 Arc::clone(&pipeline),
+                Arc::clone(&synthesis_tasks),
+                Arc::clone(&synthesize_entered),
                 app.handle().clone(),
             );
 
@@ -398,6 +411,8 @@ pub fn run() {
                 pipeline,
                 tray_cmd_tx: Some(tray_tx),
                 user_quit: Arc::new(AtomicBool::new(false)),
+                synthesis_tasks,
+                synthesize_entered,
             });
 
             Ok(())

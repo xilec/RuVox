@@ -1,11 +1,14 @@
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use parking_lot::Mutex;
+use tokio::task::AbortHandle;
 
 use crate::pipeline::TTSPipeline;
 use crate::player::Player;
+use crate::storage::schema::EntryId;
 use crate::storage::service::StorageService;
 use crate::tray::TrayCmd;
 use crate::tts::supervisor::Emitter;
@@ -45,4 +48,12 @@ pub struct AppState {
     /// runtime distinguish a real quit from a window-close that should keep
     /// the app running in the tray.
     pub user_quit: Arc<AtomicBool>,
+    /// Abort handles of the spawned synthesis tasks, keyed by entry.
+    /// Populated by `spawn_synthesis` and removed when the task finishes
+    /// (any outcome) or when `cancel_synthesis` aborts it.
+    pub synthesis_tasks: Arc<Mutex<HashMap<EntryId, AbortHandle>>>,
+    /// Entries currently inside the `tts.synthesize()` await. Lets
+    /// `cancel_synthesis` decide whether the ttsd subprocess must be killed
+    /// (only entries that reached the TTS stage keep ttsd busy).
+    pub synthesize_entered: Arc<Mutex<HashSet<EntryId>>>,
 }

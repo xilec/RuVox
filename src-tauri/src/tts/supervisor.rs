@@ -183,6 +183,22 @@ impl TtsSupervisor {
         Err(err)
     }
 
+    /// Forcibly terminate the current ttsd subprocess, if any.
+    ///
+    /// The slot is deliberately left untouched: the driver task of the killed
+    /// process exits, so in-flight and queued requests on the old handle fail
+    /// with [`TtsError::Died`] and the next request respawns through the
+    /// existing `ensure_respawned` path (`ttsd_restarting` + backoff +
+    /// background warmup), exactly as if the process had crashed. Used by
+    /// `cancel_synthesis` when the cancelled entry had already entered the
+    /// TTS stage.
+    pub async fn kill_current(&self) {
+        if let Some(handle) = self.current_handle().await {
+            info!(target: "tts::supervisor", "kill_current: terminating ttsd subprocess");
+            handle.kill_now();
+        }
+    }
+
     /// Run `warmup` against the freshly-spawned handle in a background task,
     /// mirroring the `model_loading` → `model_loaded` / `model_error`
     /// lifecycle that startup uses. Failures here do not invalidate the

@@ -29,7 +29,7 @@ use serde_json::Value;
 use thiserror::Error;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
 use tokio::time::timeout;
 use tracing::{info, warn};
 
@@ -193,6 +193,8 @@ struct DriverRequest {
 /// The underlying driver task owns the subprocess and serializes all I/O.
 pub struct TtsSubprocess {
     sender: mpsc::Sender<DriverRequest>,
+    /// Kill signal for the driver task (see [`TtsSubprocess::kill_now`]).
+    kill_tx: watch::Sender<bool>,
 }
 
 impl TtsSubprocess {
@@ -212,9 +214,26 @@ impl TtsSubprocess {
         let child = cmd.spawn().map_err(TtsError::Spawn)?;
 
         let (tx, rx) = mpsc::channel::<DriverRequest>(1);
-        tokio::spawn(driver_task(child, rx));
+        let (kill_tx, kill_rx) = watch::channel(false);
+        tokio::spawn(driver_task(child, rx, kill_rx));
 
-        Ok(Self { sender: tx })
+        Ok(Self {
+            sender: tx,
+            kill_tx,
+        })
+    }
+
+    /// Forcibly terminate the ttsd subprocess (SIGKILL), even mid-request.
+    ///
+    /// The driver task kills the child and exits, so in-flight and queued
+    /// requests on this handle fail with [`TtsError::Died`] and the
+    /// supervisor's retry loop respawns transparently. No-op when the driver
+    /// is already gone (i.e. the process is already dead). Used by
+    /// [`supervisor::TtsSupervisor::kill_current`] for synthesis cancellation.
+    pub fn kill_now(&self) {
+        // Errors only when the driver (and its receiver) is already gone —
+        // the process is dead then, which is what the caller wants anyway.
+        let _ = self.kill_tx.send(true);
     }
 
     /// Send a raw request and wait for the response.
@@ -305,7 +324,19 @@ impl TtsSubprocess {
 // ---------------------------------------------------------------------------
 
 /// Owns the subprocess and its stdin/stdout. Serializes all requests one at a time.
-async fn driver_task(mut child: Child, mut rx: mpsc::Receiver<DriverRequest>) {
+///
+/// The task exits — making queued and future senders observe [`TtsError::Died`]
+/// so the supervisor can respawn — when:
+/// - all senders are dropped (normal teardown),
+/// - the child exits (observed via `child.wait()` between requests, or via a
+///   stdout EOF mid-request), or
+/// - a kill is requested through `kill_rx` ([`TtsSubprocess::kill_now`]),
+///   which SIGKILLs the child even while a request is in flight.
+async fn driver_task(
+    mut child: Child,
+    mut rx: mpsc::Receiver<DriverRequest>,
+    mut kill_rx: watch::Receiver<bool>,
+) {
     // stdin is held in an Option so it can be dropped (closing the pipe / sending EOF)
     // before we wait on the child during graceful shutdown.
     let mut stdin = Some(child.stdin.take().expect("stdin was piped"));
@@ -322,12 +353,49 @@ async fn driver_task(mut child: Child, mut rx: mpsc::Receiver<DriverRequest>) {
 
     let mut stdout_lines = BufReader::new(stdout).lines();
 
-    while let Some(req) = rx.recv().await {
+    loop {
+        let req = tokio::select! {
+            req = rx.recv() => match req {
+                Some(req) => req,
+                None => return,
+            },
+            // Kill requested while idle: SIGKILL the child and exit.
+            _ = kill_rx.changed() => {
+                info!(target: "ttsd", "kill requested — terminating subprocess");
+                let _ = child.start_kill();
+                let _ = child.wait().await;
+                return;
+            }
+            // Child exited between requests (no in-flight request to observe
+            // the EOF). Exit so the next request fails fast with Died instead
+            // of an unretryable stdin write error.
+            status = child.wait() => {
+                match status {
+                    Ok(status) => info!(target: "ttsd", "subprocess exited: {status}"),
+                    Err(e) => warn!(target: "ttsd", "wait() failed: {e}"),
+                }
+                return;
+            }
+        };
+
         let is_shutdown = matches!(&req.payload, TtsRequest::Shutdown);
         let result = match stdin.as_mut() {
-            Some(s) => handle_one_request(s, &mut stdout_lines, req.payload).await,
+            Some(s) => tokio::select! {
+                res = handle_one_request(s, &mut stdout_lines, req.payload) => res,
+                // Kill requested mid-request: SIGKILL the child, fail the
+                // in-flight request with Died (the supervisor retries other
+                // entries' requests against a respawned process), and exit.
+                _ = kill_rx.changed() => {
+                    info!(target: "ttsd", "kill requested mid-request — terminating subprocess");
+                    let _ = child.start_kill();
+                    let _ = child.wait().await;
+                    let _ = req.reply.send(Err(TtsError::Died));
+                    return;
+                }
+            },
             None => Err(TtsError::Died),
         };
+        let died = matches!(result, Err(TtsError::Died));
         let _ = req.reply.send(result);
 
         if is_shutdown {
@@ -346,6 +414,13 @@ async fn driver_task(mut child: Child, mut rx: mpsc::Receiver<DriverRequest>) {
                     let _ = child.wait().await;
                 }
             }
+            return;
+        }
+
+        if died {
+            // stdout hit EOF — the child is gone. Exit so queued and future
+            // senders observe Died and the supervisor respawns.
+            info!(target: "ttsd", "subprocess died mid-request — driver exiting");
             return;
         }
     }
