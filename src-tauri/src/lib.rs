@@ -7,6 +7,9 @@ pub mod storage;
 pub mod tray;
 pub mod tts;
 
+#[cfg(test)]
+mod test_support;
+
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -17,7 +20,7 @@ use tauri_plugin_mpv::MpvExt;
 
 use commands::*;
 use pipeline::TTSPipeline;
-use player::Player;
+use player::{Player, PlayerBackend};
 use state::AppState;
 use storage::service::StorageService;
 use tray::TrayCmd;
@@ -288,7 +291,7 @@ fn spawn_tray_handler<R: Runtime + 'static>(
     tts: Arc<dyn tts::TtsEngine>,
     piper_voices_dir: std::path::PathBuf,
     emitter: tts::supervisor::Emitter,
-    player: Arc<Player<R>>,
+    player: Arc<dyn PlayerBackend>,
     pipeline: Arc<Mutex<TTSPipeline>>,
     app: AppHandle<R>,
 ) -> tokio::sync::mpsc::Sender<TrayCmd> {
@@ -347,6 +350,41 @@ fn spawn_tray_handler<R: Runtime + 'static>(
     tray_tx
 }
 
+/// The single registration point for all Tauri commands.
+///
+/// Extracted from `run()` so the test harness (`test_support`) registers the
+/// identical command set on its `MockRuntime` app — no drift between the
+/// production handler list and what tests exercise.
+pub(crate) fn invoke_handler<R: Runtime>(
+) -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![
+        add_clipboard_entry,
+        add_text_entry,
+        preview_normalize,
+        get_entries,
+        get_entry,
+        delete_entry,
+        delete_audio,
+        regenerate_entry,
+        cancel_synthesis,
+        play_entry,
+        pause_playback,
+        resume_playback,
+        stop_playback,
+        seek_to,
+        set_speed,
+        set_volume,
+        get_config,
+        update_config,
+        get_available_engines,
+        download_piper_voice,
+        get_timestamps,
+        clear_cache,
+        get_cache_stats,
+        get_cache_dir,
+    ]
+}
+
 pub fn run() {
     reap_orphan_mpv();
     tauri::Builder::default()
@@ -357,8 +395,8 @@ pub fn run() {
             tray::init(app.handle())?;
             install_window_icon(app.handle())?;
 
-            let player = Arc::new(Player::new(app.handle().clone())?);
-            player::spawn_position_emitter(player.clone(), app.handle().clone());
+            let player: Arc<dyn PlayerBackend> = Arc::new(Player::new(app.handle().clone())?);
+            player::spawn_position_emitter(Arc::clone(&player), app.handle().clone());
 
             let storage = Arc::new(StorageService::new().expect("failed to open storage"));
             spawn_audio_migration_and_cleanup(Arc::clone(&storage));
@@ -402,32 +440,7 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
-            add_clipboard_entry,
-            add_text_entry,
-            preview_normalize,
-            get_entries,
-            get_entry,
-            delete_entry,
-            delete_audio,
-            regenerate_entry,
-            cancel_synthesis,
-            play_entry,
-            pause_playback,
-            resume_playback,
-            stop_playback,
-            seek_to,
-            set_speed,
-            set_volume,
-            get_config,
-            update_config,
-            get_available_engines,
-            download_piper_voice,
-            get_timestamps,
-            clear_cache,
-            get_cache_stats,
-            get_cache_dir,
-        ])
+        .invoke_handler(invoke_handler())
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| match event {

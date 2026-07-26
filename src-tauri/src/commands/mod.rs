@@ -10,7 +10,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tauri::{AppHandle, Emitter, Runtime, State, Wry};
+use tauri::{AppHandle, Emitter, Runtime, State};
 use tracing::{info, warn};
 
 use crate::pipeline::tracked_text::CharMapping;
@@ -106,7 +106,7 @@ pub fn spawn_synthesis_pub<R: Runtime + 'static>(
     tts: Arc<dyn TtsEngine>,
     piper_voices_dir: PathBuf,
     emitter: crate::tts::supervisor::Emitter,
-    player: Arc<crate::player::Player<R>>,
+    player: Arc<dyn crate::player::PlayerBackend>,
     pipeline: Arc<parking_lot::Mutex<crate::pipeline::TTSPipeline>>,
     entry_id: EntryId,
     play_when_ready: bool,
@@ -351,11 +351,7 @@ fn mark_ready_and_emit<R: Runtime>(
 
 /// Phase 7: kick off auto-play. Errors are logged and swallowed — failed
 /// auto-play must not flip the entry into `Error`.
-fn autoplay<R: Runtime>(
-    player: &crate::player::Player<R>,
-    audio_path: PathBuf,
-    entry_id: &EntryId,
-) {
+fn autoplay(player: &dyn crate::player::PlayerBackend, audio_path: PathBuf, entry_id: &EntryId) {
     if let Err(e) = player.load(&audio_path, entry_id.to_string()) {
         warn!("auto-play load failed: {e}");
     } else if let Err(e) = player.play() {
@@ -371,7 +367,7 @@ fn spawn_synthesis<R: Runtime + 'static>(
     tts: Arc<dyn TtsEngine>,
     piper_voices_dir: PathBuf,
     emitter: crate::tts::supervisor::Emitter,
-    player: Arc<crate::player::Player<R>>,
+    player: Arc<dyn crate::player::PlayerBackend>,
     pipeline: Arc<Mutex<TTSPipeline>>,
     entry_id: EntryId,
     play_when_ready: bool,
@@ -409,7 +405,7 @@ fn spawn_synthesis<R: Runtime + 'static>(
             );
             if play_when_ready {
                 let path = storage.cache_dir().join("audio").join(&audio_filename);
-                autoplay(&player, path, &entry_id);
+                autoplay(player.as_ref(), path, &entry_id);
             }
             Ok(())
         }
@@ -448,8 +444,8 @@ fn set_entry_error<R: Runtime>(
 /// Shared implementation for the two "add text to queue" commands below.
 /// Rejects blank input, persists the entry, emits `entry_updated`, and
 /// spawns background synthesis.
-fn ingest_text(
-    app: AppHandle<Wry>,
+fn ingest_text<R: Runtime>(
+    app: AppHandle<R>,
     state: &AppState,
     text: String,
     play_when_ready: bool,
@@ -486,8 +482,8 @@ fn ingest_text(
 /// crate (which silently fails with `ContentNotAvailable` for
 /// WebKit-sourced clipboard data on KDE Plasma 6).
 #[tauri::command]
-pub async fn add_text_entry(
-    app: AppHandle<Wry>,
+pub async fn add_text_entry<R: Runtime>(
+    app: AppHandle<R>,
     state: State<'_, AppState>,
     text: String,
     play_when_ready: bool,
@@ -499,8 +495,8 @@ pub async fn add_text_entry(
 /// Used by the tray menu, where no webview context is available.
 /// Frontend code should prefer `add_text_entry` (see above).
 #[tauri::command]
-pub async fn add_clipboard_entry(
-    app: AppHandle<Wry>,
+pub async fn add_clipboard_entry<R: Runtime>(
+    app: AppHandle<R>,
     state: State<'_, AppState>,
     play_when_ready: bool,
 ) -> CmdResult<String> {
@@ -611,8 +607,8 @@ pub async fn delete_entry(state: State<'_, AppState>, id: String) -> CmdResult<(
 
 /// Delete only the audio files for an entry, resetting its status to pending.
 #[tauri::command]
-pub async fn delete_audio(
-    app: AppHandle<Wry>,
+pub async fn delete_audio<R: Runtime>(
+    app: AppHandle<R>,
     state: State<'_, AppState>,
     id: String,
 ) -> CmdResult<()> {
@@ -636,8 +632,8 @@ pub async fn delete_audio(
 /// Rejects the call if the entry is currently being synthesized — re-entering
 /// `spawn_synthesis` for the same id would race with the in-flight task.
 #[tauri::command]
-pub async fn regenerate_entry(
-    app: AppHandle<Wry>,
+pub async fn regenerate_entry<R: Runtime>(
+    app: AppHandle<R>,
     state: State<'_, AppState>,
     id: String,
 ) -> CmdResult<()> {
@@ -694,8 +690,8 @@ pub async fn regenerate_entry(
 /// Currently marks entry as pending (mid-request abort is not supported since
 /// the TTS supervisor serialises all requests into a single channel).
 #[tauri::command]
-pub async fn cancel_synthesis(
-    app: AppHandle<Wry>,
+pub async fn cancel_synthesis<R: Runtime>(
+    app: AppHandle<R>,
     state: State<'_, AppState>,
     id: String,
 ) -> CmdResult<()> {
@@ -946,8 +942,8 @@ pub struct ClearCacheResult {
 /// removed from `history.json`; otherwise only their audio is dropped.
 /// Always sweeps orphans regardless of `mode` / `delete_texts`.
 #[tauri::command]
-pub async fn clear_cache(
-    app: AppHandle<Wry>,
+pub async fn clear_cache<R: Runtime>(
+    app: AppHandle<R>,
     state: State<'_, AppState>,
     args: ClearCacheArgs,
 ) -> CmdResult<ClearCacheResult> {
@@ -1564,15 +1560,14 @@ mod tests {
 
     // ── set_speed / set_volume boundary contract ──────────────────────────────
     //
-    // Both commands take `State<'_, AppState>`, which (per `AppState::player:
-    // Arc<Player<tauri::Wry>>`) can only be constructed from a live Tauri
-    // app/webview — there is no pure function to call here, and per the task
-    // scope Tauri-specific commands aren't exercised through mock frameworks.
-    // These tests instead pin down the *documented* contract read from the
-    // source (`set_speed`/`set_volume` in this file): out-of-range values are
-    // rejected with `CommandError::ConfigError`, not silently clamped. If that
-    // ever changes, whoever edits the range literals below should notice they
-    // now disagree with the guard clauses in `set_speed`/`set_volume`.
+    // These tests predate the MockRuntime harness (`crate::test_support`):
+    // they pin down the *documented* contract read from the source
+    // (`set_speed`/`set_volume` in this file) — out-of-range values are
+    // rejected with `CommandError::ConfigError`, not silently clamped — via a
+    // local re-implementation of the range guard. Exercising the real commands
+    // through a managed `AppState` now belongs in `test_support`-based tests;
+    // if the range literals below ever disagree with the guard clauses in
+    // `set_speed`/`set_volume`, whoever edits them should notice.
 
     /// Pins down current behavior: `set_speed` rejects (does not clamp)
     /// speeds outside `[0.5, 2.0]`, per its `!(0.5..=2.0).contains(&speed)`
