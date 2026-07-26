@@ -20,11 +20,6 @@
 //! 2. go through the IPC router with [`tauri::test::get_ipc_response`], which
 //!    additionally pins command-name routing and the JSON wire contract.
 
-// Some helpers are consumed only by the command-orchestration tests in
-// `commands::orchestration_tests` and the proof tests at the bottom; keep the
-// allowance so harness additions for future test issues compile unused.
-#![allow(dead_code)]
-
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -140,28 +135,27 @@ impl TtsEngine for StubEngine {
 // ---------------------------------------------------------------------------
 
 /// A playback-control call received by [`FakePlayer`], in receive order.
-/// Floats are stored raw; compare with epsilon where it matters.
+/// Only the calls tests assert on are recorded; `pause`/`resume`,
+/// `ensure_mpv_alive` and `mark_destroyed` update the tracked flags but
+/// leave no trace here. Floats are stored raw; compare with epsilon where
+/// it matters.
 #[derive(Debug, Clone)]
 pub enum PlayerCall {
     Load(PathBuf, String),
     Play,
-    Pause,
-    Resume,
     Stop,
     Seek(f64),
     SetSpeed(f32),
     SetVolume(f32),
-    EnsureMpvAlive,
-    MarkDestroyed,
 }
 
 /// Test double for [`PlayerBackend`].
 ///
-/// Records every control call into [`FakePlayer::calls`] and tracks the
-/// playing/loaded flags the way the real `Player` does. Unlike the real
-/// player it emits **no** Tauri events (`playback_started` etc.) — it holds
-/// no `AppHandle`; tests assert on recorded calls and on the position
-/// emitter's own output instead.
+/// Records the control calls tests assert on into [`FakePlayer::calls`] and
+/// tracks the playing/loaded flags the way the real `Player` does. Unlike
+/// the real player it emits **no** Tauri events (`playback_started` etc.) —
+/// it holds no `AppHandle`; tests assert on recorded calls and on the
+/// position emitter's own output instead.
 ///
 /// `position_sec()` answers from a scripted queue (see
 /// [`FakePlayer::script_positions`]); once the script is exhausted it returns
@@ -223,16 +217,12 @@ impl PlayerBackend for FakePlayer {
     }
 
     fn pause(&self) -> PlayerResult<()> {
-        let mut inner = self.inner.lock();
-        inner.calls.push(PlayerCall::Pause);
-        inner.is_playing = false;
+        self.inner.lock().is_playing = false;
         Ok(())
     }
 
     fn resume(&self) -> PlayerResult<()> {
-        let mut inner = self.inner.lock();
-        inner.calls.push(PlayerCall::Resume);
-        inner.is_playing = true;
+        self.inner.lock().is_playing = true;
         Ok(())
     }
 
@@ -275,12 +265,10 @@ impl PlayerBackend for FakePlayer {
     }
 
     fn ensure_mpv_alive(&self) -> PlayerResult<()> {
-        self.inner.lock().calls.push(PlayerCall::EnsureMpvAlive);
         Ok(())
     }
 
     fn mark_destroyed(&self) {
-        self.inner.lock().calls.push(PlayerCall::MarkDestroyed);
         self.destroyed.store(true, Ordering::SeqCst);
     }
 
@@ -331,8 +319,6 @@ pub struct TestApp {
     /// The stub TTS engine behind the switcher — steer `synthesize` via its
     /// knobs (`fail_with`, `block_synthesis`).
     pub engine: Arc<StubEngine>,
-    /// Events emitted through the state's `emitter` (engine layer).
-    pub engine_events: EventLog,
     _storage_dir: TempDir,
     _voices_dir: TempDir,
     _ttsd_dir: TempDir,
@@ -359,7 +345,7 @@ pub fn build_test_app() -> TestApp {
     let voices_dir = TempDir::new().expect("voices tempdir");
     let ttsd_dir = TempDir::new().expect("ttsd tempdir");
 
-    let (emitter, engine_events) = recording_emitter();
+    let (emitter, _engine_events) = recording_emitter();
 
     let engine = Arc::new(StubEngine::new());
     let stub: Arc<dyn TtsEngine> = engine.clone();
@@ -392,7 +378,6 @@ pub fn build_test_app() -> TestApp {
         app,
         player,
         engine,
-        engine_events,
         _storage_dir: storage_dir,
         _voices_dir: voices_dir,
         _ttsd_dir: ttsd_dir,
