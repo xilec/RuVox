@@ -2022,44 +2022,6 @@ mod tests {
         }
     }
 
-    // ── set_speed / set_volume boundary contract ──────────────────────────────
-    //
-    // These tests predate the MockRuntime harness (`crate::test_support`):
-    // they pin down the *documented* contract read from the source
-    // (`set_speed`/`set_volume` in this file) — out-of-range values are
-    // rejected with `CommandError::ConfigError`, not silently clamped — via a
-    // local re-implementation of the range guard. Exercising the real commands
-    // through a managed `AppState` now belongs in `test_support`-based tests;
-    // if the range literals below ever disagree with the guard clauses in
-    // `set_speed`/`set_volume`, whoever edits them should notice.
-
-    /// Pins down current behavior: `set_speed` rejects (does not clamp)
-    /// speeds outside `[0.5, 2.0]`, per its `!(0.5..=2.0).contains(&speed)`
-    /// guard.
-    #[test]
-    fn set_speed_range_contract_is_inclusive_0_5_to_2_0() {
-        let in_range = |speed: f32| (0.5..=2.0).contains(&speed);
-        assert!(in_range(0.5), "lower bound is inclusive");
-        assert!(in_range(2.0), "upper bound is inclusive");
-        assert!(in_range(1.0));
-        assert!(!in_range(0.499_999));
-        assert!(!in_range(2.000_001));
-        assert!(!in_range(-1.0));
-    }
-
-    /// Pins down current behavior: `set_volume` rejects (does not clamp)
-    /// volumes outside `[0.0, 1.0]`, per its `!(0.0..=1.0).contains(&volume)`
-    /// guard.
-    #[test]
-    fn set_volume_range_contract_is_inclusive_0_0_to_1_0() {
-        let in_range = |volume: f32| (0.0..=1.0).contains(&volume);
-        assert!(in_range(0.0), "lower bound is inclusive");
-        assert!(in_range(1.0), "upper bound is inclusive");
-        assert!(in_range(0.5));
-        assert!(!in_range(-0.000_001));
-        assert!(!in_range(1.000_001));
-    }
-
     // ── preview_normalize ────────────────────────────────────────────────────
 
     /// The preview returns the normalized text together with a char mapping

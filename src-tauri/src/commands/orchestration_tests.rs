@@ -458,3 +458,91 @@ async fn preview_normalize_returns_text_without_history_or_audio_side_effects() 
     assert_eq!(std::fs::read_dir(audio_dir(&t)).unwrap().count(), 0);
     assert!(t.state().synthesis_tasks.lock().is_empty());
 }
+
+// ── set_speed / set_volume range guards ──────────────────────────────
+
+/// The real `set_speed` command accepts the documented inclusive range
+/// [0.5, 2.0], forwards each value to the player, and persists the last
+/// one to `speech_rate`.
+#[tokio::test(flavor = "multi_thread")]
+async fn set_speed_accepts_inclusive_bounds_and_persists() {
+    let t = build_test_app();
+
+    for speed in [0.5_f32, 1.0, 2.0] {
+        set_speed(t.state(), speed).await.unwrap();
+    }
+
+    let speeds: Vec<f32> = t
+        .player
+        .calls()
+        .iter()
+        .filter_map(|c| match c {
+            PlayerCall::SetSpeed(s) => Some(*s),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(speeds, vec![0.5, 1.0, 2.0]);
+    assert_eq!(t.state().storage.load_config().unwrap().speech_rate, 2.0);
+}
+
+/// Speeds outside [0.5, 2.0] are rejected with `config_error` (not
+/// clamped) and never reach the player.
+#[tokio::test(flavor = "multi_thread")]
+async fn set_speed_rejects_out_of_range() {
+    let t = build_test_app();
+
+    for speed in [0.499_999_f32, 2.000_001, -1.0] {
+        let err = set_speed(t.state(), speed).await.unwrap_err();
+        assert!(
+            matches!(err, CommandError::ConfigError { .. }),
+            "speed {speed} must be rejected with config_error, got {err:?}"
+        );
+    }
+    assert!(t
+        .player
+        .calls()
+        .iter()
+        .all(|c| !matches!(c, PlayerCall::SetSpeed(_))));
+}
+
+/// The real `set_volume` command accepts the documented inclusive range
+/// [0.0, 1.0] and forwards each value to the player.
+#[tokio::test(flavor = "multi_thread")]
+async fn set_volume_accepts_inclusive_bounds() {
+    let t = build_test_app();
+
+    for volume in [0.0_f32, 0.5, 1.0] {
+        set_volume(t.state(), volume).await.unwrap();
+    }
+
+    let volumes: Vec<f32> = t
+        .player
+        .calls()
+        .iter()
+        .filter_map(|c| match c {
+            PlayerCall::SetVolume(v) => Some(*v),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(volumes, vec![0.0, 0.5, 1.0]);
+}
+
+/// Volumes outside [0.0, 1.0] are rejected with `config_error` (not
+/// clamped) and never reach the player.
+#[tokio::test(flavor = "multi_thread")]
+async fn set_volume_rejects_out_of_range() {
+    let t = build_test_app();
+
+    for volume in [-0.000_001_f32, 1.000_001, -1.0] {
+        let err = set_volume(t.state(), volume).await.unwrap_err();
+        assert!(
+            matches!(err, CommandError::ConfigError { .. }),
+            "volume {volume} must be rejected with config_error, got {err:?}"
+        );
+    }
+    assert!(t
+        .player
+        .calls()
+        .iter()
+        .all(|c| !matches!(c, PlayerCall::SetVolume(_))));
+}
