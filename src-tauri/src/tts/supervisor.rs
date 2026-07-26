@@ -358,6 +358,52 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn respawn_is_single_flight_under_concurrent_died() {
+        // Several callers observing `Died` on the same handle must share a
+        // single respawn: the factory is invoked exactly once past the
+        // initial spawn and exactly one `ttsd_restarting` event is emitted
+        // (the respawn_lock mutex + the Arc::ptr_eq second-chance check
+        // collapse the concurrent callers into one spawn cycle).
+        let counter = Arc::new(AtomicUsize::new(0));
+        let counter_clone = Arc::clone(&counter);
+        let factory: CommandFactory = Arc::new(move || {
+            counter_clone.fetch_add(1, Ordering::SeqCst);
+            Command::new("cat")
+        });
+
+        let (emitter, log) = recording_emitter();
+        let sup = Arc::new(TtsSupervisor::spawn(factory, emitter).expect("initial spawn ok"));
+
+        let dead = sup.current_handle().await.expect("handle present");
+
+        // Fan out concurrent respawn requests that all observed the same
+        // dead handle.
+        let mut tasks = Vec::new();
+        for _ in 0..4 {
+            let sup = Arc::clone(&sup);
+            let dead = Arc::clone(&dead);
+            tasks.push(tokio::spawn(async move {
+                sup.ensure_respawned(Some(&dead)).await
+            }));
+        }
+        for task in tasks {
+            task.await
+                .expect("respawn task panicked")
+                .expect("respawn should succeed for every concurrent caller");
+        }
+
+        // 1 initial spawn + exactly 1 respawn — not one per concurrent caller.
+        assert_eq!(counter.load(Ordering::SeqCst), 2);
+
+        let log = log.lock().unwrap();
+        let restarting = log.iter().filter(|(n, _)| n == "ttsd_restarting").count();
+        assert_eq!(
+            restarting, 1,
+            "expected exactly one ttsd_restarting event, got {restarting}"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn with_retry_propagates_non_died_error_without_respawn() {
         // A non-`Died` error (here `Timeout`) must be surfaced to the caller
         // as-is: no respawn is attempted and no `ttsd_restarting` event fires.
