@@ -605,35 +605,8 @@ impl CodeIdentifierNormalizer {
     }
 
     fn letter_name(c: char) -> &'static str {
-        match c.to_ascii_uppercase() {
-            'A' => "эй",
-            'B' => "би",
-            'C' => "си",
-            'D' => "ди",
-            'E' => "и",
-            'F' => "эф",
-            'G' => "джи",
-            'H' => "эйч",
-            'I' => "ай",
-            'J' => "джей",
-            'K' => "кей",
-            'L' => "эл",
-            'M' => "эм",
-            'N' => "эн",
-            'O' => "о",
-            'P' => "пи",
-            'Q' => "кью",
-            'R' => "ар",
-            'S' => "эс",
-            'T' => "ти",
-            'U' => "ю",
-            'V' => "ви",
-            'W' => "дабл ю",
-            'X' => "икс",
-            'Y' => "вай",
-            'Z' => "зет",
-            _ => "?",
-        }
+        // Shared letter-name table (#120) — same reading as abbreviations.
+        super::english::letter_name(c).unwrap_or("?")
     }
 
     fn basic_transliterate(&self, word: &str) -> String {
