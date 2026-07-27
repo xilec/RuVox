@@ -77,6 +77,10 @@ pub struct Timestamps {
 pub struct UIConfig {
     #[serde(default = "UIConfig::default_speaker")]
     pub speaker: String,
+    /// Sample rate is shared across engines. The global default is 48000;
+    /// the native Silero engine's own default is 24000 — the Settings dialog
+    /// offers that when the user picks «Silero (нативный)» without an
+    /// explicit sample-rate choice (see `src/dialogs/Settings.tsx`).
     #[serde(default = "UIConfig::default_sample_rate")]
     pub sample_rate: u32,
     #[serde(default = "UIConfig::default_speech_rate")]
@@ -103,7 +107,7 @@ pub struct UIConfig {
     /// Show preview dialog before synthesis.
     #[serde(default = "UIConfig::default_true")]
     pub preview_dialog_enabled: bool,
-    /// Active TTS engine: `"piper"` (default) | `"silero"`.
+    /// Active TTS engine: `"piper"` (default) | `"silero"` | `"silero_native"`.
     #[serde(default = "UIConfig::default_engine")]
     pub engine: String,
     /// Active Piper voice id (`"ruslan"` by default — see `tts::piper::catalog`).

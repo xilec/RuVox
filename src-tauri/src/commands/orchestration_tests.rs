@@ -342,6 +342,53 @@ async fn update_config_failed_engine_switch_preserves_previous_config() {
     assert_eq!(t.state().tts.kind(), EngineKind::Piper);
 }
 
+/// Picking `silero_native` without a downloaded bundle aborts
+/// `update_config` with `config_error` (the switcher fails fast with
+/// `engine_unavailable`): the previous config stays on disk and the active
+/// engine is untouched — same rollback contract as an unknown engine.
+#[tokio::test(flavor = "multi_thread")]
+async fn update_config_silero_native_without_bundle_preserves_previous_config() {
+    let t = build_test_app();
+    let before = get_config(t.state()).await.unwrap();
+    assert_eq!(before.engine, "piper");
+
+    let patch = UIConfigPatch {
+        engine: Some("silero_native".to_string()),
+        ..Default::default()
+    };
+    let err = update_config(t.state(), patch).await.unwrap_err();
+    match err {
+        CommandError::ConfigError { message } => {
+            assert!(message.contains("не удалось переключить движок"))
+        }
+        other => panic!("expected ConfigError, got {other:?}"),
+    }
+
+    let after = get_config(t.state()).await.unwrap();
+    assert_eq!(
+        serde_json::to_value(&after).unwrap(),
+        serde_json::to_value(&before).unwrap(),
+        "config must be unchanged after a failed engine switch"
+    );
+    assert_eq!(t.state().tts.kind(), EngineKind::Piper);
+}
+
+/// `get_available_engines` reports `silero_native` as unavailable with a
+/// Russian reason when no bundle is installed (the test app's bundle dir is
+/// an empty TempDir).
+#[tokio::test(flavor = "multi_thread")]
+async fn get_available_engines_reports_silero_native_unavailable_without_bundle() {
+    let t = build_test_app();
+    let engines = get_available_engines(t.state()).await.unwrap();
+    assert!(engines.piper.available);
+    assert!(!engines.silero_native.available);
+    let reason = engines.silero_native.reason.expect("reason set");
+    assert!(
+        reason.chars().any(|c| matches!(c, 'А'..='я' | 'ё' | 'Ё')),
+        "reason should be Russian: {reason}"
+    );
+}
+
 // ── events ───────────────────────────────────────────────────────────
 
 /// `delete_audio` drops the audio/timestamps files, resets the entry to

@@ -223,7 +223,10 @@ fn build_engine<R: Runtime>(
     let ttsd_dir = resolve_ttsd_dir(app);
 
     let want_silero = config.engine == "silero";
-    let silero_available = want_silero && tts::availability::probe(&ttsd_dir).silero.available;
+    let silero_available = want_silero
+        && tts::availability::probe(&ttsd_dir, &silero_native_bundle_dir)
+            .silero
+            .available;
     // Cheap gate only (manifest present) — the engine's warmup runs the full
     // manifest + sha256 verification before opening ONNX sessions.
     let want_silero_native =
@@ -409,6 +412,7 @@ pub(crate) fn invoke_handler<R: Runtime>(
         update_config,
         get_available_engines,
         download_piper_voice,
+        download_silero_native_bundle,
         get_timestamps,
         clear_cache,
         get_cache_stats,
