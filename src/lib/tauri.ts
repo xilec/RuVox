@@ -9,11 +9,27 @@ export type EntryId = string;
 
 export type EntryStatus = 'pending' | 'processing' | 'ready' | 'playing' | 'error';
 
+export type EntryFormat = 'plain' | 'markdown' | 'html';
+
+/** Narrow a free-form string (config value, Select event) to EntryFormat. */
+export function toEntryFormat(
+  v: string | null | undefined,
+  fallback: EntryFormat = 'markdown',
+): EntryFormat {
+  return v === 'plain' || v === 'markdown' || v === 'html' ? v : fallback;
+}
+
 export interface TextEntry {
   id: EntryId;
   original_text: string;
   normalized_text: string | null;
   status: EntryStatus;
+  /** Display format persisted for this entry; null = never chosen, the
+   * viewer falls back to its default mode. */
+  format: EntryFormat | null;
+  /** Sanitized HTML kept for rendering in HTML mode; set only for
+   * HTML-ingested entries (their original_text is the extracted TTS text). */
+  html_source: string | null;
   created_at: string;               // ISO 8601
   audio_generated_at: string | null;
   audio_path: string | null;
@@ -97,8 +113,18 @@ export const commands = {
   addClipboardEntry: (play_when_ready: boolean): Promise<EntryId> =>
     tauriInvoke('add_clipboard_entry', { playWhenReady: play_when_ready }),
 
-  addTextEntry: (text: string, play_when_ready: boolean): Promise<EntryId> =>
-    tauriInvoke('add_text_entry', { text, playWhenReady: play_when_ready }),
+  addTextEntry: (
+    text: string,
+    play_when_ready: boolean,
+    format?: EntryFormat,
+    html_source?: string,
+  ): Promise<EntryId> =>
+    tauriInvoke('add_text_entry', {
+      text,
+      playWhenReady: play_when_ready,
+      format: format ?? null,
+      htmlSource: html_source ?? null,
+    }),
 
   getEntries: (): Promise<TextEntry[]> =>
     tauriInvoke('get_entries'),
@@ -114,6 +140,9 @@ export const commands = {
 
   regenerateEntry: (id: EntryId): Promise<void> =>
     tauriInvoke('regenerate_entry', { id }),
+
+  setEntryFormat: (id: EntryId, format: EntryFormat): Promise<void> =>
+    tauriInvoke('set_entry_format', { id, format }),
 
   cancelSynthesis: (id: EntryId): Promise<void> =>
     tauriInvoke('cancel_synthesis', { id }),

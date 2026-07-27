@@ -1,14 +1,20 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 
-import { renderHtml } from './html';
+import { renderHtml, previewTextFor } from './html';
+import { extractTextForTts } from './htmlText';
+
+/** Strip all tags — word spans included — leaving only the visible text. */
+function stripTags(html: string): string {
+  return html.replace(/<[^>]+>/g, '');
+}
 
 describe('renderHtml sanitization', () => {
   it('strips <script> tags but keeps surrounding content', () => {
     const out = renderHtml('<p>ok</p><script>alert(1)</script>');
     expect(out).not.toContain('<script');
     expect(out).not.toContain('alert(1)');
-    expect(out).toContain('<p>ok</p>');
+    expect(stripTags(out)).toContain('ok');
   });
 
   it('strips <iframe>, <object> and <embed> tags', () => {
@@ -21,7 +27,7 @@ describe('renderHtml sanitization', () => {
     expect(out).not.toContain('<iframe');
     expect(out).not.toContain('<object');
     expect(out).not.toContain('<embed');
-    expect(out).toContain('<p>ok</p>');
+    expect(stripTags(out)).toContain('ok');
   });
 
   it('strips event handler attributes (onclick, onerror)', () => {
@@ -31,28 +37,29 @@ describe('renderHtml sanitization', () => {
     expect(out).not.toContain('onclick');
     expect(out).not.toContain('onerror');
     expect(out).not.toContain('alert');
-    expect(out).toContain('<p>x</p>');
+    expect(stripTags(out)).toContain('x');
   });
 
   it('strips javascript: hrefs but keeps the link element', () => {
     const out = renderHtml('<a href="javascript:alert(1)">link</a>');
     expect(out).not.toContain('javascript:');
     expect(out).toContain('<a');
-    expect(out).toContain('link</a>');
+    expect(stripTags(out)).toContain('link');
   });
 
   it('keeps safe markup (p, b, code, pre) intact', () => {
     const out = renderHtml('<p><b>bold</b></p><pre><code>const x = 1;</code></pre>');
-    expect(out).toContain('<p><b>bold</b></p>');
+    expect(out).toContain('<p><b>');
     expect(out).toContain('<pre><code>');
-    expect(out).toContain('const x = 1;');
-    expect(out).toContain('</code></pre>');
+    const text = stripTags(out);
+    expect(text).toContain('bold');
+    expect(text).toContain('const x = 1;');
   });
 
   it('keeps https links with their href', () => {
     const out = renderHtml('<a href="https://example.com">link</a>');
     expect(out).toContain('href="https://example.com"');
-    expect(out).toContain('link</a>');
+    expect(stripTags(out)).toContain('link');
   });
 
   it('keeps code text inside <pre><code class="language-*>', () => {
@@ -61,7 +68,62 @@ describe('renderHtml sanitization', () => {
     const out = renderHtml(
       '<pre><code class="language-rust">fn main() {}</code></pre>',
     );
-    const text = out.replace(/<[^>]+>/g, '');
+    const text = stripTags(out);
     expect(text).toContain('fn main() {}');
+  });
+});
+
+describe('renderHtml word spans', () => {
+  it('wraps words in data-orig spans matching the extracted text offsets', () => {
+    const html = '<p>Вызови <code>API</code></p>';
+    const out = renderHtml(html);
+    const extracted = extractTextForTts(html);
+    expect(extracted).toBe('Вызови API');
+    expect(out).toContain(
+      '<span data-orig-start="0" data-orig-end="6">Вызови</span>',
+    );
+    expect(out).toContain(
+      '<span data-orig-start="7" data-orig-end="10">API</span>',
+    );
+  });
+
+  it('does not emit spans for excluded subtrees', () => {
+    const out = renderHtml('<div><button>Купить</button><p>Текст</p></div>');
+    expect(out).toContain('<button>Купить</button>');
+    const buttonSection = out.slice(out.indexOf('<button>'), out.indexOf('</button>'));
+    expect(buttonSection).not.toContain('data-orig-start');
+  });
+
+  it('keeps span offsets aligned when hljs highlights a code block', () => {
+    // highlightCodeBlocks mutates the DOM before annotateHtmlWords walks it;
+    // pin the invariant that span offsets still index the extracted text.
+    const html =
+      '<p>Пример</p><pre><code class="language-rust">let x = 1;</code></pre>';
+    const out = renderHtml(html);
+    const cps = Array.from(extractTextForTts(html));
+    const spanRe =
+      /<span data-orig-start="(\d+)" data-orig-end="(\d+)">([^<]+)<\/span>/g;
+    const spans = [...out.matchAll(spanRe)];
+    expect(spans.length).toBeGreaterThan(0);
+    for (const m of spans) {
+      expect(cps.slice(Number(m[1]), Number(m[2])).join('')).toBe(m[3]);
+    }
+  });
+});
+
+
+describe('previewTextFor', () => {
+  it('returns the text unchanged for plain and markdown', () => {
+    const text = '<p>разметка</p> as-is';
+    expect(previewTextFor(text, 'plain')).toBe(text);
+    expect(previewTextFor(text, 'markdown')).toBe(text);
+  });
+
+  it('sanitizes and extracts the text for html', () => {
+    const out = previewTextFor(
+      '<div><button>Купить</button><p>Вызови <code>API</code></p></div>',
+      'html',
+    );
+    expect(out).toBe('Вызови API');
   });
 });

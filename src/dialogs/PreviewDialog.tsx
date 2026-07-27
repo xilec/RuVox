@@ -1,24 +1,30 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActionIcon, Button, Checkbox, Group, Loader, Portal, Switch, Text, Textarea } from '@mantine/core';
+import { ActionIcon, Button, Checkbox, Group, Loader, Portal, Select, Switch, Text, Textarea } from '@mantine/core';
 import { Rnd } from 'react-rnd';
 import classes from './PreviewDialog.module.css';
-import { commands } from '../lib/tauri';
+import { commands, toEntryFormat } from '../lib/tauri';
+import type { EntryFormat } from '../lib/tauri';
 import { formatError } from '../lib/errors';
+import { previewTextFor } from '../lib/html';
 
 export interface PreviewDialogProps {
   /** Raw clipboard text to preview and optionally edit before synthesis. */
   text: string;
   opened: boolean;
+  /** Initial source format (the configured viewer default). */
+  defaultFormat: EntryFormat;
   /**
    * Called when the user confirms synthesis.
    * `finalText` is either the original or the user-edited version.
    * `skipShortTexts` is true when the user checked the "skip for short texts" box.
    * `playWhenReady` reflects the dialog's "Read Now" toggle state.
+   * `sourceFormat` is the dialog's source-format selection.
    */
   onSynthesize: (
     finalText: string,
     skipShortTexts: boolean,
     playWhenReady: boolean,
+    sourceFormat: EntryFormat,
   ) => void;
   /** Called when the user cancels the dialog. */
   onCancel: () => void;
@@ -60,10 +66,12 @@ function IconClose() {
 export function PreviewDialog({
   text,
   opened,
+  defaultFormat,
   onSynthesize,
   onCancel,
 }: PreviewDialogProps) {
   const [editedText, setEditedText] = useState<string>(text);
+  const [sourceFormat, setSourceFormat] = useState<EntryFormat>(defaultFormat);
   const [skipShortTexts, setSkipShortTexts] = useState(false);
   const [playWhenReady, setPlayWhenReady] = useState(true);
   const [normalized, setNormalized] = useState<string>('');
@@ -93,34 +101,47 @@ export function PreviewDialog({
     setSkipShortTexts(false);
     setPlayWhenReady(true);
     setEditedText(text);
+    setSourceFormat(defaultFormat);
     setSize({ width: INITIAL_W, height: INITIAL_H });
     setPosition(centeredPosition(INITIAL_W, INITIAL_H));
-  }, [opened, text]);
+  }, [opened, text, defaultFormat]);
 
   // Debounced (re-)normalization.  Runs whenever the text under consideration
   // changes — the initial clipboard text on open, or the edited text once
-  // the user enters edit mode.
+  // the user enters edit mode.  With the `html` source format the markup is
+  // sanitized and extracted first, so the preview shows what will actually
+  // be narrated (preview-dialog spec).
   useEffect(() => {
     if (!opened) return;
-    if (!editedText.trim()) {
+    const source = previewTextFor(editedText, sourceFormat);
+    if (!source.trim()) {
       setNormalized('');
       setLoading(false);
       return;
     }
     setLoading(true);
+    // Guard against out-of-order responses: a slow preview_normalize for a
+    // previous input/format must not overwrite a newer result.
+    let stale = false;
     const timer = window.setTimeout(() => {
       commands
-        .previewNormalize(editedText)
-        .then((result) => setNormalized(result.normalized))
-        .catch((err) =>
-          setNormalized(`(ошибка нормализации: ${formatError(err)})`),
-        )
-        .finally(() => setLoading(false));
+        .previewNormalize(source)
+        .then((result) => {
+          if (!stale) setNormalized(result.normalized);
+        })
+        .catch((err) => {
+          if (!stale)
+            setNormalized(`(ошибка нормализации: ${formatError(err)})`);
+        })
+        .finally(() => {
+          if (!stale) setLoading(false);
+        });
     }, DEBOUNCE_MS);
     return () => {
+      stale = true;
       window.clearTimeout(timer);
     };
-  }, [opened, editedText]);
+  }, [opened, editedText, sourceFormat]);
 
   // ESC closes the floating window (mantine Modal used to handle this; non-modal
   // react-rnd has no built-in handler, so we bind one manually while opened).
@@ -135,7 +156,7 @@ export function PreviewDialog({
 
   function handleSynthesize() {
     const finalText = editMode ? editedText.trim() : text;
-    onSynthesize(finalText || text, skipShortTexts, playWhenReady);
+    onSynthesize(finalText || text, skipShortTexts, playWhenReady, sourceFormat);
   }
 
   function handleEdit() {
@@ -254,6 +275,18 @@ export function PreviewDialog({
               wrap="wrap"
             >
               <Group gap="md" wrap="wrap">
+                <Select
+                  size="xs"
+                  aria-label="Формат источника"
+                  data={[
+                    { value: 'plain', label: 'Plain' },
+                    { value: 'markdown', label: 'Markdown' },
+                    { value: 'html', label: 'HTML' },
+                  ]}
+                  value={sourceFormat}
+                  onChange={(v) => setSourceFormat(toEntryFormat(v, defaultFormat))}
+                  allowDeselect={false}
+                />
                 <Checkbox
                   label="Больше не показывать этот диалог"
                   checked={skipShortTexts}

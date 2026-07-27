@@ -6,7 +6,9 @@
 
 use super::*;
 use crate::player::PlayerBackend;
-use crate::test_support::{build_test_app, record_events, wait_until, PlayerCall, TestApp};
+use crate::test_support::{
+    build_test_app, build_test_app_with_kind, record_events, wait_until, PlayerCall, TestApp,
+};
 use crate::tts::engine::EngineKind;
 use std::time::Duration;
 
@@ -61,6 +63,8 @@ async fn add_ready_entry(t: &TestApp) -> String {
         t.state(),
         "текст для озвучки".to_string(),
         false,
+        None,
+        None,
     )
     .await
     .unwrap();
@@ -178,6 +182,8 @@ async fn regenerate_entry_rejects_processing_entry_and_synthesis_continues() {
         t.state(),
         "текст".to_string(),
         false,
+        None,
+        None,
     )
     .await
     .unwrap();
@@ -210,9 +216,16 @@ async fn cancel_synthesis_aborts_in_flight_task_and_keeps_entry_pending() {
     let t = build_test_app();
     t.engine.block_synthesis();
     let events = record_events(&t.app, &["entry_updated"]);
-    let id = add_text_entry(t.app.handle().clone(), t.state(), "текст".to_string(), true)
-        .await
-        .unwrap();
+    let id = add_text_entry(
+        t.app.handle().clone(),
+        t.state(),
+        "текст".to_string(),
+        true,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     let uuid = entry_uuid(&id);
     // Deterministic "inside the TTS stage": the marker is set right
     // before the (blocked) engine await.
@@ -373,6 +386,95 @@ async fn delete_audio_resets_entry_and_emits_entry_updated() {
     assert!(payload["entry"]["audio_path"].is_null());
 }
 
+// ── set_entry_format ─────────────────────────────────────────────────
+
+/// Switching the format persists it and emits `entry_updated`, leaving the
+/// synthesized artifacts (normalized text, audio, timestamps) untouched.
+#[tokio::test(flavor = "multi_thread")]
+async fn set_entry_format_persists_and_preserves_audio_artifacts() {
+    let t = build_test_app();
+    let id = add_ready_entry(&t).await;
+    let uuid = entry_uuid(&id);
+    let before = t.state().storage.get_entry(&uuid).unwrap();
+
+    let events = record_events(&t.app, &["entry_updated"]);
+    set_entry_format(
+        t.app.handle().clone(),
+        t.state(),
+        id.clone(),
+        TextFormat::Html,
+    )
+    .await
+    .unwrap();
+
+    let entry = t.state().storage.get_entry(&uuid).unwrap();
+    assert_eq!(entry.format, Some(TextFormat::Html));
+    assert_eq!(entry.normalized_text, before.normalized_text);
+    assert_eq!(entry.audio_path, before.audio_path);
+    assert_eq!(entry.timestamps_path, before.timestamps_path);
+    assert_eq!(entry.status, EntryStatus::Ready);
+
+    let log = events.lock().unwrap();
+    let payload = last_entry_updated(&log);
+    assert_eq!(payload["entry"]["id"], id);
+    assert_eq!(payload["entry"]["format"], "html");
+}
+
+/// A well-formed but unknown id is a typed `not_found` error and emits
+/// nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn set_entry_format_unknown_entry_is_rejected() {
+    let t = build_test_app();
+    let events = record_events(&t.app, &["entry_updated"]);
+
+    let err = set_entry_format(
+        t.app.handle().clone(),
+        t.state(),
+        uuid::Uuid::new_v4().to_string(),
+        TextFormat::Plain,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(matches!(err, CommandError::NotFound { .. }));
+    assert!(events.lock().unwrap().is_empty());
+}
+
+// ── HTML ingestion ───────────────────────────────────────────────────
+
+/// `add_text_entry` with `format: "html"` persists the sanitized
+/// `html_source` and synthesizes the extracted text, not the markup.
+#[tokio::test(flavor = "multi_thread")]
+async fn add_text_entry_with_html_params_persists_source_and_synthesizes_text() {
+    let t = build_test_app();
+
+    let id = add_text_entry(
+        t.app.handle().clone(),
+        t.state(),
+        "Вызови API".to_string(),
+        false,
+        Some(TextFormat::Html),
+        Some("<p>Вызови <code>API</code></p>".to_string()),
+    )
+    .await
+    .unwrap();
+    let uuid = entry_uuid(&id);
+    wait_entry_status(&t, &uuid, EntryStatus::Ready).await;
+
+    let entry = t.state().storage.get_entry(&uuid).unwrap();
+    assert_eq!(entry.format, Some(TextFormat::Html));
+    assert_eq!(
+        entry.html_source.as_deref(),
+        Some("<p>Вызови <code>API</code></p>")
+    );
+    assert_eq!(entry.original_text, "Вызови API");
+    // The pipeline normalized the extracted text (Latin is transliterated),
+    // so the markup never reached synthesis.
+    let normalized = entry.normalized_text.unwrap_or_default();
+    assert!(normalized.contains("эй пи ай"), "normalized: {normalized}");
+    assert!(!normalized.contains('<'), "normalized: {normalized}");
+}
+
 /// A TTS-stage failure flips the entry to `error` and emits
 /// `entry_updated` (status `error`) *before* `tts_error` — the ordering
 /// the spec's "Synthesis Failure Event" requirement pins.
@@ -387,6 +489,8 @@ async fn tts_failure_emits_entry_updated_error_then_tts_error() {
         t.state(),
         "текст".to_string(),
         false,
+        None,
+        None,
     )
     .await
     .unwrap();
@@ -459,6 +563,149 @@ async fn preview_normalize_returns_text_without_history_or_audio_side_effects() 
     assert!(get_entries(t.state()).await.unwrap().is_empty());
     assert_eq!(std::fs::read_dir(audio_dir(&t)).unwrap().count(), 0);
     assert!(t.state().synthesis_tasks.lock().is_empty());
+}
+
+// ── input length limit (MAX_INPUT_CHARS = 100 000 codepoints, Piper only) ──
+
+/// Oversized text is rejected by `add_text_entry` before persistence when the
+/// active engine is Piper (the default test-app kind): typed `internal` error
+/// naming the engine and the limit, no entry, no synthesis task.
+#[tokio::test(flavor = "multi_thread")]
+async fn add_text_entry_rejects_oversized_input_before_persistence() {
+    let t = build_test_app();
+    assert_eq!(t.state().tts.kind(), EngineKind::Piper);
+
+    let err = add_text_entry(
+        t.app.handle().clone(),
+        t.state(),
+        "а".repeat(MAX_INPUT_CHARS + 1),
+        false,
+        None,
+        None,
+    )
+    .await
+    .expect_err("oversized input must be rejected");
+    match err {
+        CommandError::Internal { message } => {
+            assert!(
+                message.contains("100 000"),
+                "message names the limit: {message}"
+            );
+            assert!(
+                message.contains("Piper"),
+                "message names the engine: {message}"
+            );
+        }
+        other => panic!("expected internal error, got {other:?}"),
+    }
+
+    assert!(get_entries(t.state()).await.unwrap().is_empty());
+    assert!(t.state().synthesis_tasks.lock().is_empty());
+}
+
+/// Oversized text is rejected by `preview_normalize` before normalization
+/// when the active engine is Piper.
+#[tokio::test(flavor = "multi_thread")]
+async fn preview_normalize_rejects_oversized_input() {
+    let t = build_test_app();
+
+    let err = preview_normalize(t.state(), "а".repeat(MAX_INPUT_CHARS + 1))
+        .await
+        .expect_err("oversized input must be rejected");
+    match err {
+        CommandError::Internal { message } => {
+            assert!(
+                message.contains("100 000"),
+                "message names the limit: {message}"
+            );
+            assert!(
+                message.contains("Piper"),
+                "message names the engine: {message}"
+            );
+        }
+        other => panic!("expected internal error, got {other:?}"),
+    }
+}
+
+/// Text of exactly `MAX_INPUT_CHARS` codepoints is accepted and synthesized.
+#[tokio::test(flavor = "multi_thread")]
+async fn add_text_entry_accepts_input_at_limit() {
+    let t = build_test_app();
+
+    let id = add_text_entry(
+        t.app.handle().clone(),
+        t.state(),
+        "а".repeat(MAX_INPUT_CHARS),
+        false,
+        None,
+        None,
+    )
+    .await
+    .expect("input at the limit must be accepted");
+    wait_entry_status(&t, &entry_uuid(&id), EntryStatus::Ready).await;
+}
+
+/// With Silero active the length limit does not apply: Silero synthesizes in
+/// bounded chunks, so oversized input is ingested and synthesized.
+#[tokio::test(flavor = "multi_thread")]
+async fn add_text_entry_accepts_oversized_input_with_silero() {
+    let t = build_test_app_with_kind(EngineKind::Silero);
+    assert_eq!(t.state().tts.kind(), EngineKind::Silero);
+
+    let id = add_text_entry(
+        t.app.handle().clone(),
+        t.state(),
+        "а".repeat(MAX_INPUT_CHARS + 1),
+        false,
+        None,
+        None,
+    )
+    .await
+    .expect("oversized input must be accepted when Silero is active");
+    wait_entry_status(&t, &entry_uuid(&id), EntryStatus::Ready).await;
+}
+
+/// With Silero active `preview_normalize` normalizes oversized input instead
+/// of rejecting it — in full, with no content dropped.
+#[tokio::test(flavor = "multi_thread")]
+async fn preview_normalize_accepts_oversized_input_with_silero() {
+    let t = build_test_app_with_kind(EngineKind::Silero);
+
+    let result = preview_normalize(t.state(), "а".repeat(MAX_INPUT_CHARS + 1))
+        .await
+        .expect("oversized input must be normalized when Silero is active");
+    assert_eq!(result.normalized.chars().count(), MAX_INPUT_CHARS + 1);
+}
+
+/// The length guard is re-checked at synthesis time: an oversized entry that
+/// was accepted while Silero was active (simulated here by inserting it
+/// directly into storage) must fail with the limit message when synthesis
+/// runs under Piper, instead of feeding Piper an unchunked oversized run.
+#[tokio::test(flavor = "multi_thread")]
+async fn synthesis_under_piper_fails_oversized_entry_accepted_under_silero() {
+    let t = build_test_app();
+    assert_eq!(t.state().tts.kind(), EngineKind::Piper);
+
+    let entry = t
+        .state()
+        .storage
+        .add_entry_with_source("а".repeat(MAX_INPUT_CHARS + 1), None, None)
+        .unwrap();
+    let uuid = entry.id;
+
+    spawn_synthesis(
+        SynthesisDeps::from_state(&t.app.handle(), &t.state()),
+        uuid,
+        false,
+    );
+
+    wait_entry_status(&t, &uuid, EntryStatus::Error).await;
+    let entry = t.state().storage.get_entry(&uuid).unwrap();
+    let message = entry.error_message.expect("error entry carries a message");
+    assert!(
+        message.contains("Piper"),
+        "message names the engine: {message}"
+    );
 }
 
 // ── set_speed / set_volume range guards ──────────────────────────────

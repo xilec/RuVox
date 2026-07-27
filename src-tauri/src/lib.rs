@@ -370,6 +370,7 @@ pub(crate) fn invoke_handler<R: Runtime>(
         delete_entry,
         delete_audio,
         regenerate_entry,
+        set_entry_format,
         cancel_synthesis,
         play_entry,
         pause_playback,

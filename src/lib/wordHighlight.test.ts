@@ -6,7 +6,6 @@ import {
   applyHighlight,
   clearHighlight,
   findActiveTimestamp,
-  highlightingEnabled,
 } from './wordHighlight';
 
 const HIGHLIGHT_CLASS = 'word-highlight';
@@ -14,17 +13,6 @@ const HIGHLIGHT_CLASS = 'word-highlight';
 function ts(start: number, end: number, origStart = 0, origEnd = 0): WordTimestamp {
   return { word: 'w', start, end, original_pos: [origStart, origEnd] };
 }
-
-describe('highlightingEnabled', () => {
-  it('is disabled for html format (no data-orig-* spans to highlight)', () => {
-    expect(highlightingEnabled('html')).toBe(false);
-  });
-
-  it('is enabled for plain and markdown formats', () => {
-    expect(highlightingEnabled('plain')).toBe(true);
-    expect(highlightingEnabled('markdown')).toBe(true);
-  });
-});
 
 describe('findActiveTimestamp', () => {
   const severalIntervals = [ts(0, 1), ts(1, 2), ts(2, 3), ts(3, 4), ts(4, 5)];
