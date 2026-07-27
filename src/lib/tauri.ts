@@ -69,7 +69,8 @@ export interface UIConfig {
   preview_dialog_enabled: boolean;
   /** Active TTS engine. Defaults to "piper" on fresh installs and on configs
    *  that pre-date the engine selector. */
-  engine: EngineKind;  /** Active Piper voice id (e.g. "ruslan", "irina"). See piperVoices.ts. */
+  engine: EngineKind;
+  /** Active Piper voice id (e.g. "ruslan", "irina"). See piperVoices.ts. */
   piper_voice: string;
 }
 
