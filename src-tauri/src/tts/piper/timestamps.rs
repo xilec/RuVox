@@ -86,7 +86,14 @@ fn static_re() -> &'static Regex {
 /// Find the span(s) covering `[norm_start, norm_end)` and return the smallest
 /// interval in original-text coordinates that contains them. Mirrors the
 /// `_map_via_spans` helper in `ttsd/timestamps.py`.
-fn map_via_spans(spans: &[CharMappingEntry], norm_start: usize, norm_end: usize) -> (usize, usize) {
+///
+/// `pub(crate)` so the Silero Native engine can reuse the same mapping for
+/// the char offsets its word timestamps carry.
+pub(crate) fn map_via_spans(
+    spans: &[CharMappingEntry],
+    norm_start: usize,
+    norm_end: usize,
+) -> (usize, usize) {
     let mut best_start: Option<usize> = None;
     let mut best_end: Option<usize> = None;
 

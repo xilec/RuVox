@@ -327,6 +327,7 @@ pub struct TestApp {
     _storage_dir: TempDir,
     _voices_dir: TempDir,
     _ttsd_dir: TempDir,
+    _bundle_dir: TempDir,
 }
 
 impl TestApp {
@@ -349,6 +350,7 @@ pub fn build_test_app() -> TestApp {
     );
     let voices_dir = TempDir::new().expect("voices tempdir");
     let ttsd_dir = TempDir::new().expect("ttsd tempdir");
+    let bundle_dir = TempDir::new().expect("bundle tempdir");
 
     let (emitter, _engine_events) = recording_emitter();
 
@@ -360,6 +362,7 @@ pub fn build_test_app() -> TestApp {
         Some("stub-voice".to_string()),
         voices_dir.path().to_path_buf(),
         ttsd_dir.path().to_path_buf(),
+        bundle_dir.path().to_path_buf(),
         Arc::clone(&emitter),
     ));
     let player = Arc::new(FakePlayer::new());
@@ -370,6 +373,7 @@ pub fn build_test_app() -> TestApp {
         engine_switcher: switcher,
         ttsd_dir: ttsd_dir.path().to_path_buf(),
         piper_voices_dir: voices_dir.path().to_path_buf(),
+        silero_native_bundle_dir: bundle_dir.path().to_path_buf(),
         emitter,
         player: player.clone(),
         pipeline: Arc::new(ParkingMutex::new(TTSPipeline::new())),
@@ -386,6 +390,7 @@ pub fn build_test_app() -> TestApp {
         _storage_dir: storage_dir,
         _voices_dir: voices_dir,
         _ttsd_dir: ttsd_dir,
+        _bundle_dir: bundle_dir,
     }
 }
 

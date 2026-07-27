@@ -18,6 +18,7 @@ use tokio::sync::RwLock;
 
 use super::engine::{EngineKind, TtsEngine};
 use super::piper::PiperEngine;
+use super::silero_native::SileroNativeEngine;
 use super::supervisor::{CommandFactory, Emitter, TtsSupervisor};
 use super::{CharMappingEntry, SynthesizeOutput, TtsError};
 
@@ -29,6 +30,7 @@ pub struct EngineSwitcher {
     kind: AtomicU8,
     piper_voices_dir: PathBuf,
     ttsd_dir: PathBuf,
+    silero_native_bundle_dir: PathBuf,
     emitter: Emitter,
 }
 
@@ -41,17 +43,20 @@ struct Slot {
 
 const KIND_PIPER: u8 = 0;
 const KIND_SILERO: u8 = 1;
+const KIND_SILERO_NATIVE: u8 = 2;
 
 fn kind_to_u8(k: EngineKind) -> u8 {
     match k {
         EngineKind::Piper => KIND_PIPER,
         EngineKind::Silero => KIND_SILERO,
+        EngineKind::SileroNative => KIND_SILERO_NATIVE,
     }
 }
 
 fn u8_to_kind(v: u8) -> EngineKind {
     match v {
         KIND_SILERO => EngineKind::Silero,
+        KIND_SILERO_NATIVE => EngineKind::SileroNative,
         _ => EngineKind::Piper,
     }
 }
@@ -67,6 +72,7 @@ impl EngineSwitcher {
         initial_piper_voice: Option<String>,
         piper_voices_dir: PathBuf,
         ttsd_dir: PathBuf,
+        silero_native_bundle_dir: PathBuf,
         emitter: Emitter,
     ) -> Self {
         Self {
@@ -77,6 +83,7 @@ impl EngineSwitcher {
             kind: AtomicU8::new(kind_to_u8(initial_kind)),
             piper_voices_dir,
             ttsd_dir,
+            silero_native_bundle_dir,
             emitter,
         }
     }
@@ -86,8 +93,10 @@ impl EngineSwitcher {
     /// builds the new engine, swaps it in, and kicks off a background
     /// warmup so the UI gets `model_loading` → `model_loaded` events.
     ///
-    /// `target_engine` must be `"piper"` or `"silero"`. Unknown values
-    /// return [`TtsError::Ttsd`] with code `engine_unknown`.
+    /// `target_engine` must be `"piper"`, `"silero"`, or `"silero_native"`.
+    /// Unknown values return [`TtsError::Ttsd`] with code `engine_unknown`.
+    /// Picking `"silero_native"` without a downloaded model bundle fails with
+    /// code `engine_unavailable` (the active engine stays untouched).
     pub async fn apply_config(
         &self,
         target_engine: &str,
@@ -111,6 +120,7 @@ impl EngineSwitcher {
                 Some(target_piper_voice.to_string()),
             ),
             EngineKind::Silero => (self.build_silero()?, None),
+            EngineKind::SileroNative => (self.build_silero_native()?, None),
         };
 
         {
@@ -144,6 +154,28 @@ impl EngineSwitcher {
         Ok(Arc::new(supervisor))
     }
 
+    /// Build the in-process Silero Native engine. Fails fast with
+    /// `engine_unavailable` when the model bundle is not on disk, so
+    /// `update_config` surfaces a `config_error` and leaves the previous
+    /// config on disk instead of swapping to an engine that cannot load.
+    /// The full manifest verification runs inside the engine's warmup.
+    fn build_silero_native(&self) -> Result<Arc<SileroNativeEngine>, TtsError> {
+        if !self.silero_native_bundle_dir.join("manifest.json").exists() {
+            return Err(TtsError::Ttsd {
+                code: "engine_unavailable".to_string(),
+                message: format!(
+                    "Бандл моделей Silero не скачан ({}). \
+                     Скачайте его в настройках (движок «Silero (нативный)»).",
+                    self.silero_native_bundle_dir.display()
+                ),
+            });
+        }
+        Ok(Arc::new(SileroNativeEngine::new(
+            self.silero_native_bundle_dir.clone(),
+            Arc::clone(&self.emitter),
+        )))
+    }
+
     async fn current_engine(&self) -> Arc<dyn TtsEngine> {
         Arc::clone(&self.inner.read().await.engine)
     }
@@ -163,6 +195,7 @@ fn parse_kind(name: &str) -> Result<EngineKind, TtsError> {
     match name {
         "piper" => Ok(EngineKind::Piper),
         "silero" => Ok(EngineKind::Silero),
+        "silero_native" => Ok(EngineKind::SileroNative),
         other => Err(TtsError::Ttsd {
             code: "engine_unknown".to_string(),
             message: format!("неизвестный движок: \"{other}\""),
@@ -216,12 +249,19 @@ mod tests {
     /// never collide on a shared `/tmp/ruvox-test-*` path. The guards must
     /// be kept alive for the duration of the test (dropping them removes
     /// the directories).
-    fn fake_switcher() -> (EngineSwitcher, tempfile::TempDir, tempfile::TempDir) {
+    fn fake_switcher() -> (
+        EngineSwitcher,
+        tempfile::TempDir,
+        tempfile::TempDir,
+        tempfile::TempDir,
+    ) {
         let (emitter, _) = recording_emitter();
         let voices_tmp = tempfile::TempDir::new().expect("voices tempdir");
         let ttsd_tmp = tempfile::TempDir::new().expect("ttsd tempdir");
+        let bundle_tmp = tempfile::TempDir::new().expect("bundle tempdir");
         let voices_dir = voices_tmp.path().to_path_buf();
         let ttsd_dir = ttsd_tmp.path().to_path_buf();
+        let bundle_dir = bundle_tmp.path().to_path_buf();
         let initial: Arc<dyn TtsEngine> = Arc::new(PiperEngine::new(
             voices_dir.clone(),
             "ruslan".to_string(),
@@ -233,15 +273,20 @@ mod tests {
             Some("ruslan".to_string()),
             voices_dir,
             ttsd_dir,
+            bundle_dir,
             emitter,
         );
-        (switcher, voices_tmp, ttsd_tmp)
+        (switcher, voices_tmp, ttsd_tmp, bundle_tmp)
     }
 
     #[test]
     fn parse_kind_accepts_known_values() {
         assert_eq!(parse_kind("piper").unwrap(), EngineKind::Piper);
         assert_eq!(parse_kind("silero").unwrap(), EngineKind::Silero);
+        assert_eq!(
+            parse_kind("silero_native").unwrap(),
+            EngineKind::SileroNative
+        );
     }
 
     #[test]
@@ -255,7 +300,7 @@ mod tests {
 
     #[tokio::test]
     async fn apply_config_with_same_engine_and_voice_is_noop() {
-        let (sw, _voices_tmp, _ttsd_tmp) = fake_switcher();
+        let (sw, _voices_tmp, _ttsd_tmp, _bundle_tmp) = fake_switcher();
         // Same kind + same voice → no rebuild attempted.
         sw.apply_config("piper", "ruslan").await.unwrap();
         assert_eq!(sw.kind(), EngineKind::Piper);
@@ -263,7 +308,7 @@ mod tests {
 
     #[tokio::test]
     async fn apply_config_rebuilds_piper_on_voice_change() {
-        let (sw, _voices_tmp, _ttsd_tmp) = fake_switcher();
+        let (sw, _voices_tmp, _ttsd_tmp, _bundle_tmp) = fake_switcher();
         sw.apply_config("piper", "irina").await.unwrap();
         // Engine kind unchanged, but the inner slot now references "irina".
         assert_eq!(sw.kind(), EngineKind::Piper);
@@ -273,11 +318,44 @@ mod tests {
 
     #[tokio::test]
     async fn apply_config_rejects_unknown_engine() {
-        let (sw, _voices_tmp, _ttsd_tmp) = fake_switcher();
+        let (sw, _voices_tmp, _ttsd_tmp, _bundle_tmp) = fake_switcher();
         let err = sw.apply_config("nemo", "ruslan").await.unwrap_err();
         match err {
             TtsError::Ttsd { code, .. } => assert_eq!(code, "engine_unknown"),
             other => panic!("expected engine_unknown, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn apply_config_silero_native_without_bundle_is_engine_unavailable() {
+        let (sw, _voices_tmp, _ttsd_tmp, _bundle_tmp) = fake_switcher();
+        let err = sw
+            .apply_config("silero_native", "ruslan")
+            .await
+            .unwrap_err();
+        match err {
+            TtsError::Ttsd { code, message } => {
+                assert_eq!(code, "engine_unavailable");
+                assert!(
+                    message.chars().any(|c| matches!(c, 'А'..='я' | 'ё' | 'Ё')),
+                    "message should be Russian: {message}"
+                );
+            }
+            other => panic!("expected engine_unavailable, got {other:?}"),
+        }
+        // The failed switch must leave the previous engine active.
+        assert_eq!(sw.kind(), EngineKind::Piper);
+    }
+
+    #[tokio::test]
+    async fn apply_config_silero_native_with_bundle_dir_swaps_engine() {
+        let (sw, _voices_tmp, _ttsd_tmp, bundle_tmp) = fake_switcher();
+        // The build gate only requires the manifest to exist; the real load
+        // (with full verification) happens in the engine's warmup.
+        std::fs::write(bundle_tmp.path().join("manifest.json"), b"{}").unwrap();
+        sw.apply_config("silero_native", "ruslan").await.unwrap();
+        assert_eq!(sw.kind(), EngineKind::SileroNative);
+        let slot = sw.inner.read().await;
+        assert_eq!(slot.piper_voice, None);
     }
 }

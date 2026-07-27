@@ -12,12 +12,14 @@
 pub mod availability;
 pub mod engine;
 pub mod piper;
+pub mod silero_native;
 pub mod supervisor;
 pub mod switcher;
 
 pub use availability::{AvailableEngines, EngineAvailability};
 pub use engine::{EngineKind, SharedEngine, TtsEngine};
 pub use piper::PiperEngine;
+pub use silero_native::SileroNativeEngine;
 pub use supervisor::TtsSupervisor;
 pub use switcher::EngineSwitcher;
 

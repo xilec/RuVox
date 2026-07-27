@@ -36,6 +36,10 @@ pub struct AppState {
     /// Used by `download_piper_voice` and the auto-download fallback in
     /// `synthesize_audio` so they don't need to re-derive the path.
     pub piper_voices_dir: PathBuf,
+    /// Directory holding the Silero Native model bundle (`manifest.json` +
+    /// ONNX/dict files). Consumed by `get_available_engines` (availability
+    /// probe) and `download_silero_native_bundle`.
+    pub silero_native_bundle_dir: PathBuf,
     /// Frontend emitter shared with the engine layer. Held here so the
     /// download path can reuse it without rebuilding the closure.
     pub emitter: Emitter,
