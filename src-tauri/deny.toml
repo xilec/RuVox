@@ -40,6 +40,11 @@ confidence-threshold = 0.8
 crate = "ruvox-tauri"
 allow = ["GPL-3.0-only"]
 
+# Same policy for the in-repo engine crate (path dependency).
+[[licenses.exceptions]]
+crate = "silero-native"
+allow = ["GPL-3.0-only"]
+
 [bans]
 multiple-versions = "warn"
 wildcards = "warn"
