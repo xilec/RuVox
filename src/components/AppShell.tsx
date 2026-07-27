@@ -12,7 +12,7 @@ import { notifications } from '@mantine/notifications';
 import { useState, useEffect, useRef } from 'react';
 import { readText as readClipboardText } from '@tauri-apps/plugin-clipboard-manager';
 import { commands } from '../lib/tauri';
-import type { UIConfig } from '../lib/tauri';
+import type { EntryFormat, UIConfig } from '../lib/tauri';
 import { formatError } from '../lib/errors';
 import { sanitizeHtml } from '../lib/html';
 import { extractTextForTts } from '../lib/htmlText';
@@ -24,6 +24,11 @@ import { useSearchQuery } from '../stores/searchQuery';
 import { PreviewDialog } from '../dialogs/PreviewDialog';
 import { SettingsModal } from '../dialogs/Settings';
 import { IconSearch } from './icons';
+
+/** Config stores the default format as a free-form string; narrow it. */
+function toEntryFormat(v: string | undefined): EntryFormat {
+  return v === 'plain' || v === 'html' ? v : 'markdown';
+}
 
 export function AppShell() {
   const { selectedEntry } = useSelectedEntry();
@@ -203,16 +208,21 @@ export function AppShell() {
     const sanitized = sanitizeHtml(rawHtml);
     const extracted = extractTextForTts(sanitized);
     if (!extracted.trim()) return false;
-    await doAddEntry(extracted, playWhenReady, sanitized);
+    await doAddEntry(extracted, playWhenReady, 'html', sanitized);
     return true;
   }
 
-  async function doAddEntry(text: string, playWhenReady: boolean, htmlSource?: string) {
+  async function doAddEntry(
+    text: string,
+    playWhenReady: boolean,
+    format?: EntryFormat,
+    htmlSource?: string,
+  ) {
     try {
       const entryId = await commands.addTextEntry(
         text,
         playWhenReady,
-        htmlSource ? 'html' : undefined,
+        format,
         htmlSource,
       );
       // Select the new entry so TextViewer swaps to its content; entry_updated
@@ -237,6 +247,7 @@ export function AppShell() {
     finalText: string,
     skipShortTexts: boolean,
     playWhenReady: boolean,
+    sourceFormat: EntryFormat,
   ) {
     setPreviewOpen(false);
     if (skipShortTexts && config) {
@@ -247,7 +258,28 @@ export function AppShell() {
     setPending(true);
     // finalText reflects user edits from the preview dialog; fall back to the
     // captured clipboard text if the user didn't edit or cleared the field.
-    void doAddEntry(finalText || previewText, playWhenReady);
+    const text = finalText || previewText;
+    if (sourceFormat === 'html') {
+      // Explicit choice: interpret the text as HTML markup (preview-dialog
+      // spec). No plain fallback here — an empty extraction is an error.
+      void addHtmlEntry(text, playWhenReady)
+        .then((ok) => {
+          if (!ok) {
+            notifications.show({
+              title: 'Ошибка',
+              message: 'Не удалось извлечь текст из HTML',
+              color: 'red',
+            });
+            setPending(false);
+          }
+        })
+        .catch((err) => {
+          notifications.show({ title: 'Ошибка', message: formatError(err), color: 'red' });
+          setPending(false);
+        });
+      return;
+    }
+    void doAddEntry(text, playWhenReady, sourceFormat);
   }
 
   function handlePreviewCancel() {
@@ -365,6 +397,7 @@ export function AppShell() {
       <PreviewDialog
         opened={previewOpen}
         text={previewText}
+        defaultFormat={toEntryFormat(config?.text_format)}
         onSynthesize={handlePreviewSynthesize}
         onCancel={handlePreviewCancel}
       />

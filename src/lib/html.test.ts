@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 
-import { renderHtml } from './html';
+import { renderHtml, previewTextFor } from './html';
 import { extractTextForTts } from './htmlText';
 
 /** Strip all tags — word spans included — leaving only the visible text. */
@@ -108,5 +108,22 @@ describe('renderHtml word spans', () => {
     for (const m of spans) {
       expect(cps.slice(Number(m[1]), Number(m[2])).join('')).toBe(m[3]);
     }
+  });
+});
+
+
+describe('previewTextFor', () => {
+  it('returns the text unchanged for plain and markdown', () => {
+    const text = '<p>разметка</p> as-is';
+    expect(previewTextFor(text, 'plain')).toBe(text);
+    expect(previewTextFor(text, 'markdown')).toBe(text);
+  });
+
+  it('sanitizes and extracts the text for html', () => {
+    const out = previewTextFor(
+      '<div><button>Купить</button><p>Вызови <code>API</code></p></div>',
+      'html',
+    );
+    expect(out).toBe('Вызови API');
   });
 });

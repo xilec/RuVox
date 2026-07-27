@@ -1,6 +1,7 @@
 import DOMPurify, { type Config as DOMPurifyConfig } from 'dompurify';
 import hljs from 'highlight.js';
-import { annotateHtmlWords } from './htmlText';
+import { annotateHtmlWords, extractTextForTts } from './htmlText';
+import type { EntryFormat } from './tauri';
 
 /**
  * DOMPurify configuration.
@@ -31,6 +32,16 @@ export function sanitizeHtml(raw: string): string {
   // DOMPurify.sanitize with RETURN_DOM=false (default) narrows the return
   // type to string via the config overload.
   return DOMPurify.sanitize(raw, { ...PURIFY_CONFIG, RETURN_DOM: false });
+}
+
+/**
+ * Text that a preview/normalization request should run on for a given
+ * source-format choice (preview-dialog spec): for `html` the markup is
+ * sanitized and extracted first, so the preview shows what will actually
+ * be narrated; other formats preview the text unchanged.
+ */
+export function previewTextFor(text: string, format: EntryFormat): string {
+  return format === 'html' ? extractTextForTts(sanitizeHtml(text)) : text;
 }
 
 /**
