@@ -208,12 +208,51 @@ number words joined by "точка". File paths SHALL be read with "слэш" (o
 `.` / `..`, drive letters plus "двоеточие" for Windows drives, and "точка"
 before file extensions.
 
+The system SHALL also detect scheme-less URLs — `www.`-prefixed domains and
+bare domains whose last label is a known TLD from `TLD_MAP` — with optional
+path, query, and fragment, and SHALL read them like schemed URLs without the
+scheme prefix: domain labels joined with "точка" (known TLDs via `TLD_MAP`),
+path segments after "слэш", query after "вопросительный знак", fragment
+after "решётка". Detection MUST NOT match dotted names whose last label is
+not in `TLD_MAP` (filenames like `file.txt`, `test.spec.ts`, `config.yaml`),
+MUST NOT match numeric dotted forms (versions `1.2.3`, dates), and MUST NOT
+re-match domains already consumed as part of a schemed URL or an email
+address.
+
 #### Scenario: HTTPS URL
 
 - GIVEN the input "https://github.com/user/repo"
 - WHEN the pipeline processes it
 - THEN the output contains "эйч ти ти пи эс двоеточие слэш слэш гитхаб точка
   ком слэш юзер слэш репо"
+
+#### Scenario: www-prefixed URL
+
+- GIVEN the input "Сайт www.example.com недоступен"
+- WHEN the pipeline processes it
+- THEN the output contains "ввв точка экзампл точка ком" and no literal "."
+  between the domain labels remains
+
+#### Scenario: Bare domain with path
+
+- GIVEN the input "документация на docs.python.org/3/tutorial"
+- WHEN the pipeline processes it
+- THEN the output contains "докс точка пайтон точка орг слэш три слэш
+  тьюториал"
+
+#### Scenario: Filename is not a bare domain
+
+- GIVEN the input "открой file.txt и config.yaml"
+- WHEN the pipeline processes it
+- THEN neither name is read with "точка" domain separators (their suffixes
+  are not in `TLD_MAP`)
+
+#### Scenario: Version is not a bare domain
+
+- GIVEN the input "версия 1.2.3"
+- WHEN the pipeline processes it
+- THEN the version is read as "один точка два точка три" by the version
+  phase, not treated as a domain
 
 #### Scenario: Email address
 

@@ -14,7 +14,7 @@ use crate::pipeline::normalizers::code_blocks::CodeBlockHandler;
 use crate::pipeline::normalizers::english::EnglishNormalizer;
 use crate::pipeline::normalizers::numbers::NumberNormalizer;
 use crate::pipeline::normalizers::symbols::SymbolNormalizer;
-use crate::pipeline::normalizers::urls::URLPathNormalizer;
+use crate::pipeline::normalizers::urls::{is_known_tld, URLPathNormalizer};
 use crate::pipeline::tracked_text::{CharMapping, TrackedText};
 
 // ── Static compiled regexes ───────────────────────────────────────────────────
@@ -27,6 +27,23 @@ fn re_url() -> &'static Regex {
         )
         .expect("valid regex")
     })
+}
+
+fn re_schemeless_url() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    // Generic dotted-labels candidate ("example.com", "example.com/path").
+    // The www/TLD validation happens in the phase-7 closure, which rejects
+    // versions, dates, filenames, and path-internal segments.
+    RE.get_or_init(|| {
+        Regex::new(r#"\b(?:[a-zA-Z0-9-]+\.)+[a-zA-Z0-9-]+(?:/[^\s<>"'\)]*)?"#).expect("valid regex")
+    })
+}
+
+/// Split trailing sentence punctuation off a matched URL so it is neither
+/// parsed nor read as part of it ("смотри example.com." keeps its dot).
+fn split_trailing_punct(url: &str) -> (&str, &str) {
+    let core = url.trim_end_matches(['.', ',', ';', ':', '!', '?']);
+    (core, &url[core.len()..])
 }
 
 fn re_email() -> &'static Regex {
@@ -304,17 +321,45 @@ impl TTSPipeline {
             let url_norm = URLPathNormalizer::new(eng, num);
             tracked.sub(re_url(), |caps| {
                 let url = caps.get(0).unwrap().as_str();
-                // The URL regex greedily eats sentence punctuation clinging
-                // to the end ("смотри https://example.com."), which would
-                // otherwise be read as "точка". Strip it before parsing and
-                // re-append verbatim.
-                let core = url.trim_end_matches(['.', ',', ';', ':', '!', '?']);
-                let suffix = &url[core.len()..];
+                let (core, suffix) = split_trailing_punct(url);
                 format!("{}{}", url_norm.normalize_url(core), suffix)
             });
             tracked.sub(re_email(), |caps| {
                 url_norm.normalize_email(caps.get(0).unwrap().as_str())
             });
+            // Scheme-less URLs ("www.example.com", "example.com/path") — after
+            // schemed URLs and emails so their spans are already consumed.
+            {
+                let snapshot = tracked.text().to_string();
+                let matches: Vec<(usize, usize, String)> = re_schemeless_url()
+                    .find_iter(&snapshot)
+                    .filter_map(|m| {
+                        // Skip path-internal segments ("/home/site.dev/main.py"
+                        // or "C:\app.dev\main.py" is a file path, not a domain).
+                        if m.start() > 0 && snapshot[..m.start()].ends_with(['/', '\\']) {
+                            return None;
+                        }
+                        let candidate = m.as_str();
+                        let (core, suffix) = split_trailing_punct(candidate);
+                        let host = core.split(['/', '?', '#']).next().unwrap_or(core);
+                        let is_www = host
+                            .split('.')
+                            .next()
+                            .is_some_and(|l| l.eq_ignore_ascii_case("www"));
+                        let known_tld = host.rsplit('.').next().is_some_and(is_known_tld);
+                        if is_www || known_tld {
+                            Some((
+                                m.start(),
+                                m.end(),
+                                format!("{}{}", url_norm.normalize_schemeless(core), suffix),
+                            ))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                tracked.replace_byte_ranges(matches);
+            }
             tracked.sub(re_ip(), |caps| {
                 url_norm.normalize_ip(caps.get(0).unwrap().as_str())
             });
@@ -807,5 +852,76 @@ mod tests {
         let mut p = TTSPipeline::new();
         p.process("Переменная x равна 5");
         assert!(p.english_normalizer.get_unknown_words().is_empty());
+    }
+
+    // ── Scheme-less URLs ─────────────────────────────────────────────────────
+
+    #[test]
+    fn pipeline_schemeless_www_domain() {
+        let mut p = TTSPipeline::new();
+        assert_eq!(
+            p.process("Сайт www.example.com недоступен"),
+            "Сайт ввв точка экзампл точка ком недоступен"
+        );
+    }
+
+    #[test]
+    fn pipeline_schemeless_bare_domain_with_path() {
+        let mut p = TTSPipeline::new();
+        assert_eq!(
+            p.process("документация на docs.python.org/3/tutorial"),
+            "документация на докс точка пайтон точка орг слэш три слэш тьюториал"
+        );
+    }
+
+    #[test]
+    fn pipeline_schemeless_domain_keeps_sentence_punctuation() {
+        // The sentence-ending dot is not part of the domain and must not be
+        // read as "точка".
+        let mut p = TTSPipeline::new();
+        assert_eq!(
+            p.process("Смотри example.com, там документация."),
+            "Смотри экзампл точка ком, там документация."
+        );
+    }
+
+    #[test]
+    fn pipeline_schemeless_skips_email_domain() {
+        // The email pass consumes the whole address first; the domain inside
+        // must not be re-matched as a bare domain.
+        let mut p = TTSPipeline::new();
+        assert_eq!(
+            p.process("Пишите на user@example.com"),
+            "Пишите на юзер собака экзампл точка ком"
+        );
+    }
+
+    #[test]
+    fn pipeline_schemeless_false_positive_guards() {
+        // Filenames (suffix not in TLD_MAP) and versions (numeric last label)
+        // must not be detected as bare domains.
+        let mut p = TTSPipeline::new();
+        assert_eq!(
+            p.process("открой file.txt и config.yaml"),
+            "открой филе.тэкст и конфиг.ямл"
+        );
+        assert_eq!(p.process("версия 1.2.3"), "версия один точка два точка три");
+    }
+
+    #[test]
+    fn pipeline_schemeless_skips_path_internal_segment() {
+        // "site.dev" inside a file path is a directory, not a domain.
+        let mut p = TTSPipeline::new();
+        assert_eq!(
+            p.process("Файл /home/site.dev/main.py лежит тут"),
+            "Файл слэш хоум слэш сите точка дев слэш мэйн точка пи лежит тут"
+        );
+        // Same guard for Windows-style separators: "app.dev" after a
+        // backslash must not be read as a domain. (Backslash paths are not
+        // matched by re_path today at all — pre-existing gap, out of scope.)
+        assert_eq!(
+            p.process(r"путь C:\projects\app.dev\main.py тут"),
+            "путь си:\\проджектс\\апп.дев\\мэйн.пи тут"
+        );
     }
 }

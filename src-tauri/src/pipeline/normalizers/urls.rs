@@ -51,6 +51,12 @@ fn lookup_tld(tld: &str) -> Option<&'static str> {
         .map(|(_, v)| *v)
 }
 
+/// Whether the label is a known TLD — used by the pipeline's scheme-less URL
+/// detection to keep filenames and versions from matching.
+pub(crate) fn is_known_tld(label: &str) -> bool {
+    lookup_tld(label).is_some()
+}
+
 fn lookup_protocol(scheme: &str) -> Option<&'static str> {
     let lower = scheme.to_lowercase();
     PROTOCOLS
@@ -193,6 +199,23 @@ impl<'a> URLPathNormalizer<'a> {
         }
 
         parts.push("двоеточие слэш слэш".to_string());
+        parts.extend(self.render_host_and_tail(rest));
+
+        parts.join(" ")
+    }
+
+    /// Normalize a scheme-less URL ("www.example.com", "example.com/path").
+    ///
+    /// Rendered exactly like `normalize_url` minus the protocol prefix, so
+    /// transliteration, digit runs, and punctuation wording stay identical.
+    pub fn normalize_schemeless(&self, url: &str) -> String {
+        self.render_host_and_tail(url).join(" ")
+    }
+
+    /// Render "host[:port][/path][?query][#fragment]" (everything after the
+    /// scheme) into speakable parts.
+    fn render_host_and_tail(&self, rest: &str) -> Vec<String> {
+        let mut parts: Vec<String> = Vec::new();
 
         // Split authority (host[:port]) from path/query/fragment.
         let (authority, path_query_fragment) = if let Some(pos) = rest.find('/') {
@@ -304,7 +327,7 @@ impl<'a> URLPathNormalizer<'a> {
             parts.push(self.transliterate_segment(fragment_str));
         }
 
-        parts.join(" ")
+        parts
     }
 
     fn normalize_identifier(&self, identifier: &str) -> String {
@@ -693,5 +716,18 @@ mod tests {
     fn filepath_production_path(path: &str) -> String {
         let (en, nn) = mk_normalizer();
         norm(&en, &nn).normalize_filepath(path)
+    }
+
+    // ---- Scheme-less URLs (normalize_schemeless) ----
+
+    #[test_case("www.example.com" => "ввв точка экзампл точка ком"; "www_prefixed")]
+    #[test_case("example.com" => "экзампл точка ком"; "bare_domain")]
+    #[test_case("docs.python.org/3/tutorial" => "докс точка пайтон точка орг слэш три слэш тьюториал"; "bare_domain_with_path")]
+    #[test_case("example.com/search?q=test&lang=ru" => "экзампл точка ком слэш сирч вопросительный знак к равно тест ланг равно ру"; "bare_domain_with_query")]
+    #[test_case("example.com/#section-2" => "экзампл точка ком решётка секшн два"; "bare_domain_with_fragment")]
+    #[test_case("api.example.com/v1/users/123" => "эй пи ай точка экзампл точка ком слэш в один слэш юзерс слэш сто двадцать три"; "digit_runs_in_segments")]
+    fn schemeless_production_path(url: &str) -> String {
+        let (en, nn) = mk_normalizer();
+        norm(&en, &nn).normalize_schemeless(url)
     }
 }
