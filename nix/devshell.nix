@@ -196,6 +196,16 @@ pkgs.mkShell {
   shellHook = ''
     export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:$LD_LIBRARY_PATH"
 
+    # espeak-rs-sys 0.2.0 finds the system libsonic via CMake's
+    # find_library() and links it into the static espeak-ng target with
+    # `target_link_libraries(... PRIVATE ''${SONIC_LIB})`. CMake does not
+    # propagate PRIVATE link libraries of a STATIC target to consumers, so
+    # build.rs never emits `cargo:rustc-link-lib=sonic` and dev/test
+    # binaries fail to link with undefined references to sonic* symbols.
+    # Same workaround as the production build (flake.nix `env.RUSTFLAGS`);
+    # the -L search path comes from buildInputs' `sonic` via NIX_LDFLAGS.
+    export RUSTFLAGS="-C link-arg=-lsonic''${RUSTFLAGS:+ $RUSTFLAGS}"
+
     # bindgen needs the C system include paths from stdenv.cc — without these,
     # `#include <stdio.h>` fails inside the espeak-rs-sys / sonic-rs-sys build
     # scripts because clang has no implicit C system headers under nix.
