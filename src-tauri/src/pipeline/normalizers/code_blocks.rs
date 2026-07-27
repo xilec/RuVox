@@ -152,9 +152,11 @@ impl CodeBlockHandler {
 
     // ── Public processing entry points ─────────────────────────────────
 
-    /// Process a single code block (code content + optional language tag).
+    /// Process a single code block (code content + optional language tag)
+    /// under the handler's default mode.
     ///
-    /// This is the low-level entry used in tests and by `process()`.
+    /// This is the low-level entry used in tests; `process()` calls
+    /// `process_block_with_mode()` directly to honor per-section directives.
     pub fn process_block(&self, code: &str, language: Option<&str>) -> String {
         self.process_block_with_mode(self.mode, code, language)
     }
