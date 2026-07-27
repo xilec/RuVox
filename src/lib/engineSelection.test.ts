@@ -9,21 +9,31 @@ import {
 const BOTH_AVAILABLE: AvailabilityMap = {
   piper: { available: true, reason: null },
   silero: { available: true, reason: null },
+  silero_native: { available: false, reason: 'Бандл моделей не скачан' },
+};
+
+const ALL_AVAILABLE: AvailabilityMap = {
+  piper: { available: true, reason: null },
+  silero: { available: true, reason: null },
+  silero_native: { available: true, reason: null },
 };
 
 const ONLY_PIPER: AvailabilityMap = {
   piper: { available: true, reason: null },
   silero: { available: false, reason: 'Python-стек не установлен' },
+  silero_native: { available: false, reason: 'Бандл моделей не скачан' },
 };
 
 const ONLY_SILERO: AvailabilityMap = {
   piper: { available: false, reason: 'Голос не загружен' },
   silero: { available: true, reason: null },
+  silero_native: { available: false, reason: 'Бандл моделей не скачан' },
 };
 
 const NEITHER: AvailabilityMap = {
   piper: { available: false, reason: 'oops' },
   silero: { available: false, reason: 'oops' },
+  silero_native: { available: false, reason: 'oops' },
 };
 
 describe('computeEngineFormState', () => {
@@ -74,6 +84,24 @@ describe('computeEngineFormState', () => {
     );
     expect(s.piperVoice).toBe('ruslan');
     expect(s.sileroSpeaker).toBe('xenia');
+  });
+
+  it('preserves a saved silero_native engine when it is available', () => {
+    const s = computeEngineFormState(
+      { engine: 'silero_native', piper_voice: 'ruslan', speaker: 'xenia' },
+      ALL_AVAILABLE,
+    );
+    expect(s.engine).toBe('silero_native');
+    expect(s.coercedAwayFromUnavailable).toBe(false);
+  });
+
+  it('coerces silero_native → piper when the bundle is not downloaded', () => {
+    const s = computeEngineFormState(
+      { engine: 'silero_native', piper_voice: 'ruslan', speaker: 'xenia' },
+      BOTH_AVAILABLE,
+    );
+    expect(s.engine).toBe('piper');
+    expect(s.coercedAwayFromUnavailable).toBe(true);
   });
 });
 

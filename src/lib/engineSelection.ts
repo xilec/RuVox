@@ -30,11 +30,11 @@ export function computeEngineFormState(
   config: Pick<UIConfig, 'engine' | 'piper_voice' | 'speaker'>,
   availability: AvailabilityMap,
 ): EngineFormState {
-  const savedEngine: EngineKind = config.engine === 'silero' ? 'silero' : 'piper';
+  const savedEngine = coerceEngineKind(config.engine);
   const savedAvailable = availability[savedEngine].available;
   const engine: EngineKind = savedAvailable
     ? savedEngine
-    : pickFallbackEngine(savedEngine, availability);
+    : pickFallbackEngine(availability);
 
   return {
     engine,
@@ -42,6 +42,11 @@ export function computeEngineFormState(
     sileroSpeaker: config.speaker || 'xenia',
     coercedAwayFromUnavailable: !savedAvailable && engine !== savedEngine,
   };
+}
+
+/** Map a persisted (possibly stale / unknown) engine string to a known kind. */
+function coerceEngineKind(raw: string): EngineKind {
+  return raw === 'silero' || raw === 'silero_native' ? raw : 'piper';
 }
 
 /**
@@ -62,15 +67,12 @@ export function applyEngineChange(
   return { ...state, engine: next, coercedAwayFromUnavailable: false };
 }
 
-function pickFallbackEngine(
-  unavailable: EngineKind,
-  availability: AvailabilityMap,
-): EngineKind {
-  const other: EngineKind = unavailable === 'piper' ? 'silero' : 'piper';
-  if (availability[other].available) {
-    return other;
-  }
-  // Both unavailable — return Piper so the UI still has a value to render.
+function pickFallbackEngine(availability: AvailabilityMap): EngineKind {
+  // Preference order for the automatic fallback: Piper first (in-process,
+  // always available in practice), then the Silero engines.
+  const order: EngineKind[] = ['piper', 'silero', 'silero_native'];
+  const found = order.find((e) => availability[e].available);
+  // Nothing available — return Piper so the UI still has a value to render.
   // The save attempt will fail at the backend and the user gets the error.
-  return 'piper';
+  return found ?? 'piper';
 }
