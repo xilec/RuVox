@@ -22,6 +22,7 @@ use crate::storage::schema::{
     EntryId, EntryStatus, TextEntry, TextFormat, UIConfig, UIConfigPatch, WordTimestamp,
 };
 use crate::storage::service::{StorageError, StorageService};
+use crate::tts::engine::EngineKind;
 use crate::tts::piper::download::download_voice;
 use crate::tts::{
     availability, AvailableEngines, CharMappingEntry, SynthesizeOutput, TtsEngine, TtsError,
@@ -76,21 +77,35 @@ impl From<TtsError> for CommandError {
 
 type CmdResult<T> = Result<T, CommandError>;
 
-/// Maximum accepted input length in Unicode codepoints. Larger pastes are
-/// rejected before normalization/persistence: Piper still synthesizes the
-/// whole text in one unchunked ONNX run, so unbounded input risks both a
-/// CPU wedge and an OOM (see openspec change `fix-pipeline-quadratic`).
+/// Maximum accepted input length in Unicode codepoints when the active engine
+/// is Piper. Piper still synthesizes the whole text in one unchunked ONNX run,
+/// so unbounded input risks both a CPU wedge and an OOM (see openspec change
+/// `fix-pipeline-quadratic` and issue #155). Silero synthesizes in bounded
+/// chunks (`ttsd/ttsd/chunking.py`), so no limit applies while it is active.
 const MAX_INPUT_CHARS: usize = 100_000;
 
-/// Reject input longer than `MAX_INPUT_CHARS` codepoints.
-fn validate_input_length(text: &str) -> CmdResult<()> {
-    if text.chars().count() > MAX_INPUT_CHARS {
-        return Err(CommandError::Internal {
-            // Keep the space-grouped literal in sync with MAX_INPUT_CHARS.
-            message: "текст слишком длинный (максимум 100 000 символов)".to_string(),
-        });
+/// The rejection message for input longer than `MAX_INPUT_CHARS` codepoints
+/// when the active engine is Piper; `None` for Silero (it synthesizes in
+/// bounded chunks and accepts any length).
+fn oversized_input_message(text: &str, engine: EngineKind) -> Option<String> {
+    if engine == EngineKind::Piper && text.chars().count() > MAX_INPUT_CHARS {
+        // Keep the space-grouped literal in sync with MAX_INPUT_CHARS.
+        return Some(
+            "текст слишком длинный для движка Piper (максимум 100 000 символов); \
+             сократите текст или переключитесь на Silero в настройках"
+                .to_string(),
+        );
     }
-    Ok(())
+    None
+}
+
+/// Reject input longer than `MAX_INPUT_CHARS` codepoints when the active
+/// engine is Piper; Silero chunks the text and accepts any length.
+fn validate_input_length(text: &str, engine: EngineKind) -> CmdResult<()> {
+    match oversized_input_message(text, engine) {
+        Some(message) => Err(CommandError::Internal { message }),
+        None => Ok(()),
+    }
 }
 
 // ── Helper: emit entry_updated ─────────────────────────────────────────────────
@@ -175,6 +190,7 @@ impl<R: Runtime> SynthesisDeps<R> {
 enum SynthesisError {
     PipelinePanic(String),
     EmptyText,
+    InputTooLong(String),
     TtsFailed(String),
 }
 
@@ -183,6 +199,7 @@ impl SynthesisError {
         match self {
             Self::PipelinePanic(msg) => format!("pipeline task panicked: {msg}"),
             Self::EmptyText => "нормализация вернула пустой текст".to_string(),
+            Self::InputTooLong(msg) => msg.clone(),
             Self::TtsFailed(msg) => msg.clone(),
         }
     }
@@ -512,6 +529,14 @@ pub fn spawn_synthesis<R: Runtime + 'static>(
             };
 
             let result: Result<(), SynthesisError> = async {
+                // Re-check the length guard at synthesis time: the engine may
+                // have been switched to Piper after the entry was ingested
+                // under Silero (queued synthesis or regenerate_entry), and an
+                // unchunked oversized run is exactly what the limit guards
+                // against.
+                if let Some(msg) = oversized_input_message(&entry.original_text, tts.kind()) {
+                    return Err(SynthesisError::InputTooLong(msg));
+                }
                 let (normalized, mapping) =
                     run_normalization(Arc::clone(&pipeline), entry.original_text.clone()).await?;
                 mark_processing(&storage, &app, &entry_id, &normalized);
@@ -679,7 +704,7 @@ fn ingest_text<R: Runtime>(
             message: "в буфере обмена нет текста".to_string(),
         });
     }
-    validate_input_length(&text)?;
+    validate_input_length(&text, state.tts.kind())?;
 
     let entry = state
         .storage
@@ -772,7 +797,7 @@ pub async fn preview_normalize(
     state: State<'_, AppState>,
     text: String,
 ) -> CmdResult<PreviewNormalizeResult> {
-    validate_input_length(&text)?;
+    validate_input_length(&text, state.tts.kind())?;
     let (normalized, _char_mapping) =
         preview_normalization(Arc::clone(&state.pipeline), text).await?;
     Ok(PreviewNormalizeResult { normalized })

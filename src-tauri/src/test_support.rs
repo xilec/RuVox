@@ -338,6 +338,13 @@ impl TestApp {
 
 /// Build the test app: production command set, managed `AppState` with fakes.
 pub fn build_test_app() -> TestApp {
+    build_test_app_with_kind(EngineKind::Piper)
+}
+
+/// Build the test app with the `EngineSwitcher` reporting the given engine
+/// kind. Only the switcher's atomic kind is affected — the stub engine behind
+/// it is unchanged, so synthesis behavior stays stub-driven.
+pub fn build_test_app_with_kind(kind: EngineKind) -> TestApp {
     let app = mock_builder()
         .invoke_handler(crate::invoke_handler())
         .build(mock_context(noop_assets()))
@@ -356,7 +363,7 @@ pub fn build_test_app() -> TestApp {
     let stub: Arc<dyn TtsEngine> = engine.clone();
     let switcher = Arc::new(EngineSwitcher::new(
         Arc::clone(&stub),
-        EngineKind::Piper,
+        kind,
         Some("stub-voice".to_string()),
         voices_dir.path().to_path_buf(),
         ttsd_dir.path().to_path_buf(),

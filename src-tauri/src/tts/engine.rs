@@ -41,7 +41,9 @@ impl EngineKind {
 /// the Tokio runtime.
 #[async_trait]
 pub trait TtsEngine: Send + Sync {
-    /// Identifies the concrete engine. Cheap; called for logs/events only.
+    /// Identifies the concrete engine. Cheap. Called for logs/events and for
+    /// engine-aware decisions (the input length limit gates on it), so it must
+    /// reflect the actually-active engine at call time.
     fn kind(&self) -> EngineKind;
 
     /// Load the model. Idempotent — calling it twice should be a no-op.

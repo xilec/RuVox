@@ -6,7 +6,9 @@
 
 use super::*;
 use crate::player::PlayerBackend;
-use crate::test_support::{build_test_app, record_events, wait_until, PlayerCall, TestApp};
+use crate::test_support::{
+    build_test_app, build_test_app_with_kind, record_events, wait_until, PlayerCall, TestApp,
+};
 use crate::tts::engine::EngineKind;
 use std::time::Duration;
 
@@ -563,13 +565,15 @@ async fn preview_normalize_returns_text_without_history_or_audio_side_effects() 
     assert!(t.state().synthesis_tasks.lock().is_empty());
 }
 
-// ── input length limit (MAX_INPUT_CHARS = 100 000 codepoints) ─────────
+// ── input length limit (MAX_INPUT_CHARS = 100 000 codepoints, Piper only) ──
 
-/// Oversized text is rejected by `add_text_entry` before persistence:
-/// typed `internal` error naming the limit, no entry, no synthesis task.
+/// Oversized text is rejected by `add_text_entry` before persistence when the
+/// active engine is Piper (the default test-app kind): typed `internal` error
+/// naming the engine and the limit, no entry, no synthesis task.
 #[tokio::test(flavor = "multi_thread")]
 async fn add_text_entry_rejects_oversized_input_before_persistence() {
     let t = build_test_app();
+    assert_eq!(t.state().tts.kind(), EngineKind::Piper);
 
     let err = add_text_entry(
         t.app.handle().clone(),
@@ -586,7 +590,11 @@ async fn add_text_entry_rejects_oversized_input_before_persistence() {
             assert!(
                 message.contains("100 000"),
                 "message names the limit: {message}"
-            )
+            );
+            assert!(
+                message.contains("Piper"),
+                "message names the engine: {message}"
+            );
         }
         other => panic!("expected internal error, got {other:?}"),
     }
@@ -595,7 +603,8 @@ async fn add_text_entry_rejects_oversized_input_before_persistence() {
     assert!(t.state().synthesis_tasks.lock().is_empty());
 }
 
-/// Oversized text is rejected by `preview_normalize` before normalization.
+/// Oversized text is rejected by `preview_normalize` before normalization
+/// when the active engine is Piper.
 #[tokio::test(flavor = "multi_thread")]
 async fn preview_normalize_rejects_oversized_input() {
     let t = build_test_app();
@@ -608,7 +617,11 @@ async fn preview_normalize_rejects_oversized_input() {
             assert!(
                 message.contains("100 000"),
                 "message names the limit: {message}"
-            )
+            );
+            assert!(
+                message.contains("Piper"),
+                "message names the engine: {message}"
+            );
         }
         other => panic!("expected internal error, got {other:?}"),
     }
@@ -630,6 +643,69 @@ async fn add_text_entry_accepts_input_at_limit() {
     .await
     .expect("input at the limit must be accepted");
     wait_entry_status(&t, &entry_uuid(&id), EntryStatus::Ready).await;
+}
+
+/// With Silero active the length limit does not apply: Silero synthesizes in
+/// bounded chunks, so oversized input is ingested and synthesized.
+#[tokio::test(flavor = "multi_thread")]
+async fn add_text_entry_accepts_oversized_input_with_silero() {
+    let t = build_test_app_with_kind(EngineKind::Silero);
+    assert_eq!(t.state().tts.kind(), EngineKind::Silero);
+
+    let id = add_text_entry(
+        t.app.handle().clone(),
+        t.state(),
+        "а".repeat(MAX_INPUT_CHARS + 1),
+        false,
+        None,
+        None,
+    )
+    .await
+    .expect("oversized input must be accepted when Silero is active");
+    wait_entry_status(&t, &entry_uuid(&id), EntryStatus::Ready).await;
+}
+
+/// With Silero active `preview_normalize` normalizes oversized input instead
+/// of rejecting it — in full, with no content dropped.
+#[tokio::test(flavor = "multi_thread")]
+async fn preview_normalize_accepts_oversized_input_with_silero() {
+    let t = build_test_app_with_kind(EngineKind::Silero);
+
+    let result = preview_normalize(t.state(), "а".repeat(MAX_INPUT_CHARS + 1))
+        .await
+        .expect("oversized input must be normalized when Silero is active");
+    assert_eq!(result.normalized.chars().count(), MAX_INPUT_CHARS + 1);
+}
+
+/// The length guard is re-checked at synthesis time: an oversized entry that
+/// was accepted while Silero was active (simulated here by inserting it
+/// directly into storage) must fail with the limit message when synthesis
+/// runs under Piper, instead of feeding Piper an unchunked oversized run.
+#[tokio::test(flavor = "multi_thread")]
+async fn synthesis_under_piper_fails_oversized_entry_accepted_under_silero() {
+    let t = build_test_app();
+    assert_eq!(t.state().tts.kind(), EngineKind::Piper);
+
+    let entry = t
+        .state()
+        .storage
+        .add_entry_with_source("а".repeat(MAX_INPUT_CHARS + 1), None, None)
+        .unwrap();
+    let uuid = entry.id;
+
+    spawn_synthesis(
+        SynthesisDeps::from_state(&t.app.handle(), &t.state()),
+        uuid,
+        false,
+    );
+
+    wait_entry_status(&t, &uuid, EntryStatus::Error).await;
+    let entry = t.state().storage.get_entry(&uuid).unwrap();
+    let message = entry.error_message.expect("error entry carries a message");
+    assert!(
+        message.contains("Piper"),
+        "message names the engine: {message}"
+    );
 }
 
 // ── set_speed / set_volume range guards ──────────────────────────────
