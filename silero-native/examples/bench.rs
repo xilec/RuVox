@@ -16,11 +16,16 @@ const PHRASE: &str = "Сервер обрабатывает запросы и с
 const RUNS: usize = 20;
 
 fn main() {
-    let dir = std::env::args().nth(1).map(PathBuf::from).unwrap_or_else(|| {
-        std::env::var("SILERO_NATIVE_BUNDLE")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tmp/bundle-v5"))
-    });
+    let dir = std::env::args()
+        .nth(1)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            std::env::var("SILERO_NATIVE_BUNDLE")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| {
+                    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tmp/bundle-v5")
+                })
+        });
 
     let engine = SileroNative::load(&dir).expect("bundle must load");
 
