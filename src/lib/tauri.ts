@@ -11,6 +11,14 @@ export type EntryStatus = 'pending' | 'processing' | 'ready' | 'playing' | 'erro
 
 export type EntryFormat = 'plain' | 'markdown' | 'html';
 
+/** Narrow a free-form string (config value, Select event) to EntryFormat. */
+export function toEntryFormat(
+  v: string | null | undefined,
+  fallback: EntryFormat = 'markdown',
+): EntryFormat {
+  return v === 'plain' || v === 'markdown' || v === 'html' ? v : fallback;
+}
+
 export interface TextEntry {
   id: EntryId;
   original_text: string;

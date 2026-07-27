@@ -3,7 +3,9 @@ import tseslint from 'typescript-eslint';
 import reactHooks from 'eslint-plugin-react-hooks';
 
 export default tseslint.config(
-  { ignores: ['dist/', 'node_modules/', 'src-tauri/', 'ttsd/', 'scripts/'] },
+  // tmp/ holds scratch work (repro crates, worktrees); their generated
+  // build artifacts include .ts files that break the typed lint.
+  { ignores: ['dist/', 'node_modules/', 'src-tauri/', 'ttsd/', 'scripts/', 'tmp/'] },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   reactHooks.configs.flat.recommended,

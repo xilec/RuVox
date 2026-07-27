@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActionIcon, Button, Checkbox, Group, Loader, Portal, Select, Switch, Text, Textarea } from '@mantine/core';
 import { Rnd } from 'react-rnd';
 import classes from './PreviewDialog.module.css';
-import { commands } from '../lib/tauri';
+import { commands, toEntryFormat } from '../lib/tauri';
 import type { EntryFormat } from '../lib/tauri';
 import { formatError } from '../lib/errors';
 import { previewTextFor } from '../lib/html';
@@ -120,16 +120,25 @@ export function PreviewDialog({
       return;
     }
     setLoading(true);
+    // Guard against out-of-order responses: a slow preview_normalize for a
+    // previous input/format must not overwrite a newer result.
+    let stale = false;
     const timer = window.setTimeout(() => {
       commands
         .previewNormalize(source)
-        .then((result) => setNormalized(result.normalized))
-        .catch((err) =>
-          setNormalized(`(ошибка нормализации: ${formatError(err)})`),
-        )
-        .finally(() => setLoading(false));
+        .then((result) => {
+          if (!stale) setNormalized(result.normalized);
+        })
+        .catch((err) => {
+          if (!stale)
+            setNormalized(`(ошибка нормализации: ${formatError(err)})`);
+        })
+        .finally(() => {
+          if (!stale) setLoading(false);
+        });
     }, DEBOUNCE_MS);
     return () => {
+      stale = true;
       window.clearTimeout(timer);
     };
   }, [opened, editedText, sourceFormat]);
@@ -275,7 +284,7 @@ export function PreviewDialog({
                     { value: 'html', label: 'HTML' },
                   ]}
                   value={sourceFormat}
-                  onChange={(v) => setSourceFormat((v as EntryFormat | null) ?? defaultFormat)}
+                  onChange={(v) => setSourceFormat(toEntryFormat(v, defaultFormat))}
                   allowDeselect={false}
                 />
                 <Checkbox

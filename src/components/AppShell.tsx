@@ -11,11 +11,10 @@ import { useHotkeys } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { useState, useEffect, useRef } from 'react';
 import { readText as readClipboardText } from '@tauri-apps/plugin-clipboard-manager';
-import { commands } from '../lib/tauri';
+import { commands, toEntryFormat } from '../lib/tauri';
 import type { EntryFormat, UIConfig } from '../lib/tauri';
 import { formatError } from '../lib/errors';
-import { sanitizeHtml } from '../lib/html';
-import { extractTextForTts } from '../lib/htmlText';
+import { resolveIngest } from '../lib/ingest';
 import { TextViewer } from './TextViewer';
 import { Player } from './Player';
 import { QueueList } from './QueueList';
@@ -24,11 +23,6 @@ import { useSearchQuery } from '../stores/searchQuery';
 import { PreviewDialog } from '../dialogs/PreviewDialog';
 import { SettingsModal } from '../dialogs/Settings';
 import { IconSearch } from './icons';
-
-/** Config stores the default format as a free-form string; narrow it. */
-function toEntryFormat(v: string | undefined): EntryFormat {
-  return v === 'plain' || v === 'html' ? v : 'markdown';
-}
 
 export function AppShell() {
   const { selectedEntry } = useSelectedEntry();
@@ -205,10 +199,9 @@ export function AppShell() {
   // rendering). Returns false when the HTML yields no readable text, so the
   // caller can fall back to the plain-text flavor.
   async function addHtmlEntry(rawHtml: string, playWhenReady: boolean): Promise<boolean> {
-    const sanitized = sanitizeHtml(rawHtml);
-    const extracted = extractTextForTts(sanitized);
-    if (!extracted.trim()) return false;
-    await doAddEntry(extracted, playWhenReady, 'html', sanitized);
+    const action = resolveIngest(rawHtml, 'html');
+    if (action.kind !== 'html') return false;
+    await doAddEntry(action.text, playWhenReady, 'html', action.htmlSource);
     return true;
   }
 
@@ -258,28 +251,25 @@ export function AppShell() {
     setPending(true);
     // finalText reflects user edits from the preview dialog; fall back to the
     // captured clipboard text if the user didn't edit or cleared the field.
-    const text = finalText || previewText;
-    if (sourceFormat === 'html') {
-      // Explicit choice: interpret the text as HTML markup (preview-dialog
-      // spec). No plain fallback here — an empty extraction is an error.
-      void addHtmlEntry(text, playWhenReady)
-        .then((ok) => {
-          if (!ok) {
-            notifications.show({
-              title: 'Ошибка',
-              message: 'Не удалось извлечь текст из HTML',
-              color: 'red',
-            });
-            setPending(false);
-          }
-        })
-        .catch((err) => {
-          notifications.show({ title: 'Ошибка', message: formatError(err), color: 'red' });
-          setPending(false);
+    // An explicit `html` choice has no plain fallback (preview-dialog spec):
+    // an empty extraction is an error, not a silent plain ingest.
+    const action = resolveIngest(finalText || previewText, sourceFormat);
+    switch (action.kind) {
+      case 'reject':
+        notifications.show({
+          title: 'Ошибка',
+          message: 'Не удалось извлечь текст из HTML',
+          color: 'red',
         });
-      return;
+        setPending(false);
+        return;
+      case 'html':
+        void doAddEntry(action.text, playWhenReady, 'html', action.htmlSource);
+        return;
+      case 'direct':
+        void doAddEntry(action.text, playWhenReady, action.format);
+        return;
     }
-    void doAddEntry(text, playWhenReady, sourceFormat);
   }
 
   function handlePreviewCancel() {
