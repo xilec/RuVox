@@ -74,3 +74,24 @@ nix build .#ruvox -L           # full production build
 
 Status of the first full build run: see `tmp/ort-spike/nix-build.log`
 (recorded during the Phase 1 blocker check).
+
+## Testing
+
+Tests split into two tiers:
+
+- **Unit tests** (`src/**`, `tests/frontend_text.rs`) need no model and run
+  everywhere, including CI.
+- **Bundle-gated tests** (`tests/bundle_load.rs`, `tests/edge_cases.rs`,
+  `tests/frontend_accentor.rs`, `tests/parity.rs`) need the ~230 MB model
+  bundle. They look up `SILERO_NATIVE_BUNDLE` first, then the default
+  `tmp/bundle-v5`, and skip silently when no `manifest.json` is found. They
+  run locally and on any CI machine with the bundle cached; there is no
+  synthetic ONNX fixture — every plumbing path is covered either by unit
+  tests or by the bundle-gated suite.
+
+To simulate the no-bundle CI path locally:
+
+```bash
+SILERO_NATIVE_BUNDLE=/nonexistent nix develop -c \
+  cargo test --manifest-path silero-native/Cargo.toml
+```
