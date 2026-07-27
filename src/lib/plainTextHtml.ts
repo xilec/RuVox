@@ -12,13 +12,14 @@ import { wrapWordsWithOrigPos } from './wordSpans';
 export function plainToWordHtml(s: string): string {
   // Split on newlines so we can insert <br> between lines while still
   // wrapping each word in a data-orig-* span.  Offsets track the position of
-  // each line within the original source text.
+  // each line within the original source text, in codepoints (see
+  // wrapWordsWithOrigPos).
   const lines = s.split('\n');
   const parts: string[] = [];
   let offset = 0;
   for (let i = 0; i < lines.length; i += 1) {
     parts.push(wrapWordsWithOrigPos(lines[i], offset));
-    offset += lines[i].length + 1; // +1 for the consumed \n
+    offset += Array.from(lines[i]).length + 1; // +1 for the consumed \n
     if (i < lines.length - 1) parts.push('<br>');
   }
   return parts.join('');

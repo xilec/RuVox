@@ -51,8 +51,11 @@ md.renderer.rules.fence = (tokens, idx) => {
  * text fragments map to distinct, non-overlapping source positions.
  */
 export function renderMarkdown(source: string): string {
-  // Cursor shared across all text-token renders in this call.
+  // Cursor shared across all text-token renders in this call. `searchFrom`
+  // is a UTF-16 index for indexOf mechanics; `cpCursor` is its codepoint
+  // twin used for the data-orig-* contract (see wrapWordsWithOrigPos).
   let searchFrom = 0;
+  let cpCursor = 0;
 
   const origTextRule = md.renderer.rules.text;
 
@@ -72,10 +75,13 @@ export function renderMarkdown(source: string): string {
         ? origTextRule(tokens, idx, options, env, self)
         : escapeHtml(content);
     }
+    cpCursor += Array.from(source.slice(searchFrom, pos)).length;
     searchFrom = pos + content.length;
+    const startCp = cpCursor;
+    cpCursor += Array.from(content).length;
     // Wrap each word in its own span so that word-highlighting targets a
     // single word, not the whole text-token (which can be a paragraph).
-    return wrapWordsWithOrigPos(content, pos);
+    return wrapWordsWithOrigPos(content, startCp);
   };
 
   const html = md.render(source);
