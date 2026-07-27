@@ -106,7 +106,12 @@ impl<'a> URLPathNormalizer<'a> {
         match self.english {
             None => word.to_string(),
             Some(_en) => {
-                if !word.is_ascii() || !word.chars().any(|c| c.is_alphabetic()) {
+                if !word.is_ascii() {
+                    // Non-ASCII (e.g. Cyrillic) segments are already readable;
+                    // only wiki-style underscores need to become spaces.
+                    return word.replace('_', " ");
+                }
+                if !word.chars().any(|c| c.is_alphabetic()) {
                     return word.to_string();
                 }
                 let lower = word.to_lowercase();
@@ -119,25 +124,51 @@ impl<'a> URLPathNormalizer<'a> {
         }
     }
 
+    /// Transliterate a separator-free piece, splitting embedded digit runs
+    /// into number words ("v1" → "ви один"). Digits must not leak into the
+    /// output: later pipeline phases skip already-replaced regions, so a
+    /// digit left here would reach the TTS engine as-is.
+    fn transliterate_runs(&self, part: &str) -> String {
+        let mut runs: Vec<String> = Vec::new();
+        let mut run = String::new();
+        let mut run_is_digit = false;
+        for c in part.chars() {
+            let is_digit = c.is_ascii_digit();
+            if !run.is_empty() && is_digit != run_is_digit {
+                runs.push(std::mem::take(&mut run));
+            }
+            run.push(c);
+            run_is_digit = is_digit;
+        }
+        if !run.is_empty() {
+            runs.push(run);
+        }
+
+        runs.iter()
+            .map(|r| {
+                if r.bytes().all(|b| b.is_ascii_digit()) {
+                    self.numbers.normalize_number(r)
+                } else {
+                    self.transliterate_word(r)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
     fn transliterate_segment(&self, segment: &str) -> String {
         if segment.is_empty() {
             return segment.to_string();
         }
-        if !segment.contains('-') {
-            return self.transliterate_word(segment);
-        }
-        // Split by hyphens; numeric parts → number words, alphabetic → transliterate.
-        let parts: Vec<String> = segment
-            .split('-')
-            .map(|part| {
-                if !part.is_empty() && part.chars().all(|c| c.is_ascii_digit()) {
-                    self.numbers.normalize_number(part)
-                } else {
-                    self.transliterate_word(part)
-                }
-            })
-            .collect();
-        parts.join(" ")
+        // Split on hyphens and underscores (wiki-style spaces); each piece is
+        // then split into digit runs (number words) and alphabetic runs
+        // (transliteration) by transliterate_runs.
+        segment
+            .split(['-', '_'])
+            .filter(|part| !part.is_empty())
+            .map(|part| self.transliterate_runs(part))
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 
     pub fn normalize_url(&self, url: &str) -> String {
@@ -197,11 +228,8 @@ impl<'a> URLPathNormalizer<'a> {
                         return tld.to_string();
                     }
                 }
-                if !part.is_empty() && part.chars().all(|c| c.is_ascii_digit()) {
-                    self.numbers.normalize_number(part)
-                } else {
-                    self.transliterate_word(part)
-                }
+                // transliterate_runs also splits digit runs ("s3" → "эс три").
+                self.transliterate_runs(part)
             })
             .collect();
         parts.push(domain_words.join(" точка "));
@@ -263,9 +291,9 @@ impl<'a> URLPathNormalizer<'a> {
                 if let Some(eq_pos) = qp.find('=') {
                     let key = &qp[..eq_pos];
                     let value = &qp[eq_pos + 1..];
-                    parts.push(key.to_string());
+                    parts.push(self.transliterate_segment(key));
                     parts.push("равно".to_string());
-                    parts.push(value.to_string());
+                    parts.push(self.transliterate_segment(value));
                 }
             }
         }
@@ -273,7 +301,7 @@ impl<'a> URLPathNormalizer<'a> {
         // Fragment
         if !fragment_str.is_empty() {
             parts.push("решётка".to_string());
-            parts.push(fragment_str.to_string());
+            parts.push(self.transliterate_segment(fragment_str));
         }
 
         parts.join(" ")
@@ -288,28 +316,28 @@ impl<'a> URLPathNormalizer<'a> {
             match ch {
                 '.' => {
                     if !current_word.is_empty() {
-                        result.push(current_word.clone());
+                        result.push(self.transliterate_word(&current_word));
                         current_word.clear();
                     }
                     result.push("точка".to_string());
                 }
                 '_' => {
                     if !current_word.is_empty() {
-                        result.push(current_word.clone());
+                        result.push(self.transliterate_word(&current_word));
                         current_word.clear();
                     }
                     result.push("андерскор".to_string());
                 }
                 '-' => {
                     if !current_word.is_empty() {
-                        result.push(current_word.clone());
+                        result.push(self.transliterate_word(&current_word));
                         current_word.clear();
                     }
                     result.push("дефис".to_string());
                 }
                 c if c.is_ascii_digit() => {
                     if !current_word.is_empty() {
-                        result.push(current_word.clone());
+                        result.push(self.transliterate_word(&current_word));
                         current_word.clear();
                     }
                     let mut num_str = String::new();
@@ -330,7 +358,7 @@ impl<'a> URLPathNormalizer<'a> {
         }
 
         if !current_word.is_empty() {
-            result.push(current_word);
+            result.push(self.transliterate_word(&current_word));
         }
 
         result.join(" ")
@@ -360,7 +388,8 @@ impl<'a> URLPathNormalizer<'a> {
                         return tld.to_string();
                     }
                 }
-                part.to_string()
+                // transliterate_runs also splits digit runs ("mail.123.com").
+                self.transliterate_runs(part)
             })
             .collect();
         parts.push(domain_words.join(" точка "));
@@ -390,12 +419,20 @@ impl<'a> URLPathNormalizer<'a> {
     }
 
     fn normalize_filename_part(&self, part: &str) -> String {
-        if part.contains('-') {
-            let subparts: Vec<&str> = part.split('-').collect();
-            subparts.join(" дефис ")
-        } else {
-            part.to_string()
-        }
+        // Hyphens are read as "дефис", underscores become spaces (as in URL
+        // segments); each piece is transliterated with digit runs split into
+        // number words.
+        part.split('-')
+            .map(|p| {
+                p.split('_')
+                    .filter(|s| !s.is_empty())
+                    .map(|s| self.transliterate_runs(s))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join(" дефис ")
     }
 
     pub fn normalize_filepath(&self, path: &str) -> String {
@@ -450,9 +487,9 @@ impl<'a> URLPathNormalizer<'a> {
                     let ext = &rest[dot_pos + 1..];
                     parts.push(self.normalize_filename_part(name));
                     parts.push("точка".to_string());
-                    parts.push(ext.to_string());
+                    parts.push(self.transliterate_runs(ext));
                 } else {
-                    parts.push(rest.to_string());
+                    parts.push(self.normalize_filename_part(rest));
                 }
             } else if segment.contains('.') {
                 // Filename with one or more extensions (e.g. test.spec.ts).
@@ -599,19 +636,24 @@ mod tests {
 
     // ---- Complex URLs (query, fragment, multi-segment paths) ----
     //
-    // English words and bare digit segments (e.g. "123") pass through
-    // verbatim here by design: later pipeline phases (English/number
-    // normalizers) pick them up.
+    // In no-English mode alphabetic words pass through verbatim, but digit
+    // runs still become number words everywhere: later pipeline phases skip
+    // already-replaced regions, so anything left here would never be picked
+    // up downstream.
 
     #[test_case("https://example.com/search?q=test" => "эйч ти ти пи эс двоеточие слэш слэш example точка ком слэш search вопросительный знак q равно test"; "query_params")]
     #[test_case("https://docs.example.com/guide#installation" => "эйч ти ти пи эс двоеточие слэш слэш docs точка example точка ком слэш guide решётка installation"; "fragment")]
-    #[test_case("https://api.example.com/v1/users/123/posts" => "эйч ти ти пи эс двоеточие слэш слэш api точка example точка ком слэш v1 слэш users слэш 123 слэш posts"; "multiple_path_segments")]
+    #[test_case("https://api.example.com/v1/users/123/posts" => "эйч ти ти пи эс двоеточие слэш слэш api точка example точка ком слэш v один слэш users слэш сто двадцать три слэш posts"; "multiple_path_segments")]
     fn complex_url(url: &str) -> String {
         let (_, nn) = mk_normalizer();
         norm_no_en(&nn).normalize_url(url)
     }
 
     // ---- With EnglishNormalizer (transliteration enabled) ----
+    //
+    // This is the production path: the pipeline always builds the normalizer
+    // with `EnglishNormalizer`, and later phases skip the replaced URL region,
+    // so the output here must already be fully speakable (no Latin, no digits).
 
     #[test]
     fn url_with_english_normalizer_transliterates() {
@@ -624,5 +666,32 @@ mod tests {
             result,
             "эйч ти ти пи эс двоеточие слэш слэш гитхаб точка ком слэш юзер слэш репо"
         );
+    }
+
+    #[test_case("https://example.com/search?q=test&lang=ru" => "эйч ти ти пи эс двоеточие слэш слэш экзампл точка ком слэш сирч вопросительный знак к равно тест ланг равно ру"; "query_key_value_transliterated")]
+    #[test_case("https://example.com/#section-2" => "эйч ти ти пи эс двоеточие слэш слэш экзампл точка ком решётка секшн два"; "fragment_transliterated")]
+    #[test_case("https://api.example.com/v1/users/123/posts" => "эйч ти ти пи эс двоеточие слэш слэш эй пи ай точка экзампл точка ком слэш в один слэш юзерс слэш сто двадцать три слэш постс"; "digit_runs_in_path_segments")]
+    #[test_case("https://ru.wikipedia.org/wiki/Заглавная_страница" => "эйч ти ти пи эс двоеточие слэш слэш ру точка википедиа точка орг слэш вики слэш Заглавная страница"; "cyrillic_segment_underscore_to_space")]
+    #[test_case("https://s3.amazonaws.com" => "эйч ти ти пи эс двоеточие слэш слэш с три точка амазонос точка ком"; "digit_run_in_host_label")]
+    fn url_production_path(url: &str) -> String {
+        let (en, nn) = mk_normalizer();
+        norm(&en, &nn).normalize_url(url)
+    }
+
+    #[test_case("john.doe@company.org" => "джохн точка дое собака компани точка орг"; "email_local_and_domain")]
+    #[test_case("name_123@test.io" => "наме андерскор сто двадцать три собака тест точка ай оу"; "email_underscore_and_digits")]
+    #[test_case("john2doe@test.com" => "джохн два дое собака тест точка ком"; "email_digit_run_in_word")]
+    #[test_case("user@mail.123.com" => "юзер собака мэйл точка сто двадцать три точка ком"; "email_digit_only_domain_label")]
+    fn email_production_path(email: &str) -> String {
+        let (en, nn) = mk_normalizer();
+        norm(&en, &nn).normalize_email(email)
+    }
+
+    #[test_case("/home/user/file.txt" => "слэш хоум слэш юзер слэш филе точка тэкст"; "unix_path")]
+    #[test_case("docker-compose.yml" => "докер дефис компосе точка имл"; "hyphenated_filename")]
+    #[test_case("~/my_file.txt" => "тильда слэш ми филе точка тэкст"; "underscore_in_filename")]
+    fn filepath_production_path(path: &str) -> String {
+        let (en, nn) = mk_normalizer();
+        norm(&en, &nn).normalize_filepath(path)
     }
 }
