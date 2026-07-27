@@ -607,7 +607,7 @@ impl TTSPipeline {
                     // Lone letters are read by English letter name via the same
                     // table as code identifiers ("x" → "икс"), not
                     // transliterated, and are not tracked as unknown words.
-                    self.code_normalizer.spell_abbreviation(word)
+                    CodeIdentifierNormalizer::spell_abbreviation(word)
                 } else if let Some(v) = IT_TERMS.get(word_lower.as_str()) {
                     v.to_string()
                 } else if word.chars().all(|c| c.is_ascii_uppercase()) && word.len() >= 2 {
@@ -624,21 +624,16 @@ impl TTSPipeline {
             })
             .collect();
 
-        // Apply replacements via TrackedText in reverse order.
-        // Must be by byte range: a literal `replace` would also hit occurrences of
-        // the word embedded in longer tokens (e.g. "use" inside "user"), corrupting
-        // them before their own turn to be replaced.
-        for (start, end, replacement) in matches.into_iter().rev() {
-            tracked.replace_byte_range(start, end, &replacement);
-        }
+        tracked.replace_byte_ranges(matches);
     }
 
     fn process_numbers_tracked(&self, tracked: &mut TrackedText) {
-        // Effective pattern: `(?<![.\d])(\d+)(?![.\d]|[a-zA-Zа-яА-Я])`.
-        // The regex crate lacks lookbehind/lookahead, so the boundary check is applied
-        // in the closure below after the bare \d+ match.
+        // Effective pattern: `(?<![.])(\d+)(?![.])` on top of the Unicode-aware
+        // `\b\d+\b` from re_number(). The regex crate lacks lookbehind/lookahead,
+        // and `\b` already rejects digits, letters, and underscore next to the
+        // match, so the manual guard below only needs to exclude '.' (float and
+        // version separators, owned by earlier pipeline phases).
         let snapshot = tracked.text().to_string();
-        let bytes = snapshot.as_bytes();
 
         let matches: Vec<(usize, usize, String)> = re_number()
             .find_iter(&snapshot)
@@ -646,22 +641,8 @@ impl TTSPipeline {
                 let start = m.start();
                 let end = m.end();
 
-                // Check char before: must not be '.' or digit
-                let preceded_ok = start == 0 || {
-                    let prev = snapshot[..start].chars().next_back().unwrap();
-                    prev != '.' && !prev.is_ascii_digit()
-                };
-
-                // Check char after: must not be '.', digit, or Latin/Cyrillic letter
-                let followed_ok = end >= snapshot.len() || {
-                    let next_byte = bytes[end];
-                    let next_str = &snapshot[end..];
-                    let next_ch = next_str.chars().next().unwrap();
-                    next_byte != b'.'
-                        && !next_ch.is_ascii_digit()
-                        && !next_ch.is_ascii_alphabetic()
-                        && !next_ch.is_alphabetic()
-                };
+                let preceded_ok = start == 0 || !snapshot[..start].ends_with('.');
+                let followed_ok = end >= snapshot.len() || !snapshot[end..].starts_with('.');
 
                 if preceded_ok && followed_ok {
                     let replacement = self.number_normalizer.normalize_number(m.as_str());
@@ -672,12 +653,7 @@ impl TTSPipeline {
             })
             .collect();
 
-        // Apply in reverse order so byte offsets stay valid.
-        // Must be by byte range: a literal `replace` would also hit the digit run
-        // embedded in a longer number (e.g. "42" inside "142"), corrupting it.
-        for (start, end, replacement) in matches.into_iter().rev() {
-            tracked.replace_byte_range(start, end, &replacement);
-        }
+        tracked.replace_byte_ranges(matches);
     }
 }
 
