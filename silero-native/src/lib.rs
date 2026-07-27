@@ -5,6 +5,7 @@
 //! and the text frontend (accentor, homograph solver) is a Rust port of the
 //! upstream package code. See `docs/architecture.md` for the pipeline map.
 
+pub mod bundle;
 pub mod error;
 
 pub use error::{EngineError, Result};
