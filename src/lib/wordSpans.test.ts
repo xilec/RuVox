@@ -88,23 +88,18 @@ describe('wrapWordsWithOrigPos', () => {
     );
   });
 
-  it('documents current UTF-16 code-unit indexing for astral (surrogate-pair) characters', () => {
+  it('indexes astral (surrogate-pair) characters in codepoints, matching the char_map contract', () => {
     // '🚀' is a single Unicode codepoint but occupies two UTF-16 code units.
-    // wrapWordsWithOrigPos indexes via plain JS string ops (UTF-16 units), so
-    // the emoji "word" is reported as spanning 2 positions (data-orig-end -
-    // data-orig-start === 2), not 1 codepoint, and "mir" is pushed one
-    // position further out than a codepoint-based scheme would place it.
-    // This diverges from the Rust pipeline's char_map, which is indexed by
-    // Unicode codepoints (see src-tauri/src/pipeline/tracked_text.rs). This
-    // test pins down current behavior; it is not an assertion that the
-    // offset is semantically correct.
+    // data-orig-* must be codepoint-based, like the Rust pipeline's char_map
+    // (position-mapping spec): the emoji spans 1 position, and "mir" starts
+    // right after it (codepoint 2), not one unit further out.
     const text = '🚀 mir';
     expect(text.length).toBe(6); // 2 UTF-16 units for the emoji + 1 space + 3 for "mir"
     const out = wrapWordsWithOrigPos(text, 0);
     expect(out).toBe(
-      '<span data-orig-start="0" data-orig-end="2">🚀</span>' +
+      '<span data-orig-start="0" data-orig-end="1">🚀</span>' +
         ' ' +
-        '<span data-orig-start="3" data-orig-end="6">mir</span>',
+        '<span data-orig-start="2" data-orig-end="5">mir</span>',
     );
   });
 

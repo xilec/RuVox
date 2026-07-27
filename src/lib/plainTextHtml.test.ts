@@ -62,4 +62,14 @@ describe('plainToWordHtml', () => {
       '<span data-orig-start="0" data-orig-end="3">foo</span><br>',
     );
   });
+
+  it('tracks offsets in codepoints across lines with astral characters', () => {
+    // '🌍' is one codepoint (two UTF-16 units): the second line must start at
+    // codepoint 2 (emoji + \n), not 3.
+    expect(plainToWordHtml('🌍\nмир')).toBe(
+      '<span data-orig-start="0" data-orig-end="1">🌍</span>' +
+        '<br>' +
+        '<span data-orig-start="2" data-orig-end="5">мир</span>',
+    );
+  });
 });
