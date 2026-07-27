@@ -55,6 +55,7 @@ interface TextEntry {
   normalized_text: string | null;
   status: EntryStatus;
   format: TextFormat | null;         // null = never chosen; viewer uses the config default
+  html_source: string | null;        // sanitized HTML for rendering; HTML-ingested entries only
   created_at: string;              // naive datetime, e.g. "2026-02-15T11:46:51.504055"
   audio_path: string | null;       // filename relative to the cache audio dir
   timestamps_path: string | null;
@@ -91,9 +92,9 @@ interface UIConfig {
 ```
 
 #### Scenario: TextEntry round-trips through get_entries
-- GIVEN an entry persisted in storage with `format` set
+- GIVEN an entry persisted in storage with `format` and `html_source` set
 - WHEN the frontend calls `invoke("get_entries")`
-- THEN each entry serializes with the field names above, `status` as a lowercase string, and `format` as a lowercase string or null
+- THEN each entry serializes with the field names above, `status` and `format` as lowercase strings or null, and `html_source` as a string or null
 
 #### Scenario: UIConfig defaults include engine fields
 - GIVEN a fresh installation with no `config.json`
@@ -118,6 +119,10 @@ queue entry and start background synthesis immediately.
 
 `add_text_entry(text, play_when_ready)` is the preferred frontend path (the
 frontend reads the clipboard itself via `tauri-plugin-clipboard-manager`).
+It SHALL additionally accept optional `format` and `html_source` parameters;
+when `format` is `"html"`, `text` is the extracted plain text and
+`html_source` carries the sanitized markup for rendering. When omitted, the
+entry behaves exactly as a plain entry (`format: null`, `html_source: null`).
 `add_clipboard_entry(play_when_ready)` reads the system clipboard in Rust via
 `arboard` on a blocking thread and exists for the system tray menu, where no
 webview clipboard API is available. Both share one implementation (`ingest_text`):
@@ -130,6 +135,11 @@ synthesis.
 - GIVEN the model is loaded
 - WHEN the frontend invokes `add_text_entry` with non-blank text
 - THEN the promise resolves with the new `EntryId`, an `entry_updated` event with `status: "pending"` is emitted, and background synthesis advances the entry through `processing` to `ready` (each step emitting `entry_updated`)
+
+#### Scenario: add_text_entry with HTML parameters
+- GIVEN the model is loaded
+- WHEN the frontend invokes `add_text_entry` with extracted text, `format: "html"`, and a sanitized `html_source`
+- THEN the entry is persisted with `format: "html"` and the given `html_source`, and synthesis normalizes the extracted text
 
 #### Scenario: blank text is rejected
 - GIVEN any engine state

@@ -61,6 +61,7 @@ interface TextEntry {
   normalized_text: string | null;       // Output of the Rust TTS pipeline
   status: EntryStatus;
   format: TextFormat | null;            // Display format chosen for this entry; null = never chosen
+  html_source: string | null;           // Sanitized HTML for rendering; set only for HTML-ingested entries
   created_at: string;                   // Naive timestamp, e.g. "2026-02-15T11:46:51.504055" (no TZ suffix)
   audio_generated_at: string | null;    // Naive timestamp when audio file was written
   audio_path: string | null;            // Filename relative to audio/, e.g. "{uuid}.opus"
@@ -71,7 +72,7 @@ interface TextEntry {
 }
 ```
 
-Status and format values SHALL serialize as lowercase strings. `created_at` and `audio_generated_at` SHALL be stored as naive timestamps without a timezone suffix; `created_at` is generated from the local clock (`Local::now().naive_local()`) and readers treat the values as UTC. `audio_path` and `timestamps_path` SHALL store the filename only; the full path resolves as `<cache_root>/audio/{filename}`. All optional `TextEntry` fields SHALL default when absent from the JSON, so entries written by older builds keep parsing; a missing `format` SHALL default to `null`, meaning the viewer falls back to the `text_format` config default.
+Status and format values SHALL serialize as lowercase strings. `created_at` and `audio_generated_at` SHALL be stored as naive timestamps without a timezone suffix; `created_at` is generated from the local clock (`Local::now().naive_local()`) and readers treat the values as UTC. `audio_path` and `timestamps_path` SHALL store the filename only; the full path resolves as `<cache_root>/audio/{filename}`. All optional `TextEntry` fields SHALL default when absent from the JSON, so entries written by older builds keep parsing; a missing `format` SHALL default to `null`, meaning the viewer falls back to the `text_format` config default, and a missing `html_source` SHALL default to `null`. For HTML-ingested entries, `original_text` SHALL hold the extracted plain text (the TTS pipeline input) and `html_source` SHALL hold the sanitized markup.
 
 #### Scenario: New entry is persisted
 - GIVEN an empty history
@@ -79,12 +80,12 @@ Status and format values SHALL serialize as lowercase strings. `created_at` and 
 - THEN `history.json` contains a `version: 1` wrapper and the entry with status `"pending"`, a UUID v4 `id`, null audio fields, and `format: null`
 
 #### Scenario: History round-trips through disk
-- GIVEN an entry with `normalized_text` set, `format` set to `"html"`, and status `"ready"`
+- GIVEN an entry with `normalized_text` set, `format` set to `"html"`, `html_source` set, and status `"ready"`
 - WHEN the storage service is re-initialized against the same cache directory
-- THEN the loaded entry has the same `normalized_text`, `format: "html"`, and field values as before the restart
+- THEN the loaded entry has the same `normalized_text`, `format`, `html_source`, and field values as before the restart
 
 #### Scenario: Older entries without optional fields parse
-- GIVEN a `history.json` entry that lacks `format`, `normalized_text`, `audio_path`, `was_regenerated`, and other optional fields
+- GIVEN a `history.json` entry that lacks `format`, `html_source`, `normalized_text`, `audio_path`, `was_regenerated`, and other optional fields
 - WHEN the history is loaded
 - THEN the entry parses successfully with the missing fields defaulted (null / false)
 

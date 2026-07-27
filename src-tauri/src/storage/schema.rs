@@ -42,6 +42,11 @@ pub struct TextEntry {
     /// viewer falls back to the `text_format` config default.
     #[serde(default)]
     pub format: Option<TextFormat>,
+    /// Sanitized HTML kept for rendering in the viewer's HTML mode. Set only
+    /// for HTML-ingested entries; their `original_text` holds the extracted
+    /// plain text that the TTS pipeline consumed.
+    #[serde(default)]
+    pub html_source: Option<String>,
     // Naive UTC timestamps (no TZ suffix), e.g. "2026-02-15T11:46:51.504055".
     // Callers treat these values as UTC.
     pub created_at: NaiveDateTime,
@@ -337,7 +342,32 @@ mod tests {
         assert!(e.audio_path.is_none());
         assert!(e.normalized_text.is_none());
         assert!(e.format.is_none());
+        assert!(e.html_source.is_none());
         assert!(!e.was_regenerated);
+    }
+
+    #[test]
+    fn entry_html_source_roundtrip() {
+        // HTML-ingested entries keep their sanitized source alongside the
+        // extracted original_text.
+        let json = r#"{
+            "id": "550e8400-e29b-41d4-a716-446655440000",
+            "original_text": "Вызови API",
+            "status": "pending",
+            "format": "html",
+            "html_source": "<p>Вызови <code>API</code></p>",
+            "created_at": "2025-01-01T12:00:00.000000"
+        }"#;
+        let e: TextEntry = serde_json::from_str(json).unwrap();
+        assert_eq!(e.format, Some(TextFormat::Html));
+        assert_eq!(
+            e.html_source.as_deref(),
+            Some("<p>Вызови <code>API</code></p>")
+        );
+        let serialized = serde_json::to_string(&e).unwrap();
+        let e2: TextEntry = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(e2.format, Some(TextFormat::Html));
+        assert_eq!(e2.html_source, e.html_source);
     }
 
     #[test]

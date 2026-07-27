@@ -14,6 +14,8 @@ import { readText as readClipboardText } from '@tauri-apps/plugin-clipboard-mana
 import { commands } from '../lib/tauri';
 import type { UIConfig } from '../lib/tauri';
 import { formatError } from '../lib/errors';
+import { sanitizeHtml } from '../lib/html';
+import { extractTextForTts } from '../lib/htmlText';
 import { TextViewer } from './TextViewer';
 import { Player } from './Player';
 import { QueueList } from './QueueList';
@@ -91,11 +93,61 @@ export function AppShell() {
     });
   }, [setColorScheme]);
 
+  // Paste anywhere in the window ingests clipboard content. The paste event
+  // carries the text/html flavor natively in the WKWebView (no permission
+  // prompts, unlike navigator.clipboard.read), so this is the primary
+  // HTML-detection path (html-ingestion spec).
+  useEffect(() => {
+    function handlePaste(e: ClipboardEvent) {
+      // Don't hijack paste into text inputs (search field, preview editor).
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('input, textarea, [contenteditable="true"]')) return;
+      if (pending) return;
+
+      const rawHtml = e.clipboardData?.getData('text/html') ?? '';
+      const plain = e.clipboardData?.getData('text/plain') ?? '';
+      if (!rawHtml.trim() && !plain.trim()) return;
+      e.preventDefault();
+      setPending(true);
+      if (rawHtml.trim()) {
+        void addHtmlEntry(rawHtml, true)
+          .then((added) => (added ? undefined : doAddEntry(plain, true)))
+          .catch((err) => {
+            notifications.show({ title: 'Ошибка', message: formatError(err), color: 'red' });
+            setPending(false);
+          });
+        return;
+      }
+      void doAddEntry(plain, true);
+    }
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+    // Re-subscribing on `pending` is enough: addHtmlEntry/doAddEntry are
+    // state-independent (they only touch commands, notifications, stores).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending]);
+
   async function addEntry() {
     if (pending) return;
     setPending(true);
 
     try {
+      // Best-effort HTML detection: navigator.clipboard.read() may be
+      // unavailable or blocked in the WKWebView — any failure just falls
+      // through to the plain-text path below.
+      try {
+        const items = await navigator.clipboard.read();
+        for (const item of items) {
+          if (item.types.includes('text/html')) {
+            const rawHtml = await (await item.getType('text/html')).text();
+            if (rawHtml.trim() && (await addHtmlEntry(rawHtml, true))) return;
+            break;
+          }
+        }
+      } catch {
+        // No HTML clipboard access — continue with plain text.
+      }
+
       // Read via tauri-plugin-clipboard-manager: the plugin goes through
       // the Tauri webview's native clipboard bridge, which handles Wayland
       // / KDE data reliably — unlike the Rust-side `arboard` crate which
@@ -132,9 +184,26 @@ export function AppShell() {
     }
   }
 
-  async function doAddEntry(text: string, playWhenReady: boolean) {
+  // HTML ingestion path: sanitize → extract → add an entry with format
+  // "html" (extracted text goes to synthesis, sanitized markup is kept for
+  // rendering). Returns false when the HTML yields no readable text, so the
+  // caller can fall back to the plain-text flavor.
+  async function addHtmlEntry(rawHtml: string, playWhenReady: boolean): Promise<boolean> {
+    const sanitized = sanitizeHtml(rawHtml);
+    const extracted = extractTextForTts(sanitized);
+    if (!extracted.trim()) return false;
+    await doAddEntry(extracted, playWhenReady, sanitized);
+    return true;
+  }
+
+  async function doAddEntry(text: string, playWhenReady: boolean, htmlSource?: string) {
     try {
-      const entryId = await commands.addTextEntry(text, playWhenReady);
+      const entryId = await commands.addTextEntry(
+        text,
+        playWhenReady,
+        htmlSource ? 'html' : undefined,
+        htmlSource,
+      );
       // Select the new entry so TextViewer swaps to its content; entry_updated
       // events from the backend will populate the full TextEntry shortly.
       useSelectedEntry.getState().setSelectedId(entryId);

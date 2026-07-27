@@ -2,13 +2,13 @@
 
 ## Purpose
 
-Covers how the backend tracks, for every character of normalized (or
-HTML-extracted) text, the corresponding range in the original source. This
-mapping powers word-level highlighting during playback: TTS word timestamps
-refer to the normalized text, and the UI converts them back to original-text
-positions via `CharMapping`. Implemented by `TrackedText` / `CharMapping`
-(`src-tauri/src/pipeline/tracked_text.rs`) and by the HTML extractor
-(`src-tauri/src/pipeline/html_extractor.rs`).
+Covers how the backend tracks, for every character of normalized text, the
+corresponding range in the original source. This mapping powers word-level
+highlighting during playback: TTS word timestamps refer to the normalized
+text, and the UI converts them back to original-text positions via
+`CharMapping`. Implemented by `TrackedText` / `CharMapping`
+(`src-tauri/src/pipeline/tracked_text.rs`). HTML extraction lives in the
+frontend and is specified in the `html-ingestion` capability.
 
 ## Requirements
 
@@ -127,42 +127,3 @@ holds for multi-byte (Cyrillic) content as well.
 - THEN the result is trimmed, no panic occurs, and `char_map.len()` equals
   the codepoint count of the trimmed result
 
-### Requirement: HTML text extraction with spans
-
-The system SHALL provide `extract_text_for_tts(html) -> TrackedHtml` that
-extracts readable plain text from an HTML document using the `scraper`
-(html5ever) parser, tolerating malformed markup. Subtrees of the tags `nav`,
-`footer`, `aside`, `script`, `style`, `head`, `noscript`, `template`, `svg`,
-`math`, `button`, `select`, `option`, `optgroup`, and `datalist` SHALL be
-excluded entirely. Block-level elements SHALL be separated from surrounding
-text by newlines, and `<br>` / `<hr>` SHALL emit a newline. Extracted text
-SHALL have whitespace collapsed (including non-breaking spaces treated as
-regular spaces) and SHALL be trimmed, with span offsets adjusted accordingly.
-Each emitted text run SHALL be recorded as an `HtmlCharSpan { text_start,
-text_end, html_start, html_end }` using **byte** offsets; because per-node
-source offsets are not available from the parser, `html_start`/`html_end`
-SHALL carry the sentinel value `0` meaning "source position unknown".
-`TrackedHtml::html_range_for(text_start, text_end)` SHALL return the bounding
-HTML range over all spans overlapping the queried text range, or `None` when
-no span overlaps. The helper `normalise_extracted` SHALL collapse consecutive
-blank lines in extracted text to single newline separators.
-
-#### Scenario: Chrome elements excluded
-
-- GIVEN an HTML document with a `<nav>` menu, a `<script>` block, and a
-  `<p>` paragraph
-- WHEN `extract_text_for_tts` runs
-- THEN the extracted text contains only the paragraph content
-
-#### Scenario: Block structure becomes newlines
-
-- GIVEN HTML with two consecutive `<p>` elements
-- WHEN `extract_text_for_tts` runs
-- THEN the two paragraphs appear on separate lines in the extracted text
-
-#### Scenario: Span lookup with no overlap
-
-- GIVEN a `TrackedHtml` result
-- WHEN `html_range_for` is queried with a text range that overlaps no
-  recorded span
-- THEN it returns `None`

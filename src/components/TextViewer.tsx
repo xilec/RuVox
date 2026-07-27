@@ -20,7 +20,6 @@ import {
   findActiveTimestamp,
   applyHighlight,
   clearHighlight,
-  highlightingEnabled,
 } from '../lib/wordHighlight';
 import { plainToWordHtml } from '../lib/plainTextHtml';
 import classes from './TextViewer.module.css';
@@ -63,7 +62,10 @@ export function TextViewer({ entry }: Props) {
         // works in plain mode (same approach as markdown).
         return { __html: plainToWordHtml(displayText) };
       case "html":
-        return { __html: renderHtml(displayText) };
+        // HTML-ingested entries render their sanitized source; entries that
+        // only have plain text (e.g. toggled to HTML manually) fall back to
+        // the original text.
+        return { __html: renderHtml(entry.html_source ?? displayText) };
       case "markdown":
       default:
         return { __html: renderMarkdown(displayText) };
@@ -210,10 +212,8 @@ export function TextViewer({ entry }: Props) {
         const timestamps = timestampsRef.current;
         if (timestamps.length === 0) return;
 
-        // Plain mode now emits data-orig-* word spans, so highlighting works.
-        // HTML mode still uses HtmlCharSpan sentinel (0/0) — disabled below.
-        if (!highlightingEnabled(format)) return;
-
+        // All three display modes emit data-orig-* word spans (HTML mode
+        // gets them from annotateHtmlWords over the sanitized source).
         const newIdx = findActiveTimestamp(timestamps, position_sec);
         const prevIdx = activeIdxRef.current;
 

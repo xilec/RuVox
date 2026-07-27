@@ -19,6 +19,9 @@ export interface TextEntry {
   /** Display format persisted for this entry; null = never chosen, the
    * viewer falls back to its default mode. */
   format: EntryFormat | null;
+  /** Sanitized HTML kept for rendering in HTML mode; set only for
+   * HTML-ingested entries (their original_text is the extracted TTS text). */
+  html_source: string | null;
   created_at: string;               // ISO 8601
   audio_generated_at: string | null;
   audio_path: string | null;
@@ -102,8 +105,18 @@ export const commands = {
   addClipboardEntry: (play_when_ready: boolean): Promise<EntryId> =>
     tauriInvoke('add_clipboard_entry', { playWhenReady: play_when_ready }),
 
-  addTextEntry: (text: string, play_when_ready: boolean): Promise<EntryId> =>
-    tauriInvoke('add_text_entry', { text, playWhenReady: play_when_ready }),
+  addTextEntry: (
+    text: string,
+    play_when_ready: boolean,
+    format?: EntryFormat,
+    html_source?: string,
+  ): Promise<EntryId> =>
+    tauriInvoke('add_text_entry', {
+      text,
+      playWhenReady: play_when_ready,
+      format: format ?? null,
+      htmlSource: html_source ?? null,
+    }),
 
   getEntries: (): Promise<TextEntry[]> =>
     tauriInvoke('get_entries'),

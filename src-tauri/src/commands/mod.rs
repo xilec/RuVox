@@ -654,6 +654,8 @@ fn ingest_text<R: Runtime>(
     state: &AppState,
     text: String,
     play_when_ready: bool,
+    format: Option<TextFormat>,
+    html_source: Option<String>,
 ) -> CmdResult<String> {
     if text.trim().is_empty() {
         return Err(CommandError::Internal {
@@ -661,7 +663,10 @@ fn ingest_text<R: Runtime>(
         });
     }
 
-    let entry = state.storage.add_entry(text).map_err(CommandError::from)?;
+    let entry = state
+        .storage
+        .add_entry_with_source(text, format, html_source)
+        .map_err(CommandError::from)?;
     let entry_id = entry.id;
 
     emit_entry_updated(&app, &entry);
@@ -680,14 +685,20 @@ fn ingest_text<R: Runtime>(
 /// Clipboard API is more robust on Wayland than the Rust-side `arboard`
 /// crate (which silently fails with `ContentNotAvailable` for
 /// WebKit-sourced clipboard data on KDE Plasma 6).
+///
+/// For HTML-ingested entries the frontend passes `format: "html"`, the
+/// extracted plain text as `text`, and the sanitized markup as
+/// `html_source` (rendering only — synthesis always normalizes `text`).
 #[tauri::command]
 pub async fn add_text_entry<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
     text: String,
     play_when_ready: bool,
+    format: Option<TextFormat>,
+    html_source: Option<String>,
 ) -> CmdResult<String> {
-    ingest_text(app, &state, text, play_when_ready)
+    ingest_text(app, &state, text, play_when_ready, format, html_source)
 }
 
 /// Read text from the system clipboard and add a new entry to the queue.
@@ -713,7 +724,7 @@ pub async fn add_clipboard_entry<R: Runtime>(
         message: format!("clipboard task panicked: {e}"),
     })??;
 
-    ingest_text(app, &state, text, play_when_ready)
+    ingest_text(app, &state, text, play_when_ready, None, None)
 }
 
 /// Pure normalization step behind [`preview_normalize`]: runs the pipeline on

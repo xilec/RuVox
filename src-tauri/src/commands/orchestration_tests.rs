@@ -61,6 +61,8 @@ async fn add_ready_entry(t: &TestApp) -> String {
         t.state(),
         "текст для озвучки".to_string(),
         false,
+        None,
+        None,
     )
     .await
     .unwrap();
@@ -178,6 +180,8 @@ async fn regenerate_entry_rejects_processing_entry_and_synthesis_continues() {
         t.state(),
         "текст".to_string(),
         false,
+        None,
+        None,
     )
     .await
     .unwrap();
@@ -210,9 +214,16 @@ async fn cancel_synthesis_aborts_in_flight_task_and_keeps_entry_pending() {
     let t = build_test_app();
     t.engine.block_synthesis();
     let events = record_events(&t.app, &["entry_updated"]);
-    let id = add_text_entry(t.app.handle().clone(), t.state(), "текст".to_string(), true)
-        .await
-        .unwrap();
+    let id = add_text_entry(
+        t.app.handle().clone(),
+        t.state(),
+        "текст".to_string(),
+        true,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     let uuid = entry_uuid(&id);
     // Deterministic "inside the TTS stage": the marker is set right
     // before the (blocked) engine await.
@@ -427,6 +438,41 @@ async fn set_entry_format_unknown_entry_is_rejected() {
     assert!(events.lock().unwrap().is_empty());
 }
 
+// ── HTML ingestion ───────────────────────────────────────────────────
+
+/// `add_text_entry` with `format: "html"` persists the sanitized
+/// `html_source` and synthesizes the extracted text, not the markup.
+#[tokio::test(flavor = "multi_thread")]
+async fn add_text_entry_with_html_params_persists_source_and_synthesizes_text() {
+    let t = build_test_app();
+
+    let id = add_text_entry(
+        t.app.handle().clone(),
+        t.state(),
+        "Вызови API".to_string(),
+        false,
+        Some(TextFormat::Html),
+        Some("<p>Вызови <code>API</code></p>".to_string()),
+    )
+    .await
+    .unwrap();
+    let uuid = entry_uuid(&id);
+    wait_entry_status(&t, &uuid, EntryStatus::Ready).await;
+
+    let entry = t.state().storage.get_entry(&uuid).unwrap();
+    assert_eq!(entry.format, Some(TextFormat::Html));
+    assert_eq!(
+        entry.html_source.as_deref(),
+        Some("<p>Вызови <code>API</code></p>")
+    );
+    assert_eq!(entry.original_text, "Вызови API");
+    // The pipeline normalized the extracted text (Latin is transliterated),
+    // so the markup never reached synthesis.
+    let normalized = entry.normalized_text.unwrap_or_default();
+    assert!(normalized.contains("эй пи ай"), "normalized: {normalized}");
+    assert!(!normalized.contains('<'), "normalized: {normalized}");
+}
+
 /// A TTS-stage failure flips the entry to `error` and emits
 /// `entry_updated` (status `error`) *before* `tts_error` — the ordering
 /// the spec's "Synthesis Failure Event" requirement pins.
@@ -441,6 +487,8 @@ async fn tts_failure_emits_entry_updated_error_then_tts_error() {
         t.state(),
         "текст".to_string(),
         false,
+        None,
+        None,
     )
     .await
     .unwrap();

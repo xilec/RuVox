@@ -93,8 +93,9 @@ playback stops or finishes, when a different entry is selected, or when the
 display mode is switched. Pausing SHALL keep the current highlight visible.
 After an entry or mode switch the viewer SHALL re-subscribe to playback
 events so highlighting resumes for the new context. Highlighting SHALL work
-in `plain` and `markdown` modes; in `html` mode position events MUST be
-ignored because no original-position mapping exists.
+in `plain`, `markdown`, and `html` modes: in `html` mode the rendered word
+spans carry offsets in the extracted text (`original_text`), which is the
+same coordinate space as the timestamps' `original_pos`.
 
 #### Scenario: Pause keeps the highlight
 
@@ -108,9 +109,9 @@ ignored because no original-position mapping exists.
 - WHEN playback stops or finishes
 - THEN all `word-highlight` classes are removed from the viewer
 
-#### Scenario: HTML mode without highlighting
+#### Scenario: HTML mode highlights the spoken word
 
-- GIVEN the viewer is in HTML mode and the displayed entry is playing
-- WHEN `playback_position` events arrive
-- THEN no span is highlighted
+- GIVEN an HTML-ingested entry is playing and the viewer is in HTML mode
+- WHEN a `playback_position` event arrives
+- THEN the word whose span matches the active timestamp's `original_pos` is highlighted
 
