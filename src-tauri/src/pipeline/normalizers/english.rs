@@ -197,7 +197,7 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     m.insert("etc", "етс");
     m.insert("opt", "опт");
     // File extensions
-    m.insert("pdf", "пдф");
+    m.insert("pdf", "пэ дэ эф");
     m.insert("doc", "док");
     m.insert("txt", "тэкст");
     m.insert("csv", "си эс ви");
@@ -561,6 +561,14 @@ mod tests {
     #[test_case("true" => "тру"; "true_")]
     #[test_case("false" => "фолс"; "false_")]
     fn it_terms_misread_words(word: &str) -> String {
+        normalizer().normalize(word, false)
+    }
+
+    // Extensions read letter-by-letter, like "html" — issue #140.
+    #[test_case("pdf" => "пэ дэ эф"; "pdf")]
+    #[test_case("csv" => "си эс ви"; "csv")]
+    #[test_case("svg" => "эс ви джи"; "svg")]
+    fn it_terms_file_extensions_spelled(word: &str) -> String {
         normalizer().normalize(word, false)
     }
 
