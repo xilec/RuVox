@@ -301,9 +301,9 @@ impl TtsSubprocess {
 
     /// Request graceful shutdown.
     ///
-    /// Waits up to 5 s for the ttsd response. If the subprocess does not respond
-    /// or does not exit cleanly within that window, the driver task force-kills
-    /// the process (see `driver_task`).
+    /// Waits up to 5 s for the ttsd response. If the subprocess does not exit
+    /// cleanly within that window, the driver task escalates in stages:
+    /// SIGTERM, a 2 s grace, then SIGKILL (see `driver_task`).
     pub async fn shutdown(&self) -> Result<(), TtsError> {
         const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
         let resp = timeout(SHUTDOWN_TIMEOUT, self.send(TtsRequest::Shutdown))
@@ -409,9 +409,31 @@ async fn driver_task(
                     warn!(target: "ttsd", "wait() failed: {e}");
                 }
                 Err(_) => {
-                    warn!(target: "ttsd", "did not exit within 5 s, sending SIGKILL");
-                    let _ = child.start_kill();
-                    let _ = child.wait().await;
+                    // Escalate in stages: SIGTERM gives the Python process a
+                    // chance to run cleanup (flush logs, atexit handlers);
+                    // SIGKILL only if it is still alive after the grace.
+                    warn!(target: "ttsd", "did not exit within 5 s, sending SIGTERM");
+                    if let Some(pid) = child.id() {
+                        // SAFETY: plain signal send. The pid is still ours:
+                        // the timed-out wait() above is cancel-safe and only
+                        // dropped the future, so the child has not been
+                        // reaped — it is alive or a zombie, and a zombie
+                        // holds its pid, so the OS cannot have recycled it.
+                        let _ = unsafe { libc::kill(pid as i32, libc::SIGTERM) };
+                    }
+                    match timeout(Duration::from_secs(2), child.wait()).await {
+                        Ok(Ok(status)) => {
+                            info!(target: "ttsd", "exited after SIGTERM: {status}");
+                        }
+                        Ok(Err(e)) => {
+                            warn!(target: "ttsd", "wait() after SIGTERM failed: {e}");
+                        }
+                        Err(_) => {
+                            warn!(target: "ttsd", "still alive 2 s after SIGTERM, sending SIGKILL");
+                            let _ = child.start_kill();
+                            let _ = child.wait().await;
+                        }
+                    }
                 }
             }
             return;
