@@ -228,7 +228,10 @@ commits/pushes on the task branch for the duration of this epic.
 | 5. Testing | done | parity suite 31 cases (ONNX refs, worst 9.8e-4); +13 unit tests; no-bundle CI path green; bench ~1.3x vs warmed apply_tts (spike ~10x was cold-vs-partial); commits d2b37e0.. |
 | 6. Integration | done | third engine end-to-end (backend, downloader, IPC, Settings UI); gates green; commits 8b081ed..d044113 |
 | 7. Docs & licensing | done | README, NOTICE (CC BY-NC-SA attribution), architecture.md (pipeline/bundle/debugging/error codes), AGENTS.md, CHANGELOG |
-| 8. Manual verification | manual gate | user, pre-PR |
+| 8. Manual verification | manual gate | user, pre-PR; checklist in tasks 8.1 + group-6 report (release does not exist yet — either run the export workflow or symlink tmp/bundle-v5 into ~/.local/share/ruvox/voices/silero-native/) |
+
+Archive: done (2026-07-27-add-silero-native-engine, specs synced 13/13).
+Branch: pushed to origin (pre-push hooks green).
 
 ## Progress tracker (phases, superseded by the State tracker above)
 
