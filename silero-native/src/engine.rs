@@ -66,11 +66,15 @@ impl Engine {
         })
     }
 
-    /// Run the text frontend: strip markup → normalize → homosolver →
-    /// accentor → symbol ids.
+    /// Run the text frontend: strip markup → sanitize newlines → normalize →
+    /// homosolver → accentor → symbol ids.
     fn prepare(&self, text: &str) -> Result<(Vec<i64>, String)> {
         let stripped = strip_unsupported_markup(text);
-        let prepared = prepare_text_input(&stripped, &self.config.symbols_tail());
+        // ttsd parity (`sanitize_for_silero`): the pipeline keeps `\n\n` in
+        // the normalized text, and the symbol filter below would drop `\n`
+        // silently, gluing the surrounding words into one.
+        let sanitized = crate::chunking::sanitize_for_silero(&stripped);
+        let prepared = prepare_text_input(&sanitized, &self.config.symbols_tail());
         if !prepared.has_text {
             return Err(EngineError::BadInput(
                 "text has no speakable content after normalization".to_string(),

@@ -6,6 +6,7 @@
 //! upstream package code. See `docs/architecture.md` for the pipeline map.
 
 pub mod bundle;
+pub mod chunking;
 pub mod engine;
 pub mod error;
 pub mod frontend;

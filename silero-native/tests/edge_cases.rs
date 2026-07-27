@@ -74,3 +74,17 @@ fn markup_is_stripped_and_synthesized() {
     let words: Vec<&str> = result.timestamps.iter().map(|t| t.word.as_str()).collect();
     assert_eq!(words, vec!["привет", "мир"]);
 }
+
+#[test]
+fn multiline_text_synthesizes_without_gluing_words() {
+    let Some(engine) = engine() else { return };
+    // The pipeline keeps `\n\n` paragraph breaks; the engine must turn them
+    // into word separators (ttsd `sanitize_for_silero` parity), not drop
+    // them and glue the surrounding words into one.
+    let result = engine
+        .synthesize("строки\n\nновая", "aidar", 24000)
+        .expect("multiline input must synthesize");
+    assert!(!result.wav.is_empty());
+    let words: Vec<&str> = result.timestamps.iter().map(|t| t.word.as_str()).collect();
+    assert_eq!(words, vec!["строки", "новая"]);
+}
