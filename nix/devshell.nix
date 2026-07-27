@@ -50,8 +50,13 @@ pkgs.mkShell {
     llvmPackages.libclang
 
     # ── Piper TTS native runtime ───────────────────────────────────────────
-    # piper-rs links libonnxruntime via `ort` with the `load-dynamic` feature
-    # (set ORT_DYLIB_PATH below). espeak-rs-sys vendors libespeak-ng and
+    # onnxruntime is load-bearing for BOTH native TTS engines: piper-rs and
+    # the silero-native engine (see silero-native/docs/architecture.md) link
+    # libonnxruntime via `ort` (pykeio/ort v2) with the `load-dynamic`
+    # feature, which dlopens the shared library at runtime from
+    # ORT_DYLIB_PATH (set below). Do not download ort's prebuilt binaries:
+    # impure in dev and impossible in the offline Nix build sandbox.
+    # espeak-rs-sys vendors libespeak-ng and
     # builds it via cmake, so we don't need the package for linking — but
     # the cmake build's espeak-ng-data ends up in target/debug/build/.../out
     # which espeak-rs never looks at (it checks $CWD/espeak-ng-data and
