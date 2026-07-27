@@ -364,11 +364,16 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
   }, [opened]);
 
   const handleBundleDownload = () => {
+    // Switch to the progress view immediately — the started event lands one
+    // IPC round-trip later, and without this the button stays clickable and
+    // the user can queue a second download.
+    setBundleDownload({ file: 'manifest.json', percent: 0 });
     commands.downloadSileroNativeBundle().catch((err) => {
       // Mid-download failures are already reported by the
       // bundle_download_finished { ok: false } event; only a command that
       // failed before starting needs a notification here.
       if (!downloadActiveRef.current) {
+        setBundleDownload(null);
         notifications.show({
           title: 'Не удалось скачать бандл',
           message: formatError(err),

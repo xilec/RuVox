@@ -82,7 +82,17 @@ async fn download_inner(bundle_dir: &Path, emitter: &Emitter) -> Result<(), TtsE
         .await
         .map_err(TtsError::Ipc)?;
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        // The whole bundle is ~230 MB: 30 min overall is generous even on a
+        // slow link, while the connect timeout keeps a dead host from
+        // hanging the download forever.
+        .connect_timeout(std::time::Duration::from_secs(60))
+        .timeout(std::time::Duration::from_secs(30 * 60))
+        .build()
+        .map_err(|e| TtsError::Ttsd {
+            code: "bundle_download_failed".to_string(),
+            message: format!("не удалось инициализировать HTTP-клиент: {e}"),
+        })?;
 
     // 1. Manifest first — it is the source of truth for the file list and
     // the expected checksums. Validated in memory through the crate's own
