@@ -103,6 +103,23 @@ describe('computeEngineFormState', () => {
     expect(s.engine).toBe('piper');
     expect(s.coercedAwayFromUnavailable).toBe(true);
   });
+
+  it('replaces a saved random speaker when the saved engine is silero_native', () => {
+    const s = computeEngineFormState(
+      { engine: 'silero_native', piper_voice: 'ruslan', speaker: 'random' },
+      ALL_AVAILABLE,
+    );
+    expect(s.engine).toBe('silero_native');
+    expect(s.sileroSpeaker).toBe('xenia');
+  });
+
+  it('keeps a saved random speaker for the ttsd engine', () => {
+    const s = computeEngineFormState(
+      { engine: 'silero', piper_voice: 'ruslan', speaker: 'random' },
+      ALL_AVAILABLE,
+    );
+    expect(s.sileroSpeaker).toBe('random');
+  });
 });
 
 describe('applyEngineChange', () => {
@@ -132,5 +149,24 @@ describe('applyEngineChange', () => {
     expect(coerced.coercedAwayFromUnavailable).toBe(true);
     const next = applyEngineChange(coerced, 'piper', ONLY_PIPER);
     expect(next.coercedAwayFromUnavailable).toBe(false);
+  });
+
+  it('coerces the random speaker away when switching to silero_native', () => {
+    const onSilero = computeEngineFormState(
+      { engine: 'silero', piper_voice: 'ruslan', speaker: 'random' },
+      ALL_AVAILABLE,
+    );
+    const next = applyEngineChange(onSilero, 'silero_native', ALL_AVAILABLE);
+    expect(next.engine).toBe('silero_native');
+    expect(next.sileroSpeaker).toBe('xenia');
+  });
+
+  it('keeps the random speaker when switching to engines that support it', () => {
+    const next = applyEngineChange(start, 'silero', BOTH_AVAILABLE);
+    expect(next.sileroSpeaker).toBe('xenia');
+    const withRandom = { ...start, sileroSpeaker: 'random' };
+    expect(applyEngineChange(withRandom, 'silero', BOTH_AVAILABLE).sileroSpeaker).toBe('random');
+    // Piper does not use the Silero speaker at all — keep it for the round-trip.
+    expect(applyEngineChange(withRandom, 'piper', BOTH_AVAILABLE).sileroSpeaker).toBe('random');
   });
 });

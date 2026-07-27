@@ -7,6 +7,24 @@ import type { AvailableEngines, EngineKind, UIConfig } from './tauri';
 
 export type AvailabilityMap = AvailableEngines;
 
+/** Speaker id that only the Python ttsd engine supports: it picks a random
+ *  speaker per call. The native engine has no such concept and rejects it. */
+export const RANDOM_SPEAKER = 'random';
+
+/** Default Silero speaker, used when the saved/picked speaker cannot be
+ *  served by the active engine. */
+export const DEFAULT_SILERO_SPEAKER = 'xenia';
+
+/**
+ * Map a speaker to one the given engine can serve. Currently only `random`
+ * needs coercion: valid for ttsd (`silero`), rejected by `silero_native`.
+ */
+export function coerceSpeakerForEngine(engine: EngineKind, speaker: string): string {
+  return engine === 'silero_native' && speaker === RANDOM_SPEAKER
+    ? DEFAULT_SILERO_SPEAKER
+    : speaker;
+}
+
 export interface EngineFormState {
   engine: EngineKind;
   /** Voice the user picked for Piper. Persisted across engine flips so the
@@ -39,7 +57,7 @@ export function computeEngineFormState(
   return {
     engine,
     piperVoice: config.piper_voice || DEFAULT_PIPER_VOICE,
-    sileroSpeaker: config.speaker || 'xenia',
+    sileroSpeaker: coerceSpeakerForEngine(engine, config.speaker || DEFAULT_SILERO_SPEAKER),
     coercedAwayFromUnavailable: !savedAvailable && engine !== savedEngine,
   };
 }
@@ -64,7 +82,12 @@ export function applyEngineChange(
   if (!availability[next].available) {
     return state;
   }
-  return { ...state, engine: next, coercedAwayFromUnavailable: false };
+  return {
+    ...state,
+    engine: next,
+    sileroSpeaker: coerceSpeakerForEngine(next, state.sileroSpeaker),
+    coercedAwayFromUnavailable: false,
+  };
 }
 
 function pickFallbackEngine(availability: AvailabilityMap): EngineKind {

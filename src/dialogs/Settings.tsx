@@ -27,6 +27,7 @@ import { PIPER_VOICES } from '../lib/piperVoices';
 import {
   applyEngineChange,
   computeEngineFormState,
+  RANDOM_SPEAKER,
   type AvailabilityMap,
 } from '../lib/engineSelection';
 
@@ -73,6 +74,14 @@ const SPEAKER_OPTIONS = [
   { value: 'eugene', label: 'Eugene' },
   { value: 'random', label: 'Случайный' },
 ];
+
+/** `random` is a ttsd-only feature (the Python wrapper picks a speaker per
+ *  call); the native engine rejects it, so hide it for silero_native. */
+function speakerOptionsForEngine(engine: EngineKind) {
+  return engine === 'silero_native'
+    ? SPEAKER_OPTIONS.filter((o) => o.value !== RANDOM_SPEAKER)
+    : SPEAKER_OPTIONS;
+}
 
 const SAMPLE_RATE_OPTIONS = [
   { value: '8000', label: '8000 Гц' },
@@ -281,6 +290,11 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
     [],
   );
 
+  const speakerOptions = useMemo(
+    () => speakerOptionsForEngine(form.values.engine),
+    [form.values.engine],
+  );
+
   const handleEngineChange = (next: EngineKind) => {
     const current = {
       engine: form.values.engine,
@@ -290,6 +304,9 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
     };
     const updated = applyEngineChange(current, next, availability);
     form.setFieldValue('engine', updated.engine);
+    // applyEngineChange coerces ttsd-only speakers (e.g. 'random') away
+    // when the native engine is picked.
+    form.setFieldValue('speaker', updated.sileroSpeaker);
     setCoercedAlert(updated.coercedAwayFromUnavailable);
     // The native engine defaults to 24000; follow it only while the user
     // hasn't explicitly picked a sample rate in this dialog session.
@@ -521,7 +538,7 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
           ) : (
             <Select
               label="Голос Silero"
-              data={SPEAKER_OPTIONS}
+              data={speakerOptions}
               key={form.key('speaker')}
               {...form.getInputProps('speaker')}
             />
