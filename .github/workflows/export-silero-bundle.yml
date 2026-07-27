@@ -14,9 +14,9 @@ on:
         required: true
         default: "v5_ru"
       speaker:
-        description: "Speaker used for export examples and self-check"
+        description: "Comma-separated speakers for the self-check (first is used for export examples)"
         required: true
-        default: "aidar"
+        default: "aidar,kseniya"
 
 permissions:
   contents: write # needed to create the release

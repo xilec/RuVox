@@ -28,14 +28,16 @@ CLI:
 - `--model-path <file>` — use a specific `.pt` file, skipping cache/URL
   resolution.
 - `--out <dir>` — output bundle directory (required).
-- `--speaker <name>` — speaker for export examples and self-check
-  (default `aidar`).
+- `--speaker <a,b>` — comma-separated speakers for the self-check (default
+  `aidar,kseniya`); the first one is also used for the export-time example
+  inputs.
 - `--self-check` / `--no-self-check` — torch-vs-ONNX end-to-end waveform
-  parity check (default: on; exits non-zero when max abs diff > 1e-3 or the
-  waveform lengths differ). The check runs in a **fresh subprocess**
-  automatically: the ONNX export passes mutate the loaded torch model's
-  graph state, so in-process torch inference drifts after the export and
-  cannot serve as a reference.
+  parity check (default: on; exits non-zero when a phrase exceeds its
+  tolerance or the waveform lengths differ; per-phrase tolerances live in
+  `SELF_CHECK_PHRASES`, default 1e-3). The check runs in a **fresh
+  subprocess** automatically: the ONNX export passes mutate the loaded
+  torch model's graph state, so in-process torch inference drifts after
+  the export and cannot serve as a reference.
 - `--self-check-only` — only (re)run the self-check against an existing
   bundle in `--out`, without re-exporting.
 
@@ -44,6 +46,21 @@ Each exported graph is additionally validated inline right after its export
 1e-4, `pqmf_*` < 1e-5, `homosolver` < 1e-4, `accentor_tensor` decision-level:
 argmax equal + softmax diff < 1e-4 — raw logits carry amplified float noise,
 see the note in `export.py`).
+
+### Known limitations (investigated 2026-07-27)
+
+- **Chaotic divergence corners.** Some (text, voice) inputs are numerically
+  unstable inside the upstream model itself: torch and ONNX both produce
+  valid speech of identical duration (`dur_hat` matches exactly) but
+  entirely different content. Confirmed case: kseniya + «в тысяча» /
+  «в тысяче» (all other speaker x phrase combinations are within
+  tolerance). This is a near-tie flip in the decoder, not an export defect,
+  and cannot be fixed at the export level. The numbers self-check phrase
+  was chosen to avoid this corner.
+- **Pitch-zeroing on punctuation is not exported** (converter limitation).
+  The end-to-end effect is speaker-dependent: ~2.4e-4 for aidar, up to
+  ~2.1e-3 for kseniya — hence the looser 5e-3 tolerance for the
+  punctuation-heavy self-check phrase.
 
 Model resolution order:
 

@@ -79,6 +79,12 @@ unsupported sample rate), `synthesis_failed`.
 - **Parity threshold flakiness:** the suite budget is 1e-3 with a worst
   observed case of 9.8e-4. If an onnxruntime version bump pushes a case
   over, raise the threshold to 2e-3 with a comment (and re-listen).
+- **Chaotic divergence corners exist in the upstream model itself:** rare
+  (text, voice) inputs (confirmed: kseniya + «в тысяча») produce valid but
+  entirely different speech in torch vs ONNX, with identical durations and
+  inputs. If a user reports "the native engine reads a phrase differently
+  than the Python one" for a specific phrase+voice, check this first —
+  compare `dur_hat` (identical => chaotic corner, not a port bug).
 
 ## ONNX Runtime linkage strategy
 
