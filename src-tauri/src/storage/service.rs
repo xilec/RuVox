@@ -219,6 +219,7 @@ impl StorageService {
             original_text: clean_text,
             normalized_text: None,
             status: EntryStatus::Pending,
+            format: None,
             created_at: Local::now().naive_local(),
             audio_path: None,
             timestamps_path: None,

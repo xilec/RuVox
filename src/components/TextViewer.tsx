@@ -9,8 +9,10 @@ import {
   useComputedColorScheme,
 } from '@mantine/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { TextEntry, WordTimestamp } from '../lib/tauri';
+import { notifications } from '@mantine/notifications';
+import type { EntryFormat, TextEntry, WordTimestamp } from '../lib/tauri';
 import { commands, events } from '../lib/tauri';
+import { formatError } from '../lib/errors';
 import { renderMarkdown } from '../lib/markdown';
 import { renderHtml } from '../lib/html';
 import { renderMermaidIn } from '../lib/mermaid';
@@ -23,20 +25,24 @@ import {
 import { plainToWordHtml } from '../lib/plainTextHtml';
 import classes from './TextViewer.module.css';
 
-// TODO(B1/F4): add `format: "plain" | "markdown" | "html"` to TextEntry schema
-// so that the selected format is persisted alongside the entry.  Until that
-// schema change lands, the format is ephemeral client-side state.
-type Format = "plain" | "markdown" | "html";
+// Entries without a persisted format render in the viewer default mode.
+const DEFAULT_FORMAT: EntryFormat = "markdown";
 
 interface Props {
   entry: TextEntry | null;
 }
 
 export function TextViewer({ entry }: Props) {
-  const [format, setFormat] = useState<Format>("markdown");
+  const [format, setFormat] = useState<EntryFormat>(DEFAULT_FORMAT);
   const [zoomedSvg, setZoomedSvg] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const colorScheme = useComputedColorScheme("light");
+
+  // Restore the persisted display mode when another entry is selected or
+  // the entry's saved format changes (e.g. after set_entry_format lands).
+  useEffect(() => {
+    setFormat(entry?.format ?? DEFAULT_FORMAT);
+  }, [entry?.id, entry?.format]);
 
   // Timestamps for the currently playing entry, cached to avoid re-fetching on
   // every playback_position event.
@@ -252,6 +258,18 @@ export function TextViewer({ entry }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entry?.id, format]);
 
+  // Optimistic local switch; persist on the entry and revert on failure.
+  function handleFormatChange(v: string) {
+    if (!entry) return;
+    const next = v as EntryFormat;
+    const prev = format;
+    setFormat(next);
+    commands.setEntryFormat(entry.id, next).catch((err) => {
+      setFormat(prev);
+      notifications.show({ title: 'Ошибка', message: formatError(err), color: 'red' });
+    });
+  }
+
   if (!entry) {
     return (
       <Stack h="100%">
@@ -265,7 +283,7 @@ export function TextViewer({ entry }: Props) {
       <Group justify="space-between" wrap="nowrap">
         <SegmentedControl
           value={format}
-          onChange={(v) => setFormat(v as Format)}
+          onChange={handleFormatChange}
           size="xs"
           data={[
             { label: "Plain", value: "plain" },

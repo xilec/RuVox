@@ -17,6 +17,15 @@ pub enum EntryStatus {
     Error,
 }
 
+/// Display format of a text entry in the viewer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TextFormat {
+    Plain,
+    Markdown,
+    Html,
+}
+
 /// A text entry in the TTS queue.
 ///
 /// Field names match the on-disk `history.json` format that originated in
@@ -29,6 +38,10 @@ pub struct TextEntry {
     #[serde(default)]
     pub normalized_text: Option<String>,
     pub status: EntryStatus,
+    /// Display format chosen for this entry. `None` = never chosen; the
+    /// viewer falls back to the `text_format` config default.
+    #[serde(default)]
+    pub format: Option<TextFormat>,
     // Naive UTC timestamps (no TZ suffix), e.g. "2026-02-15T11:46:51.504055".
     // Callers treat these values as UTC.
     pub created_at: NaiveDateTime,
@@ -323,7 +336,24 @@ mod tests {
         let e: TextEntry = serde_json::from_str(json).unwrap();
         assert!(e.audio_path.is_none());
         assert!(e.normalized_text.is_none());
+        assert!(e.format.is_none());
         assert!(!e.was_regenerated);
+    }
+
+    #[test]
+    fn entry_format_serialization() {
+        // All format values must round-trip via JSON as lowercase strings.
+        let cases = [
+            (TextFormat::Plain, "\"plain\""),
+            (TextFormat::Markdown, "\"markdown\""),
+            (TextFormat::Html, "\"html\""),
+        ];
+        for (format, expected) in cases {
+            let serialized = serde_json::to_string(&format).unwrap();
+            assert_eq!(serialized, expected);
+            let deserialized: TextFormat = serde_json::from_str(&serialized).unwrap();
+            assert_eq!(deserialized, format);
+        }
     }
 
     #[test]

@@ -9,11 +9,16 @@ export type EntryId = string;
 
 export type EntryStatus = 'pending' | 'processing' | 'ready' | 'playing' | 'error';
 
+export type EntryFormat = 'plain' | 'markdown' | 'html';
+
 export interface TextEntry {
   id: EntryId;
   original_text: string;
   normalized_text: string | null;
   status: EntryStatus;
+  /** Display format persisted for this entry; null = never chosen, the
+   * viewer falls back to its default mode. */
+  format: EntryFormat | null;
   created_at: string;               // ISO 8601
   audio_generated_at: string | null;
   audio_path: string | null;
@@ -114,6 +119,9 @@ export const commands = {
 
   regenerateEntry: (id: EntryId): Promise<void> =>
     tauriInvoke('regenerate_entry', { id }),
+
+  setEntryFormat: (id: EntryId, format: EntryFormat): Promise<void> =>
+    tauriInvoke('set_entry_format', { id, format }),
 
   cancelSynthesis: (id: EntryId): Promise<void> =>
     tauriInvoke('cancel_synthesis', { id }),

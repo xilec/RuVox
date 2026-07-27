@@ -373,6 +373,60 @@ async fn delete_audio_resets_entry_and_emits_entry_updated() {
     assert!(payload["entry"]["audio_path"].is_null());
 }
 
+// ── set_entry_format ─────────────────────────────────────────────────
+
+/// Switching the format persists it and emits `entry_updated`, leaving the
+/// synthesized artifacts (normalized text, audio, timestamps) untouched.
+#[tokio::test(flavor = "multi_thread")]
+async fn set_entry_format_persists_and_preserves_audio_artifacts() {
+    let t = build_test_app();
+    let id = add_ready_entry(&t).await;
+    let uuid = entry_uuid(&id);
+    let before = t.state().storage.get_entry(&uuid).unwrap();
+
+    let events = record_events(&t.app, &["entry_updated"]);
+    set_entry_format(
+        t.app.handle().clone(),
+        t.state(),
+        id.clone(),
+        TextFormat::Html,
+    )
+    .await
+    .unwrap();
+
+    let entry = t.state().storage.get_entry(&uuid).unwrap();
+    assert_eq!(entry.format, Some(TextFormat::Html));
+    assert_eq!(entry.normalized_text, before.normalized_text);
+    assert_eq!(entry.audio_path, before.audio_path);
+    assert_eq!(entry.timestamps_path, before.timestamps_path);
+    assert_eq!(entry.status, EntryStatus::Ready);
+
+    let log = events.lock().unwrap();
+    let payload = last_entry_updated(&log);
+    assert_eq!(payload["entry"]["id"], id);
+    assert_eq!(payload["entry"]["format"], "html");
+}
+
+/// A well-formed but unknown id is a typed `not_found` error and emits
+/// nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn set_entry_format_unknown_entry_is_rejected() {
+    let t = build_test_app();
+    let events = record_events(&t.app, &["entry_updated"]);
+
+    let err = set_entry_format(
+        t.app.handle().clone(),
+        t.state(),
+        uuid::Uuid::new_v4().to_string(),
+        TextFormat::Plain,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(matches!(err, CommandError::NotFound { .. }));
+    assert!(events.lock().unwrap().is_empty());
+}
+
 /// A TTS-stage failure flips the entry to `error` and emits
 /// `entry_updated` (status `error`) *before* `tts_error` — the ordering
 /// the spec's "Synthesis Failure Event" requirement pins.
