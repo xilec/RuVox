@@ -86,6 +86,7 @@ const MAX_INPUT_CHARS: usize = 100_000;
 fn validate_input_length(text: &str) -> CmdResult<()> {
     if text.chars().count() > MAX_INPUT_CHARS {
         return Err(CommandError::Internal {
+            // Keep the space-grouped literal in sync with MAX_INPUT_CHARS.
             message: "текст слишком длинный (максимум 100 000 символов)".to_string(),
         });
     }

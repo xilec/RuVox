@@ -348,7 +348,10 @@ impl TrackedText {
         // the splice pass. Ranges are disjoint by construction (regex matches
         // never overlap; snapshot-based loops queue disjoint regions).
         batch.sort_by_key(|p| p.byte_start);
-        debug_assert!(batch.windows(2).all(|w| w[0].byte_end <= w[1].byte_start));
+        assert!(
+            batch.windows(2).all(|w| w[0].byte_end <= w[1].byte_start),
+            "flush_pending: queued replacement ranges must be disjoint"
+        );
 
         // Walk the text once, converting byte offsets to codepoint indices on
         // the way, and validate each queued replacement against the committed
@@ -1105,5 +1108,52 @@ mod tests {
         let mut tracked = TrackedText::new("Hello world");
         assert_eq!(tracked.text(), "Hello world");
         assert_eq!(tracked.original, "Hello world");
+    }
+
+    /// Adjacent disjoint matches within a single batch are all applied: the
+    /// splice walk must handle the empty gap between neighboring ranges.
+    #[test]
+    fn test_batch_adjacent_matches() {
+        let mut tracked = TrackedText::new("ab ba");
+        let pat = Regex::new("[ab]").unwrap();
+        tracked.sub(&pat, |caps| {
+            if &caps[0] == "a" {
+                "AA".to_string()
+            } else {
+                "BB".to_string()
+            }
+        });
+
+        assert_eq!(tracked.text(), "AABB BBAA");
+        let mapping = tracked.build_mapping();
+        assert_eq!(
+            mapping.char_map,
+            vec![
+                (0, 1),
+                (0, 1),
+                (1, 2),
+                (1, 2),
+                (2, 3),
+                (3, 4),
+                (3, 4),
+                (4, 5),
+                (4, 5)
+            ]
+        );
+    }
+
+    /// A batch where every replacement equals the matched text is an all-
+    /// no-op batch: the text and the identity mapping must be untouched.
+    #[test]
+    fn test_batch_all_noops_identity() {
+        let mut tracked = TrackedText::new("a b a");
+        let pat = Regex::new("[ab]").unwrap();
+        tracked.sub(&pat, |caps| caps[0].to_string());
+
+        assert_eq!(tracked.text(), "a b a");
+        let mapping = tracked.build_mapping();
+        for i in 0..5 {
+            assert_eq!(mapping.char_map[i], (i, i + 1));
+        }
     }
 }
