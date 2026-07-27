@@ -2,6 +2,48 @@ use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 
+/// English letter names — the single home for letter-name readings
+/// (issue #120). Used by abbreviation spelling, code-identifier spelling,
+/// and lone-letter reading, so "x" sounds "икс" in every context.
+/// Keys are lowercase.
+pub static LETTER_NAMES: [(char, &str); 26] = [
+    ('a', "эй"),
+    ('b', "би"),
+    ('c', "си"),
+    ('d', "ди"),
+    ('e', "и"),
+    ('f', "эф"),
+    ('g', "джи"),
+    ('h', "эйч"),
+    ('i', "ай"),
+    ('j', "джей"),
+    ('k', "кей"),
+    ('l', "эл"),
+    ('m', "эм"),
+    ('n', "эн"),
+    ('o', "о"),
+    ('p', "пи"),
+    ('q', "кью"),
+    ('r', "ар"),
+    ('s', "эс"),
+    ('t', "ти"),
+    ('u', "ю"),
+    ('v', "ви"),
+    ('w', "дабл ю"),
+    ('x', "икс"),
+    ('y', "вай"),
+    ('z', "зет"),
+];
+
+/// Look up an English letter name case-insensitively.
+pub fn letter_name(c: char) -> Option<&'static str> {
+    let lower = c.to_ascii_lowercase();
+    LETTER_NAMES
+        .iter()
+        .find(|(k, _)| *k == lower)
+        .map(|(_, v)| *v)
+}
+
 /// IT terms with established Russian pronunciation.
 ///
 /// Keys are lowercase English. Values are Russian phonetic spelling.

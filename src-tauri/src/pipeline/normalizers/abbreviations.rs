@@ -1,38 +1,6 @@
+use super::english::letter_name;
 use std::collections::HashMap;
 use std::sync::LazyLock;
-
-static LETTER_MAP: LazyLock<HashMap<char, &'static str>> = LazyLock::new(|| {
-    [
-        ('a', "эй"),
-        ('b', "би"),
-        ('c', "си"),
-        ('d', "ди"),
-        ('e', "и"),
-        ('f', "эф"),
-        ('g', "джи"),
-        ('h', "эйч"),
-        ('i', "ай"),
-        ('j', "джей"),
-        ('k', "кей"),
-        ('l', "эл"),
-        ('m', "эм"),
-        ('n', "эн"),
-        ('o', "о"),
-        ('p', "пи"),
-        ('q', "кью"),
-        ('r', "ар"),
-        ('s', "эс"),
-        ('t', "ти"),
-        ('u', "ю"),
-        ('v', "ви"),
-        ('w', "дабл ю"),
-        ('x', "экс"),
-        ('y', "уай"),
-        ('z', "зед"),
-    ]
-    .into_iter()
-    .collect()
-});
 
 static AS_WORD: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
     [
@@ -104,8 +72,7 @@ impl AbbreviationNormalizer {
 
         if abbrev.len() == 1 {
             let ch = lower.chars().next().unwrap();
-            return LETTER_MAP
-                .get(&ch)
+            return letter_name(ch)
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| abbrev.to_string());
         }
@@ -122,8 +89,7 @@ impl AbbreviationNormalizer {
             .to_lowercase()
             .chars()
             .map(|c| {
-                LETTER_MAP
-                    .get(&c)
+                letter_name(c)
                     .map(|s| s.to_string())
                     .unwrap_or_else(|| c.to_string())
             })
@@ -136,7 +102,7 @@ impl AbbreviationNormalizer {
             .to_lowercase()
             .chars()
             .map(|c| {
-                if let Some(&pronunciation) = LETTER_MAP.get(&c) {
+                if let Some(pronunciation) = letter_name(c) {
                     pronunciation.to_string()
                 } else {
                     c.to_string()
@@ -151,10 +117,6 @@ impl Default for AbbreviationNormalizer {
     fn default() -> Self {
         Self::new()
     }
-}
-
-pub fn letter_map() -> &'static HashMap<char, &'static str> {
-    &LETTER_MAP
 }
 
 pub fn as_word() -> &'static HashMap<&'static str, &'static str> {
@@ -198,7 +160,7 @@ mod tests {
     #[test_case("HTTPS" => "эйч ти ти пи эс"; "https")]
     #[test_case("HTML" => "эйч ти эм эл"; "html")]
     #[test_case("CSS" => "си эс эс"; "css")]
-    #[test_case("XML" => "экс эм эл"; "xml")]
+    #[test_case("XML" => "икс эм эл"; "xml")]
     #[test_case("URL" => "ю ар эл"; "url")]
     #[test_case("URI" => "ю ар ай"; "uri")]
     #[test_case("API" => "эй пи ай"; "api")]
@@ -210,7 +172,7 @@ mod tests {
     #[test_case("SSH" => "эс эс эйч"; "ssh")]
     #[test_case("VPN" => "ви пи эн"; "vpn")]
     #[test_case("JWT" => "джей дабл ю ти"; "jwt")]
-    #[test_case("XSS" => "экс эс эс"; "xss")]
+    #[test_case("XSS" => "икс эс эс"; "xss")]
     #[test_case("CSRF" => "си эс ар эф"; "csrf")]
     #[test_case("TCP" => "ти си пи"; "tcp")]
     #[test_case("UDP" => "ю ди пи"; "udp")]
@@ -225,7 +187,7 @@ mod tests {
     #[test_case("USB" => "ю эс би"; "usb")]
     #[test_case("HDMI" => "эйч ди эм ай"; "hdmi")]
     #[test_case("UI" => "ю ай"; "ui")]
-    #[test_case("UX" => "ю экс"; "ux")]
+    #[test_case("UX" => "ю икс"; "ux")]
     #[test_case("CI" => "си ай"; "ci")]
     #[test_case("CD" => "си ди"; "cd")]
     #[test_case("AI" => "эй ай"; "ai")]
@@ -269,9 +231,9 @@ mod tests {
     #[test_case("U" => "ю"; "u")]
     #[test_case("V" => "ви"; "v")]
     #[test_case("W" => "дабл ю"; "w")]
-    #[test_case("X" => "экс"; "x")]
-    #[test_case("Y" => "уай"; "y")]
-    #[test_case("Z" => "зед"; "z")]
+    #[test_case("X" => "икс"; "x")]
+    #[test_case("Y" => "вай"; "y")]
+    #[test_case("Z" => "зет"; "z")]
     fn letter(input: &str) -> String {
         normalizer().normalize(input)
     }
@@ -284,10 +246,10 @@ mod tests {
         normalizer().normalize(input)
     }
 
-    #[test_case("XYZ" => "экс уай зед"; "xyz")]
+    #[test_case("XYZ" => "икс вай зет"; "xyz")]
     #[test_case("ABC" => "эй би си"; "abc")]
     #[test_case("QRS" => "кью ар эс"; "qrs")]
-    #[test_case("WXYZ" => "дабл ю экс уай зед"; "wxyz")]
+    #[test_case("WXYZ" => "дабл ю икс вай зет"; "wxyz")]
     fn unknown_abbreviation(input: &str) -> String {
         normalizer().normalize(input)
     }
@@ -305,14 +267,20 @@ mod tests {
         normalizer().normalize(input)
     }
 
-    // --- Public accessors ---
+    // --- Shared letter-name table (#120) ---
 
     #[test]
-    fn test_letter_map_accessible() {
-        let map = letter_map();
-        assert_eq!(map.get(&'a'), Some(&"эй"));
-        assert_eq!(map.get(&'z'), Some(&"зед"));
-        assert_eq!(map.len(), 26);
+    fn letter_names_match_code_spelling() {
+        // One shared table: abbreviations and code identifiers read the
+        // same letter identically ("x" and "X" both → "икс").
+        for c in 'a'..='z' {
+            let s = c.to_string();
+            assert_eq!(
+                normalizer().normalize(&s),
+                super::super::code::CodeIdentifierNormalizer::spell_abbreviation(&s),
+                "letter {c} differs between abbreviation and code spelling"
+            );
+        }
     }
 
     #[test]
