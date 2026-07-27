@@ -214,6 +214,11 @@ export function TextViewer({ entry }: Props) {
 
         // All three display modes emit data-orig-* word spans (HTML mode
         // gets them from annotateHtmlWords over the sanitized source).
+        // Exception: a plain-text entry manually toggled to HTML renders a
+        // whitespace-collapsed fallback, whose span offsets do not match
+        // WordTimestamp.original_pos — highlighting would be misleading.
+        if (format === 'html' && !entry.html_source) return;
+
         const newIdx = findActiveTimestamp(timestamps, position_sec);
         const prevIdx = activeIdxRef.current;
 

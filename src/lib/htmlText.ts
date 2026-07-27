@@ -40,6 +40,9 @@ interface WalkCtx {
   /** Extracted text built so far; maintained in both modes — word offsets
    * are codepoint positions in this string. */
   text: string;
+  /** Codepoint length of `text`, incremented as we append. Measuring
+   * `cpLen(ctx.text)` per word instead would be O(n²) on large documents. */
+  cpCount: number;
   lastWasSpace: boolean;
   /** When true, words are wrapped in data-orig spans in the walked DOM. */
   wrap: boolean;
@@ -48,7 +51,7 @@ interface WalkCtx {
 /** Extract the TTS text from a sanitized HTML string. */
 export function extractTextForTts(sanitizedHtml: string): string {
   const doc = new DOMParser().parseFromString(sanitizedHtml, 'text/html');
-  const ctx: WalkCtx = { text: '', lastWasSpace: true, wrap: false };
+  const ctx: WalkCtx = { text: '', cpCount: 0, lastWasSpace: true, wrap: false };
   walkChildren(doc.body, ctx);
   return ctx.text.trim();
 }
@@ -59,7 +62,7 @@ export function extractTextForTts(sanitizedHtml: string): string {
  * the same document, which is what makes highlight offsets line up.
  */
 export function annotateHtmlWords(container: Element): string {
-  const ctx: WalkCtx = { text: '', lastWasSpace: true, wrap: true };
+  const ctx: WalkCtx = { text: '', cpCount: 0, lastWasSpace: true, wrap: true };
   walkChildren(container, ctx);
   return ctx.text.trim();
 }
@@ -91,6 +94,7 @@ function walkElement(el: Element, ctx: WalkCtx): void {
 function pushNewline(ctx: WalkCtx): void {
   if (ctx.text.length > 0 && !ctx.text.endsWith('\n')) {
     ctx.text += '\n';
+    ctx.cpCount += 1;
   }
   ctx.lastWasSpace = true;
 }
@@ -115,6 +119,7 @@ function emitText(node: Text, ctx: WalkCtx): void {
       // the output is not already after whitespace.
       if (!ctx.lastWasSpace) {
         ctx.text += ' ';
+        ctx.cpCount += 1;
         ctx.lastWasSpace = true;
       }
       tokens.push({ isWord: false, token: { str: raw.slice(i, j) } });
@@ -123,10 +128,11 @@ function emitText(node: Text, ctx: WalkCtx): void {
       // Astral characters are never whitespace, so UTF-16 iteration here
       // never splits a surrogate pair.
       const word = raw.slice(i, j);
-      const origStart = cpLen(ctx.text);
+      const origStart = ctx.cpCount;
       ctx.text += word;
+      ctx.cpCount += cpLen(word);
       ctx.lastWasSpace = false;
-      tokens.push({ isWord: true, token: { str: word, origStart, origEnd: cpLen(ctx.text) } });
+      tokens.push({ isWord: true, token: { str: word, origStart, origEnd: ctx.cpCount } });
     }
     i = j;
   }

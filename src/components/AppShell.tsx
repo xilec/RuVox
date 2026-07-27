@@ -100,8 +100,8 @@ export function AppShell() {
   useEffect(() => {
     function handlePaste(e: ClipboardEvent) {
       // Don't hijack paste into text inputs (search field, preview editor).
-      const target = e.target as HTMLElement | null;
-      if (target?.closest('input, textarea, [contenteditable="true"]')) return;
+      if (!(e.target instanceof Element)) return;
+      if (e.target.closest('input, textarea, [contenteditable="true"]')) return;
       if (pending) return;
 
       const rawHtml = e.clipboardData?.getData('text/html') ?? '';
@@ -111,7 +111,18 @@ export function AppShell() {
       setPending(true);
       if (rawHtml.trim()) {
         void addHtmlEntry(rawHtml, true)
-          .then((added) => (added ? undefined : doAddEntry(plain, true)))
+          .then((added) => {
+            if (added) return undefined;
+            // HTML-only clipboard whose markup yields no readable text
+            // (e.g. pure nav/button chrome): nothing to ingest — skip the
+            // plain fallback, which would submit an empty text and surface
+            // a spurious backend error.
+            if (!plain.trim()) {
+              setPending(false);
+              return undefined;
+            }
+            return doAddEntry(plain, true);
+          })
           .catch((err) => {
             notifications.show({ title: 'Ошибка', message: formatError(err), color: 'red' });
             setPending(false);

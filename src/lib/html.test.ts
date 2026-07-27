@@ -93,4 +93,20 @@ describe('renderHtml word spans', () => {
     const buttonSection = out.slice(out.indexOf('<button>'), out.indexOf('</button>'));
     expect(buttonSection).not.toContain('data-orig-start');
   });
+
+  it('keeps span offsets aligned when hljs highlights a code block', () => {
+    // highlightCodeBlocks mutates the DOM before annotateHtmlWords walks it;
+    // pin the invariant that span offsets still index the extracted text.
+    const html =
+      '<p>Пример</p><pre><code class="language-rust">let x = 1;</code></pre>';
+    const out = renderHtml(html);
+    const cps = Array.from(extractTextForTts(html));
+    const spanRe =
+      /<span data-orig-start="(\d+)" data-orig-end="(\d+)">([^<]+)<\/span>/g;
+    const spans = [...out.matchAll(spanRe)];
+    expect(spans.length).toBeGreaterThan(0);
+    for (const m of spans) {
+      expect(cps.slice(Number(m[1]), Number(m[2])).join('')).toBe(m[3]);
+    }
+  });
 });
