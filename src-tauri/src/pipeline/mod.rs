@@ -188,9 +188,10 @@ fn re_collapse_spaces() -> &'static Regex {
 
 fn re_tilde_approx() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    // Match ~<optional spaces><digit> — capture the digit to preserve it in replacement.
+    // Match ~<optional spaces><digit> — capture only the digit so that "~ 5"
+    // collapses to a single space ("около 5", not "около  5").
     // Regex crate does not support lookahead, so we consume the digit and re-emit it.
-    RE.get_or_init(|| Regex::new(r"~(\s*\d)").expect("valid regex"))
+    RE.get_or_init(|| Regex::new(r"~\s*(\d)").expect("valid regex"))
 }
 
 // ── Multi-char operators processed in tracked mode (longest first) ────────────
