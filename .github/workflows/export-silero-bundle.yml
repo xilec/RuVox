@@ -48,6 +48,13 @@ jobs:
           tar -czf "silero-onnx-bundle-${{ inputs.model }}.tar.gz" -C bundle .
           cp bundle/manifest.json "manifest-${{ inputs.model }}.json"
           cp bundle/selfcheck/report.json "selfcheck-${{ inputs.model }}.json"
+          # Per-file assets under the exact names the in-app downloader
+          # fetches: it builds URLs as {release}/manifest.json and then
+          # {release}/<path> for every entry the manifest lists
+          # (src-tauri/src/tts/silero_native/download.rs). Without these the
+          # release is undownloadable from the app — do not drop this step.
+          mkdir -p release-files
+          find bundle -maxdepth 1 -type f -exec cp {} release-files/ \;
 
       - name: Upload release
         uses: softprops/action-gh-release@v2
@@ -63,4 +70,5 @@ jobs:
             silero-onnx-bundle-${{ inputs.model }}.tar.gz
             manifest-${{ inputs.model }}.json
             selfcheck-${{ inputs.model }}.json
+            release-files/*
           overwrite: true
