@@ -85,15 +85,17 @@ async fn download_inner(bundle_dir: &Path, emitter: &Emitter) -> Result<(), TtsE
     let client = reqwest::Client::new();
 
     // 1. Manifest first — it is the source of truth for the file list and
-    // the expected checksums. Persisted atomically, then re-loaded through
-    // the crate's own validator (rejects malformed JSON and empty lists).
+    // the expected checksums. Validated in memory through the crate's own
+    // parser (rejects malformed JSON and empty lists) *before* being
+    // persisted atomically, so a broken download never leaves a corrupt
+    // manifest.json behind for the availability probe to trip over.
     let manifest_url = format!("{BUNDLE_RELEASE_BASE_URL}/manifest.json");
     let manifest_bytes = fetch_whole(&client, &manifest_url).await?;
-    write_atomic(&bundle_dir.join("manifest.json"), &manifest_bytes).await?;
-    let manifest = Manifest::load(bundle_dir).map_err(|e| TtsError::Ttsd {
+    let manifest = Manifest::parse(&manifest_bytes).map_err(|e| TtsError::Ttsd {
         code: "bundle_manifest_invalid".to_string(),
         message: format!("манифест бандла повреждён: {e}"),
     })?;
+    write_atomic(&bundle_dir.join("manifest.json"), &manifest_bytes).await?;
 
     // 2. Bundle files, in manifest order.
     let total_files = manifest.files.len() as u32;

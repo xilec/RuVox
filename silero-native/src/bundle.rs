@@ -65,9 +65,16 @@ impl Manifest {
     /// Load and parse `manifest.json` from the bundle directory.
     pub fn load(bundle_dir: &Path) -> Result<Self> {
         let path = bundle_dir.join("manifest.json");
-        let text = std::fs::read_to_string(&path)
+        let bytes = std::fs::read(&path)
             .map_err(|e| EngineError::Bundle(format!("cannot read {}: {e}", path.display())))?;
-        let manifest: Self = serde_json::from_str(&text)
+        Self::parse(&bytes)
+    }
+
+    /// Parse manifest bytes (already fetched from disk or the network)
+    /// without touching the file system. Rejects malformed JSON and empty
+    /// file lists.
+    pub fn parse(bytes: &[u8]) -> Result<Self> {
+        let manifest: Self = serde_json::from_slice(bytes)
             .map_err(|e| EngineError::Bundle(format!("malformed manifest.json: {e}")))?;
         if manifest.files.is_empty() {
             return Err(EngineError::Bundle(
@@ -220,5 +227,38 @@ mod tests {
         let manifest = Manifest::load(tmp.path()).expect("load manifest");
         let err = manifest.verify(tmp.path()).expect_err("must fail");
         assert!(matches!(err, EngineError::Bundle(_)));
+    }
+
+    #[test]
+    fn parse_rejects_malformed_json() {
+        let err = Manifest::parse(b"not json").expect_err("must fail");
+        assert!(err.to_string().contains("malformed manifest.json"));
+    }
+
+    #[test]
+    fn parse_rejects_empty_file_list() {
+        let bytes = serde_json::json!({
+            "model_id": "test",
+            "opset": 17,
+            "export_date_utc": "2026-01-01T00:00:00+00:00",
+            "files": [],
+        })
+        .to_string();
+        let err = Manifest::parse(bytes.as_bytes()).expect_err("must fail");
+        assert!(err.to_string().contains("lists no files"));
+    }
+
+    #[test]
+    fn parse_accepts_valid_manifest() {
+        let bytes = serde_json::json!({
+            "model_id": "test",
+            "opset": 17,
+            "export_date_utc": "2026-01-01T00:00:00+00:00",
+            "files": [{"path": "a.onnx", "size": 3, "sha256": "abc"}],
+        })
+        .to_string();
+        let manifest = Manifest::parse(bytes.as_bytes()).expect("must parse");
+        assert_eq!(manifest.files.len(), 1);
+        assert_eq!(manifest.files[0].path, "a.onnx");
     }
 }

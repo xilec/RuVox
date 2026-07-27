@@ -155,19 +155,24 @@ impl EngineSwitcher {
     }
 
     /// Build the in-process Silero Native engine. Fails fast with
-    /// `engine_unavailable` when the model bundle is not on disk, so
-    /// `update_config` surfaces a `config_error` and leaves the previous
-    /// config on disk instead of swapping to an engine that cannot load.
-    /// The full manifest verification runs inside the engine's warmup.
+    /// `engine_unavailable` when the model bundle is not fully on disk
+    /// (stat-only probe: manifest parses, every listed file present with
+    /// the recorded size), so `update_config` surfaces a `config_error` and
+    /// leaves the previous config on disk instead of swapping to an engine
+    /// that cannot load. The full sha256 verification runs inside the
+    /// engine's warmup.
     fn build_silero_native(&self) -> Result<Arc<SileroNativeEngine>, TtsError> {
-        if !self.silero_native_bundle_dir.join("manifest.json").exists() {
+        let probe = super::availability::probe_silero_native(&self.silero_native_bundle_dir);
+        if !probe.available {
             return Err(TtsError::Ttsd {
                 code: "engine_unavailable".to_string(),
-                message: format!(
-                    "Бандл моделей Silero не скачан ({}). \
-                     Скачайте его в настройках (движок «Silero (нативный)»).",
-                    self.silero_native_bundle_dir.display()
-                ),
+                message: probe.reason.unwrap_or_else(|| {
+                    format!(
+                        "Бандл моделей Silero не скачан ({}). \
+                         Скачайте его в настройках (движок «Silero (нативный)»).",
+                        self.silero_native_bundle_dir.display()
+                    )
+                }),
             });
         }
         Ok(Arc::new(SileroNativeEngine::new(
@@ -347,15 +352,82 @@ mod tests {
         assert_eq!(sw.kind(), EngineKind::Piper);
     }
 
+    /// Write a manifest + payload files into `dir` so the stat-only bundle
+    /// probe passes. Sizes and hashes are honest, though the probe itself
+    /// only checks presence and size.
+    fn write_fake_bundle(dir: &std::path::Path, files: &[(&str, &[u8])]) {
+        use sha2::{Digest, Sha256};
+        let entries: Vec<serde_json::Value> = files
+            .iter()
+            .map(|(name, contents)| {
+                std::fs::write(dir.join(name), contents).unwrap();
+                serde_json::json!({
+                    "path": name,
+                    "size": contents.len(),
+                    "sha256": format!("{:x}", Sha256::new().chain_update(contents).finalize()),
+                })
+            })
+            .collect();
+        let manifest = serde_json::json!({
+            "model_id": "test",
+            "opset": 17,
+            "export_date_utc": "2026-01-01T00:00:00+00:00",
+            "files": entries,
+        });
+        std::fs::write(dir.join("manifest.json"), manifest.to_string()).unwrap();
+    }
+
     #[tokio::test]
-    async fn apply_config_silero_native_with_bundle_dir_swaps_engine() {
+    async fn apply_config_silero_native_with_complete_bundle_swaps_engine() {
         let (sw, _voices_tmp, _ttsd_tmp, bundle_tmp) = fake_switcher();
-        // The build gate only requires the manifest to exist; the real load
-        // (with full verification) happens in the engine's warmup.
-        std::fs::write(bundle_tmp.path().join("manifest.json"), b"{}").unwrap();
+        // The build gate is the stat-only probe; the real load (with full
+        // sha256 verification) happens in the engine's warmup.
+        write_fake_bundle(bundle_tmp.path(), &[("a.onnx", b"aaa")]);
         sw.apply_config("silero_native", "ruslan").await.unwrap();
         assert_eq!(sw.kind(), EngineKind::SileroNative);
         let slot = sw.inner.read().await;
         assert_eq!(slot.piper_voice, None);
+    }
+
+    #[tokio::test]
+    async fn apply_config_silero_native_with_incomplete_bundle_is_engine_unavailable() {
+        let (sw, _voices_tmp, _ttsd_tmp, bundle_tmp) = fake_switcher();
+        write_fake_bundle(
+            bundle_tmp.path(),
+            &[("a.onnx", b"aaa"), ("b.onnx", b"bbbb")],
+        );
+        // A file the manifest lists is gone — a bare manifest.exists() gate
+        // would let this through, the probe must not.
+        std::fs::remove_file(bundle_tmp.path().join("b.onnx")).unwrap();
+        let err = sw
+            .apply_config("silero_native", "ruslan")
+            .await
+            .unwrap_err();
+        match err {
+            TtsError::Ttsd { code, message } => {
+                assert_eq!(code, "engine_unavailable");
+                assert!(
+                    message.chars().any(|c| matches!(c, 'А'..='я' | 'ё' | 'Ё')),
+                    "message should be Russian: {message}"
+                );
+            }
+            other => panic!("expected engine_unavailable, got {other:?}"),
+        }
+        assert_eq!(sw.kind(), EngineKind::Piper);
+    }
+
+    #[tokio::test]
+    async fn apply_config_silero_native_with_corrupt_manifest_is_engine_unavailable() {
+        let (sw, _voices_tmp, _ttsd_tmp, bundle_tmp) = fake_switcher();
+        std::fs::write(bundle_tmp.path().join("manifest.json"), b"{}").unwrap();
+        let err = sw
+            .apply_config("silero_native", "ruslan")
+            .await
+            .unwrap_err();
+        match err {
+            TtsError::Ttsd { code, .. } => assert_eq!(code, "engine_unavailable"),
+            other => panic!("expected engine_unavailable, got {other:?}"),
+        }
+        assert_eq!(sw.kind(), EngineKind::Piper);
     }
 }

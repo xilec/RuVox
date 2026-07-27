@@ -227,10 +227,11 @@ fn build_engine<R: Runtime>(
         && tts::availability::probe(&ttsd_dir, &silero_native_bundle_dir)
             .silero
             .available;
-    // Cheap gate only (manifest present) — the engine's warmup runs the full
-    // manifest + sha256 verification before opening ONNX sessions.
-    let want_silero_native =
-        config.engine == "silero_native" && silero_native_bundle_dir.join("manifest.json").exists();
+    // Stat-only gate (manifest parses, every listed file present with the
+    // recorded size) — the engine's warmup runs the full sha256 verification
+    // before opening ONNX sessions.
+    let want_silero_native = config.engine == "silero_native"
+        && tts::availability::probe_silero_native(&silero_native_bundle_dir).available;
 
     let (initial_engine, initial_kind, initial_voice) = if want_silero_native {
         let engine: Arc<dyn tts::TtsEngine> = Arc::new(tts::SileroNativeEngine::new(
@@ -255,7 +256,7 @@ fn build_engine<R: Runtime>(
         }
         if config.engine == "silero_native" {
             tracing::info!(
-                "Silero Native requested in config but the bundle is missing; serving Piper this run"
+                "Silero Native requested in config but the bundle is missing or incomplete; serving Piper this run"
             );
         }
         build_piper_initial(&voices_dir, &config.piper_voice, &emitter)
