@@ -100,6 +100,11 @@ silero-native = { path = "../silero-native" }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
 futures-util = "0.3"
 
+# sha256 verification of the Silero Native bundle download — the same crate
+# the silero-native bundle loader verifies with, so feature unification keeps
+# a single copy.
+sha2 = "0.10"
+
 [dev-dependencies]
 tempfile = "3"
 similar = "2"
