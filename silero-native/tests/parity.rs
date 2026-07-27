@@ -17,8 +17,9 @@
 //!   3. sample count matches within ±1 output frame (600 samples at 48 kHz,
 //!      scaled by rate).
 //!
-//! Fixtures come from `tmp/gen_parity_fixtures.py` (real v5_ru model,
-//! references taken after `unpack_q_model`). Bundle-gated like the other
+//! Fixtures come from `tests/tools/gen_parity_fixtures.py` (real v5_ru model,
+//! references taken after `unpack_q_model`; regenerate via
+//! `tests/tools/regenerate_fixtures.sh`). Bundle-gated like the other
 //! integration tests: these run locally / wherever the ~230 MB bundle is
 //! present (`SILERO_NATIVE_BUNDLE` or the default `tmp/bundle-v5`); on CI
 //! machines without the bundle the test skips and only the unit tests run.

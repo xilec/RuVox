@@ -2,7 +2,9 @@
 //! the upstream torch pipeline output symbol-for-symbol on real homographs,
 //! ё-words, explicit stress markers and dash tokens.
 //!
-//! Fixtures come from `tmp/gen_accentor_fixtures.py` (real v5_ru model).
+//! Fixtures come from `tests/tools/gen_accentor_fixtures.py` (real v5_ru
+//! model, references taken after `unpack_q_model` — regenerate via
+//! `tests/tools/regenerate_fixtures.sh`).
 //! Skipped when the bundle is absent (set SILERO_NATIVE_BUNDLE to override).
 
 use std::path::PathBuf;
