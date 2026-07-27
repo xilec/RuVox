@@ -24,6 +24,7 @@ jobs:
           filters: |
             rust:
               - 'src-tauri/**'
+              - 'silero-native/**'
               - '.github/workflows/ci.yml'
             typescript:
               - 'src/**'
@@ -66,14 +67,17 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: "src-tauri\nsilero-native"
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+      - run: cargo fmt --manifest-path silero-native/Cargo.toml -- --check
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml --no-deps -- -D warnings
+      - run: cargo clippy --manifest-path silero-native/Cargo.toml --no-deps -- -D warnings
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
           manifest-path: src-tauri/Cargo.toml
       - run: cargo test --manifest-path src-tauri/Cargo.toml --all-features
+      - run: cargo test --manifest-path silero-native/Cargo.toml
 
   typescript:
     name: TypeScript (typecheck + vitest)

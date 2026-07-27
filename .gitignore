@@ -70,6 +70,10 @@ dist/
 
 # Rust / Tauri
 src-tauri/target/
+# Standalone builds of the engine crate (when built via src-tauri it shares
+# src-tauri/target). Lockfile is owned by the app (src-tauri/Cargo.lock).
+silero-native/target/
+silero-native/Cargo.lock
 src-tauri/gen/
 
 # pnpm

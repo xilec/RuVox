@@ -90,6 +90,10 @@ ort = { version = "=2.0.0-rc.12", default-features = false, features = ["load-dy
 ort-sys = { version = "=2.0.0-rc.12", default-features = false, features = ["disable-linking"] }
 async-trait = "0.1"
 
+# In-process Silero v5 engine (ONNX). Same ort/ort-sys pins as above — cargo
+# feature unification keeps a single onnxruntime linkage for both engines.
+silero-native = { path = "../silero-native" }
+
 # On-demand Piper voice download (Phase 4 of #42). `rustls-tls` keeps us off
 # the system OpenSSL ABI; `stream` exposes `bytes_stream()` for the progress
 # loop. `default-features = false` suppresses ureq + native-tls.
