@@ -126,7 +126,10 @@ entry behaves exactly as a plain entry (`format: null`, `html_source: null`).
 `add_clipboard_entry(play_when_ready)` reads the system clipboard in Rust via
 `arboard` on a blocking thread and exists for the system tray menu, where no
 webview clipboard API is available. Both share one implementation (`ingest_text`):
-blank/whitespace-only text is rejected with `internal`; the entry is persisted
+blank/whitespace-only text is rejected with `internal`; text longer than
+100 000 codepoints SHALL be rejected with `internal` and a Russian message
+naming the limit before any normalization or persistence happens; the entry
+is persisted
 with status `pending`; `entry_updated` is emitted; synthesis runs in a
 background task; the command returns the new `EntryId` without waiting for
 synthesis.
@@ -146,6 +149,11 @@ synthesis.
 - WHEN `add_text_entry` is invoked with whitespace-only text
 - THEN the command fails with `type: "internal"` and no entry is persisted
 
+#### Scenario: oversized text is rejected before normalization
+- GIVEN any engine state
+- WHEN `add_text_entry` or `add_clipboard_entry` is invoked with text longer than 100 000 codepoints
+- THEN the command fails with `type: "internal"` and a Russian message naming the limit, no entry is persisted, and no synthesis is started
+
 #### Scenario: add_clipboard_entry reads the system clipboard
 - GIVEN the tray menu triggered a read-now action
 - WHEN `add_clipboard_entry` is invoked and the clipboard contains text
@@ -161,12 +169,19 @@ synthesis.
 The system SHALL provide `preview_normalize(text)` returning
 `{ normalized: string }` — the output of the Rust normalization pipeline
 (char-mapping discarded) without persisting any entry or touching storage.
-A pipeline task panic is reported as `type: "internal"`.
+A pipeline task panic is reported as `type: "internal"`. Text longer than
+100 000 codepoints SHALL be rejected with `internal` and a Russian message
+naming the limit before normalization starts.
 
 #### Scenario: preview returns normalized text without side effects
 - GIVEN raw text containing English identifiers
 - WHEN the frontend invokes `preview_normalize`
 - THEN the response is `{ normalized: "<pipeline output>" }` and no new entry appears in `get_entries`
+
+#### Scenario: oversized preview input is rejected
+- GIVEN any engine state
+- WHEN the frontend invokes `preview_normalize` with text longer than 100 000 codepoints
+- THEN the command fails with `type: "internal"` and a Russian message naming the limit, and normalization does not run
 
 ### Requirement: Entry Query Commands
 

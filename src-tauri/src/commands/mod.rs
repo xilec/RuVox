@@ -76,6 +76,22 @@ impl From<TtsError> for CommandError {
 
 type CmdResult<T> = Result<T, CommandError>;
 
+/// Maximum accepted input length in Unicode codepoints. Larger pastes are
+/// rejected before normalization/persistence: Piper still synthesizes the
+/// whole text in one unchunked ONNX run, so unbounded input risks both a
+/// CPU wedge and an OOM (see openspec change `fix-pipeline-quadratic`).
+const MAX_INPUT_CHARS: usize = 100_000;
+
+/// Reject input longer than `MAX_INPUT_CHARS` codepoints.
+fn validate_input_length(text: &str) -> CmdResult<()> {
+    if text.chars().count() > MAX_INPUT_CHARS {
+        return Err(CommandError::Internal {
+            message: "текст слишком длинный (максимум 100 000 символов)".to_string(),
+        });
+    }
+    Ok(())
+}
+
 // ── Helper: emit entry_updated ─────────────────────────────────────────────────
 
 fn emit_entry_updated<R: Runtime>(app: &AppHandle<R>, entry: &TextEntry) {
@@ -662,6 +678,7 @@ fn ingest_text<R: Runtime>(
             message: "в буфере обмена нет текста".to_string(),
         });
     }
+    validate_input_length(&text)?;
 
     let entry = state
         .storage
@@ -754,6 +771,7 @@ pub async fn preview_normalize(
     state: State<'_, AppState>,
     text: String,
 ) -> CmdResult<PreviewNormalizeResult> {
+    validate_input_length(&text)?;
     let (normalized, _char_mapping) =
         preview_normalization(Arc::clone(&state.pipeline), text).await?;
     Ok(PreviewNormalizeResult { normalized })

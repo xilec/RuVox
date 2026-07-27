@@ -91,19 +91,43 @@ struct Replacement {
 }
 
 /// Tracks a replacement entry for position mapping.
+///
+/// Entries live in `TrackedText::offset_entries`, sorted by `orig_start`.
+/// Original ranges are disjoint (overlapping candidates are rejected before
+/// insertion), so `orig_start` values are distinct and `orig_end` is sorted
+/// as well — every query binary-searches the index instead of scanning it.
 #[derive(Debug, Clone)]
 struct OffsetEntry {
-    /// Codepoint position in current text at the time of replacement.
-    #[allow(dead_code)]
-    current_pos: usize,
     orig_start: usize, // codepoint index in original
     orig_end: usize,   // codepoint index in original (exclusive)
     new_len: usize,    // codepoint count of replacement text
 }
 
+/// A queued replacement whose byte range refers to the current text.
+#[derive(Debug)]
+struct PendingReplace {
+    byte_start: usize,
+    byte_end: usize,
+    to: String,
+}
+
+/// A queued replacement that passed all overlap checks, ready to splice.
+#[derive(Debug)]
+struct AcceptedReplace {
+    byte_start: usize,
+    byte_end: usize,
+    orig_start: usize,
+    orig_end: usize,
+    new_text: String,
+}
+
 // ---- Helper: convert between byte and codepoint indices ----
 
 /// Convert a byte offset in a string to its codepoint index.
+///
+/// Production code converts offsets in bulk during the batch splice; this
+/// per-offset form is used by the mapping tests.
+#[cfg(test)]
 fn byte_to_char_idx(s: &str, byte_offset: usize) -> usize {
     s[..byte_offset].chars().count()
 }
@@ -118,20 +142,42 @@ pub fn char_to_byte_idx(s: &str, char_idx: usize) -> usize {
 }
 
 /// Codepoint length of a string.
+///
+/// Counts UTF-8 lead bytes (everything except `0b10xx_xxxx` continuation
+/// bytes) instead of decoding every char — measurably cheaper in unoptimized
+/// builds, and the batch splice walks the whole text once per phase.
 fn char_len(s: &str) -> usize {
-    s.chars().count()
+    s.as_bytes()
+        .iter()
+        .filter(|b| (*b & 0b1100_0000) != 0b1000_0000)
+        .count()
 }
 
 /// Text wrapper that tracks all modifications for precise position mapping.
 ///
 /// All position tracking uses **Unicode codepoint** indices, not byte offsets,
 /// so multi-byte characters (Cyrillic, emoji, etc.) count as one position each.
+///
+/// ## Why replacements are applied in batches
+///
+/// A normalization phase queues many replacements (one per matched word,
+/// number, symbol, …). Applying each one eagerly costs O(n) for the string
+/// splice plus O(history) for the position-map bookkeeping, which made a
+/// phase O(M·n + M²) and wedged the app at 100% CPU on large pastes
+/// (see openspec change `fix-pipeline-quadratic`). Instead, replacements are
+/// queued in `pending` and applied by `flush_pending` in a single
+/// left-to-right pass: one string rebuild and one sorted merge into the
+/// entry index per batch, so a phase costs O(n + M log M).
 pub struct TrackedText {
     pub original: String,
     current: String,
+    pending: Vec<PendingReplace>,
     replacements: Vec<Replacement>,
+    /// Sorted by `orig_start`; ranges disjoint (see `OffsetEntry`).
     offset_entries: Vec<OffsetEntry>,
-    sorted_entries_cache: Option<Vec<OffsetEntry>>,
+    /// `delta_prefix[i]` = sum of `new_len - old_len` over
+    /// `offset_entries[..i]`. One element longer than `offset_entries`.
+    delta_prefix: Vec<i64>,
 }
 
 impl TrackedText {
@@ -140,21 +186,28 @@ impl TrackedText {
         Self {
             original: s.clone(),
             current: s,
+            pending: Vec::new(),
             replacements: Vec::new(),
             offset_entries: Vec::new(),
-            sorted_entries_cache: None,
+            delta_prefix: vec![0],
         }
     }
 
-    pub fn text(&self) -> &str {
+    pub fn text(&mut self) -> &str {
+        self.flush_pending();
         &self.current
     }
 
-    pub fn len(&self) -> usize {
+    pub fn len(&mut self) -> usize {
+        self.flush_pending();
         char_len(&self.current)
     }
 
-    pub fn is_empty(&self) -> bool {
+    // &mut self: queued replacements must be flushed before the answer is
+    // meaningful — clippy's convention lint does not know that.
+    #[allow(clippy::wrong_self_convention)]
+    pub fn is_empty(&mut self) -> bool {
+        self.flush_pending();
         self.current.is_empty()
     }
 
@@ -174,65 +227,26 @@ impl TrackedText {
         self.sub(&pattern, |_| to.to_string());
     }
 
-    /// Replace exactly one byte range `[byte_start, byte_end)` in the current text.
+    /// Queue a replacement of exactly one byte range `[byte_start, byte_end)`
+    /// in the current text.
     ///
-    /// This allows callers to replace a single occurrence without constructing a
-    /// literal string that might match elsewhere. Used by markdown link stripping
-    /// to remove the leading `[` and the trailing `](url)` independently, so that
-    /// the link-text characters retain individual original-position entries and
-    /// can still be normalised by later pipeline phases.
+    /// This allows callers to replace a single occurrence without constructing
+    /// a literal string that might match elsewhere. Used by markdown link
+    /// stripping to remove the leading `[` and the trailing `](url)`
+    /// independently, so that the link-text characters retain individual
+    /// original-position entries and can still be normalised by later pipeline
+    /// phases.
+    ///
+    /// Application is batched (see the struct docs): the range must refer to
+    /// the text as it stands before any other queued-but-unapplied
+    /// replacement. All callers compute ranges against a snapshot and queue
+    /// them in reverse document order, which satisfies this.
     pub fn replace_byte_range(&mut self, byte_start: usize, byte_end: usize, to: &str) {
-        let old_text = &self.current[byte_start..byte_end];
-        if old_text == to {
-            return;
-        }
-
-        let char_start = byte_to_char_idx(&self.current, byte_start);
-        let char_end = byte_to_char_idx(&self.current, byte_end);
-
-        // Skip if any codepoint in the match is inside an existing replacement.
-        let already_replaced =
-            (char_start..char_end).any(|pos| self.is_current_char_pos_inside_replacement(pos));
-        if already_replaced {
-            return;
-        }
-
-        let orig_start = self.current_to_original(char_start);
-        let orig_end = if char_end > char_start {
-            self.current_to_original(char_end - 1) + 1
-        } else {
-            orig_start
-        };
-
-        if self
-            .find_containing_replacement(orig_start, orig_end)
-            .is_some()
-        {
-            return;
-        }
-
-        self.replacements.push(Replacement {
-            orig_start,
-            orig_end,
-            new_text: to.to_string(),
+        self.pending.push(PendingReplace {
+            byte_start,
+            byte_end,
+            to: to.to_string(),
         });
-        self.offset_entries.insert(
-            0,
-            OffsetEntry {
-                current_pos: char_start,
-                orig_start,
-                orig_end,
-                new_len: char_len(to),
-            },
-        );
-        self.sorted_entries_cache = None;
-
-        self.current = format!(
-            "{}{}{}",
-            &self.current[..byte_start],
-            to,
-            &self.current[byte_end..]
-        );
     }
 
     /// Regex substitution with a callback, tracking positions for `CharMapping`.
@@ -243,29 +257,33 @@ impl TrackedText {
     where
         F: FnMut(&regex::Captures) -> String,
     {
-        // Snapshot current text for iteration (avoid borrow issues).
-        let snapshot = self.current.clone();
+        self.flush_pending();
 
-        // Collect all matches with their new texts.
-        let matches: Vec<(usize, usize, String)> = pattern
-            .captures_iter(&snapshot)
-            .map(|caps| {
+        // Take the text out for iteration (the replacer only sees captures,
+        // never `self`), avoiding a full-text clone per phase.
+        let snapshot = std::mem::take(&mut self.current);
+
+        // Collect all matches with their new texts, then apply them as one
+        // batch. Regex matches are disjoint, so the application order inside
+        // a batch cannot change the result; ascending order enables a single
+        // left-to-right splice pass in flush_pending.
+        self.pending
+            .extend(pattern.captures_iter(&snapshot).map(|caps| {
                 let m = caps.get(0).unwrap();
-                let new_text = replacer(&caps);
-                (m.start(), m.end(), new_text)
-            })
-            .collect();
-
-        // Process in reverse order so positions don't shift under us.
-        // All no-op / overlap checks and position bookkeeping live in
-        // replace_byte_range — keep them in one home.
-        for (byte_start, byte_end, new_text) in matches.into_iter().rev() {
-            self.replace_byte_range(byte_start, byte_end, &new_text);
-        }
+                PendingReplace {
+                    byte_start: m.start(),
+                    byte_end: m.end(),
+                    to: replacer(&caps),
+                }
+            }));
+        // Move the text back (O(1)) so flush_pending splices the real string.
+        self.current = snapshot;
+        self.flush_pending();
     }
 
     /// Build the `CharMapping` from all accumulated replacements.
-    pub fn build_mapping(self) -> CharMapping {
+    pub fn build_mapping(mut self) -> CharMapping {
+        self.flush_pending();
         let orig_char_len = char_len(&self.original);
         let trans_char_len = char_len(&self.current);
 
@@ -314,97 +332,213 @@ impl TrackedText {
         }
     }
 
-    // ---- Internal helpers ----
+    // ---- Batch application ----
 
-    fn get_sorted_entries(&mut self) -> &[OffsetEntry] {
-        if self.sorted_entries_cache.is_none() {
-            let mut sorted = self.offset_entries.clone();
-            sorted.sort_by_key(|e| e.orig_start);
-            self.sorted_entries_cache = Some(sorted);
+    /// Validate and apply all queued replacements in a single pass.
+    ///
+    /// One batch costs O(n + m log r) (n = text length, m = queued
+    /// replacements, r = recorded entries): one left-to-right string rebuild
+    /// plus one sorted merge into the entry index.
+    fn flush_pending(&mut self) {
+        if self.pending.is_empty() {
+            return;
         }
-        self.sorted_entries_cache.as_deref().unwrap()
-    }
+        let mut batch = std::mem::take(&mut self.pending);
+        // Callers queue ranges in reverse document order; sort ascending for
+        // the splice pass. Ranges are disjoint by construction (regex matches
+        // never overlap; snapshot-based loops queue disjoint regions).
+        batch.sort_by_key(|p| p.byte_start);
+        debug_assert!(batch.windows(2).all(|w| w[0].byte_end <= w[1].byte_start));
 
-    /// Returns `true` if the codepoint `current_pos` is inside the new text of any
-    /// existing replacement (checked in current-text codepoint coordinates).
-    fn is_current_char_pos_inside_replacement(&mut self, current_pos: usize) -> bool {
-        let sorted = self.get_sorted_entries().to_vec();
-        let mut cumulative_delta: i64 = 0;
+        // Walk the text once, converting byte offsets to codepoint indices on
+        // the way, and validate each queued replacement against the committed
+        // entries. A batch's own ranges are disjoint, so they cannot affect
+        // each other's checks — validating against the committed index is
+        // equivalent to the old per-replacement sequential validation.
+        let mut accepted: Vec<AcceptedReplace> = Vec::with_capacity(batch.len());
+        let mut byte_cursor = 0;
+        let mut char_cursor = 0;
+        for p in batch {
+            char_cursor += char_len(&self.current[byte_cursor..p.byte_start]);
+            let char_start = char_cursor;
+            char_cursor += char_len(&self.current[p.byte_start..p.byte_end]);
+            let char_end = char_cursor;
+            byte_cursor = p.byte_end;
 
-        for entry in &sorted {
-            let old_len = (entry.orig_end - entry.orig_start) as i64;
-            let new_len = entry.new_len as i64;
-            let delta = new_len - old_len;
-
-            let current_start = (entry.orig_start as i64 + cumulative_delta) as usize;
-            let current_end = current_start + entry.new_len;
-
-            if current_pos < current_start {
-                return false;
-            } else if current_pos < current_end {
-                return true;
+            if self.current[p.byte_start..p.byte_end] == p.to {
+                continue;
+            }
+            if self.overlaps_current_replacement(char_start, char_end) {
+                continue;
+            }
+            let orig_start = self.current_to_original(char_start);
+            let orig_end = if char_end > char_start {
+                self.current_to_original(char_end - 1) + 1
             } else {
-                cumulative_delta += delta;
+                orig_start
+            };
+            if self.find_containing_replacement(orig_start, orig_end) {
+                continue;
             }
+            accepted.push(AcceptedReplace {
+                byte_start: p.byte_start,
+                byte_end: p.byte_end,
+                orig_start,
+                orig_end,
+                new_text: p.to,
+            });
+        }
+        if accepted.is_empty() {
+            return;
         }
 
-        false
+        // Single string rebuild for the whole batch.
+        let new_byte_len = accepted.iter().fold(self.current.len(), |acc, a| {
+            acc + a.new_text.len() - (a.byte_end - a.byte_start)
+        });
+        let mut next = String::with_capacity(new_byte_len);
+        let mut cursor = 0;
+        for a in &accepted {
+            next.push_str(&self.current[cursor..a.byte_start]);
+            next.push_str(&a.new_text);
+            cursor = a.byte_end;
+        }
+        next.push_str(&self.current[cursor..]);
+        self.current = next;
+
+        self.replacements
+            .extend(accepted.iter().map(|a| Replacement {
+                orig_start: a.orig_start,
+                orig_end: a.orig_end,
+                new_text: a.new_text.clone(),
+            }));
+
+        // Accepted ranges ascend in current coordinates, hence in original
+        // coordinates too — merge into the sorted index in one pass.
+        let new_entries: Vec<OffsetEntry> = accepted
+            .into_iter()
+            .map(|a| OffsetEntry {
+                orig_start: a.orig_start,
+                orig_end: a.orig_end,
+                new_len: char_len(&a.new_text),
+            })
+            .collect();
+        self.merge_entries(new_entries);
     }
 
-    /// Find an existing replacement whose original range overlaps `[orig_start, orig_end)`.
-    fn find_containing_replacement(
-        &self,
-        orig_start: usize,
-        orig_end: usize,
-    ) -> Option<&OffsetEntry> {
-        for entry in &self.offset_entries {
-            if orig_start == orig_end {
-                if entry.orig_start <= orig_start && orig_start < entry.orig_end {
-                    return Some(entry);
-                }
-            } else if orig_start < entry.orig_end && entry.orig_start < orig_end {
-                return Some(entry);
+    /// Merge new entries (ascending `orig_start`, disjoint from the existing
+    /// ranges) into the sorted index and rebuild the delta prefix sums.
+    fn merge_entries(&mut self, new_entries: Vec<OffsetEntry>) {
+        let old = std::mem::take(&mut self.offset_entries);
+        let mut merged = Vec::with_capacity(old.len() + new_entries.len());
+        let mut new_iter = new_entries.into_iter().peekable();
+        for entry in old {
+            while let Some(ne) = new_iter.next_if(|ne| ne.orig_start < entry.orig_start) {
+                merged.push(ne);
             }
+            merged.push(entry);
         }
-        None
+        merged.extend(new_iter);
+        self.offset_entries = merged;
+
+        self.delta_prefix.clear();
+        self.delta_prefix.push(0);
+        let mut cumulative: i64 = 0;
+        for entry in &self.offset_entries {
+            cumulative += entry.new_len as i64 - (entry.orig_end - entry.orig_start) as i64;
+            self.delta_prefix.push(cumulative);
+        }
+    }
+
+    // ---- Interval index queries ----
+
+    /// Start of entry `i`'s replacement text in current-text codepoint
+    /// coordinates. Saturates at 0 like the old cumulative-delta scan: a
+    /// non-monotone replacement chain could otherwise wrap a `usize`.
+    fn entry_current_start(&self, i: usize) -> i64 {
+        (self.offset_entries[i].orig_start as i64 + self.delta_prefix[i]).max(0)
+    }
+
+    /// End (exclusive) of entry `i`'s replacement text in current coordinates.
+    fn entry_current_end(&self, i: usize) -> i64 {
+        self.entry_current_start(i) + self.offset_entries[i].new_len as i64
+    }
+
+    /// Returns `true` if any codepoint in `[char_start, char_end)` (current
+    /// coordinates) lies inside the replacement text of an existing entry.
+    fn overlaps_current_replacement(&self, char_start: usize, char_end: usize) -> bool {
+        if char_start >= char_end {
+            return false;
+        }
+        // Entry current ranges are disjoint and ascending, so only the first
+        // entry ending after `char_start` can overlap the range.
+        let candidate = partition_point(self.offset_entries.len(), |i| {
+            self.entry_current_end(i) <= char_start as i64
+        });
+        candidate < self.offset_entries.len()
+            && self.entry_current_start(candidate) < char_end as i64
+    }
+
+    /// Returns `true` if an existing entry's original range overlaps
+    /// `[orig_start, orig_end)` — or contains the point, for an empty range.
+    fn find_containing_replacement(&self, orig_start: usize, orig_end: usize) -> bool {
+        if orig_start == orig_end {
+            // Last entry starting at or before the point contains it iff the
+            // point is below that entry's end.
+            let i = partition_point(self.offset_entries.len(), |i| {
+                self.offset_entries[i].orig_start <= orig_start
+            });
+            i > 0 && orig_start < self.offset_entries[i - 1].orig_end
+        } else {
+            // Original ranges are disjoint and ascending: only the first
+            // entry ending after `orig_start` can overlap.
+            let i = partition_point(self.offset_entries.len(), |i| {
+                self.offset_entries[i].orig_end <= orig_start
+            });
+            i < self.offset_entries.len() && self.offset_entries[i].orig_start < orig_end
+        }
     }
 
     /// Convert a codepoint position in the current text to the corresponding
     /// codepoint position in the original text.
     ///
     /// Negative intermediates are saturated to 0: a non-monotone replacement
-    /// chain could in principle produce `cumulative_delta` whose magnitude
-    /// exceeds the position being mapped.  Mapping such cases to 0 keeps the
-    /// result a valid index instead of wrapping into a huge usize.
-    fn current_to_original(&mut self, current_pos: usize) -> usize {
-        let sorted = self.get_sorted_entries().to_vec();
-        let mut cumulative_delta: i64 = 0;
-
-        let saturating_apply = |pos: usize, delta: i64| -> usize {
-            (pos as i64).saturating_sub(delta).max(0) as usize
-        };
-
-        for entry in &sorted {
-            let old_len = (entry.orig_end - entry.orig_start) as i64;
-            let new_len = entry.new_len as i64;
-            let delta = new_len - old_len;
-
-            let current_start = (entry.orig_start as i64)
-                .saturating_add(cumulative_delta)
-                .max(0) as usize;
-            let current_end = current_start + entry.new_len;
-
-            if current_pos < current_start {
-                return saturating_apply(current_pos, cumulative_delta);
-            } else if current_pos < current_end {
-                return entry.orig_start;
-            } else {
-                cumulative_delta += delta;
-            }
+    /// chain could in principle produce a delta whose magnitude exceeds the
+    /// position being mapped. Mapping such cases to 0 keeps the result a
+    /// valid index instead of wrapping into a huge usize.
+    fn current_to_original(&self, current_pos: usize) -> usize {
+        let pos = current_pos as i64;
+        // Last entry whose replacement text starts at or before `pos`.
+        let i = partition_point(self.offset_entries.len(), |i| {
+            self.entry_current_start(i) <= pos
+        });
+        if i == 0 {
+            // Before the first entry: no delta accumulated yet.
+            return current_pos;
         }
-
-        saturating_apply(current_pos, cumulative_delta)
+        if pos < self.entry_current_end(i - 1) {
+            self.offset_entries[i - 1].orig_start
+        } else {
+            (pos - self.delta_prefix[i]).max(0) as usize
+        }
     }
+}
+
+/// First index in `0..len` for which `pred` is false, assuming `pred` is
+/// monotone (`true…true false…false`). Binary search over an index range —
+/// `slice::partition_point` does not apply without a materialized slice.
+fn partition_point(len: usize, mut pred: impl FnMut(usize) -> bool) -> usize {
+    let mut lo = 0;
+    let mut hi = len;
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        if pred(mid) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    lo
 }
 
 #[cfg(test)]
@@ -968,7 +1102,7 @@ mod tests {
     /// Python: TestCreateTrackedText::test_create_tracked_text
     #[test]
     fn test_new_tracked_text() {
-        let tracked = TrackedText::new("Hello world");
+        let mut tracked = TrackedText::new("Hello world");
         assert_eq!(tracked.text(), "Hello world");
         assert_eq!(tracked.original, "Hello world");
     }

@@ -563,6 +563,75 @@ async fn preview_normalize_returns_text_without_history_or_audio_side_effects() 
     assert!(t.state().synthesis_tasks.lock().is_empty());
 }
 
+// ── input length limit (MAX_INPUT_CHARS = 100 000 codepoints) ─────────
+
+/// Oversized text is rejected by `add_text_entry` before persistence:
+/// typed `internal` error naming the limit, no entry, no synthesis task.
+#[tokio::test(flavor = "multi_thread")]
+async fn add_text_entry_rejects_oversized_input_before_persistence() {
+    let t = build_test_app();
+
+    let err = add_text_entry(
+        t.app.handle().clone(),
+        t.state(),
+        "а".repeat(MAX_INPUT_CHARS + 1),
+        false,
+        None,
+        None,
+    )
+    .await
+    .expect_err("oversized input must be rejected");
+    match err {
+        CommandError::Internal { message } => {
+            assert!(
+                message.contains("100 000"),
+                "message names the limit: {message}"
+            )
+        }
+        other => panic!("expected internal error, got {other:?}"),
+    }
+
+    assert!(get_entries(t.state()).await.unwrap().is_empty());
+    assert!(t.state().synthesis_tasks.lock().is_empty());
+}
+
+/// Oversized text is rejected by `preview_normalize` before normalization.
+#[tokio::test(flavor = "multi_thread")]
+async fn preview_normalize_rejects_oversized_input() {
+    let t = build_test_app();
+
+    let err = preview_normalize(t.state(), "а".repeat(MAX_INPUT_CHARS + 1))
+        .await
+        .expect_err("oversized input must be rejected");
+    match err {
+        CommandError::Internal { message } => {
+            assert!(
+                message.contains("100 000"),
+                "message names the limit: {message}"
+            )
+        }
+        other => panic!("expected internal error, got {other:?}"),
+    }
+}
+
+/// Text of exactly `MAX_INPUT_CHARS` codepoints is accepted and synthesized.
+#[tokio::test(flavor = "multi_thread")]
+async fn add_text_entry_accepts_input_at_limit() {
+    let t = build_test_app();
+
+    let id = add_text_entry(
+        t.app.handle().clone(),
+        t.state(),
+        "а".repeat(MAX_INPUT_CHARS),
+        false,
+        None,
+        None,
+    )
+    .await
+    .expect("input at the limit must be accepted");
+    wait_entry_status(&t, &entry_uuid(&id), EntryStatus::Ready).await;
+}
+
 // ── set_speed / set_volume range guards ──────────────────────────────
 
 /// The real `set_speed` command accepts the documented inclusive range
