@@ -4,6 +4,11 @@
 
 Формат: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), версии по [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Движок «Silero (нативный)»** — третий TTS-движок: Silero v5 работает в процессе приложения на ONNX Runtime (крейт `silero-native/`), без Python-sidecar'а. Модельный бандл (~230 МБ) скачивается по требованию из GitHub Releases с проверкой sha256; полный паритет с Python-версией (автоударения, омографы, ё). Piper остаётся движком по умолчанию, Python-версия Silero сохраняется как запасной вариант.
+
 ## [0.2.0] — 2026-04-20 — RuVox 2 rewrite
 
 Полный переход с PyQt6 + Python-моно-процесса на Tauri 2 + Rust + Python-subprocess. Цель — сохранить функциональность 0.1.x, убрать жёсткую связность UI ↔ TTS, перевести pipeline нормализации на типизированный Rust с golden-тестами.

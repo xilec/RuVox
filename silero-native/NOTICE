@@ -1,0 +1,28 @@
+# NOTICE — upstream model attribution
+
+The model bundle files produced by `silero-native/export/` (the `*.onnx`
+graphs, the `ngrams`/`exceptions` dictionaries, `homodict.json`,
+`vocab.txt`, and `frontend.json`) are a technical format conversion of the
+**Silero TTS v5** model published by the Silero Team at
+https://github.com/snakers4/silero-models
+
+The upstream model is licensed under the
+**Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
+(CC BY-NC-SA 4.0)** license:
+https://creativecommons.org/licenses/by-nc-sa/4.0/
+
+Per Section 2(a)(4) of that license, format conversion (PyTorch
+`torch.package` → ONNX) is an allowed technical modification and does not
+itself produce Adapted Material; the converted model remains under
+CC BY-NC-SA 4.0. This means:
+
+- **NonCommercial use only.** The bundle must not be used in a commercial
+  product or service.
+- **Attribution.** This notice (or equivalent) must accompany any
+  redistribution of the bundle.
+- **ShareAlike.** Any modified version of the model that is shared must be
+  licensed under CC BY-NC-SA 4.0 or a compatible license.
+
+The Rust crate and the exporter code in this repository are original work
+licensed under the repository license (GPL-3.0-only); the license above
+applies to the model data, not to this code.

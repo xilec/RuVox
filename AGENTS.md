@@ -74,6 +74,11 @@ toolchain.
 │       ├── timestamps.py  # Word-level timestamp estimation
 │       ├── protocol.py    # request/response types
 │       └── main.py        # main stdin→stdout JSON loop
+├── silero-native/    # Native Silero v5 engine (ONNX Runtime, no Python) — third TTS engine
+│   ├── src/          #   engine crate (frontend port + synthesis pipeline)
+│   ├── export/       #   maintainer exporter: upstream .pt → ONNX bundle (uv)
+│   ├── tests/        #   unit tier + bundle-gated parity suite
+│   └── docs/         #   architecture.md (pipeline, debugging), benchmarks.md
 ├── ai/rules/         # conventions.md + code-quality.md — hard rules & craft standard
 ├── docs/             # Project documentation (process docs; behavior specs live in openspec/)
 ├── openspec/         # OpenSpec: specs/ (behavior source of truth), changes/ (proposals), config.yaml
@@ -130,6 +135,7 @@ When a CI step, script flag, or workaround exists because of a specific incident
 ```bash
 nix develop -c just test                                                   # everything
 nix develop -c cargo test --manifest-path src-tauri/Cargo.toml             # Rust (incl. golden pipeline fixtures)
+nix develop -c cargo test --manifest-path silero-native/Cargo.toml         # native Silero engine (bundle-gated tests skip without SILERO_NATIVE_BUNDLE)
 nix develop -c pnpm typecheck                                              # TS typecheck
 nix develop -c pnpm test:unit                                              # TS unit tests
 nix develop -c bash -c "cd ttsd && uv run python -m pytest"                # Python subprocess tests

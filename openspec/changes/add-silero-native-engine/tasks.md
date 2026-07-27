@@ -52,10 +52,10 @@ Reference: `docs/plans/silero-native-port.md` (decisions, tracker),
 
 ## 7. Docs and licensing
 
-- [ ] 7.1 `silero-native/README.md`: overview, architecture diagram, build/test, model download/re-export
-- [ ] 7.2 `silero-native/docs/architecture.md`: pipeline map, bundle/manifest format, debugging section (intermediate tensor dumps, Python reference comparison, known edge cases)
-- [ ] 7.3 Licensing: `NOTICE` (CC BY-NC-SA 4.0, Silero Team, format conversion per §2(a)(4)), README attribution section, mention in user docs
-- [ ] 7.4 Update `AGENTS.md` (layout, test commands) and `docs/`; update `docs/plans/silero-native-port.md` tracker
+- [x] 7.1 `silero-native/README.md`: overview, architecture diagram, build/test, model download/re-export
+- [x] 7.2 `silero-native/docs/architecture.md`: pipeline map, bundle/manifest format, debugging section (intermediate tensor dumps, Python reference comparison, known edge cases)
+- [x] 7.3 Licensing: `NOTICE` (CC BY-NC-SA 4.0, Silero Team, format conversion per §2(a)(4)), README attribution section, mention in user docs
+- [x] 7.4 Update `AGENTS.md` (layout, test commands) and `docs/`; update `docs/plans/silero-native-port.md` tracker
 
 ## 8. Manual verification (pre-PR)
 
