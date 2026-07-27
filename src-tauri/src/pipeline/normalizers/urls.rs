@@ -73,6 +73,95 @@ fn lookup_drive(letter: &str) -> Option<&'static str> {
         .map(|(_, v)| *v)
 }
 
+fn hex_val(b: u8) -> u8 {
+    match b {
+        b'0'..=b'9' => b - b'0',
+        b'a'..=b'f' => b - b'a' + 10,
+        b'A'..=b'F' => b - b'A' + 10,
+        _ => unreachable!("callers check is_ascii_hexdigit first"),
+    }
+}
+
+/// Punctuation a percent-decoded URL component may yield. Readings follow
+/// the URL context ('/' is "слэш", not "делить"); '.', '-', '_' are absent
+/// because the regular chunk reading already handles them.
+const DECODED_PUNCT: &[(char, &str)] = &[
+    ('/', "слэш"),
+    ('?', "вопросительный знак"),
+    ('#', "решётка"),
+    ('&', "амперсанд"),
+    ('=', "равно"),
+    (':', "двоеточие"),
+    ('@', "собака"),
+    ('(', "открывающая скобка"),
+    (')', "закрывающая скобка"),
+    (',', "запятая"),
+    (';', "точка с запятой"),
+    ('\'', "апостроф"),
+    ('"', "кавычка"),
+    ('<', "меньше"),
+    ('>', "больше"),
+    ('*', "умножить"),
+    ('|', "пайп"),
+    ('\\', "бэкслэш"),
+    ('$', "доллар"),
+    ('!', "восклицательный знак"),
+    ('~', "тильда"),
+    ('^', "каретка"),
+    ('[', "открывающая квадратная скобка"),
+    (']', "закрывающая квадратная скобка"),
+    ('{', "открывающая фигурная скобка"),
+    ('}', "закрывающая фигурная скобка"),
+    ('`', "обратная кавычка"),
+];
+
+/// Decode percent-encoded bytes (`%XX`) in a single URL component. A maximal
+/// run of `%XX` triples decodes as one UTF-8 string; a run that is not valid
+/// UTF-8 is kept verbatim so the caller reads each leftover '%' as "процент".
+/// A '%' without two hex digits after it is kept as-is. When `plus_as_space`
+/// is set (query components, form-urlencoded), '+' becomes a space;
+/// otherwise it is kept for the caller to read as "плюс".
+fn percent_decode(input: &str, plus_as_space: bool) -> String {
+    let bytes = input.as_bytes();
+    let mut out = String::with_capacity(input.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let is_triple = bytes[i] == b'%'
+            && i + 2 < bytes.len()
+            && bytes[i + 1].is_ascii_hexdigit()
+            && bytes[i + 2].is_ascii_hexdigit();
+        if is_triple {
+            let mut run: Vec<u8> = Vec::new();
+            while i + 2 < bytes.len()
+                && bytes[i] == b'%'
+                && bytes[i + 1].is_ascii_hexdigit()
+                && bytes[i + 2].is_ascii_hexdigit()
+            {
+                run.push(hex_val(bytes[i + 1]) * 16 + hex_val(bytes[i + 2]));
+                i += 3;
+            }
+            match std::str::from_utf8(&run) {
+                Ok(s) => out.push_str(s),
+                Err(_) => {
+                    for byte in run {
+                        out.push('%');
+                        out.push(char::from_digit((byte >> 4) as u32, 16).expect("nibble < 16"));
+                        out.push(char::from_digit((byte & 0xF) as u32, 16).expect("nibble < 16"));
+                    }
+                }
+            }
+        } else if bytes[i] == b'+' && plus_as_space {
+            out.push(' ');
+            i += 1;
+        } else {
+            let ch = input[i..].chars().next().expect("i is on a char boundary");
+            out.push(ch);
+            i += ch.len_utf8();
+        }
+    }
+    out
+}
+
 /// Normalizes URLs, emails, IP addresses, and file paths to speakable Russian text.
 ///
 /// When `english` is `None`, alphabetic segments in URLs and paths are kept verbatim.
@@ -177,6 +266,75 @@ impl<'a> URLPathNormalizer<'a> {
             .join(" ")
     }
 
+    /// Render a URL component (path segment, query key/value, fragment):
+    /// percent-decode it, then read the decoded text. In query components
+    /// `+` means a space (form-urlencoded); elsewhere a literal `+` is read
+    /// as "плюс". Decoding happens after the structural splits, so a decoded
+    /// "%2F" never becomes a path separator.
+    fn read_component(&self, component: &str, plus_as_space: bool) -> String {
+        self.read_decoded_text(&percent_decode(component, plus_as_space))
+    }
+
+    /// Read already-decoded component text: leftover '%' (invalid sequences)
+    /// is read as "процент", '+' as "плюс", whitespace separates words,
+    /// decoded punctuation is read via `DECODED_PUNCT`; other chunks keep
+    /// the historical dot / hyphen / digit-run reading.
+    fn read_decoded_text(&self, text: &str) -> String {
+        let mut words: Vec<String> = Vec::new();
+        let mut chunk = String::new();
+        for ch in text.chars() {
+            let marker = match ch {
+                '%' => Some("процент"),
+                '+' => Some("плюс"),
+                // Decoded whitespace is a word separator; other control
+                // characters (%00-%1F, %7F) are dropped — they carry no
+                // reading and must not reach TTS.
+                c if c.is_whitespace() || c.is_control() => Some(""),
+                c => DECODED_PUNCT.iter().find(|(p, _)| *p == c).map(|(_, w)| *w),
+            };
+            match marker {
+                Some(word) => {
+                    if !chunk.is_empty() {
+                        words.push(self.read_chunk(std::mem::take(&mut chunk).as_str()));
+                    }
+                    if !word.is_empty() {
+                        words.push(word.to_string());
+                    }
+                }
+                None => chunk.push(ch),
+            }
+        }
+        if !chunk.is_empty() {
+            words.push(self.read_chunk(&chunk));
+        }
+        words
+            .into_iter()
+            .filter(|w| !w.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    /// Read a chunk free of '%' / '+' / whitespace: dotted pieces are joined
+    /// with "точка" (all-digit pieces as number words), the rest goes
+    /// through transliterate_segment.
+    fn read_chunk(&self, chunk: &str) -> String {
+        if chunk.contains('.') {
+            chunk
+                .split('.')
+                .map(|sp| {
+                    if !sp.is_empty() && sp.chars().all(|c| c.is_ascii_digit()) {
+                        self.numbers.normalize_number(sp)
+                    } else {
+                        self.transliterate_segment(sp)
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(" точка ")
+        } else {
+            self.transliterate_segment(chunk)
+        }
+    }
+
     pub fn normalize_url(&self, url: &str) -> String {
         if url.is_empty() {
             return url.to_string();
@@ -240,19 +398,27 @@ impl<'a> URLPathNormalizer<'a> {
             (authority, None)
         };
 
-        // Domain parts with TLD handling.
+        // Domain parts with TLD handling. Labels are percent-decoded; any
+        // label the decoder changed (or one carrying a raw '%' / '+' from an
+        // invalid sequence) is read as component text — TLD lookup no longer
+        // applies to it.
         let domain_parts: Vec<&str> = host.split('.').collect();
+        let last = domain_parts.len() - 1;
         let domain_words: Vec<String> = domain_parts
             .iter()
             .enumerate()
             .map(|(i, part)| {
-                if i == domain_parts.len() - 1 {
-                    if let Some(tld) = lookup_tld(part) {
+                let decoded = percent_decode(part, false);
+                if decoded != *part || decoded.contains(['%', '+']) {
+                    return self.read_decoded_text(&decoded);
+                }
+                if i == last {
+                    if let Some(tld) = lookup_tld(&decoded) {
                         return tld.to_string();
                     }
                 }
                 // transliterate_runs also splits digit runs ("s3" → "эс три").
-                self.transliterate_runs(part)
+                self.transliterate_runs(&decoded)
             })
             .collect();
         parts.push(domain_words.join(" точка "));
@@ -288,35 +454,21 @@ impl<'a> URLPathNormalizer<'a> {
                     continue;
                 }
                 parts.push("слэш".to_string());
-                if segment.contains('.') {
-                    let seg_parts: Vec<&str> = segment.split('.').collect();
-                    let seg_words: Vec<String> = seg_parts
-                        .iter()
-                        .map(|sp| {
-                            if !sp.is_empty() && sp.chars().all(|c| c.is_ascii_digit()) {
-                                self.numbers.normalize_number(sp)
-                            } else {
-                                self.transliterate_segment(sp)
-                            }
-                        })
-                        .collect();
-                    parts.push(seg_words.join(" точка "));
-                } else {
-                    parts.push(self.transliterate_segment(segment));
-                }
+                parts.push(self.read_component(segment, false));
             }
         }
 
-        // Query parameters (simplified — key=value pairs).
+        // Query parameters (simplified — key=value pairs). "+" means a
+        // space here (form-urlencoded).
         if !query_str.is_empty() {
             parts.push("вопросительный знак".to_string());
             for qp in query_str.split('&') {
                 if let Some(eq_pos) = qp.find('=') {
                     let key = &qp[..eq_pos];
                     let value = &qp[eq_pos + 1..];
-                    parts.push(self.transliterate_segment(key));
+                    parts.push(self.read_component(key, true));
                     parts.push("равно".to_string());
-                    parts.push(self.transliterate_segment(value));
+                    parts.push(self.read_component(value, true));
                 }
             }
         }
@@ -324,7 +476,7 @@ impl<'a> URLPathNormalizer<'a> {
         // Fragment
         if !fragment_str.is_empty() {
             parts.push("решётка".to_string());
-            parts.push(self.transliterate_segment(fragment_str));
+            parts.push(self.read_component(fragment_str, false));
         }
 
         parts
@@ -358,6 +510,28 @@ impl<'a> URLPathNormalizer<'a> {
                     }
                     result.push("дефис".to_string());
                 }
+                '+' => {
+                    if !current_word.is_empty() {
+                        result.push(self.transliterate_word(&current_word));
+                        current_word.clear();
+                    }
+                    result.push("плюс".to_string());
+                }
+                '%' => {
+                    // Leftover from an invalid percent sequence.
+                    if !current_word.is_empty() {
+                        result.push(self.transliterate_word(&current_word));
+                        current_word.clear();
+                    }
+                    result.push("процент".to_string());
+                }
+                c if c.is_whitespace() => {
+                    // Decoded "%20": a plain word separator.
+                    if !current_word.is_empty() {
+                        result.push(self.transliterate_word(&current_word));
+                        current_word.clear();
+                    }
+                }
                 c if c.is_ascii_digit() => {
                     if !current_word.is_empty() {
                         result.push(self.transliterate_word(&current_word));
@@ -375,7 +549,23 @@ impl<'a> URLPathNormalizer<'a> {
                     result.push(self.numbers.normalize_number(&num_str));
                 }
                 other => {
-                    current_word.push(other);
+                    if let Some((_, word)) = DECODED_PUNCT.iter().find(|(p, _)| *p == other) {
+                        // Decoded punctuation (e.g. "%28" → '(') is read, not leaked.
+                        if !current_word.is_empty() {
+                            result.push(self.transliterate_word(&current_word));
+                            current_word.clear();
+                        }
+                        result.push(word.to_string());
+                    } else if other.is_control() {
+                        // Decoded control character (%00-%1F, %7F): dropped,
+                        // it carries no reading and must not reach TTS.
+                        if !current_word.is_empty() {
+                            result.push(self.transliterate_word(&current_word));
+                            current_word.clear();
+                        }
+                    } else {
+                        current_word.push(other);
+                    }
                 }
             }
         }
@@ -393,12 +583,12 @@ impl<'a> URLPathNormalizer<'a> {
         }
 
         let at_pos = email.rfind('@').unwrap();
-        let local_part = &email[..at_pos];
+        let local_part = percent_decode(&email[..at_pos], false);
         let domain = &email[at_pos + 1..];
 
         let mut parts: Vec<String> = Vec::new();
 
-        parts.push(self.normalize_identifier(local_part));
+        parts.push(self.normalize_identifier(&local_part));
         parts.push("собака".to_string());
 
         let domain_parts: Vec<&str> = domain.split('.').collect();
@@ -615,6 +805,68 @@ mod tests {
     fn email(input: &str) -> String {
         let (_, nn) = mk_normalizer();
         norm_no_en(&nn).normalize_email(input)
+    }
+
+    // ---- Percent-decoding and '+' (change normalize-url-encoding) ----
+
+    #[test_case("hello%20world", false => "hello world"; "encoded_space")]
+    #[test_case("%D1%84%D0%B0%D0%B9%D0%BB", false => "файл"; "cyrillic_utf8_run")]
+    #[test_case("a%2Bb", false => "a+b"; "encoded_plus_stays_literal")]
+    #[test_case("a+b", true => "a b"; "plus_as_space_in_query")]
+    #[test_case("a+b", false => "a+b"; "plus_kept_outside_query")]
+    #[test_case("100%25", false => "100%"; "encoded_percent_sign")]
+    #[test_case("done%2", false => "done%2"; "truncated_sequence_kept")]
+    #[test_case("%ZZ", false => "%ZZ"; "non_hex_kept")]
+    #[test_case("%FF%FE", false => "%ff%fe"; "invalid_utf8_run_kept")]
+    fn percent_decode_cases(input: &str, plus_as_space: bool) -> String {
+        percent_decode(input, plus_as_space)
+    }
+
+    #[test_case("https://example.com/hello%20world" => "эйч ти ти пи эс двоеточие слэш слэш экзампл точка ком слэш хеллоу ворлд"; "encoded_space_in_path")]
+    #[test_case("https://example.com/%D1%84%D0%B0%D0%B9%D0%BB" => "эйч ти ти пи эс двоеточие слэш слэш экзампл точка ком слэш файл"; "encoded_cyrillic_name")]
+    #[test_case("https://example.com/search?q=hello+world" => "эйч ти ти пи эс двоеточие слэш слэш экзампл точка ком слэш сирч вопросительный знак к равно хеллоу ворлд"; "plus_in_query_is_space")]
+    #[test_case("https://example.com/a+b" => "эйч ти ти пи эс двоеточие слэш слэш экзампл точка ком слэш а плюс б"; "plus_in_path_is_word")]
+    #[test_case("https://example.com/100%25done%2" => "эйч ти ти пи эс двоеточие слэш слэш экзампл точка ком слэш сто процент доне процент два"; "encoded_percent_and_truncated")]
+    #[test_case("https://example.com/x%2Fy" => "эйч ти ти пи эс двоеточие слэш слэш экзампл точка ком слэш кс слэш и"; "decoded_slash_is_not_path_separator")]
+    #[test_case("https://example.com/%FF%FE" => "эйч ти ти пи эс двоеточие слэш слэш экзампл точка ком слэш процент фф процент фе"; "invalid_utf8_run")]
+    #[test_case("https://example.com/x#a+b" => "эйч ти ти пи эс двоеточие слэш слэш экзампл точка ком слэш кс решётка а плюс б"; "plus_in_fragment_is_word")]
+    #[test_case("https://exa%2Emple.com/x" => "эйч ти ти пи эс двоеточие слэш слэш екса точка мпле точка ком слэш кс"; "encoded_dot_in_host_label")]
+    fn url_percent_decoding(input: &str) -> String {
+        let (en, nn) = mk_normalizer();
+        norm(&en, &nn).normalize_url(input)
+    }
+
+    #[test_case("user+tag@example.com" => "юзер плюс таг собака экзампл точка ком"; "plus_in_local_part")]
+    #[test_case("user%20name@example.com" => "юзер наме собака экзампл точка ком"; "encoded_space_in_local_part")]
+    #[test_case("user%28tag@example.com" => "юзер открывающая скобка таг собака экзампл точка ком"; "decoded_punctuation_in_local_part")]
+    fn email_percent_decoding(input: &str) -> String {
+        let (en, nn) = mk_normalizer();
+        norm(&en, &nn).normalize_email(input)
+    }
+
+    #[test]
+    fn url_decoding_leaves_no_special_chars() {
+        let (en, nn) = mk_normalizer();
+        let n = norm(&en, &nn);
+        for input in [
+            "https://example.com/hello%20world",
+            "https://example.com/%D1%84%D0%B0%D0%B9%D0%BB",
+            "https://example.com/search?q=hello+world&lang=ru",
+            "https://example.com/100%25done%2",
+            "https://example.com/%FF%FE",
+            "https://example.com/x%2Fy?q=a%3Db%26c",
+            "https://example.com/a%28b%29",
+            "https://example.com/a%0Ab%00c",
+        ] {
+            let out = n.normalize_url(input);
+            assert!(
+                !out.contains(['%', '+', '/', '?', '#', '&', '=', '(', ')'])
+                    && !out.chars().any(|c| c.is_control()),
+                "special char leak in {input:?}: {out:?}"
+            );
+        }
+        let out = n.normalize_email("user+tag@example.com");
+        assert!(!out.contains(['%', '+']), "special char leak: {out:?}");
     }
 
     // ---- IP address normalization ----

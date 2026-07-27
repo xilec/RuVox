@@ -219,6 +219,20 @@ MUST NOT match numeric dotted forms (versions `1.2.3`, dates), and MUST NOT
 re-match domains already consumed as part of a schemed URL or an email
 address.
 
+URL components (host labels, path segments, query keys and values, fragment)
+and email local parts SHALL be percent-decoded after the structural splits
+(`/`, `&`, `=`, `@`) and before lexical processing: valid percent-encoded
+UTF-8 sequences SHALL decode to their text (so an encoded Cyrillic file name
+is read as that name), `%20` and other encoded ASCII SHALL decode to their
+characters read by the existing rules, and encoded characters MUST NOT
+change the URL structure (a decoded `%2F` is not a path separator). A `+`
+inside query components SHALL be read as a word separator (space); a `+` in
+email local parts, path segments, and fragments SHALL be read as "плюс".
+Invalid percent sequences (truncated, non-hex, or non-UTF-8 byte runs) MUST
+NOT leak a literal `%`: the `%` SHALL be read as "процент" and the following
+characters read normally. No literal `%` or `+` SHALL remain in the
+normalized output.
+
 #### Scenario: HTTPS URL
 
 - GIVEN the input "https://github.com/user/repo"
@@ -260,6 +274,39 @@ address.
 - WHEN the pipeline processes it
 - THEN the output contains "собака" between the local part and the domain,
   and the domain is read with "точка ком"
+
+#### Scenario: Percent-encoded space in path
+
+- GIVEN the input "https://example.com/hello%20world"
+- WHEN the pipeline processes it
+- THEN the output contains "слэш хеллоу ворлд" ("hello" via `IT_TERMS`) and
+  no literal "%" remains
+
+#### Scenario: Percent-encoded Cyrillic file name
+
+- GIVEN the input "https://example.com/%D1%84%D0%B0%D0%B9%D0%BB"
+- WHEN the pipeline processes it
+- THEN the output contains "слэш файл" (the bytes decode to "файл")
+
+#### Scenario: Plus in query is a space
+
+- GIVEN the input "https://example.com/search?q=hello+world"
+- WHEN the pipeline processes it
+- THEN the output contains "к равно хеллоу ворлд" and no literal "+" remains
+
+#### Scenario: Plus in email local part
+
+- GIVEN the input "user+tag@example.com"
+- WHEN the pipeline processes it
+- THEN the output contains "юзер плюс таг собака экзампл точка ком" and no
+  literal "+" remains
+
+#### Scenario: Encoded percent sign and truncated sequence
+
+- GIVEN the input "https://example.com/100%25done%2"
+- WHEN the pipeline processes it
+- THEN "%25" decodes to "%" read as "процент", the truncated "%2" reads its
+  "%" as "процент" followed by "два", and no literal "%" remains
 
 #### Scenario: Unix file path
 
