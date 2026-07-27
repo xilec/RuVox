@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use chrono::Local;
+use chrono::Utc;
 use parking_lot::RwLock;
 use thiserror::Error;
 use uuid::Uuid;
@@ -232,7 +232,7 @@ impl StorageService {
             status: EntryStatus::Pending,
             format,
             html_source,
-            created_at: Local::now().naive_local(),
+            created_at: Utc::now().naive_utc(),
             audio_path: None,
             timestamps_path: None,
             duration_sec: None,
@@ -601,7 +601,7 @@ mod tests {
     #[test]
     fn get_all_entries_newest_first() {
         let (svc, _dir) = make_service();
-        let base = Local::now().naive_local();
+        let base = chrono::Local::now().naive_local();
         let e1 = add_entry_at(&svc, "first", base);
         let e2 = add_entry_at(&svc, "second", base + chrono::Duration::seconds(1));
 

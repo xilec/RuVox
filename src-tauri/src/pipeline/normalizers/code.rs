@@ -582,7 +582,7 @@ impl CodeIdentifierNormalizer {
                     translation.to_string()
                 } else if part.len() >= 2 && part.chars().all(|c| c.is_ascii_uppercase()) {
                     // All-caps abbreviation not in CODE_WORDS: spell letter by letter
-                    self.spell_abbreviation(part)
+                    Self::spell_abbreviation(part)
                 } else {
                     self.basic_transliterate(&part_lower)
                 }
@@ -596,46 +596,17 @@ impl CodeIdentifierNormalizer {
     ///
     /// Also used by the pipeline's English phase for lone single letters in
     /// prose, so "x" sounds the same inside an identifier and standalone.
-    pub fn spell_abbreviation(&self, abbrev: &str) -> String {
-        let letter_names: &[(&str, &str)] = &[
-            ("A", "эй"),
-            ("B", "би"),
-            ("C", "си"),
-            ("D", "ди"),
-            ("E", "и"),
-            ("F", "эф"),
-            ("G", "джи"),
-            ("H", "эйч"),
-            ("I", "ай"),
-            ("J", "джей"),
-            ("K", "кей"),
-            ("L", "эл"),
-            ("M", "эм"),
-            ("N", "эн"),
-            ("O", "о"),
-            ("P", "пи"),
-            ("Q", "кью"),
-            ("R", "ар"),
-            ("S", "эс"),
-            ("T", "ти"),
-            ("U", "ю"),
-            ("V", "ви"),
-            ("W", "дабл ю"),
-            ("X", "икс"),
-            ("Y", "вай"),
-            ("Z", "зет"),
-        ];
-
-        let map: HashMap<&str, &str> = letter_names.iter().copied().collect();
-
+    pub fn spell_abbreviation(abbrev: &str) -> String {
         abbrev
             .chars()
-            .map(|c| {
-                let s: String = c.to_uppercase().collect();
-                map.get(s.as_str()).copied().unwrap_or("?")
-            })
+            .map(Self::letter_name)
             .collect::<Vec<_>>()
             .join(" ")
+    }
+
+    fn letter_name(c: char) -> &'static str {
+        // Shared letter-name table (#120) — same reading as abbreviations.
+        super::english::letter_name(c).unwrap_or("?")
     }
 
     fn basic_transliterate(&self, word: &str) -> String {

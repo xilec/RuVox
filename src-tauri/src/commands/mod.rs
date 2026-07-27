@@ -457,7 +457,7 @@ fn apply_ready_if_current(
     entry.audio_path = Some(audio_filename.to_string());
     entry.timestamps_path = ts_filename;
     entry.duration_sec = Some(output.duration_sec);
-    entry.audio_generated_at = Some(chrono::Local::now().naive_local());
+    entry.audio_generated_at = Some(chrono::Utc::now().naive_utc());
 
     if let Err(e) = storage.update_entry(entry) {
         warn!("failed to update entry to ready: {e}");

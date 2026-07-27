@@ -19,6 +19,12 @@
           libpulseaudio
           pipewire
           alsa-lib
+          # libayatana-appindicator is in buildInputs for the build, but
+          # tauri's libappindicator-sys dlopens libayatana-appindicator3.so.1
+          # at runtime, so it must also be on the wrapper's LD_LIBRARY_PATH —
+          # otherwise the app panics on startup with
+          # "Failed to load ayatana-appindicator3 or appindicator3 dynamic library".
+          libayatana-appindicator
         ];
 
         extraRuntimeLibPath = lib.makeLibraryPath extraRuntimeLibs;

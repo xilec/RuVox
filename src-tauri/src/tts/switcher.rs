@@ -11,7 +11,7 @@
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use async_trait::async_trait;
 use tokio::sync::RwLock;
@@ -27,6 +27,14 @@ pub struct EngineSwitcher {
     /// Last-installed kind, mirrored as an atomic so the sync `kind()` impl
     /// does not need to acquire the RwLock.
     kind: AtomicU8,
+    /// Weak reference to the most recently built Silero engine. A synthesis
+    /// started on Silero keeps the engine alive via its own `Arc` even after
+    /// the engine is swapped out, so this lets `kill_current_ttsd` still
+    /// reach and terminate the orphaned ttsd on cancel (#127). Weak, not
+    /// strong: pinning the supervisor would keep its idle ttsd child alive
+    /// for the rest of the session (the driver only SIGKILLs the child via
+    /// `kill_on_drop` once the last `Arc` is gone).
+    last_silero: RwLock<Option<Weak<dyn TtsEngine>>>,
     piper_voices_dir: PathBuf,
     ttsd_dir: PathBuf,
     emitter: Emitter,
@@ -69,12 +77,14 @@ impl EngineSwitcher {
         ttsd_dir: PathBuf,
         emitter: Emitter,
     ) -> Self {
+        let last_silero = (initial_kind == EngineKind::Silero).then(|| Arc::downgrade(&initial));
         Self {
             inner: RwLock::new(Slot {
                 engine: initial,
                 piper_voice: initial_piper_voice,
             }),
             kind: AtomicU8::new(kind_to_u8(initial_kind)),
+            last_silero: RwLock::new(last_silero),
             piper_voices_dir,
             ttsd_dir,
             emitter,
@@ -113,6 +123,10 @@ impl EngineSwitcher {
             EngineKind::Silero => (self.build_silero()?, None),
         };
 
+        if target_kind == EngineKind::Silero {
+            *self.last_silero.write().await = Some(Arc::downgrade(&new_engine));
+        }
+
         {
             let mut slot = self.inner.write().await;
             slot.engine = Arc::clone(&new_engine);
@@ -150,12 +164,32 @@ impl EngineSwitcher {
 
     /// Terminate the current ttsd subprocess when Silero is the active
     /// engine; no-op for Piper (in-process synthesis has no subprocess to
-    /// kill). Reaches [`TtsSupervisor::kill_current`] through the
-    /// [`TtsEngine`] trait, so no concrete supervisor handle is stored here.
+    /// kill). Also terminates the most recently built Silero engine when it
+    /// is still alive: a synthesis started on Silero keeps that engine
+    /// running after a mid-synthesis engine switch, and its orphaned ttsd
+    /// would otherwise keep burning CPU on the cancelled request (#127).
+    /// When both references point at the same engine (Silero is active),
+    /// only one kill is issued. Reaches [`TtsSupervisor::kill_current`]
+    /// through the [`TtsEngine`] trait, so no concrete supervisor handle is
+    /// stored here.
     /// Called by `cancel_synthesis` when the cancelled entry had entered the
     /// TTS stage.
     pub async fn kill_current_ttsd(&self) {
-        self.current_engine().await.kill_current().await;
+        let current = self.current_engine().await;
+        current.kill_current().await;
+        let previous = self
+            .last_silero
+            .read()
+            .await
+            .as_ref()
+            .and_then(Weak::upgrade);
+        if let Some(previous) = previous {
+            // Skip the second kill when both references point at the same
+            // engine (Silero is active): one SIGKILL is enough.
+            if !Arc::ptr_eq(&previous, &current) {
+                previous.kill_current().await;
+            }
+        }
     }
 }
 
@@ -202,8 +236,11 @@ impl TtsEngine for EngineSwitcher {
         self.current_engine().await.shutdown().await
     }
 
+    /// Delegate to [`EngineSwitcher::kill_current_ttsd`] so callers behind
+    /// `Arc<dyn TtsEngine>` get the same kill semantics as the direct path
+    /// (current engine plus a swapped-out Silero, #127).
     async fn kill_current(&self) {
-        self.current_engine().await.kill_current().await;
+        self.kill_current_ttsd().await;
     }
 }
 
@@ -279,5 +316,125 @@ mod tests {
             TtsError::Ttsd { code, .. } => assert_eq!(code, "engine_unknown"),
             other => panic!("expected engine_unknown, got {other:?}"),
         }
+    }
+
+    /// Fake engine reporting `EngineKind::Silero` with a kill counter, so
+    /// tests can observe `kill_current` calls without spawning a real ttsd.
+    /// The counter sits behind an `Arc` so the test can still inspect it
+    /// after every engine reference is dropped.
+    struct FakeSilero {
+        kills: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl FakeSilero {
+        fn new() -> (Self, Arc<std::sync::atomic::AtomicUsize>) {
+            let kills = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            (
+                Self {
+                    kills: Arc::clone(&kills),
+                },
+                kills,
+            )
+        }
+    }
+
+    #[async_trait]
+    impl TtsEngine for FakeSilero {
+        fn kind(&self) -> EngineKind {
+            EngineKind::Silero
+        }
+
+        async fn warmup(&self) -> Result<(), TtsError> {
+            Ok(())
+        }
+
+        async fn spawn_initial_warmup(&self) {}
+
+        async fn synthesize(
+            &self,
+            _text: String,
+            _voice: String,
+            _sample_rate: u32,
+            _out_wav: String,
+            _char_mapping: Option<Vec<CharMappingEntry>>,
+        ) -> Result<SynthesizeOutput, TtsError> {
+            unimplemented!("tests never synthesize on the fake")
+        }
+
+        async fn shutdown(&self) -> Result<(), TtsError> {
+            Ok(())
+        }
+
+        async fn kill_current(&self) {
+            self.kills.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    fn silero_switcher(
+        initial: Arc<dyn TtsEngine>,
+    ) -> (EngineSwitcher, tempfile::TempDir, tempfile::TempDir) {
+        let (emitter, _) = recording_emitter();
+        let voices_tmp = tempfile::TempDir::new().expect("voices tempdir");
+        let ttsd_tmp = tempfile::TempDir::new().expect("ttsd tempdir");
+        let switcher = EngineSwitcher::new(
+            initial,
+            EngineKind::Silero,
+            None,
+            voices_tmp.path().to_path_buf(),
+            ttsd_tmp.path().to_path_buf(),
+            emitter,
+        );
+        (switcher, voices_tmp, ttsd_tmp)
+    }
+
+    #[tokio::test]
+    async fn kill_current_ttsd_reaches_engine_swapped_out_mid_synthesis() {
+        // #127: a synthesis started on Silero keeps the engine alive after a
+        // switch (the in-flight future holds its own Arc, played here by
+        // `fake`); cancel must still reach that engine's ttsd, not only the
+        // current slot.
+        let (fake_engine, kills) = FakeSilero::new();
+        let fake: Arc<dyn TtsEngine> = Arc::new(fake_engine);
+        let (sw, _voices_tmp, _ttsd_tmp) = silero_switcher(Arc::clone(&fake));
+
+        sw.apply_config("piper", "ruslan").await.unwrap();
+        assert_eq!(sw.kind(), EngineKind::Piper);
+
+        sw.kill_current_ttsd().await;
+        assert_eq!(
+            kills.load(Ordering::SeqCst),
+            1,
+            "cancel must kill the swapped-out engine's ttsd"
+        );
+    }
+
+    #[tokio::test]
+    async fn kill_current_ttsd_ignores_fully_dropped_previous_engine() {
+        // When nothing holds the swapped-out engine anymore (its synthesis
+        // already settled), the weak reference is dead and the kill must be
+        // a no-op — the child is already gone via `kill_on_drop`.
+        let (fake_engine, kills) = FakeSilero::new();
+        let (sw, _voices_tmp, _ttsd_tmp) = {
+            let fake: Arc<dyn TtsEngine> = Arc::new(fake_engine);
+            let (sw, voices_tmp, ttsd_tmp) = silero_switcher(fake);
+            sw.apply_config("piper", "ruslan").await.unwrap();
+            (sw, voices_tmp, ttsd_tmp)
+            // Last Arc<FakeSilero> dropped here → weak reference is dead.
+        };
+
+        sw.kill_current_ttsd().await;
+        assert_eq!(kills.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn kill_current_ttsd_kills_active_silero_only_once() {
+        // Silero active and also referenced by `last_silero`: the dedup must
+        // collapse both references into a single kill.
+        let (fake_engine, kills) = FakeSilero::new();
+        let fake: Arc<dyn TtsEngine> = Arc::new(fake_engine);
+        let (sw, _voices_tmp, _ttsd_tmp) = silero_switcher(fake);
+
+        sw.kill_current_ttsd().await;
+        assert_eq!(kills.load(Ordering::SeqCst), 1);
     }
 }

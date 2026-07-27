@@ -207,7 +207,6 @@ export interface PlaybackFinishedPayload { entry_id: EntryId; }
 export interface ModelErrorPayload { message: string; }
 export interface TtsErrorPayload { entry_id: EntryId; message: string; }
 export interface TtsFatalPayload { message: string; }
-export interface SynthesisProgressPayload { entry_id: EntryId; progress: number; }
 
 export interface VoiceDownloadStartedPayload {
   engine: 'piper';
@@ -273,9 +272,6 @@ export const events = {
 
   ttsFatal: (cb: (p: TtsFatalPayload) => void): Promise<UnlistenFn> =>
     tauriListen<TtsFatalPayload>('tts_fatal', (e) => cb(e.payload)),
-
-  synthesisProgress: (cb: (p: SynthesisProgressPayload) => void): Promise<UnlistenFn> =>
-    tauriListen<SynthesisProgressPayload>('synthesis_progress', (e) => cb(e.payload)),
 
   trayReadNow: (cb: () => void): Promise<UnlistenFn> =>
     tauriListen<Record<string, never>>('tray_read_now', () => cb()),

@@ -90,6 +90,14 @@ pkgs.mkShell {
     # the C library at link time and at runtime.
     libopus
 
+    # ── libsonic (espeak-ng dependency) ────────────────────────────────────
+    # espeak-rs-sys 0.2.0 vendors espeak-ng and builds it via cmake; its
+    # deps.cmake does find_library(SONIC_LIB sonic) and falls back to
+    # git-cloning https://github.com/waywardgeek/sonic via FetchContent,
+    # which is flaky and breaks `cargo clippy` in the pre-push hook
+    # (same rationale as `sonic` in flake.nix buildInputs).
+    sonic
+
     # ── Wayland + X11 support ──────────────────────────────────────────────
     wayland
     wayland-protocols

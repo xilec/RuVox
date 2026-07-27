@@ -152,14 +152,13 @@ impl CodeBlockHandler {
 
     // ── Public processing entry points ─────────────────────────────────
 
-    /// Process a single code block (code content + optional language tag).
+    /// Process a single code block (code content + optional language tag)
+    /// under the handler's default mode.
     ///
-    /// This is the low-level entry used in tests and by `process()`.
+    /// This is the low-level entry used in tests; `process()` calls
+    /// `process_block_with_mode()` directly to honor per-section directives.
     pub fn process_block(&self, code: &str, language: Option<&str>) -> String {
-        match self.mode {
-            CodeBlockMode::Brief => self.brief_description(language),
-            CodeBlockMode::Full => self.full_normalize(code, language),
-        }
+        self.process_block_with_mode(self.mode, code, language)
     }
 
     /// In-place replacement of all fenced code blocks in `tracked`.
@@ -198,25 +197,14 @@ impl CodeBlockHandler {
                 let replacement = if language.is_some_and(|l| l.eq_ignore_ascii_case("mermaid")) {
                     "Тут мермэйд диаграмма".to_string()
                 } else {
-                    let handler = CodeBlockHandler {
-                        mode: effective_mode,
-                        code_normalizer: CodeIdentifierNormalizer::new(),
-                    };
-                    handler.process_block(code, language)
+                    self.process_block_with_mode(effective_mode, code, language)
                 };
 
                 (m.start(), m.end(), replacement)
             })
             .collect();
 
-        // Apply replacements via TrackedText in reverse order (right-to-left)
-        // so that byte offsets remain valid after each substitution.
-        // Must be by byte range: a literal `replace` substitutes ALL
-        // occurrences of the matched text, so byte-identical blocks would all
-        // receive the replacement computed for the first processed one (#84).
-        for (start, end, replacement) in blocks.into_iter().rev() {
-            tracked.replace_byte_range(start, end, &replacement);
-        }
+        tracked.replace_byte_ranges(blocks);
 
         // Remove mode-switch directives from the output (they are control markers,
         // not content that should be spoken).
@@ -226,6 +214,20 @@ impl CodeBlockHandler {
     }
 
     // ── Private helpers ────────────────────────────────────────────────
+
+    /// Process a block under an explicit mode (used by `process()` when a
+    /// per-section directive overrides the handler's default mode).
+    fn process_block_with_mode(
+        &self,
+        mode: CodeBlockMode,
+        code: &str,
+        language: Option<&str>,
+    ) -> String {
+        match mode {
+            CodeBlockMode::Brief => self.brief_description(language),
+            CodeBlockMode::Full => self.full_normalize(code, language),
+        }
+    }
 
     fn collect_directives(&self, text: &str) -> Vec<(usize, CodeBlockMode)> {
         RE_MODE_SWITCH

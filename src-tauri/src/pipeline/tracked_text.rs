@@ -218,13 +218,23 @@ impl TrackedText {
     /// WARNING: this is an unbounded replace-all — it also hits `from` embedded
     /// in longer tokens ("use" inside "user", "42" inside "142"). Phases that
     /// collect boundary-checked matches must apply them via
-    /// [`Self::replace_byte_range`] instead (see #75, #84, #109). Literal
+    /// [`Self::replace_byte_ranges`] instead (see #75, #84, #109). Literal
     /// `replace` is reserved for constant patterns where every occurrence must
     /// be substituted (quotes, dashes, operators, symbols, C++/C#/F# terms).
     pub fn replace(&mut self, from: &str, to: &str) {
-        let pattern =
-            regex::Regex::new(&regex::escape(from)).expect("regex::escape produces valid pattern");
-        self.sub(&pattern, |_| to.to_string());
+        if from.is_empty() {
+            return;
+        }
+        // Literal search — no regex compilation per call (this runs ~60 times
+        // per pipeline pass for quote/dash/operator/symbol constants).
+        let matches: Vec<(usize, usize)> = self
+            .current
+            .match_indices(from)
+            .map(|(i, s)| (i, i + s.len()))
+            .collect();
+        for (start, end) in matches.into_iter().rev() {
+            self.replace_byte_range(start, end, to);
+        }
     }
 
     /// Queue a replacement of exactly one byte range `[byte_start, byte_end)`
@@ -247,6 +257,20 @@ impl TrackedText {
             byte_end,
             to: to.to_string(),
         });
+    }
+
+    /// Apply several pre-collected replacements by byte range, right-to-left.
+    ///
+    /// `ranges` are `(byte_start, byte_end, new_text)` offsets into the current
+    /// text, typically collected from a regex over a snapshot. Applying in
+    /// reverse order keeps the earlier offsets valid. This is the REQUIRED way
+    /// to apply boundary-checked matches: a literal [`Self::replace`] would
+    /// also hit the matched text embedded in longer tokens (see #75, #84,
+    /// #109).
+    pub fn replace_byte_ranges(&mut self, ranges: Vec<(usize, usize, String)>) {
+        for (start, end, new_text) in ranges.into_iter().rev() {
+            self.replace_byte_range(start, end, &new_text);
+        }
     }
 
     /// Regex substitution with a callback, tracking positions for `CharMapping`.

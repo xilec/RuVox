@@ -317,7 +317,11 @@ entry's synthesis work and sets the entry status back to `pending`, emitting
 via a per-entry abort registry. If the cancelled entry had already entered
 the TTS stage, the system SHALL additionally terminate the current ttsd
 subprocess; recovery then follows the ttsd-protocol auto-restart procedure,
-and requests belonging to other entries are retried transparently. A late
+and requests belonging to other entries are retried transparently. If the
+active engine was switched while the cancelled entry's synthesis was in
+flight, cancellation SHALL also terminate the previous engine's ttsd
+subprocess — the engine that is actually running the entry's request — so
+the orphaned process does not keep consuming CPU. A late
 completion or failure belonging to a cancelled entry SHALL be discarded: the
 entry MUST NOT flip to `ready` or `error`, any audio/timestamp files written
 by the late completion SHALL be removed, no further `entry_updated` for that
@@ -341,6 +345,15 @@ completion is emitted, and no autoplay starts. A missing entry fails with
 - THEN the synthesis task is aborted, the ttsd subprocess is terminated, the
   supervisor restarts it per the auto-restart procedure, and the entry
   status becomes `pending`
+
+#### Scenario: cancel after an engine switch
+
+- GIVEN an entry with status `processing` whose request is being synthesized
+  by ttsd on the Silero engine
+- WHEN the active engine is switched to Piper and `cancel_synthesis` is then
+  invoked for that entry
+- THEN the synthesis task is aborted, the entry status becomes `pending`,
+  and the swapped-out Silero engine's ttsd subprocess is terminated
 
 #### Scenario: late completion is discarded
 

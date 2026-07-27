@@ -1,0 +1,1 @@
+Сайт www.example.com лёг, документация на docs.python.org/3/tutorial, а файл file.txt и версия 1.2.3 не ссылки.

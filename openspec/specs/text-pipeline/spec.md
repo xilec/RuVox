@@ -208,6 +208,31 @@ number words joined by "точка". File paths SHALL be read with "слэш" (o
 `.` / `..`, drive letters plus "двоеточие" for Windows drives, and "точка"
 before file extensions.
 
+The system SHALL also detect scheme-less URLs — `www.`-prefixed domains and
+bare domains whose last label is a known TLD from `TLD_MAP` — with optional
+path, query, and fragment, and SHALL read them like schemed URLs without the
+scheme prefix: domain labels joined with "точка" (known TLDs via `TLD_MAP`),
+path segments after "слэш", query after "вопросительный знак", fragment
+after "решётка". Detection MUST NOT match dotted names whose last label is
+not in `TLD_MAP` (filenames like `file.txt`, `test.spec.ts`, `config.yaml`),
+MUST NOT match numeric dotted forms (versions `1.2.3`, dates), and MUST NOT
+re-match domains already consumed as part of a schemed URL or an email
+address.
+
+URL components (host labels, path segments, query keys and values, fragment)
+and email local parts SHALL be percent-decoded after the structural splits
+(`/`, `&`, `=`, `@`) and before lexical processing: valid percent-encoded
+UTF-8 sequences SHALL decode to their text (so an encoded Cyrillic file name
+is read as that name), `%20` and other encoded ASCII SHALL decode to their
+characters read by the existing rules, and encoded characters MUST NOT
+change the URL structure (a decoded `%2F` is not a path separator). A `+`
+inside query components SHALL be read as a word separator (space); a `+` in
+email local parts, path segments, and fragments SHALL be read as "плюс".
+Invalid percent sequences (truncated, non-hex, or non-UTF-8 byte runs) MUST
+NOT leak a literal `%`: the `%` SHALL be read as "процент" and the following
+characters read normally. No literal `%` or `+` SHALL remain in the
+normalized output.
+
 #### Scenario: HTTPS URL
 
 - GIVEN the input "https://github.com/user/repo"
@@ -215,12 +240,73 @@ before file extensions.
 - THEN the output contains "эйч ти ти пи эс двоеточие слэш слэш гитхаб точка
   ком слэш юзер слэш репо"
 
+#### Scenario: www-prefixed URL
+
+- GIVEN the input "Сайт www.example.com недоступен"
+- WHEN the pipeline processes it
+- THEN the output contains "ввв точка экзампл точка ком" and no literal "."
+  between the domain labels remains
+
+#### Scenario: Bare domain with path
+
+- GIVEN the input "документация на docs.python.org/3/tutorial"
+- WHEN the pipeline processes it
+- THEN the output contains "докс точка пайтон точка орг слэш три слэш
+  тьюториал"
+
+#### Scenario: Filename is not a bare domain
+
+- GIVEN the input "открой file.txt и config.yaml"
+- WHEN the pipeline processes it
+- THEN neither name is read with "точка" domain separators (their suffixes
+  are not in `TLD_MAP`)
+
+#### Scenario: Version is not a bare domain
+
+- GIVEN the input "версия 1.2.3"
+- WHEN the pipeline processes it
+- THEN the version is read as "один точка два точка три" by the version
+  phase, not treated as a domain
+
 #### Scenario: Email address
 
 - GIVEN the input "user@example.com"
 - WHEN the pipeline processes it
 - THEN the output contains "собака" between the local part and the domain,
   and the domain is read with "точка ком"
+
+#### Scenario: Percent-encoded space in path
+
+- GIVEN the input "https://example.com/hello%20world"
+- WHEN the pipeline processes it
+- THEN the output contains "слэш хеллоу ворлд" ("hello" via `IT_TERMS`) and
+  no literal "%" remains
+
+#### Scenario: Percent-encoded Cyrillic file name
+
+- GIVEN the input "https://example.com/%D1%84%D0%B0%D0%B9%D0%BB"
+- WHEN the pipeline processes it
+- THEN the output contains "слэш файл" (the bytes decode to "файл")
+
+#### Scenario: Plus in query is a space
+
+- GIVEN the input "https://example.com/search?q=hello+world"
+- WHEN the pipeline processes it
+- THEN the output contains "к равно хеллоу ворлд" and no literal "+" remains
+
+#### Scenario: Plus in email local part
+
+- GIVEN the input "user+tag@example.com"
+- WHEN the pipeline processes it
+- THEN the output contains "юзер плюс таг собака экзампл точка ком" and no
+  literal "+" remains
+
+#### Scenario: Encoded percent sign and truncated sequence
+
+- GIVEN the input "https://example.com/100%25done%2"
+- WHEN the pipeline processes it
+- THEN "%25" decodes to "%" read as "процент", the truncated "%2" reads its
+  "%" as "процент" followed by "два", and no literal "%" remains
 
 #### Scenario: Unix file path
 
@@ -370,19 +456,25 @@ numeric parts SHALL be read as Russian number words.
 The system SHALL replace every remaining English word with speakable
 Cyrillic. Special language names `C++`, `C#`, `F#` (any case) SHALL be
 replaced first ("си плюс плюс", "си шарп", "эф шарп"). Single Latin letters
-(length-1 runs) SHALL be read by their English letter names via the
-letter-name spelling table ("a" → "эй", "I" → "ай", "x" → "икс"),
+(length-1 runs) SHALL be read by their English letter names via the shared
+letter-name table ("a" → "эй", "I" → "ай", "x" → "икс"),
 case-insensitively; they SHALL NOT be recorded in the unknown-words map.
 For remaining multi-letter words the resolution order SHALL be: `IT_TERMS`
 dictionary ("api" → "эй пи ай", "github" → "гитхаб"); all-uppercase words of
 length ≥ 2 via `AbbreviationNormalizer` (special cases like "ios" →
 "ай оу эс", `AS_WORD` entries like "json" → "джейсон", otherwise
-letter-by-letter via `LETTER_MAP`); `AS_WORD` dictionary for mixed-case
-entries; and finally digraph-first transliteration (`sh` → "ш", `tion` →
-"шн", longest match first). Custom terms registered via
-`EnglishNormalizer::add_custom_terms` SHALL override `IT_TERMS`. Words
-resolved by transliteration SHALL be recorded in the unknown-words map, which
-SHALL be cleared at the start of every `process_with_char_mapping` call.
+letter-by-letter via the same shared letter-name table); `AS_WORD`
+dictionary for mixed-case entries; and finally digraph-first
+transliteration (`sh` → "ш", `tion` → "шн", longest match first). Custom
+terms registered via `EnglishNormalizer::add_custom_terms` SHALL override
+`IT_TERMS`. Words resolved by transliteration SHALL be recorded in the
+unknown-words map, which SHALL be cleared at the start of every
+`process_with_char_mapping` call.
+
+The letter-name table SHALL have a single home shared by the abbreviation
+spelling, code-identifier spelling, and lone-letter reading paths; its
+canonical readings for x/y/z SHALL be "икс", "вай", "зет" — so an unknown
+abbreviation and a lone letter sound the same ("x" and "X" both → "икс").
 
 #### Scenario: Uppercase abbreviation spelled out
 
@@ -390,6 +482,13 @@ SHALL be cleared at the start of every `process_with_char_mapping` call.
 - WHEN the pipeline processes it
 - THEN the abbreviation is read letter by letter as "эй пи ай" and not
   transliterated as a word
+
+#### Scenario: Unknown abbreviation with x/y/z
+
+- GIVEN the input "формат XYZ"
+- WHEN the pipeline processes it
+- THEN the abbreviation is read "икс вай зет" — the same letter names as
+  for lone letters
 
 #### Scenario: IT term from dictionary
 
@@ -422,12 +521,17 @@ SHALL be cleared at the start of every `process_with_char_mapping` call.
 The system SHALL read standalone integers as Russian cardinal number words
 ("123" → "сто двадцать три"), including thousands, millions, and billions
 with correct declension and gender agreement ("тысяча" feminine). The number
-phase SHALL skip digits that are adjacent to a dot, another digit, or a
-Latin/Cyrillic letter, because those regions are owned by the earlier URL,
-size, date, version, range, and code-identifier phases. Non-integer input and
-integers that fail to parse SHALL be left unchanged. Number replacements
-SHALL be applied positionally by byte range, so a match that is a substring
-of another match (e.g. "1" inside "10") MUST NOT corrupt the longer number.
+phase SHALL skip digits that are adjacent to another digit or a
+Latin/Cyrillic letter, or that sit next to a dot acting as a digit
+separator (a decimal/version separator: a dot directly adjacent to digits
+on the side facing the number), because those regions are owned by the
+earlier URL, size, date, version, range, and code-identifier phases. A
+number immediately before a terminal dot (a period followed by whitespace,
+end of text, or a non-digit character) SHALL be read normally — sentence
+punctuation is not a separator. Non-integer input and integers that fail to
+parse SHALL be left unchanged. Number replacements SHALL be applied
+positionally by byte range, so a match that is a substring of another match
+(e.g. "1" inside "10") MUST NOT corrupt the longer number.
 
 #### Scenario: Plain number
 
@@ -453,6 +557,18 @@ of another match (e.g. "1" inside "10") MUST NOT corrupt the longer number.
 - GIVEN the input "33 3"
 - WHEN the pipeline processes it
 - THEN the output reads both numbers correctly as "тридцать три три"
+
+#### Scenario: Number before a sentence-ending dot
+
+- GIVEN the input "Встреча в 5."
+- WHEN the pipeline processes it
+- THEN the number is read as "пять" and the output is "Встреча в пять."
+
+#### Scenario: Dot between digits remains a separator
+
+- GIVEN a leftover fragment like "3.14" that earlier phases did not consume
+- WHEN the number phase runs
+- THEN neither "3" nor "14" is expanded by the number phase
 
 ### Requirement: Output post-processing
 
