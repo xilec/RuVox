@@ -38,10 +38,10 @@ Reference: `docs/plans/silero-native-port.md` (decisions, tracker),
 
 ## 5. Testing
 
-- [ ] 5.1 Golden parity suite (~20–30 phrases: tech text, numbers, homographs, ё, punctuation): frontend output symbol-for-symbol, waveform within threshold, stress identical to `apply_tts`
-- [ ] 5.2 Unit tests: ngram lookup, BERT tokenizer, zero durations, empty input, single-vowel words
-- [ ] 5.3 Integration test: full engine against the downloaded bundle (cached in CI); plumbing paths covered with a small synthetic ONNX fixture
-- [ ] 5.4 Benchmark reproducing spike numbers (~10x vs `apply_tts`); results recorded in `silero-native/docs/`
+- [x] 5.1 Golden parity suite (~20–30 phrases: tech text, numbers, homographs, ё, punctuation): frontend output symbol-for-symbol, waveform within threshold, stress identical to `apply_tts`
+- [x] 5.2 Unit tests: ngram lookup, BERT tokenizer, zero durations, empty input, single-vowel words
+- [x] 5.3 Integration test: full engine against the downloaded bundle (cached in CI); plumbing paths covered with a small synthetic ONNX fixture
+- [x] 5.4 Benchmark reproducing spike numbers (~10x vs `apply_tts`); results recorded in `silero-native/docs/`
 
 ## 6. App integration
 
