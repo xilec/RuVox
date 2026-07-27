@@ -226,8 +226,8 @@ commits/pushes on the task branch for the duration of this epic.
 | 3. Exporter | done | bundle in `tmp/bundle-v5/` (230 MB, 12 files + manifest); self-check parity ≤ 8.2e-4 all phrases; commit 5371a2b; GH workflow written, not run on GH |
 | 4. Rust core | done | full frontend (text/accentor/homosolver) + engine + API; 28 tests green; e2e parity vs torch 9.2e-5; commits c82bc5c..2a00bf3 |
 | 5. Testing | done | parity suite 31 cases (ONNX refs, worst 9.8e-4); +13 unit tests; no-bundle CI path green; bench ~1.3x vs warmed apply_tts (spike ~10x was cold-vs-partial); commits d2b37e0.. |
-| 6. Integration | pending | |
-| 7. Docs & licensing | pending | |
+| 6. Integration | done | third engine end-to-end (backend, downloader, IPC, Settings UI); gates green; commits 8b081ed..d044113 |
+| 7. Docs & licensing | done | README, NOTICE (CC BY-NC-SA attribution), architecture.md (pipeline/bundle/debugging/error codes), AGENTS.md, CHANGELOG |
 | 8. Manual verification | manual gate | user, pre-PR |
 
 ## Progress tracker (phases, superseded by the State tracker above)

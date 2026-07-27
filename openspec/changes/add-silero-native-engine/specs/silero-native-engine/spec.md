@@ -116,9 +116,13 @@ original-text positions via the existing `char_mapping` mechanism. Precise
 
 The frontend and synthesis SHALL handle: empty input (typed `bad_input`,
 no inference), single-vowel words, inputs whose predicted durations contain
-zeros (durations clamped to the upstream model's minimum before
-`repeat_interleave`), and inputs longer than one chunk (chunking is the
-caller's responsibility; the engine processes one chunk per call).
+zeros (durations clamped inside the exported graph before
+`repeat_interleave`), and inputs longer than one chunk (the engine splits
+text into ≤900-character chunks on sentence boundaries, mirroring
+`ttsd/ttsd/chunking.py`, synthesizes chunk by chunk, and concatenates the
+audio with monotonically shifted timestamps). Because the exported
+`tts_main.onnx` bakes a 5000-frame positional table, a chunk that still
+overflows it MUST be split recursively until it fits.
 
 #### Scenario: empty input rejected
 
@@ -133,3 +137,20 @@ caller's responsibility; the engine processes one chunk per call).
 - WHEN synthesis runs
 - THEN the zero durations are clamped to the model minimum and the output
   waveform matches the upstream reference within the parity threshold
+
+#### Scenario: long text is chunked
+
+- GIVEN an input longer than 900 characters
+- WHEN synthesis runs
+- THEN the text is split on sentence boundaries, each chunk is synthesized
+  separately, and the result is a single waveform with monotonically
+  increasing word timestamps whose last `end` does not exceed the total
+  duration
+
+#### Scenario: multiline input does not glue words
+
+- GIVEN an input containing newlines (e.g. multi-paragraph text)
+- WHEN the frontend prepares it
+- THEN newlines are replaced with spaces (mirroring ttsd's
+  `sanitize_for_silero`) before symbol filtering, so adjacent words are
+  never concatenated
