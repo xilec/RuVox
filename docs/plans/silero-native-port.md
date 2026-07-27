@@ -223,7 +223,7 @@ commits/pushes on the task branch for the duration of this epic.
 | 0. OpenSpec proposal | done | `openspec/changes/add-silero-native-engine/`, validated; issue #145 filed |
 | 1. Nix/ort validation | done | ort+onnxruntime already in place via piper-rs; `load-dynamic` + `ORT_DYLIB_PATH` (nixpkgs onnxruntime 1.26.0); `nix build .#ruvox` green; commit 52c23e5 |
 | 2. Scaffolding | pending | |
-| 3. Exporter | pending | |
+| 3. Exporter | done | bundle in `tmp/bundle-v5/` (230 MB, 12 files + manifest); self-check parity ≤ 8.2e-4 all phrases; commit 5371a2b; GH workflow written, not run on GH |
 | 4. Rust core | pending | |
 | 5. Testing | pending | |
 | 6. Integration | pending | |

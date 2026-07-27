@@ -17,14 +17,14 @@ Reference: `docs/plans/silero-native-port.md` (decisions, tracker),
 
 ## 3. Model exporter (`silero-native/export/`)
 
-- [ ] 3.1 Create uv project with pinned deps (torch CPU, onnx, onnxruntime); pin the upstream model version from `models.yml` (no `latest`)
-- [ ] 3.2 Rewrite the spike export as a single clean `export.py`: JIT-graph surgery (MHA/repeat_interleave symbolics, `aten::format` removal) for `tts_main.onnx` with dynamic axes
-- [ ] 3.3 Export `istft.onnx` and `pqmf.onnx` (24k/8k path)
-- [ ] 3.4 Export `homosolver.onnx` (post `unpack_q_model`) and `accentor_tensor.onnx`; extract `ngrams`/`exceptions` dictionaries
-- [ ] 3.5 Emit `manifest.json` (model version, per-file sha256, opset, source `.pt` hash, export date)
-- [ ] 3.6 Built-in self-check: waveform parity ≤ 1e-3 on a fixed phrase set vs the Python reference; non-zero exit on failure
-- [ ] 3.7 GitHub Actions workflow: run exporter, upload bundle to a `silero-models-v5.x` release
-- [ ] 3.8 `export/README.md`: how to re-export on a new upstream release
+- [x] 3.1 Create uv project with pinned deps (torch CPU, onnx, onnxruntime); pin the upstream model version from `models.yml` (no `latest`)
+- [x] 3.2 Rewrite the spike export as a single clean `export.py`: JIT-graph surgery (MHA/repeat_interleave symbolics, `aten::format` removal) for `tts_main.onnx` with dynamic axes
+- [x] 3.3 Export `istft.onnx` and `pqmf.onnx` (24k/8k path)
+- [x] 3.4 Export `homosolver.onnx` (post `unpack_q_model`) and `accentor_tensor.onnx`; extract `ngrams`/`exceptions` dictionaries
+- [x] 3.5 Emit `manifest.json` (model version, per-file sha256, opset, source `.pt` hash, export date)
+- [x] 3.6 Built-in self-check: waveform parity ≤ 1e-3 on a fixed phrase set vs the Python reference; non-zero exit on failure
+- [x] 3.7 GitHub Actions workflow: run exporter, upload bundle to a `silero-models-v5.x` release
+- [x] 3.8 `export/README.md`: how to re-export on a new upstream release
 
 ## 4. Rust engine core
 
