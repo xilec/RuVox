@@ -11,9 +11,9 @@ Reference: `docs/plans/silero-native-port.md` (decisions, tracker),
 
 ## 2. Subproject scaffolding
 
-- [ ] 2.1 Create `silero-native/` crate (`Cargo.toml`, `src/lib.rs`, `src/error.rs` with thiserror domain errors) — no Tauri dependencies
-- [ ] 2.2 Add `ort` dependency; wire `silero-native` as a path dependency of `src-tauri`
-- [ ] 2.3 Wire crate tests + fmt/clippy into `justfile` recipes and `.github/workflows/ci.yml`; keep the slim-build gate green
+- [x] 2.1 Create `silero-native/` crate (`Cargo.toml`, `src/lib.rs`, `src/error.rs` with thiserror domain errors) — no Tauri dependencies
+- [x] 2.2 Add `ort` dependency; wire `silero-native` as a path dependency of `src-tauri`
+- [x] 2.3 Wire crate tests + fmt/clippy into `justfile` recipes and `.github/workflows/ci.yml`; keep the slim-build gate green
 
 ## 3. Model exporter (`silero-native/export/`)
 
