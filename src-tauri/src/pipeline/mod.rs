@@ -607,7 +607,7 @@ impl TTSPipeline {
                     // Lone letters are read by English letter name via the same
                     // table as code identifiers ("x" → "икс"), not
                     // transliterated, and are not tracked as unknown words.
-                    self.code_normalizer.spell_abbreviation(word)
+                    CodeIdentifierNormalizer::spell_abbreviation(word)
                 } else if let Some(v) = IT_TERMS.get(word_lower.as_str()) {
                     v.to_string()
                 } else if word.chars().all(|c| c.is_ascii_uppercase()) && word.len() >= 2 {
