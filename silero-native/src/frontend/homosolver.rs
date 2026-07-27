@@ -174,9 +174,7 @@ impl HomoSolver {
         let ids_t = Tensor::<i64>::from_array((vec![batch, max_len], input_ids))?;
         let starts_t = Tensor::<i64>::from_array((vec![batch], starts))?;
         let ends_t = Tensor::<i64>::from_array((vec![batch], ends))?;
-        let mut session = self.session.lock().map_err(|_| {
-            EngineError::Internal("homosolver session mutex poisoned".to_string())
-        })?;
+        let mut session = crate::lock_session(&self.session);
         let outputs = session.run(
             ort::inputs!["input_ids" => ids_t, "homo_start_ids" => starts_t, "homo_end_ids" => ends_t],
         )?;

@@ -20,6 +20,53 @@ pub struct PreparedText {
     pub has_text: bool,
 }
 
+/// Strip markup the engine does not support: `[[...]]` phonetic inserts and
+/// SSML-like `<...>` tags. Each stripped span is logged; the remaining text
+/// goes through the normal normalization path. Upstream supports both —
+/// silently mispronouncing them would be worse than dropping them (spec:
+/// "unsupported markup MUST be stripped or rejected").
+pub fn strip_unsupported_markup(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < chars.len() {
+        // [[...]] phonetic insert
+        if chars[i] == '[' && chars.get(i + 1) == Some(&'[') {
+            let start = i;
+            i += 2;
+            while i < chars.len() && !(chars[i] == ']' && chars.get(i + 1) == Some(&']')) {
+                i += 1;
+            }
+            let end = (i + 2).min(chars.len());
+            let span: String = chars[start..end].iter().collect();
+            debug!(stripped = %span, "stripped unsupported [[...]] markup");
+            i = end;
+            continue;
+        }
+        // SSML-like tag: '<' followed by a letter or '/', closed by '>'.
+        if chars[i] == '<'
+            && chars
+                .get(i + 1)
+                .is_some_and(|c| c.is_alphabetic() || *c == '/')
+        {
+            let mut j = i + 1;
+            while j < chars.len() && chars[j] != '>' {
+                j += 1;
+            }
+            if j < chars.len() {
+                let span: String = chars[i..=j].iter().collect();
+                debug!(stripped = %span, "stripped unsupported SSML tag");
+                i = j + 1;
+                continue;
+            }
+            // Unclosed '<': plain text, keep it.
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    out
+}
+
 /// Port of `PartTTSModelMultiAcc_v3.clean_star_text`.
 ///
 /// Handles the `^` "skip stress" marker: `^` is not part of the model
@@ -171,5 +218,25 @@ mod tests {
         .collect();
         let ids = build_sequence("аб", &map, "|", "~").expect("sequence");
         assert_eq!(ids, vec![2, 11, 12, 1]);
+    }
+
+    #[test]
+    fn strips_phonetic_inserts() {
+        assert_eq!(
+            strip_unsupported_markup("скажи [[ˈtʲeksт]] громко"),
+            "скажи  громко"
+        );
+        assert_eq!(strip_unsupported_markup("[[незакрыто"), "");
+    }
+
+    #[test]
+    fn strips_ssml_tags() {
+        assert_eq!(
+            strip_unsupported_markup("<speak>привет <break time=\"1s\"/> мир</speak>"),
+            "привет  мир"
+        );
+        // '<' not followed by a letter or '/' is plain text; so is an
+        // unclosed tag.
+        assert_eq!(strip_unsupported_markup("2 < 3 и a<b"), "2 < 3 и a<b");
     }
 }

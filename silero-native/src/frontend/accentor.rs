@@ -242,9 +242,7 @@ impl Accentor {
         let ind_len = ind.len();
         let ind_t = Tensor::<i64>::from_array((vec![ind_len], ind))?;
         let off_t = Tensor::<i64>::from_array((vec![w], offsets))?;
-        let mut session = self.session.lock().map_err(|_| {
-            EngineError::Internal("accentor session mutex poisoned".to_string())
-        })?;
+        let mut session = crate::lock_session(&self.session);
         let outputs = session.run(ort::inputs!["ind" => ind_t, "offsets" => off_t])?;
         let (stress_shape, stress_data) = outputs["stress_logits"].try_extract_tensor::<f32>()?;
         let (yo_shape, yo_data) = outputs["yo_logits"].try_extract_tensor::<f32>()?;
