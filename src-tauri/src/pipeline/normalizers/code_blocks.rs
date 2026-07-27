@@ -156,10 +156,7 @@ impl CodeBlockHandler {
     ///
     /// This is the low-level entry used in tests and by `process()`.
     pub fn process_block(&self, code: &str, language: Option<&str>) -> String {
-        match self.mode {
-            CodeBlockMode::Brief => self.brief_description(language),
-            CodeBlockMode::Full => self.full_normalize(code, language),
-        }
+        self.process_block_with_mode(self.mode, code, language)
     }
 
     /// In-place replacement of all fenced code blocks in `tracked`.
@@ -198,11 +195,7 @@ impl CodeBlockHandler {
                 let replacement = if language.is_some_and(|l| l.eq_ignore_ascii_case("mermaid")) {
                     "Тут мермэйд диаграмма".to_string()
                 } else {
-                    let handler = CodeBlockHandler {
-                        mode: effective_mode,
-                        code_normalizer: CodeIdentifierNormalizer::new(),
-                    };
-                    handler.process_block(code, language)
+                    self.process_block_with_mode(effective_mode, code, language)
                 };
 
                 (m.start(), m.end(), replacement)
@@ -219,6 +212,20 @@ impl CodeBlockHandler {
     }
 
     // ── Private helpers ────────────────────────────────────────────────
+
+    /// Process a block under an explicit mode (used by `process()` when a
+    /// per-section directive overrides the handler's default mode).
+    fn process_block_with_mode(
+        &self,
+        mode: CodeBlockMode,
+        code: &str,
+        language: Option<&str>,
+    ) -> String {
+        match mode {
+            CodeBlockMode::Brief => self.brief_description(language),
+            CodeBlockMode::Full => self.full_normalize(code, language),
+        }
+    }
 
     fn collect_directives(&self, text: &str) -> Vec<(usize, CodeBlockMode)> {
         RE_MODE_SWITCH
