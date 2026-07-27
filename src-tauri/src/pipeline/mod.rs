@@ -303,7 +303,14 @@ impl TTSPipeline {
             let eng = &self.english_normalizer;
             let url_norm = URLPathNormalizer::new(eng, num);
             tracked.sub(re_url(), |caps| {
-                url_norm.normalize_url(caps.get(0).unwrap().as_str())
+                let url = caps.get(0).unwrap().as_str();
+                // The URL regex greedily eats sentence punctuation clinging
+                // to the end ("смотри https://example.com."), which would
+                // otherwise be read as "точка". Strip it before parsing and
+                // re-append verbatim.
+                let core = url.trim_end_matches(['.', ',', ';', ':', '!', '?']);
+                let suffix = &url[core.len()..];
+                format!("{}{}", url_norm.normalize_url(core), suffix)
             });
             tracked.sub(re_email(), |caps| {
                 url_norm.normalize_email(caps.get(0).unwrap().as_str())
