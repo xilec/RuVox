@@ -7,5 +7,6 @@
 
 pub mod bundle;
 pub mod error;
+pub mod frontend;
 
 pub use error::{EngineError, Result};
