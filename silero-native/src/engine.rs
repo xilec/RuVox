@@ -76,7 +76,9 @@ impl Engine {
                 "text has no speakable content after normalization".to_string(),
             ));
         }
-        let homosolved = self.homosolver.resolve(&prepared.sentence, true, true, true)?;
+        let homosolved = self
+            .homosolver
+            .resolve(&prepared.sentence, true, true, true)?;
         let empty: HashSet<String> = HashSet::new();
         let accented = self
             .accentor
@@ -91,7 +93,10 @@ impl Engine {
     }
 
     /// Extract a (1, …, N) f32 output tensor as a flat owned vec.
-    fn take_f32(outputs: &ort::session::SessionOutputs, name: &str) -> Result<(Vec<i64>, Vec<f32>)> {
+    fn take_f32(
+        outputs: &ort::session::SessionOutputs,
+        name: &str,
+    ) -> Result<(Vec<i64>, Vec<f32>)> {
         let (shape, data) = outputs[name]
             .try_extract_tensor::<f32>()
             .map_err(|e| EngineError::Synthesis(format!("cannot read output {name}: {e}")))?;

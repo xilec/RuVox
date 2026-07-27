@@ -12,16 +12,20 @@ use silero_native::SileroNative;
 fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
 
-    let dir = std::env::args().nth(1).map(PathBuf::from).unwrap_or_else(|| {
-        std::env::var("SILERO_NATIVE_BUNDLE")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tmp/bundle-v5"))
-    });
+    let dir = std::env::args()
+        .nth(1)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            std::env::var("SILERO_NATIVE_BUNDLE")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| {
+                    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tmp/bundle-v5")
+                })
+        });
     let out_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tmp");
 
     println!("loading bundle from {}", dir.display());
@@ -30,9 +34,15 @@ fn main() {
     println!("loaded in {:.1?}", t0.elapsed());
 
     let phrases = [
-        ("homograph", "Открыть замок было непросто, ведь ключи от этого замка потерялись."),
+        (
+            "homograph",
+            "Открыть замок было непросто, ведь ключи от этого замка потерялись.",
+        ),
         ("yo", "Ёлка и ёжик стояли под ёлкой, всё было как всегда."),
-        ("plain", "Сервер обрабатывает запросы пользователей и сохраняет данные в базу."),
+        (
+            "plain",
+            "Сервер обрабатывает запросы пользователей и сохраняет данные в базу.",
+        ),
     ];
     for (name, text) in phrases {
         for rate in [24000u32, 48000] {

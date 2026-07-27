@@ -44,16 +44,15 @@ pub struct ManifestFile {
 /// sha256 of a single file, read in 1 MiB chunks to keep memory flat even
 /// for the 117 MB homosolver model.
 fn sha256_file(path: &Path) -> Result<String> {
-    let file = File::open(path).map_err(|e| {
-        EngineError::Bundle(format!("cannot open {}: {e}", path.display()))
-    })?;
+    let file = File::open(path)
+        .map_err(|e| EngineError::Bundle(format!("cannot open {}: {e}", path.display())))?;
     let mut reader = BufReader::with_capacity(1 << 20, file);
     let mut hasher = Sha256::new();
     let mut buf = vec![0u8; 1 << 20];
     loop {
-        let n = reader.read(&mut buf).map_err(|e| {
-            EngineError::Bundle(format!("cannot read {}: {e}", path.display()))
-        })?;
+        let n = reader
+            .read(&mut buf)
+            .map_err(|e| EngineError::Bundle(format!("cannot read {}: {e}", path.display())))?;
         if n == 0 {
             break;
         }
@@ -66,12 +65,10 @@ impl Manifest {
     /// Load and parse `manifest.json` from the bundle directory.
     pub fn load(bundle_dir: &Path) -> Result<Self> {
         let path = bundle_dir.join("manifest.json");
-        let text = std::fs::read_to_string(&path).map_err(|e| {
-            EngineError::Bundle(format!("cannot read {}: {e}", path.display()))
-        })?;
-        let manifest: Self = serde_json::from_str(&text).map_err(|e| {
-            EngineError::Bundle(format!("malformed manifest.json: {e}"))
-        })?;
+        let text = std::fs::read_to_string(&path)
+            .map_err(|e| EngineError::Bundle(format!("cannot read {}: {e}", path.display())))?;
+        let manifest: Self = serde_json::from_str(&text)
+            .map_err(|e| EngineError::Bundle(format!("malformed manifest.json: {e}")))?;
         if manifest.files.is_empty() {
             return Err(EngineError::Bundle(
                 "manifest.json lists no files".to_string(),
@@ -86,9 +83,8 @@ impl Manifest {
     pub fn verify(&self, bundle_dir: &Path) -> Result<()> {
         for entry in &self.files {
             let path = bundle_dir.join(&entry.path);
-            let meta = std::fs::metadata(&path).map_err(|e| {
-                EngineError::Bundle(format!("cannot stat {}: {e}", path.display()))
-            })?;
+            let meta = std::fs::metadata(&path)
+                .map_err(|e| EngineError::Bundle(format!("cannot stat {}: {e}", path.display())))?;
             if meta.len() != entry.size {
                 return Err(EngineError::Bundle(format!(
                     "size mismatch for {}: expected {}, got {}",
@@ -166,9 +162,7 @@ mod tests {
     fn write_manifest(dir: &Path, files: &[(&str, &str, u64)]) -> PathBuf {
         let entries: Vec<serde_json::Value> = files
             .iter()
-            .map(|(path, sha, size)| {
-                serde_json::json!({"path": path, "size": size, "sha256": sha})
-            })
+            .map(|(path, sha, size)| serde_json::json!({"path": path, "size": size, "sha256": sha}))
             .collect();
         let manifest = serde_json::json!({
             "model_id": "test",
@@ -178,7 +172,8 @@ mod tests {
         });
         let path = dir.join("manifest.json");
         let mut f = File::create(&path).expect("create manifest");
-        f.write_all(manifest.to_string().as_bytes()).expect("write manifest");
+        f.write_all(manifest.to_string().as_bytes())
+            .expect("write manifest");
         path
     }
 

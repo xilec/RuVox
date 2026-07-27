@@ -138,7 +138,9 @@ impl HomoSolver {
             raw_mark.extend(&chars[end..]);
             let ids = self.tokenizer.encode(&raw_mark);
             // First occurrence of each marker (torch.where(...)[0][0]).
-            let homo_start = ids.iter().position(|id| *id == self.tokenizer.homo_start_id);
+            let homo_start = ids
+                .iter()
+                .position(|id| *id == self.tokenizer.homo_start_id);
             let homo_end = ids.iter().position(|id| *id == self.tokenizer.homo_end_id);
             match (homo_start, homo_end) {
                 (Some(homo_start), Some(homo_end)) => homos.push(Homo {
@@ -211,7 +213,10 @@ impl HomoSolver {
                 word_pred = word_pred.replace('ё', "е");
             }
             let pred_chars: Vec<char> = word_pred.chars().collect();
-            let n_vowels = pred_chars.iter().filter(|c| self.vowels.contains(c)).count();
+            let n_vowels = pred_chars
+                .iter()
+                .filter(|c| self.vowels.contains(c))
+                .count();
             let stress_idx = pred_chars.iter().position(|c| *c == '+');
             let no_stress: Vec<char> = pred_chars.iter().copied().filter(|c| *c != '+').collect();
             // Case-map onto the original word's letters (zip truncation).

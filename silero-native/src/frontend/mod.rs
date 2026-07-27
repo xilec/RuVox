@@ -64,12 +64,10 @@ impl FrontendConfig {
     /// Load `frontend.json` from the bundle directory.
     pub fn load(bundle_dir: &Path) -> Result<Self> {
         let path = bundle_dir.join("frontend.json");
-        let text = std::fs::read_to_string(&path).map_err(|e| {
-            EngineError::Bundle(format!("cannot read {}: {e}", path.display()))
-        })?;
-        serde_json::from_str(&text).map_err(|e| {
-            EngineError::Bundle(format!("malformed frontend.json: {e}"))
-        })
+        let text = std::fs::read_to_string(&path)
+            .map_err(|e| EngineError::Bundle(format!("cannot read {}: {e}", path.display())))?;
+        serde_json::from_str(&text)
+            .map_err(|e| EngineError::Bundle(format!("malformed frontend.json: {e}")))
     }
 
     /// Speaker name → model speaker id.

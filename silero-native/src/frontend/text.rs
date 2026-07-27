@@ -109,7 +109,10 @@ pub fn clean_star_text(text: &str) -> String {
 /// Upstream builds the keep-set with the regex `[^<symbols[3:]>\^]`; the
 /// `-` between `,` and `.` forms a range in that class but adds no new chars
 /// (both are already in `symbols`), so a plain set lookup is equivalent.
-pub fn prepare_text_input(text: &str, symbols_tail: &std::collections::HashSet<char>) -> PreparedText {
+pub fn prepare_text_input(
+    text: &str,
+    symbols_tail: &std::collections::HashSet<char>,
+) -> PreparedText {
     let lowered = text.to_lowercase();
     // replace('—', '–').replace('–', '–').replace('‑', '-')
     // (the middle replace is a no-op upstream and only documents intent)
@@ -175,7 +178,9 @@ mod tests {
 
     fn symbols_tail() -> HashSet<char> {
         // symbols[3:] of the v5_ru bundle frontend.json
-        "!+,-.:;?абвгдежзийклмнопрстуфхцчшщъыьэюяё–… ".chars().collect()
+        "!+,-.:;?абвгдежзийклмнопрстуфхцчшщъыьэюяё–… "
+            .chars()
+            .collect()
     }
 
     #[test]

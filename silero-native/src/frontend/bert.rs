@@ -268,10 +268,7 @@ mod tests {
 
     #[test]
     fn basic_splits_punctuation_and_keeps_never_split() {
-        let tok = BasicTokenizer::new(
-            ["[HOMO]".to_string()].into_iter().collect(),
-            true,
-        );
+        let tok = BasicTokenizer::new(["[HOMO]".to_string()].into_iter().collect(), true);
         let out = tok.tokenize("открой [HOMO] замок, пожалуйста!");
         assert_eq!(
             out,
@@ -288,7 +285,13 @@ mod tests {
 
     #[test]
     fn wordpiece_greedy_longest_match() {
-        let v = vocab(&[("за", 1), ("мок", 2), ("##мок", 3), ("замок", 4), ("[UNK]", 0)]);
+        let v = vocab(&[
+            ("за", 1),
+            ("мок", 2),
+            ("##мок", 3),
+            ("замок", 4),
+            ("[UNK]", 0),
+        ]);
         let wp = WordpieceTokenizer::new(&v, "[UNK]");
         assert_eq!(wp.tokenize("замок"), vec!["замок"]);
         assert_eq!(wp.tokenize("замоки"), vec!["[UNK]"]);

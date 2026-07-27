@@ -55,7 +55,10 @@ fn load_exceptions(path: &Path) -> Result<HashMap<String, (usize, i64)>> {
             )));
         };
         let stress: usize = stress.parse().map_err(|_| {
-            EngineError::Bundle(format!("bad stress index on exceptions.gz line {}", lineno + 1))
+            EngineError::Bundle(format!(
+                "bad stress index on exceptions.gz line {}",
+                lineno + 1
+            ))
         })?;
         let yo: i64 = yo.parse().map_err(|_| {
             EngineError::Bundle(format!("bad yo index on exceptions.gz line {}", lineno + 1))
@@ -140,9 +143,11 @@ impl Accentor {
             EngineError::Bundle(format!("ngrams.gz has no {:?} entry", config.unk_token))
         })?;
         let exceptions = load_exceptions(&bundle_dir.join("exceptions.gz"))?;
-        let stress_token = config.stress_token.chars().next().ok_or_else(|| {
-            EngineError::Bundle("accentor stress_token is empty".to_string())
-        })?;
+        let stress_token = config
+            .stress_token
+            .chars()
+            .next()
+            .ok_or_else(|| EngineError::Bundle("accentor stress_token is empty".to_string()))?;
         Ok(Self {
             ngrams,
             unk_id,
@@ -190,8 +195,10 @@ impl Accentor {
             let (cur_tokens, cur_mask): (Vec<String>, Vec<bool>) = if parts.len() == 1 {
                 (vec![word.clone()], vec![true])
             } else {
-                let mut toks: Vec<String> =
-                    parts[..parts.len() - 1].iter().map(|p| format!("{p}-")).collect();
+                let mut toks: Vec<String> = parts[..parts.len() - 1]
+                    .iter()
+                    .map(|p| format!("{p}-"))
+                    .collect();
                 toks.push(parts[parts.len() - 1].to_string());
                 let mut m: Vec<bool> = vec![true; parts.len() - 1];
                 m.push(!self.stop_words.contains(parts[parts.len() - 1]));
@@ -202,7 +209,9 @@ impl Accentor {
                 let cleaned: String = tok
                     .to_lowercase()
                     .chars()
-                    .filter(|c| ('а'..='я').contains(c) || ('А'..='Я').contains(c) || *c == 'ё' || *c == 'Ё')
+                    .filter(|c| {
+                        ('а'..='я').contains(c) || ('А'..='Я').contains(c) || *c == 'ё' || *c == 'Ё'
+                    })
                     .collect();
                 mask.push(!cleaned.is_empty() && m);
                 raw.push(tok);
@@ -414,7 +423,8 @@ impl Accentor {
             if !have_stress && have_yo && put_stress {
                 let vowel_count = raw_lower.iter().filter(|c| self.vowels.contains(c)).count();
                 let no_yo: String = clean_word.replace('ё', "е");
-                if (vowel_count == 1 && !stress_single_vowel) || skip_stress_words.contains(&no_yo) {
+                if (vowel_count == 1 && !stress_single_vowel) || skip_stress_words.contains(&no_yo)
+                {
                     out.push_str(raw_word);
                     continue;
                 }
@@ -441,8 +451,12 @@ impl Accentor {
 
             let no_yo: String = clean_word.replace('ё', "е");
             let mut stressed_vowel_ids = vec![stress_preds[word_idx]];
-            let passed_stress =
-                stress_probs[word_idx][stressed_vowel_ids[0]] > if put_stress { self.stress_threshold } else { 1.0 };
+            let passed_stress = stress_probs[word_idx][stressed_vowel_ids[0]]
+                > if put_stress {
+                    self.stress_threshold
+                } else {
+                    1.0
+                };
             let mut set_stress =
                 passed_stress && !have_stress && !skip_stress_words.contains(&no_yo);
 
@@ -471,7 +485,11 @@ impl Accentor {
             let mut word: Vec<char> = raw_word.chars().collect();
             for yo_pos in &yo_positions {
                 if stress_positions.contains(yo_pos) && set_yo && raw_lower[*yo_pos] == 'е' {
-                    word[*yo_pos] = if word[*yo_pos].is_lowercase() { 'ё' } else { 'Ё' };
+                    word[*yo_pos] = if word[*yo_pos].is_lowercase() {
+                        'ё'
+                    } else {
+                        'Ё'
+                    };
                 }
             }
 
@@ -504,9 +522,7 @@ mod tests {
         let chars: Vec<char> = "аб".chars().collect();
         let grams = word_ngrams(&chars, 1, chars.len() + 3);
         // ext = "<аб>", lens 1..=5 (capped at ext len 4)
-        let expected: Vec<&str> = vec![
-            "<", "а", "б", ">", "<а", "аб", "б>", "<аб", "аб>", "<аб>",
-        ];
+        let expected: Vec<&str> = vec!["<", "а", "б", ">", "<а", "аб", "б>", "<аб", "аб>", "<аб>"];
         assert_eq!(grams, expected);
     }
 

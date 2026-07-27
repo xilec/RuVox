@@ -24,6 +24,8 @@ fn valid_bundle_loads_all_sessions() {
         }
     };
     let manifest = Manifest::load(&dir).expect("manifest must parse");
-    manifest.verify(&dir).expect("bundle files must match sha256");
+    manifest
+        .verify(&dir)
+        .expect("bundle files must match sha256");
     Sessions::open(&dir, &manifest).expect("all six sessions must open");
 }

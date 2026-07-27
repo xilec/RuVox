@@ -28,13 +28,13 @@ Reference: `docs/plans/silero-native-port.md` (decisions, tracker),
 
 ## 4. Rust engine core
 
-- [ ] 4.1 Bundle loader: manifest parsing + sha256 verification of every file (typed errors, no silent loads)
-- [ ] 4.2 Text frontend port: `prepare_text_input` (lowercase, symbol filtering, dash normalization), symbol→id mapping; golden fixtures dumped from the unpacked upstream package
-- [ ] 4.3 Accentor: Rust ngram/exceptions lookup + `accentor_tensor.onnx` session; explicit `+` stress priority
-- [ ] 4.4 HomoSolver: BERT tokenizer port (`custom_tokenizers/bert_tokenizer.py` → Rust) + `homosolver.onnx` session
-- [ ] 4.5 Synthesis: `tts_main.onnx` + `istft.onnx` (+ `pqmf.onnx` for 24k/8k); speakers (id 0–4); default sample rate 24000; zero-duration clamping
-- [ ] 4.6 Public API: `SileroNative::load(bundle_dir)` / `synthesize(text, speaker, sample_rate) -> SynthesisResult` (wav + char-proportional timestamps + duration, `OkSynthesize`-compatible shape); panic containment at the boundary
-- [ ] 4.7 Edge-case handling per spec: empty input `bad_input`, unknown speaker/rate rejected before inference, unsupported markup stripped/rejected
+- [x] 4.1 Bundle loader: manifest parsing + sha256 verification of every file (typed errors, no silent loads)
+- [x] 4.2 Text frontend port: `prepare_text_input` (lowercase, symbol filtering, dash normalization), symbol→id mapping; golden fixtures dumped from the unpacked upstream package
+- [x] 4.3 Accentor: Rust ngram/exceptions lookup + `accentor_tensor.onnx` session; explicit `+` stress priority
+- [x] 4.4 HomoSolver: BERT tokenizer port (`custom_tokenizers/bert_tokenizer.py` → Rust) + `homosolver.onnx` session
+- [x] 4.5 Synthesis: `tts_main.onnx` + `istft.onnx` (+ `pqmf.onnx` for 24k/8k); speakers (id 0–4); default sample rate 24000; zero-duration clamping
+- [x] 4.6 Public API: `SileroNative::load(bundle_dir)` / `synthesize(text, speaker, sample_rate) -> SynthesisResult` (wav + char-proportional timestamps + duration, `OkSynthesize`-compatible shape); panic containment at the boundary
+- [x] 4.7 Edge-case handling per spec: empty input `bad_input`, unknown speaker/rate rejected before inference, unsupported markup stripped/rejected
 
 ## 5. Testing
 

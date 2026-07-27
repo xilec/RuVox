@@ -75,7 +75,12 @@ impl SileroNative {
     /// lives behind mutexes that [`lock_session`] recovers from poisoning,
     /// and ort sessions hold no cross-run Rust state.
     #[instrument(skip_all, fields(speaker, sample_rate, text_len = text.len()))]
-    pub fn synthesize(&self, text: &str, speaker: &str, sample_rate: u32) -> Result<SynthesisResult> {
+    pub fn synthesize(
+        &self,
+        text: &str,
+        speaker: &str,
+        sample_rate: u32,
+    ) -> Result<SynthesisResult> {
         let output = catch_unwind(AssertUnwindSafe(|| {
             self.engine.synthesize(text, speaker, sample_rate)
         }))
