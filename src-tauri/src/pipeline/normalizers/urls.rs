@@ -82,6 +82,11 @@ fn hex_val(b: u8) -> u8 {
     }
 }
 
+/// Russian letters only — 'ё'/'Ё' sit outside the 'а'-'я' ranges.
+fn is_cyrillic(c: char) -> bool {
+    matches!(c, 'а'..='я' | 'А'..='Я' | 'ё' | 'Ё')
+}
+
 /// Punctuation a percent-decoded URL component may yield. Readings follow
 /// the URL context ('/' is "слэш", not "делить"); '.', '-', '_' are absent
 /// because the regular chunk reading already handles them.
@@ -202,9 +207,26 @@ impl<'a> URLPathNormalizer<'a> {
             None => word.to_string(),
             Some(_en) => {
                 if !word.is_ascii() {
-                    // Non-ASCII (e.g. Cyrillic) segments are already readable;
-                    // only wiki-style underscores need to become spaces.
-                    return word.replace('_', " ");
+                    // Cyrillic is already readable; other scripts (CJK,
+                    // emoji, accented Latin) have no reading and must not
+                    // reach TTS — they act as word separators. Cyrillic
+                    // pieces pass through, ASCII pieces are transliterated.
+                    return word
+                        .replace('_', " ")
+                        .split(|c| {
+                            !(is_cyrillic(c) || c.is_ascii_alphanumeric() || c.is_whitespace())
+                        })
+                        .filter(|s| !s.is_empty())
+                        .map(|piece| {
+                            if piece.chars().any(is_cyrillic) {
+                                piece.to_string()
+                            } else {
+                                // ASCII piece: the regular transliteration path.
+                                self.transliterate_word(piece)
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ");
                 }
                 if !word.chars().any(|c| c.is_alphabetic()) {
                     return word.to_string();
@@ -247,6 +269,8 @@ impl<'a> URLPathNormalizer<'a> {
                     self.transliterate_word(r)
                 }
             })
+            // A word of only unreadable characters (emoji, CJK) reads as "".
+            .filter(|s| !s.is_empty())
             .collect::<Vec<_>>()
             .join(" ")
     }
@@ -262,6 +286,7 @@ impl<'a> URLPathNormalizer<'a> {
             .split(['-', '_'])
             .filter(|part| !part.is_empty())
             .map(|part| self.transliterate_runs(part))
+            .filter(|s| !s.is_empty())
             .collect::<Vec<_>>()
             .join(" ")
     }
@@ -453,8 +478,14 @@ impl<'a> URLPathNormalizer<'a> {
                 if segment.is_empty() {
                     continue;
                 }
+                let read = self.read_component(segment, false);
+                // A segment of only unreadable characters (emoji, CJK)
+                // reads as "" — skip it instead of leaving a dangling "слэш".
+                if read.is_empty() {
+                    continue;
+                }
                 parts.push("слэш".to_string());
-                parts.push(self.read_component(segment, false));
+                parts.push(read);
             }
         }
 
@@ -475,8 +506,11 @@ impl<'a> URLPathNormalizer<'a> {
 
         // Fragment
         if !fragment_str.is_empty() {
-            parts.push("решётка".to_string());
-            parts.push(self.read_component(fragment_str, false));
+            let read = self.read_component(fragment_str, false);
+            if !read.is_empty() {
+                parts.push("решётка".to_string());
+                parts.push(read);
+            }
         }
 
         parts
@@ -574,7 +608,11 @@ impl<'a> URLPathNormalizer<'a> {
             result.push(self.transliterate_word(&current_word));
         }
 
-        result.join(" ")
+        result
+            .into_iter()
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 
     pub fn normalize_email(&self, email: &str) -> String {
@@ -839,9 +877,21 @@ mod tests {
     #[test_case("user+tag@example.com" => "юзер плюс таг собака экзампл точка ком"; "plus_in_local_part")]
     #[test_case("user%20name@example.com" => "юзер наме собака экзампл точка ком"; "encoded_space_in_local_part")]
     #[test_case("user%28tag@example.com" => "юзер открывающая скобка таг собака экзампл точка ком"; "decoded_punctuation_in_local_part")]
+    #[test_case("user%F0%9F%98%80@example.com" => "юзер собака экзампл точка ком"; "encoded_emoji_in_local_part_dropped")]
     fn email_percent_decoding(input: &str) -> String {
         let (en, nn) = mk_normalizer();
         norm(&en, &nn).normalize_email(input)
+    }
+
+    // ---- Non-Cyrillic scripts are dropped, not leaked ----
+
+    #[test_case("https://example.com/файл😀" => "эйч ти ти пи эс двоеточие слэш слэш экзампл точка ком слэш файл"; "emoji_after_cyrillic_dropped")]
+    #[test_case("https://example.com/отчёт📊финал" => "эйч ти ти пи эс двоеточие слэш слэш экзампл точка ком слэш отчёт финал"; "emoji_separates_cyrillic_words")]
+    #[test_case("https://example.com/%F0%9F%98%80" => "эйч ти ти пи эс двоеточие слэш слэш экзампл точка ком"; "encoded_emoji_segment_dropped")]
+    #[test_case("https://example.com/搜索" => "эйч ти ти пи эс двоеточие слэш слэш экзампл точка ком"; "cjk_segment_dropped")]
+    fn url_non_cyrillic_dropped(input: &str) -> String {
+        let (en, nn) = mk_normalizer();
+        norm(&en, &nn).normalize_url(input)
     }
 
     #[test]
