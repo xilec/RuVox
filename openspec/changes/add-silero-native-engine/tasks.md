@@ -45,10 +45,10 @@ Reference: `docs/plans/silero-native-port.md` (decisions, tracker),
 
 ## 6. App integration
 
-- [ ] 6.1 `src-tauri/src/tts/`: `SileroNative` backend next to `Ttsd`, engine enum gains `silero_native`; synthesis via `spawn_blocking`
-- [ ] 6.2 Bundle downloader: GitHub Releases fetch into data dir, manifest sha256 verification, idempotent skip, partial-file quarantine, typed errors
-- [ ] 6.3 IPC: `download_silero_native_bundle` command, `bundle_download_*` events, `AvailableEngines.silero_native`, `UIConfig.engine` gains `"silero_native"`; `src/lib/tauri.ts` wrappers
-- [ ] 6.4 Settings UI: third engine option «Silero (нативный)» with availability gating, download button + live progress (Russian strings)
+- [x] 6.1 `src-tauri/src/tts/`: `SileroNative` backend next to `Ttsd`, engine enum gains `silero_native`; synthesis via `spawn_blocking`
+- [x] 6.2 Bundle downloader: GitHub Releases fetch into data dir, manifest sha256 verification, idempotent skip, partial-file quarantine, typed errors
+- [x] 6.3 IPC: `download_silero_native_bundle` command, `bundle_download_*` events, `AvailableEngines.silero_native`, `UIConfig.engine` gains `"silero_native"`; `src/lib/tauri.ts` wrappers
+- [x] 6.4 Settings UI: third engine option «Silero (нативный)» with availability gating, download button + live progress (Russian strings)
 
 ## 7. Docs and licensing
 
