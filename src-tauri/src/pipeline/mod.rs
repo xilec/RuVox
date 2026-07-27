@@ -628,11 +628,12 @@ impl TTSPipeline {
     }
 
     fn process_numbers_tracked(&self, tracked: &mut TrackedText) {
-        // Effective pattern: `(?<![.\d])(\d+)(?![.\d]|[a-zA-Zа-яА-Я])`.
-        // The regex crate lacks lookbehind/lookahead, so the boundary check is applied
-        // in the closure below after the bare \d+ match.
+        // Effective pattern: `(?<![.])(\d+)(?![.])` on top of the Unicode-aware
+        // `\b\d+\b` from re_number(). The regex crate lacks lookbehind/lookahead,
+        // and `\b` already rejects digits, letters, and underscore next to the
+        // match, so the manual guard below only needs to exclude '.' (float and
+        // version separators, owned by earlier pipeline phases).
         let snapshot = tracked.text().to_string();
-        let bytes = snapshot.as_bytes();
 
         let matches: Vec<(usize, usize, String)> = re_number()
             .find_iter(&snapshot)
@@ -640,22 +641,8 @@ impl TTSPipeline {
                 let start = m.start();
                 let end = m.end();
 
-                // Check char before: must not be '.' or digit
-                let preceded_ok = start == 0 || {
-                    let prev = snapshot[..start].chars().next_back().unwrap();
-                    prev != '.' && !prev.is_ascii_digit()
-                };
-
-                // Check char after: must not be '.', digit, or Latin/Cyrillic letter
-                let followed_ok = end >= snapshot.len() || {
-                    let next_byte = bytes[end];
-                    let next_str = &snapshot[end..];
-                    let next_ch = next_str.chars().next().unwrap();
-                    next_byte != b'.'
-                        && !next_ch.is_ascii_digit()
-                        && !next_ch.is_ascii_alphabetic()
-                        && !next_ch.is_alphabetic()
-                };
+                let preceded_ok = start == 0 || !snapshot[..start].ends_with('.');
+                let followed_ok = end >= snapshot.len() || !snapshot[end..].starts_with('.');
 
                 if preceded_ok && followed_ok {
                     let replacement = self.number_normalizer.normalize_number(m.as_str());
