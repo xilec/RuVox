@@ -299,4 +299,29 @@ mod tests {
         let wp2 = WordpieceTokenizer::new(&v2, "[UNK]");
         assert_eq!(wp2.tokenize("замок"), vec!["за", "##мок"]);
     }
+
+    #[test]
+    fn basic_keeps_mixed_cyrillic_latin_digits_and_case() {
+        let tok = BasicTokenizer::new(HashSet::new(), true);
+        let out = tok.tokenize("запусти getUserData123 версии v2.1!");
+        assert_eq!(
+            out,
+            vec!["запусти", "getUserData123", "версии", "v2", ".", "1", "!"]
+        );
+    }
+
+    #[test]
+    fn basic_never_split_keeps_punctuated_token_whole() {
+        let tok = BasicTokenizer::new(["[/HOMO]".to_string()].into_iter().collect(), true);
+        let out = tok.tokenize("текст [/HOMO] дальше");
+        assert_eq!(out, vec!["текст", "[/HOMO]", "дальше"]);
+    }
+
+    #[test]
+    fn wordpiece_overlong_word_becomes_unk() {
+        let v = vocab(&[("а", 1), ("[UNK]", 0)]);
+        let wp = WordpieceTokenizer::new(&v, "[UNK]");
+        let long_word = "а".repeat(101);
+        assert_eq!(wp.tokenize(&long_word), vec!["[UNK]"]);
+    }
 }

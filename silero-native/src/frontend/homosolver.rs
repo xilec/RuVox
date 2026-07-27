@@ -246,3 +246,39 @@ impl HomoSolver {
         Ok(out.into_iter().collect())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn word_spans_cover_cyrillic_and_stress_markers_only() {
+        let chars: Vec<char> = "з+амок, test 123 слово".chars().collect();
+        let spans = find_word_spans(&chars);
+        let words: Vec<String> = spans
+            .iter()
+            .map(|(s, e)| chars[*s..*e].iter().collect())
+            .collect();
+        assert_eq!(words, vec!["з+амок", "слово"]);
+    }
+
+    #[test]
+    fn word_spans_skip_lone_plus_runs() {
+        let chars: Vec<char> = "а ++ б".chars().collect();
+        let spans = find_word_spans(&chars);
+        let words: Vec<String> = spans
+            .iter()
+            .map(|(s, e)| chars[*s..*e].iter().collect())
+            .collect();
+        assert_eq!(words, vec!["а", "б"]);
+    }
+
+    #[test]
+    fn round_half_even_matches_torch_round() {
+        assert_eq!(round_half_even(0.5), 0.0);
+        assert_eq!(round_half_even(1.5), 2.0);
+        assert_eq!(round_half_even(2.5), 2.0);
+        assert_eq!(round_half_even(0.7), 1.0);
+        assert_eq!(round_half_even(0.4), 0.0);
+    }
+}

@@ -89,6 +89,140 @@ fn word_ngrams(text: &[char], min_len: usize, max_len: usize) -> Vec<String> {
     grams
 }
 
+/// Build `ind`/`offsets` for `accentor_tensor.onnx` from clean tokens.
+/// A word with no known ngram falls back to the UNK id (upstream does the
+/// same via `ngram_dict.get(gram, unk_id)`).
+fn model_inputs(
+    ngrams: &HashMap<String, i64>,
+    unk_id: i64,
+    words: &[String],
+) -> (Vec<i64>, Vec<i64>) {
+    let mut ind = Vec::new();
+    let mut offsets = Vec::with_capacity(words.len());
+    for word in words {
+        offsets.push(ind.len() as i64);
+        let chars: Vec<char> = word.chars().collect();
+        let grams = word_ngrams(&chars, 1, chars.len() + 3);
+        let mut count = 0usize;
+        for gram in &grams {
+            if let Some(id) = ngrams.get(gram) {
+                ind.push(*id);
+                count += 1;
+            }
+        }
+        if count == 0 {
+            ind.push(unk_id);
+        }
+    }
+    (ind, offsets)
+}
+
+/// Port of `AccentorNgram._accentuate_exception`: apply the dictionary
+/// stress/ё positions, or keep the user's `+` markers when present
+/// (`yo_char_idx == -1` means the word has no ё).
+fn accentuate_exception(
+    exceptions: &HashMap<String, (usize, i64)>,
+    stress_token: char,
+    clean_word: &str,
+    raw_word: &str,
+    have_stress: bool,
+) -> Result<String> {
+    let (exc_stress, exc_yo) = *exceptions
+        .get(clean_word)
+        .ok_or_else(|| EngineError::Internal(format!("exception word {clean_word:?} missing")))?;
+    if have_stress {
+        // Positions of user '+' markers in the raw word.
+        let user_positions: Vec<usize> = raw_word
+            .chars()
+            .enumerate()
+            .filter(|(_, c)| *c == stress_token)
+            .map(|(i, _)| i)
+            .collect();
+        let mut word: Vec<char> = raw_word.chars().filter(|c| *c != stress_token).collect();
+        if exc_yo != -1 && user_positions.contains(&((exc_yo as usize) + 1)) {
+            let yo = exc_yo as usize;
+            if yo < word.len() {
+                word[yo] = if word[yo].is_lowercase() { 'ё' } else { 'Ё' };
+            }
+        }
+        // Restore user '+' markers at their original positions.
+        let mut out = String::new();
+        let mut inserts: HashMap<usize, usize> = HashMap::new();
+        for (n, pos) in user_positions.iter().enumerate() {
+            *inserts.entry(pos - n).or_insert(0) += 1;
+        }
+        for (i, c) in word.iter().enumerate() {
+            while let Some(n) = inserts.get_mut(&i).filter(|n| **n > 0) {
+                out.push(stress_token);
+                *n -= 1;
+            }
+            out.push(*c);
+        }
+        while let Some(n) = inserts.get_mut(&word.len()).filter(|n| **n > 0) {
+            out.push(stress_token);
+            *n -= 1;
+        }
+        Ok(out)
+    } else {
+        let mut word: Vec<char> = raw_word.chars().collect();
+        if exc_yo != -1 {
+            let yo = exc_yo as usize;
+            if yo < word.len() {
+                word[yo] = if word[yo].is_lowercase() { 'ё' } else { 'Ё' };
+            }
+        }
+        let mut out = String::new();
+        for (i, c) in word.iter().enumerate() {
+            if i == exc_stress {
+                out.push(stress_token);
+            }
+            out.push(*c);
+        }
+        if exc_stress == word.len() {
+            out.push(stress_token);
+        }
+        Ok(out)
+    }
+}
+
+/// Port of `AccentorNgram._get_positions`: map vowel indices (model
+/// predictions count vowels) to char positions in the raw word.
+fn positions(
+    vowels: &HashSet<char>,
+    word: &[char],
+    stressed_vowel_ids: &[usize],
+    yo_vowel_ids: &[usize],
+) -> (Vec<usize>, Vec<usize>, usize, Option<usize>) {
+    let vowel_ids: Vec<usize> = word
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| vowels.contains(c))
+        .map(|(i, _)| i)
+        .collect();
+    let ye_ids: Vec<usize> = word
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| **c == 'е')
+        .map(|(i, _)| i)
+        .collect();
+    let stress_positions: Vec<usize> = stressed_vowel_ids
+        .iter()
+        .filter(|idx| **idx < vowel_ids.len())
+        .map(|idx| vowel_ids[*idx])
+        .collect();
+    let yo_positions: Vec<usize> = yo_vowel_ids
+        .iter()
+        .filter(|idx| **idx > 0 && *idx - 1 < ye_ids.len())
+        .map(|idx| ye_ids[*idx - 1])
+        .collect();
+    (
+        stress_positions,
+        yo_positions,
+        vowel_ids.len(),
+        vowel_ids.first().copied(),
+    )
+}
+
 /// Numerically stable softmax, matching `torch.softmax` closely enough for
 /// the 0.5 decision thresholds (exact bit parity is not required: the export
 /// self-check gates decisions, not raw logits).
@@ -221,33 +355,11 @@ impl Accentor {
         Tokens { raw, clean, mask }
     }
 
-    /// Build `ind`/`offsets` for `accentor_tensor.onnx` from clean tokens.
-    fn model_inputs(&self, words: &[String]) -> (Vec<i64>, Vec<i64>) {
-        let mut ind = Vec::new();
-        let mut offsets = Vec::with_capacity(words.len());
-        for word in words {
-            offsets.push(ind.len() as i64);
-            let chars: Vec<char> = word.chars().collect();
-            let grams = word_ngrams(&chars, 1, chars.len() + 3);
-            let mut count = 0usize;
-            for gram in &grams {
-                if let Some(id) = self.ngrams.get(gram) {
-                    ind.push(*id);
-                    count += 1;
-                }
-            }
-            if count == 0 {
-                ind.push(self.unk_id);
-            }
-        }
-        (ind, offsets)
-    }
-
     /// Run the tensor model; returns `(stress_probs, stress_preds, yo_probs,
     /// yo_preds)` per input word.
     fn model_preds(&self, words: &[String]) -> Result<ModelPreds> {
         let w = words.len();
-        let (ind, offsets) = self.model_inputs(words);
+        let (ind, offsets) = model_inputs(&self.ngrams, self.unk_id, words);
         let ind_len = ind.len();
         let ind_t = Tensor::<i64>::from_array((vec![ind_len], ind))?;
         let off_t = Tensor::<i64>::from_array((vec![w], offsets))?;
@@ -278,109 +390,6 @@ impl Accentor {
             yo_probs.push(y);
         }
         Ok((stress_probs, stress_preds, yo_probs, yo_preds))
-    }
-
-    /// Port of `AccentorNgram._get_positions`.
-    fn positions(
-        &self,
-        word: &[char],
-        stressed_vowel_ids: &[usize],
-        yo_vowel_ids: &[usize],
-    ) -> (Vec<usize>, Vec<usize>, usize, Option<usize>) {
-        let vowel_ids: Vec<usize> = word
-            .iter()
-            .enumerate()
-            .filter(|(_, c)| self.vowels.contains(c))
-            .map(|(i, _)| i)
-            .collect();
-        let ye_ids: Vec<usize> = word
-            .iter()
-            .enumerate()
-            .filter(|(_, c)| **c == 'е')
-            .map(|(i, _)| i)
-            .collect();
-        let stress_positions: Vec<usize> = stressed_vowel_ids
-            .iter()
-            .filter(|idx| **idx < vowel_ids.len())
-            .map(|idx| vowel_ids[*idx])
-            .collect();
-        let yo_positions: Vec<usize> = yo_vowel_ids
-            .iter()
-            .filter(|idx| **idx > 0 && *idx - 1 < ye_ids.len())
-            .map(|idx| ye_ids[*idx - 1])
-            .collect();
-        (
-            stress_positions,
-            yo_positions,
-            vowel_ids.len(),
-            vowel_ids.first().copied(),
-        )
-    }
-
-    /// Port of `AccentorNgram._accentuate_exception`.
-    fn accentuate_exception(
-        &self,
-        clean_word: &str,
-        raw_word: &str,
-        have_stress: bool,
-    ) -> Result<String> {
-        let (exc_stress, exc_yo) = *self.exceptions.get(clean_word).ok_or_else(|| {
-            EngineError::Internal(format!("exception word {clean_word:?} missing"))
-        })?;
-        let stress_tok = self.stress_token;
-        if have_stress {
-            // Positions of user '+' markers in the raw word.
-            let user_positions: Vec<usize> = raw_word
-                .chars()
-                .enumerate()
-                .filter(|(_, c)| *c == stress_tok)
-                .map(|(i, _)| i)
-                .collect();
-            let mut word: Vec<char> = raw_word.chars().filter(|c| *c != stress_tok).collect();
-            if exc_yo != -1 && user_positions.contains(&((exc_yo as usize) + 1)) {
-                let yo = exc_yo as usize;
-                if yo < word.len() {
-                    word[yo] = if word[yo].is_lowercase() { 'ё' } else { 'Ё' };
-                }
-            }
-            // Restore user '+' markers at their original positions.
-            let mut out = String::new();
-            let mut inserts: HashMap<usize, usize> = HashMap::new();
-            for (n, pos) in user_positions.iter().enumerate() {
-                *inserts.entry(pos - n).or_insert(0) += 1;
-            }
-            for (i, c) in word.iter().enumerate() {
-                while let Some(n) = inserts.get_mut(&i).filter(|n| **n > 0) {
-                    out.push(stress_tok);
-                    *n -= 1;
-                }
-                out.push(*c);
-            }
-            while let Some(n) = inserts.get_mut(&word.len()).filter(|n| **n > 0) {
-                out.push(stress_tok);
-                *n -= 1;
-            }
-            Ok(out)
-        } else {
-            let mut word: Vec<char> = raw_word.chars().collect();
-            if exc_yo != -1 {
-                let yo = exc_yo as usize;
-                if yo < word.len() {
-                    word[yo] = if word[yo].is_lowercase() { 'ё' } else { 'Ё' };
-                }
-            }
-            let mut out = String::new();
-            for (i, c) in word.iter().enumerate() {
-                if i == exc_stress {
-                    out.push(stress_tok);
-                }
-                out.push(*c);
-            }
-            if exc_stress == word.len() {
-                out.push(stress_tok);
-            }
-            Ok(out)
-        }
     }
 
     /// Port of `AccentorNgram.__call__` (see upstream for the decision tree;
@@ -445,7 +454,13 @@ impl Accentor {
 
             // From here: no user-set ё.
             if self.exceptions.contains_key(clean_word.as_str()) {
-                out.push_str(&self.accentuate_exception(clean_word, raw_word, have_stress)?);
+                out.push_str(&accentuate_exception(
+                    &self.exceptions,
+                    self.stress_token,
+                    clean_word,
+                    raw_word,
+                    have_stress,
+                )?);
                 continue;
             }
 
@@ -476,7 +491,7 @@ impl Accentor {
             }
 
             let (mut stress_positions, yo_positions, num_vowels, first_vowel_pos) =
-                self.positions(&raw_lower, &stressed_vowel_ids, &yo_vowel_ids);
+                positions(&self.vowels, &raw_lower, &stressed_vowel_ids, &yo_vowel_ids);
             if num_vowels == 0 {
                 out.push_str(raw_word);
                 continue;
@@ -539,5 +554,88 @@ mod tests {
         let sum: f32 = probs.iter().sum();
         assert!((sum - 1.0).abs() < 1e-6);
         assert_eq!(argmax(&probs), 2);
+    }
+
+    #[test]
+    fn model_inputs_fall_back_to_unk_for_unknown_word() {
+        let ngrams: HashMap<String, i64> = [
+            ("<а".to_string(), 1),
+            ("а".to_string(), 2),
+            ("UNK".to_string(), 0),
+        ]
+        .into_iter()
+        .collect();
+        let words = vec!["абв".to_string(), "xyz".to_string()];
+        let (ind, offsets) = model_inputs(&ngrams, 0, &words);
+        // "абв" contributes the two known grams; "xyz" has none → UNK.
+        assert_eq!(ind, vec![2, 1, 0]);
+        assert_eq!(offsets, vec![0, 2]);
+    }
+
+    #[test]
+    fn exception_with_yo_minus_one_places_stress_but_no_yo() {
+        let exceptions: HashMap<String, (usize, i64)> =
+            [("сел".to_string(), (1usize, -1i64))].into_iter().collect();
+        let out = accentuate_exception(&exceptions, '+', "сел", "сел", false).expect("exception");
+        assert_eq!(out, "с+ел");
+    }
+
+    #[test]
+    fn exception_with_yo_places_yo_and_stress() {
+        let exceptions: HashMap<String, (usize, i64)> =
+            [("сел".to_string(), (1usize, 1i64))].into_iter().collect();
+        let out = accentuate_exception(&exceptions, '+', "сел", "сел", false).expect("exception");
+        assert_eq!(out, "с+ёл");
+    }
+
+    #[test]
+    fn exception_keeps_user_stress_marker_over_dictionary() {
+        let exceptions: HashMap<String, (usize, i64)> =
+            [("сел".to_string(), (2usize, -1i64))].into_iter().collect();
+        let out = accentuate_exception(&exceptions, '+', "сел", "с+ел", true).expect("exception");
+        assert_eq!(out, "с+ел");
+    }
+
+    #[test]
+    fn load_exceptions_parses_stress_and_yo_indices() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("exceptions.gz");
+        let mut enc = flate2::write::GzEncoder::new(
+            std::fs::File::create(&path).expect("create gz"),
+            flate2::Compression::default(),
+        );
+        use std::io::Write as _;
+        enc.write_all("сел 1 1\nему 0 -1\n".as_bytes())
+            .expect("write gz");
+        enc.finish().expect("finish gz");
+        let map = load_exceptions(&path).expect("exceptions must parse");
+        assert_eq!(map.get("сел"), Some(&(1, 1)));
+        assert_eq!(map.get("ему"), Some(&(0, -1)));
+    }
+
+    #[test]
+    fn load_exceptions_rejects_malformed_line() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("exceptions.gz");
+        let mut enc = flate2::write::GzEncoder::new(
+            std::fs::File::create(&path).expect("create gz"),
+            flate2::Compression::default(),
+        );
+        use std::io::Write as _;
+        enc.write_all("сел 1\n".as_bytes()).expect("write gz");
+        enc.finish().expect("finish gz");
+        let err = load_exceptions(&path).expect_err("malformed line must fail");
+        assert!(matches!(err, EngineError::Bundle(_)), "got {err}");
+    }
+
+    #[test]
+    fn positions_single_vowel_word_reports_first_vowel() {
+        let vowels: HashSet<char> = "аоуыэиеяёю".chars().collect();
+        let word: Vec<char> = "а".chars().collect();
+        let (stress, yo, num_vowels, first) = positions(&vowels, &word, &[0], &[0]);
+        assert_eq!(stress, vec![0]);
+        assert!(yo.is_empty());
+        assert_eq!(num_vowels, 1);
+        assert_eq!(first, Some(0));
     }
 }
