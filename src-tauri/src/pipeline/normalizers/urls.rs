@@ -710,9 +710,9 @@ mod tests {
         norm(&en, &nn).normalize_email(email)
     }
 
-    #[test_case("/home/user/file.txt" => "слэш хоум слэш юзер слэш филе точка тэкст"; "unix_path")]
+    #[test_case("/home/user/file.txt" => "слэш хоум слэш юзер слэш файл точка тэкст"; "unix_path")]
     #[test_case("docker-compose.yml" => "докер дефис компосе точка имл"; "hyphenated_filename")]
-    #[test_case("~/my_file.txt" => "тильда слэш ми филе точка тэкст"; "underscore_in_filename")]
+    #[test_case("~/my_file.txt" => "тильда слэш ми файл точка тэкст"; "underscore_in_filename")]
     fn filepath_production_path(path: &str) -> String {
         let (en, nn) = mk_normalizer();
         norm(&en, &nn).normalize_filepath(path)

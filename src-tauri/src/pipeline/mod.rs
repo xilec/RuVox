@@ -903,7 +903,7 @@ mod tests {
         let mut p = TTSPipeline::new();
         assert_eq!(
             p.process("открой file.txt и config.yaml"),
-            "открой филе.тэкст и конфиг.ямл"
+            "открой файл.тэкст и конфиг.ямл"
         );
         assert_eq!(p.process("версия 1.2.3"), "версия один точка два точка три");
     }
@@ -914,7 +914,7 @@ mod tests {
         let mut p = TTSPipeline::new();
         assert_eq!(
             p.process("Файл /home/site.dev/main.py лежит тут"),
-            "Файл слэш хоум слэш сите точка дев слэш мэйн точка пи лежит тут"
+            "Файл слэш хоум слэш сайт точка дев слэш мэйн точка пи лежит тут"
         );
         // Same guard for Windows-style separators: "app.dev" after a
         // backslash must not be read as a domain. (Backslash paths are not

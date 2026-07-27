@@ -213,6 +213,28 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     m.insert("tutorial", "тьюториал");
     m.insert("company", "компани");
     m.insert("repo", "репо");
+    // Common words that digraph transliteration misreads (silent "e",
+    // vowel digraphs it does not know) — issue #139
+    m.insert("byte", "байт");
+    m.insert("change", "чейндж");
+    m.insert("device", "девайс");
+    m.insert("drive", "драйв");
+    m.insert("false", "фолс");
+    m.insert("file", "файл");
+    m.insert("guide", "гайд");
+    m.insert("image", "имидж");
+    m.insert("issue", "ишью");
+    m.insert("line", "лайн");
+    m.insert("mime", "майм");
+    m.insert("mode", "мод");
+    m.insert("page", "пейдж");
+    m.insert("pipe", "пайп");
+    m.insert("site", "сайт");
+    m.insert("size", "сайз");
+    m.insert("source", "сорс");
+    m.insert("stage", "стейдж");
+    m.insert("true", "тру");
+    m.insert("type", "тайп");
     m
 });
 
@@ -512,6 +534,33 @@ mod tests {
     #[test_case("index" => "индекс"; "index")]
     #[test_case("query" => "квери"; "query")]
     fn it_terms_data(word: &str) -> String {
+        normalizer().normalize(word, false)
+    }
+
+    // Words that digraph transliteration misreads (silent "e" etc.) — #139.
+    // "file" is the reported case: it was read "филе" while "files" already
+    // had the correct "файлс" entry.
+    #[test_case("file" => "файл"; "file")]
+    #[test_case("byte" => "байт"; "byte")]
+    #[test_case("page" => "пейдж"; "page")]
+    #[test_case("site" => "сайт"; "site")]
+    #[test_case("type" => "тайп"; "type_")]
+    #[test_case("size" => "сайз"; "size")]
+    #[test_case("line" => "лайн"; "line")]
+    #[test_case("guide" => "гайд"; "guide")]
+    #[test_case("image" => "имидж"; "image")]
+    #[test_case("stage" => "стейдж"; "stage")]
+    #[test_case("change" => "чейндж"; "change")]
+    #[test_case("issue" => "ишью"; "issue")]
+    #[test_case("device" => "девайс"; "device")]
+    #[test_case("drive" => "драйв"; "drive")]
+    #[test_case("mime" => "майм"; "mime")]
+    #[test_case("pipe" => "пайп"; "pipe")]
+    #[test_case("mode" => "мод"; "mode")]
+    #[test_case("source" => "сорс"; "source")]
+    #[test_case("true" => "тру"; "true_")]
+    #[test_case("false" => "фолс"; "false_")]
+    fn it_terms_misread_words(word: &str) -> String {
         normalizer().normalize(word, false)
     }
 
