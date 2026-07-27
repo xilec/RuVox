@@ -7,7 +7,7 @@
 use std::collections::HashSet;
 
 use serde::Deserialize;
-use silero_native::chunking::sanitize_for_silero;
+use silero_native::chunking::{sanitize_for_silero, split_into_chunks};
 use silero_native::frontend::text::prepare_text_input;
 
 #[derive(Deserialize)]
@@ -47,4 +47,35 @@ fn multiline_words_are_not_glued_after_sanitize() {
     let sanitized = sanitize_for_silero("строки\nновая");
     let out = prepare_text_input(&sanitized, &symbols_tail);
     assert_eq!(out.sentence, "строки новая");
+}
+
+#[derive(Deserialize)]
+struct SplitFixtures {
+    max_chunk_size: usize,
+    cases: Vec<SplitCase>,
+}
+
+#[derive(Deserialize)]
+struct SplitCase {
+    input: String,
+    chunks: Vec<(String, usize)>,
+}
+
+#[test]
+fn split_matches_ttsd_golden() {
+    let raw = include_str!("fixtures/chunking/split.json");
+    let fixtures: SplitFixtures = serde_json::from_str(raw).expect("fixture JSON must parse");
+    assert_eq!(
+        silero_native::chunking::MAX_CHUNK_SIZE,
+        fixtures.max_chunk_size,
+        "MAX_CHUNK_SIZE drifted from ttsd"
+    );
+    for case in &fixtures.cases {
+        assert_eq!(
+            split_into_chunks(&case.input),
+            case.chunks,
+            "split mismatch for input of {} chars",
+            case.input.chars().count()
+        );
+    }
 }

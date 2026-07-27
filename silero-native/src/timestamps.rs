@@ -46,22 +46,37 @@ fn round3(x: f32) -> f32 {
 /// Distribute `chunk_duration` across the words of `text`, char-proportionally.
 /// Returns an empty vec when the text has no words.
 pub fn estimate_timestamps(text: &str, chunk_duration: f32) -> Vec<WordTimestamp> {
-    let words = extract_words_with_positions(text);
-    let total_chars: usize = words.iter().map(|(w, _, _)| w.chars().count()).sum();
-    if total_chars == 0 || chunk_duration <= 0.0 {
-        return Vec::new();
-    }
-    let mut timestamps = Vec::with_capacity(words.len());
-    let mut current = 0.0f32;
-    for (word, start, end) in words {
-        let word_duration = (word.chars().count() as f32 / total_chars as f32) * chunk_duration;
-        timestamps.push(WordTimestamp {
-            word,
-            start: round3(current),
-            end: round3(current + word_duration),
-            original_pos: (start, end),
-        });
-        current += word_duration;
+    estimate_timestamps_chunked(&[(text, 0, chunk_duration)])
+}
+
+/// Chunked variant of [`estimate_timestamps`], porting ttsd's
+/// `estimate_timestamps_chunked`: each entry is
+/// `(chunk_text, text_offset, chunk_duration)` — the chunk's duration is
+/// distributed across its words char-proportionally, `text_offset` shifts
+/// `original_pos` back into full-text coordinates, and the audio timeline
+/// advances by the accumulated chunk durations.
+pub fn estimate_timestamps_chunked(chunks: &[(&str, usize, f32)]) -> Vec<WordTimestamp> {
+    let mut timestamps = Vec::new();
+    let mut audio_offset = 0.0f32;
+    for &(chunk_text, text_offset, chunk_duration) in chunks {
+        let words = extract_words_with_positions(chunk_text);
+        let total_chars: usize = words.iter().map(|(w, _, _)| w.chars().count()).sum();
+        if total_chars == 0 || chunk_duration <= 0.0 {
+            audio_offset += chunk_duration.max(0.0);
+            continue;
+        }
+        let mut current = 0.0f32;
+        for (word, start, end) in words {
+            let word_duration = (word.chars().count() as f32 / total_chars as f32) * chunk_duration;
+            timestamps.push(WordTimestamp {
+                word,
+                start: round3(audio_offset + current),
+                end: round3(audio_offset + current + word_duration),
+                original_pos: (text_offset + start, text_offset + end),
+            });
+            current += word_duration;
+        }
+        audio_offset += chunk_duration;
     }
     timestamps
 }
@@ -94,5 +109,28 @@ mod tests {
     fn no_words_no_timestamps() {
         assert!(estimate_timestamps("… — !", 1.0).is_empty());
         assert!(estimate_timestamps("текст", 0.0).is_empty());
+    }
+
+    #[test]
+    fn chunked_shifts_time_and_positions() {
+        let ts = estimate_timestamps_chunked(&[("аа бб", 0, 1.0), ("вв гг", 100, 2.0)]);
+        assert_eq!(ts.len(), 4);
+        // Second chunk starts where the first ended.
+        assert!((ts[2].start - 1.0).abs() < 2e-3);
+        assert!((ts[3].end - 3.0).abs() < 2e-3);
+        // Positions are shifted into full-text coordinates.
+        assert_eq!(ts[2].original_pos, (100, 102));
+        assert_eq!(ts[3].original_pos, (103, 105));
+        for pair in ts.windows(2) {
+            assert!(pair[0].end <= pair[1].start + 1e-3);
+        }
+    }
+
+    #[test]
+    fn chunked_skips_wordless_chunks_but_keeps_the_timeline() {
+        let ts = estimate_timestamps_chunked(&[("… !", 0, 1.5), ("слова", 10, 1.0)]);
+        assert_eq!(ts.len(), 1);
+        assert!((ts[0].start - 1.5).abs() < 1e-3);
+        assert_eq!(ts[0].original_pos, (10, 15));
     }
 }

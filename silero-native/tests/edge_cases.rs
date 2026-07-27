@@ -88,3 +88,31 @@ fn multiline_text_synthesizes_without_gluing_words() {
     let words: Vec<&str> = result.timestamps.iter().map(|t| t.word.as_str()).collect();
     assert_eq!(words, vec!["строки", "новая"]);
 }
+
+#[test]
+fn long_text_is_chunked_with_monotonic_timestamps() {
+    let Some(engine) = engine() else { return };
+    // 1000 chars > MAX_CHUNK_SIZE (900) → at least two chunks. The split
+    // itself is pinned by unit + golden tests; here we check the end-to-end
+    // contract: audio concatenated, timeline monotonic, duration summed.
+    let text = "Это тест. ".repeat(100);
+    assert!(text.chars().count() > silero_native::chunking::MAX_CHUNK_SIZE);
+    let result = engine
+        .synthesize(&text, "aidar", 24000)
+        .expect("long text must synthesize in chunks");
+    assert!(result.duration_sec > 0.0);
+    assert!(result.timestamps.len() > 100);
+    for pair in result.timestamps.windows(2) {
+        assert!(
+            pair[0].end <= pair[1].start + 1e-3,
+            "timestamps must be monotonic: {:?}",
+            pair
+        );
+    }
+    let last_end = result.timestamps.last().map(|t| t.end).unwrap_or(0.0);
+    assert!(
+        last_end <= result.duration_sec + 1e-3,
+        "last word must end within the total duration: {last_end} vs {}",
+        result.duration_sec
+    );
+}

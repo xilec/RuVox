@@ -17,7 +17,7 @@ use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 
 use ort::session::Session;
-use tracing::instrument;
+use tracing::{debug, instrument};
 
 pub use engine::Engine;
 pub use error::{EngineError, Result};
@@ -59,6 +59,29 @@ pub struct SileroNative {
     engine: Engine,
 }
 
+/// One synthesized (sub-)chunk: its text, char offset in the full input and
+/// the raw engine output.
+struct ChunkOutput {
+    text: String,
+    offset: usize,
+    output: engine::EngineOutput,
+}
+
+/// The exported `tts_main` has the decoder's positional table baked in at a
+/// fixed size (5000 frames; the torch reference grows it dynamically, so
+/// ttsd never hit this). A chunk whose predicted duration exceeds the table
+/// fails inside ONNX Runtime with a broadcast error on the `pos_encoder`
+/// Add node — the signal to re-split the chunk and retry.
+fn is_positional_overflow(e: &EngineError) -> bool {
+    match e {
+        EngineError::Ort(err) => {
+            let msg = err.to_string();
+            msg.contains("pos_encoder") || msg.contains("Attempting to broadcast")
+        }
+        _ => false,
+    }
+}
+
 impl SileroNative {
     /// Load and verify the model bundle, open all ONNX sessions.
     pub fn load(bundle_dir: impl AsRef<Path>) -> Result<Self> {
@@ -67,22 +90,24 @@ impl SileroNative {
         })
     }
 
-    /// Synthesize one chunk of text at `sample_rate` (8000/24000/48000;
-    /// the engine default used by callers is 24000).
+    /// Synthesize one chunk, re-splitting it in half when the exported
+    /// decoder's positional table overflows. Sub-chunks are appended to
+    /// `outputs` in order, with char offsets into the full input text.
     ///
     /// The inference core runs under `catch_unwind`: an ONNX Runtime panic
     /// becomes a typed `Synthesis` error instead of crossing the engine
     /// boundary. `AssertUnwindSafe` is sound here because all mutable state
     /// lives behind mutexes that [`lock_session`] recovers from poisoning,
     /// and ort sessions hold no cross-run Rust state.
-    #[instrument(skip_all, fields(speaker, sample_rate, text_len = text.len()))]
-    pub fn synthesize(
+    fn synthesize_with_fallback(
         &self,
         text: &str,
+        offset: usize,
         speaker: &str,
         sample_rate: u32,
-    ) -> Result<SynthesisResult> {
-        let output = catch_unwind(AssertUnwindSafe(|| {
+        outputs: &mut Vec<ChunkOutput>,
+    ) -> Result<()> {
+        let result = catch_unwind(AssertUnwindSafe(|| {
             self.engine.synthesize(text, speaker, sample_rate)
         }))
         .map_err(|payload| {
@@ -92,14 +117,88 @@ impl SileroNative {
                 .or_else(|| payload.downcast_ref::<String>().cloned())
                 .unwrap_or_else(|| "unknown panic".to_string());
             EngineError::Synthesis(format!("inference panicked: {msg}"))
-        })??;
-        let wav = encode_wav(&output.samples, output.sample_rate)?;
+        });
+
+        match result {
+            Ok(Ok(output)) => {
+                outputs.push(ChunkOutput {
+                    text: text.to_string(),
+                    offset,
+                    output,
+                });
+                Ok(())
+            }
+            Ok(Err(e)) if is_positional_overflow(&e) && text.chars().count() > 1 => {
+                // ~7 frames/char of Russian speech against the 5000-frame
+                // table means a 900-char ttsd-sized chunk can be too long;
+                // halve until it fits.
+                let half = (text.chars().count() / 2).max(1);
+                debug!(
+                    chars = text.chars().count(),
+                    "chunk overflows the decoder positional table; re-splitting"
+                );
+                for (sub, sub_offset) in chunking::split_with_limit(text, half) {
+                    self.synthesize_with_fallback(
+                        &sub,
+                        offset + sub_offset,
+                        speaker,
+                        sample_rate,
+                        outputs,
+                    )?;
+                }
+                Ok(())
+            }
+            Ok(Err(e)) => Err(e),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Synthesize text at `sample_rate` (8000/24000/48000; the engine
+    /// default used by callers is 24000).
+    ///
+    /// Text longer than [`chunking::MAX_CHUNK_SIZE`] chars is split into
+    /// sentence-boundary chunks (ttsd `split_into_chunks` parity), each chunk
+    /// is synthesized separately, and the audio is concatenated; word
+    /// timestamps are shifted by the accumulated chunk durations. A chunk
+    /// that still overflows the exported decoder's fixed positional table
+    /// is re-split in half until it fits.
+    #[instrument(skip_all, fields(speaker, sample_rate, text_len = text.len()))]
+    pub fn synthesize(
+        &self,
+        text: &str,
+        speaker: &str,
+        sample_rate: u32,
+    ) -> Result<SynthesisResult> {
         let stripped = frontend::text::strip_unsupported_markup(text);
-        let timestamps = timestamps::estimate_timestamps(&stripped, output.duration_sec);
+        let chunks = chunking::split_into_chunks(&stripped);
+
+        let mut outputs: Vec<ChunkOutput> = Vec::new();
+        for (chunk_text, chunk_start) in &chunks {
+            self.synthesize_with_fallback(
+                chunk_text,
+                *chunk_start,
+                speaker,
+                sample_rate,
+                &mut outputs,
+            )?;
+        }
+
+        let mut samples: Vec<f32> = Vec::new();
+        let mut out_rate = sample_rate;
+        let mut timings: Vec<(&str, usize, f32)> = Vec::with_capacity(outputs.len());
+        for co in &outputs {
+            out_rate = co.output.sample_rate;
+            timings.push((co.text.as_str(), co.offset, co.output.duration_sec));
+            samples.extend_from_slice(&co.output.samples);
+        }
+
+        let duration_sec = samples.len() as f32 / out_rate as f32;
+        let wav = encode_wav(&samples, out_rate)?;
+        let timestamps = timestamps::estimate_timestamps_chunked(&timings);
         Ok(SynthesisResult {
             wav,
             timestamps,
-            duration_sec: output.duration_sec,
+            duration_sec,
         })
     }
 }
