@@ -624,13 +624,7 @@ impl TTSPipeline {
             })
             .collect();
 
-        // Apply replacements via TrackedText in reverse order.
-        // Must be by byte range: a literal `replace` would also hit occurrences of
-        // the word embedded in longer tokens (e.g. "use" inside "user"), corrupting
-        // them before their own turn to be replaced.
-        for (start, end, replacement) in matches.into_iter().rev() {
-            tracked.replace_byte_range(start, end, &replacement);
-        }
+        tracked.replace_byte_ranges(matches);
     }
 
     fn process_numbers_tracked(&self, tracked: &mut TrackedText) {
@@ -672,12 +666,7 @@ impl TTSPipeline {
             })
             .collect();
 
-        // Apply in reverse order so byte offsets stay valid.
-        // Must be by byte range: a literal `replace` would also hit the digit run
-        // embedded in a longer number (e.g. "42" inside "142"), corrupting it.
-        for (start, end, replacement) in matches.into_iter().rev() {
-            tracked.replace_byte_range(start, end, &replacement);
-        }
+        tracked.replace_byte_ranges(matches);
     }
 }
 

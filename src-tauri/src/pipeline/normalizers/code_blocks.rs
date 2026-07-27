@@ -209,14 +209,7 @@ impl CodeBlockHandler {
             })
             .collect();
 
-        // Apply replacements via TrackedText in reverse order (right-to-left)
-        // so that byte offsets remain valid after each substitution.
-        // Must be by byte range: a literal `replace` substitutes ALL
-        // occurrences of the matched text, so byte-identical blocks would all
-        // receive the replacement computed for the first processed one (#84).
-        for (start, end, replacement) in blocks.into_iter().rev() {
-            tracked.replace_byte_range(start, end, &replacement);
-        }
+        tracked.replace_byte_ranges(blocks);
 
         // Remove mode-switch directives from the output (they are control markers,
         // not content that should be spoken).
