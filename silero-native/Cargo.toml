@@ -29,6 +29,9 @@ serde_json = "1"
 sha2 = "0.10"
 flate2 = "1"
 hound = "3"
+# Underscore-named crate; the only unicode-category crate available in the
+# offline registry. Used for the BERT tokenizer's category checks.
+unicode_categories = "0.1"
 
 [dev-dependencies]
 tempfile = "3"

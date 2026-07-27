@@ -5,6 +5,7 @@
 //! `sos + text + eos` symbol ids.
 
 pub mod accentor;
+pub mod bert;
 pub mod homosolver;
 pub mod text;
 
