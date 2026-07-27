@@ -13,13 +13,13 @@ export const RANDOM_SPEAKER = 'random';
 
 /** Default Silero speaker, used when the saved/picked speaker cannot be
  *  served by the active engine. */
-export const DEFAULT_SILERO_SPEAKER = 'xenia';
+const DEFAULT_SILERO_SPEAKER = 'xenia';
 
 /**
  * Map a speaker to one the given engine can serve. Currently only `random`
  * needs coercion: valid for ttsd (`silero`), rejected by `silero_native`.
  */
-export function coerceSpeakerForEngine(engine: EngineKind, speaker: string): string {
+function coerceSpeakerForEngine(engine: EngineKind, speaker: string): string {
   return engine === 'silero_native' && speaker === RANDOM_SPEAKER
     ? DEFAULT_SILERO_SPEAKER
     : speaker;
