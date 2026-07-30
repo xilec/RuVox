@@ -53,6 +53,21 @@ pre-commit, clippy and typecheck pre-push — commit and push from inside
 `nix develop` so they find the
 toolchain.
 
+### rust-analyzer MCP server
+
+The repo ships a project-level MCP config (`.kimi-code/mcp.json`) exposing
+rust-analyzer via the `rust-analyzer-mcp` server (tools: definition, references,
+hover, diagnostics, code actions, …). Prerequisites on the machine: `cargo
+install rust-analyzer-mcp` and `rust-analyzer` in `PATH`. The server starts with
+`src-tauri` as its workspace (passed as a CLI arg, resolved relative to the repo
+root). Path dependencies of `src-tauri` (e.g. the `silero-native` crate) are
+covered by this root automatically; if a genuinely separate cargo workspace
+appears in the repo, add a second named server entry to `.kimi-code/mcp.json`
+with that workspace's path as its CLI arg (the server accepts exactly one
+workspace). Cold indexing of the dependency tree takes ~1 minute; if the first
+tool call returns an empty result, indexing is still in progress — wait and
+retry the call.
+
 ## Project layout
 
 ```
