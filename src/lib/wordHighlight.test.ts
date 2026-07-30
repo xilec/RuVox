@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { WordTimestamp } from './tauri';
 import {
   applyHighlight,
   clearHighlight,
+  debugAssertSortedTimestamps,
   findActiveTimestamp,
 } from './wordHighlight';
 
@@ -25,10 +26,10 @@ describe('findActiveTimestamp', () => {
       expected: -1,
     },
     {
-      name: 'returns -1 when position is before the first timestamp',
+      name: 'before the first timestamp, highlights the upcoming first word',
       list: [ts(1, 2)],
       pos: 0,
-      expected: -1,
+      expected: 0,
     },
     {
       name: 'returns -1 when position is after the last timestamp',
@@ -49,7 +50,7 @@ describe('findActiveTimestamp', () => {
       expected: 0,
     },
     {
-      name: 'excludes the interval end (upper bound is exclusive)',
+      name: 'at the interval end of the last word, no upcoming word remains',
       list: [ts(1, 2)],
       pos: 2,
       expected: -1,
@@ -61,10 +62,16 @@ describe('findActiveTimestamp', () => {
       expected: 1,
     },
     {
-      name: 'returns -1 for a position that falls in a gap between intervals',
+      name: 'in a gap between intervals, highlights the closest upcoming word',
       list: [ts(0, 1), ts(2, 3)],
       pos: 1.5,
-      expected: -1,
+      expected: 1,
+    },
+    {
+      name: 'in a gap among several intervals, picks the immediate next word',
+      list: [ts(0, 1), ts(2, 3), ts(4, 5)],
+      pos: 1.5,
+      expected: 1,
     },
     {
       name: 'finds the interval at the start among several intervals',
@@ -92,18 +99,51 @@ describe('findActiveTimestamp', () => {
     },
     {
       // findActiveTimestamp is a binary search: it assumes timestamps are
-      // sorted ascending by start. If that invariant is violated, a real
+      // sorted ascending by start. If that invariant is violated, the real
       // match can be missed entirely — here index 2 genuinely contains
-      // position 0.5, but the search prunes it away and returns -1.
+      // position 0.5, but the search prunes it away and falls through to
+      // the upcoming-word fallback, returning index 0 (also wrong: word
+      // 0 is 100+ seconds away).
       // This case pins down current (surprising) behavior; it does not
-      // assert that -1 is the "right" answer.
+      // assert that 0 is the "right" answer.
       name: 'documents current behavior when timestamps are not sorted ascending',
       list: [ts(100, 101), ts(102, 103), ts(0, 1), ts(104, 105)],
       pos: 0.5,
-      expected: -1,
+      expected: 0,
     },
   ])('$name', ({ list, pos, expected }) => {
     expect(findActiveTimestamp(list, pos)).toBe(expected);
+  });
+});
+
+describe('debugAssertSortedTimestamps', () => {
+  // Without this a failing expect would leak the console.assert mock into
+  // the rest of the file (vitest restoreMocks defaults to false).
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** console.assert(condition, …) fires per pair — count the failing ones. */
+  function failedAssertions(spy: ReturnType<typeof vi.spyOn>) {
+    return spy.mock.calls.filter(([condition]) => condition === false);
+  }
+
+  it('stays silent on sorted timestamps', () => {
+    const assertSpy = vi.spyOn(console, 'assert').mockImplementation(() => {});
+    debugAssertSortedTimestamps([ts(0, 1), ts(1, 2), ts(2, 3)]);
+    expect(failedAssertions(assertSpy)).toHaveLength(0);
+  });
+
+  it('tolerates equal starts (non-decreasing order is enough)', () => {
+    const assertSpy = vi.spyOn(console, 'assert').mockImplementation(() => {});
+    debugAssertSortedTimestamps([ts(0, 1), ts(0.5, 2), ts(2, 3)]);
+    expect(failedAssertions(assertSpy)).toHaveLength(0);
+  });
+
+  it('flags every out-of-order pair', () => {
+    const assertSpy = vi.spyOn(console, 'assert').mockImplementation(() => {});
+    debugAssertSortedTimestamps([ts(0, 1), ts(5, 6), ts(2, 3), ts(1, 4)]);
+    expect(failedAssertions(assertSpy)).toHaveLength(2);
   });
 });
 
