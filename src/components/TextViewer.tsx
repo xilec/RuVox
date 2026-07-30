@@ -22,6 +22,9 @@ import {
   clearHighlight,
 } from '../lib/wordHighlight';
 import { plainToWordHtml } from '../lib/plainTextHtml';
+import { makeInert } from '../lib/inertContent';
+import { copyLinkAddress } from '../lib/viewerCopy';
+import { ViewerContextMenu } from './ViewerContextMenu';
 import classes from './TextViewer.module.css';
 
 // Entries without a persisted format render in the viewer default mode.
@@ -71,6 +74,15 @@ export function TextViewer({ entry }: Props) {
         return { __html: renderMarkdown(displayText) };
     }
   }, [entry, displayText, format]);
+
+  // Read-only viewer (text-display spec): neutralize interactive elements
+  // after every content render. Runs post-commit over the mounted DOM, in
+  // all display modes.
+  useEffect(() => {
+    if (containerRef.current) {
+      makeInert(containerRef.current);
+    }
+  }, [content]);
 
   // Clear highlight state whenever the displayed entry or format changes so
   // stale highlights do not bleed across navigation.
@@ -123,11 +135,37 @@ export function TextViewer({ entry }: Props) {
   // Ctrl/Cmd+A while focus/selection is inside the viewer should select
   // only the rendered text, not the whole window. Skip when the user is
   // typing in an input/textarea/contentEditable so default behavior wins.
+  // Ctrl/Cmd+C on a link copies the link URL instead (viewer-copy-actions
+  // spec); other Ctrl/Cmd+C presses keep the default copy behavior.
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
-      if (!(e.ctrlKey || e.metaKey) || e.key !== 'a') return;
+      if (!(e.ctrlKey || e.metaKey)) return;
       const container = containerRef.current;
       if (!container) return;
+
+      if (e.key === 'c') {
+        const active = document.activeElement as HTMLElement | null;
+        const focusedLink =
+          active && container.contains(active)
+            ? active.closest('a[href]')
+            : null;
+        const anchorNode = window.getSelection()?.anchorNode ?? null;
+        const anchorEl =
+          anchorNode instanceof Element ? anchorNode : anchorNode?.parentElement;
+        const selectedLink = anchorEl?.closest('a[href]') ?? null;
+        const link =
+          focusedLink ??
+          (selectedLink && container.contains(selectedLink)
+            ? selectedLink
+            : null);
+        if (link) {
+          e.preventDefault();
+          void copyLinkAddress(link.getAttribute('href') ?? '');
+        }
+        return;
+      }
+
+      if (e.key !== 'a') return;
       const active = document.activeElement as HTMLElement | null;
       if (
         active &&
@@ -149,13 +187,22 @@ export function TextViewer({ entry }: Props) {
     return () => document.removeEventListener('keydown', handleKey);
   }, []);
 
-  // Click-to-zoom: when user clicks a rendered mermaid SVG, show it in a modal.
+  // Read-only viewer (text-display spec): block link navigation and
+  // <details> toggling; keep the mermaid click-to-zoom behavior.
+  // Deps on entry?.id: on first mount there is often no entry yet, so the
+  // viewer renders a placeholder without the container — an effect with
+  // empty deps would see containerRef.current === null and never attach.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     function handleClick(e: MouseEvent) {
       const target = e.target as HTMLElement;
+      if (target.closest("a") || target.closest("summary")) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       const mermaidDiv = target.closest<HTMLElement>(".mermaid");
       if (!mermaidDiv) return;
       const svg = mermaidDiv.querySelector("svg");
@@ -165,7 +212,7 @@ export function TextViewer({ entry }: Props) {
 
     container.addEventListener("click", handleClick);
     return () => container.removeEventListener("click", handleClick);
-  }, []);
+  }, [entry?.id]);
 
   // Subscribe to playback events for word highlighting.
   useEffect(() => {
@@ -305,6 +352,8 @@ export function TextViewer({ entry }: Props) {
           dangerouslySetInnerHTML={content ?? { __html: "" }}
         />
       </ScrollArea>
+
+      <ViewerContextMenu containerRef={containerRef} />
 
       <Modal
         opened={zoomedSvg !== null}
