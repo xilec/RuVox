@@ -20,6 +20,7 @@ import {
   findActiveTimestamp,
   applyHighlight,
   clearHighlight,
+  debugAssertSortedTimestamps,
 } from '../lib/wordHighlight';
 import { plainToWordHtml } from '../lib/plainTextHtml';
 import classes from './TextViewer.module.css';
@@ -99,6 +100,7 @@ export function TextViewer({ entry }: Props) {
       .getTimestamps(entry.id)
       .then((ts) => {
         if (cancelled) return;
+        debugAssertSortedTimestamps(ts);
         timestampsRef.current = ts;
         playingEntryIdRef.current = entry.id;
       })
@@ -188,6 +190,7 @@ export function TextViewer({ entry }: Props) {
       .playbackStarted(async ({ entry_id }) => {
         try {
           const ts = await commands.getTimestamps(entry_id);
+          debugAssertSortedTimestamps(ts);
           timestampsRef.current = ts;
           playingEntryIdRef.current = entry_id;
           activeIdxRef.current = -1;
