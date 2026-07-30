@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "rust-analyzer": {
+      "command": "rust-analyzer-mcp",
+      "startupTimeoutMs": 180000,
+      "toolTimeoutMs": 120000
+    }
+  }
+}

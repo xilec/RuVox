@@ -53,6 +53,17 @@ pre-commit, clippy and typecheck pre-push — commit and push from inside
 `nix develop` so they find the
 toolchain.
 
+### rust-analyzer MCP server
+
+The repo ships a project-level MCP config (`.kimi-code/mcp.json`) exposing
+rust-analyzer via the `rust-analyzer-mcp` server (tools: definition, references,
+hover, diagnostics, code actions, …). Prerequisites on the machine: `cargo
+install rust-analyzer-mcp` and `rust-analyzer` in `PATH`. The repo root is not a
+cargo workspace, so the **first** rust-analyzer tool call in a session must be
+`rust_analyzer_set_workspace` pointing at `<repo>/src-tauri`; only then use the
+other tools. Cold indexing of the dependency tree takes ~1 minute on the first
+real request.
+
 ## Project layout
 
 ```
