@@ -34,6 +34,15 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-opener = "2"
 tauri-plugin-clipboard-manager = "2"
+# tauri-plugin-http: fetch remote images for "Copy image" (viewer context
+# menu) — webview fetch() would hit CORS on arbitrary hosts.
+tauri-plugin-http = "2"
+# tauri depends on `image` with default-features=false and only exposes
+# image-png/image-ico features, so tauri::image::Image::from_bytes cannot
+# decode JPEG/WebP out of the box. Declaring the same crate here unifies the
+# features into tauri's instance (cargo feature unification) — JPEG/WebP are
+# the typical formats of remote images copied via "Copy image" in the viewer.
+image = { version = "0.25", default-features = false, features = ["jpeg", "webp", "gif"] }
 # tauri-plugin-mpv: Tauri plugin that controls an mpv subprocess via JSON IPC.
 # Chosen over libmpv2 per project spec ("prefer tauri-plugin-mpv if viable").
 # Viable: supports custom CLI args (--af=scaletempo2, --no-video), arbitrary
