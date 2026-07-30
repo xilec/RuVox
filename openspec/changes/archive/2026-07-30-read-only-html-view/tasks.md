@@ -19,10 +19,10 @@
 ## 3. Hotkey
 
 - [x] 3.1 Extend the existing Ctrl/Cmd+A keydown handler in `TextViewer.tsx` with a Ctrl/Cmd+C branch: focus/selection on a link → copy resolved URL + `preventDefault`, otherwise default behavior
-- [ ] 3.2 Manual verification of the hotkey (no component-test infra; covered by task 4.3)
+- [x] 3.2 Manual verification of the hotkey (confirmed in the manual pass, task 4.3)
 
 ## 4. Verification
 
 - [x] 4.1 `nix develop -c pnpm test:unit` and `nix develop -c pnpm typecheck` green
 - [x] 4.2 `nix develop -c just lint` green (eslint, knip — new deps used)
-- [ ] 4.3 Manual pass: run the app, load an HTML entry (e.g. with remote images), verify link blocking + tooltip, context menu items, image bitmap copy, Ctrl+C on a link
+- [x] 4.3 Manual pass: run the app, load an HTML entry (e.g. with remote images), verify link blocking + tooltip, context menu items, image bitmap copy, Ctrl+C on a link — confirmed by the user on tmp/testHtml1.txt
