@@ -2,6 +2,7 @@
   "mcpServers": {
     "rust-analyzer": {
       "command": "rust-analyzer-mcp",
+      "args": ["src-tauri"],
       "startupTimeoutMs": 180000,
       "toolTimeoutMs": 120000
     }
