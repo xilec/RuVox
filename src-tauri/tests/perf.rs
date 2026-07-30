@@ -3,9 +3,13 @@
 //!
 //! Pre-fix `TrackedText` was O(M·n + M²): ~2 s at 256 KB and ~28 s at 1 MB
 //! of dense markup in release, minutes in debug. The reworked batch apply
-//! normalizes 1 MB in ~0.5 s (release). Budgets sit >10x above post-fix
+//! normalizes 1 MB in ~0.5 s (release). Budgets sit far above post-fix
 //! measurements so the tests stay green on loaded CI machines running debug
 //! builds, while a quadratic implementation blows straight through them.
+//!
+//! The 30 s budget is load-bearing: GitHub runners take 12-16 s for the 1 MB
+//! debug-build pass (vs ~3 s on a dev machine), so the original 10 s budget
+//! failed deterministically in CI (see PR #157's own red run).
 
 use ruvox_tauri_lib::pipeline::TTSPipeline;
 use std::sync::Mutex;
@@ -48,8 +52,8 @@ fn dense_markup_1mb_normalizes_within_budget() {
     let elapsed = start.elapsed();
 
     assert!(
-        elapsed < Duration::from_secs(10),
-        "1 MB dense markup normalized in {elapsed:?}, budget is 10 s"
+        elapsed < Duration::from_secs(30),
+        "1 MB dense markup normalized in {elapsed:?}, budget is 30 s"
     );
     assert_eq!(
         mapping.char_map.len(),
