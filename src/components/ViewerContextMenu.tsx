@@ -32,11 +32,17 @@ export function ViewerContextMenu({ containerRef }: Props) {
     const container = containerRef.current;
     if (!container) return;
 
-    function handleContextMenu(e: MouseEvent) {
+    const handleContextMenu = (e: MouseEvent) => {
       const el = e.target as HTMLElement;
       const link = el.closest('a[href]');
       const image = el.closest('img[src]');
-      const selection = window.getSelection()?.toString() ?? '';
+      // Only a selection inside the viewer counts — otherwise a selection
+      // made in another widget would pop "Копировать" for foreign text.
+      const sel = window.getSelection();
+      const selection =
+        sel && sel.anchorNode && container.contains(sel.anchorNode)
+          ? sel.toString()
+          : '';
       // No applicable action: leave the event alone and do not open a menu.
       if (!link && !image && !selection) return;
       e.preventDefault();
@@ -47,7 +53,7 @@ export function ViewerContextMenu({ containerRef }: Props) {
         imageSrc: image?.getAttribute('src') ?? null,
         selection,
       });
-    }
+    };
 
     container.addEventListener('contextmenu', handleContextMenu);
     return () => container.removeEventListener('contextmenu', handleContextMenu);

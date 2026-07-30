@@ -134,6 +134,29 @@ describe('TextViewer read-only behavior', () => {
       document.dispatchEvent(
         new KeyboardEvent('keydown', {
           key: 'c',
+          code: 'KeyC',
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+    expect(copyLinkAddress).toHaveBeenCalledWith('/ru/users/maybe_elf/');
+  });
+
+  // KeyboardEvent.key is layout-dependent ('с' under the Russian layout);
+  // matching by physical code keeps the hotkey working in both layouts.
+  it('copies the link href on Ctrl+C under the Russian keyboard layout', () => {
+    root = createRoot(host);
+    renderWith(makeEntry());
+
+    const link = host.querySelector('a');
+    link?.focus();
+    act(() => {
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'с',
+          code: 'KeyC',
           ctrlKey: true,
           bubbles: true,
           cancelable: true,

@@ -20,17 +20,8 @@ function notifyError(err: unknown): void {
   });
 }
 
-/** Copy a link URL to the clipboard, verbatim as in the source markup. */
-export async function copyLinkAddress(href: string): Promise<void> {
-  try {
-    await writeText(href);
-  } catch (err) {
-    notifyError(err);
-  }
-}
-
-/** Copy the current text selection to the clipboard. */
-export async function copySelection(text: string): Promise<void> {
+/** Write text to the clipboard; failures surface as a red notification. */
+async function copyText(text: string): Promise<void> {
   try {
     await writeText(text);
   } catch (err) {
@@ -38,13 +29,19 @@ export async function copySelection(text: string): Promise<void> {
   }
 }
 
+/** Copy a link URL to the clipboard, verbatim as in the source markup. */
+export async function copyLinkAddress(href: string): Promise<void> {
+  await copyText(href);
+}
+
+/** Copy the current text selection to the clipboard. */
+export async function copySelection(text: string): Promise<void> {
+  await copyText(text);
+}
+
 /** Copy an image URL to the clipboard, verbatim as in the source markup. */
 export async function copyImageAddress(src: string): Promise<void> {
-  try {
-    await writeText(src);
-  } catch (err) {
-    notifyError(err);
-  }
+  await copyText(src);
 }
 
 /**

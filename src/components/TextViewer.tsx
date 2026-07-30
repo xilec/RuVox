@@ -137,13 +137,15 @@ export function TextViewer({ entry }: Props) {
   // typing in an input/textarea/contentEditable so default behavior wins.
   // Ctrl/Cmd+C on a link copies the link URL instead (viewer-copy-actions
   // spec); other Ctrl/Cmd+C presses keep the default copy behavior.
+  // Matching by e.code (physical key), not e.key: under the Russian layout
+  // e.key is 'с'/'ф' and the hotkeys would silently stop working.
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
       if (!(e.ctrlKey || e.metaKey)) return;
       const container = containerRef.current;
       if (!container) return;
 
-      if (e.key === 'c') {
+      if (e.code === 'KeyC') {
         const active = document.activeElement as HTMLElement | null;
         const focusedLink =
           active && container.contains(active)
@@ -165,7 +167,7 @@ export function TextViewer({ entry }: Props) {
         return;
       }
 
-      if (e.key !== 'a') return;
+      if (e.code !== 'KeyA') return;
       const active = document.activeElement as HTMLElement | null;
       if (
         active &&
@@ -196,13 +198,21 @@ export function TextViewer({ entry }: Props) {
     const container = containerRef.current;
     if (!container) return;
 
-    function handleClick(e: MouseEvent) {
+    // Links and <summary> toggles are inert on any mouse button — middle
+    // click fires auxclick, not click, and would bypass a click-only block.
+    function blockInert(e: MouseEvent): boolean {
       const target = e.target as HTMLElement;
       if (target.closest("a") || target.closest("summary")) {
         e.preventDefault();
         e.stopPropagation();
-        return;
+        return true;
       }
+      return false;
+    }
+
+    function handleClick(e: MouseEvent) {
+      if (blockInert(e)) return;
+      const target = e.target as HTMLElement;
       const mermaidDiv = target.closest<HTMLElement>(".mermaid");
       if (!mermaidDiv) return;
       const svg = mermaidDiv.querySelector("svg");
@@ -211,7 +221,11 @@ export function TextViewer({ entry }: Props) {
     }
 
     container.addEventListener("click", handleClick);
-    return () => container.removeEventListener("click", handleClick);
+    container.addEventListener("auxclick", blockInert);
+    return () => {
+      container.removeEventListener("click", handleClick);
+      container.removeEventListener("auxclick", blockInert);
+    };
   }, [entry?.id]);
 
   // Subscribe to playback events for word highlighting.
