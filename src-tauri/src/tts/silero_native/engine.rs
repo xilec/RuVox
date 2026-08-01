@@ -19,7 +19,7 @@
 //! markup). The app pipeline never emits `[[...]]` / SSML markup, so those
 //! offsets line up with the normalized text; we then map them back to
 //! original-text offsets through the pipeline `char_mapping` with the same
-//! span-merge logic ttsd uses (`tts::piper::timestamps::map_via_spans`). When
+//! span-merge logic ttsd uses (`tts::map_via_spans`). When
 //! markup *is* present the positions degrade to an approximation — the same
 //! class of drift the ttsd path has.
 
@@ -33,7 +33,7 @@ use tokio::sync::{Mutex, RwLock};
 use tracing::{info, warn};
 
 use crate::tts::engine::{EngineKind, TtsEngine};
-use crate::tts::piper::timestamps::map_via_spans;
+use crate::tts::map_via_spans;
 use crate::tts::supervisor::Emitter;
 use crate::tts::{CharMappingEntry, SynthesizeOutput, TtsError, WordTimestamp};
 
