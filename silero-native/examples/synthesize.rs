@@ -9,6 +9,8 @@ use std::time::Instant;
 
 use silero_native::SileroNative;
 
+mod common;
+
 fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -16,16 +18,7 @@ fn main() {
         )
         .init();
 
-    let dir = std::env::args()
-        .nth(1)
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            std::env::var("SILERO_NATIVE_BUNDLE")
-                .map(PathBuf::from)
-                .unwrap_or_else(|_| {
-                    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tmp/bundle-v5")
-                })
-        });
+    let dir = common::bundle_dir_arg();
     let out_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tmp");
 
     println!("loading bundle from {}", dir.display());

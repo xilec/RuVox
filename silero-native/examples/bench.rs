@@ -6,26 +6,18 @@
 //! Usage: cargo run --release --example bench -- [bundle_dir]
 //! (default: ../tmp/bundle-v5 relative to the crate, or SILERO_NATIVE_BUNDLE).
 
-use std::path::PathBuf;
 use std::time::Instant;
 
 use silero_native::SileroNative;
+
+mod common;
 
 /// ~50 chars, mirrors the Python bench phrase in tmp/bench_python.py.
 const PHRASE: &str = "Сервер обрабатывает запросы и сохраняет данные в базу.";
 const RUNS: usize = 20;
 
 fn main() {
-    let dir = std::env::args()
-        .nth(1)
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            std::env::var("SILERO_NATIVE_BUNDLE")
-                .map(PathBuf::from)
-                .unwrap_or_else(|_| {
-                    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tmp/bundle-v5")
-                })
-        });
+    let dir = common::bundle_dir_arg();
 
     let engine = SileroNative::load(&dir).expect("bundle must load");
 
