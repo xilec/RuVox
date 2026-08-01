@@ -96,11 +96,12 @@ sudo apt install -y nodejs
 corepack enable pnpm
 ```
 
-## 5. (Optional) Python 3.12 + uv — for Silero
+## 5. (Optional) Python 3.12 + uv — for the Python Silero engine (`ttsd`)
 
-Skip this whole section if you only want Piper (the default engine);
-the Settings dialog will simply grey out the Silero option, and Piper
-handles every narration in-process.
+Skip this whole section if you only want Piper (the default engine) or
+the native Silero engine — both synthesize in-process without Python;
+the Settings dialog will simply grey out the Python Silero option, and
+the other engines handle every narration locally.
 
 ```bash
 sudo apt install -y python3.12 python3.12-venv

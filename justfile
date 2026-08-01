@@ -49,10 +49,10 @@ lint:
 validate:
     pnpm dlx @fission-ai/openspec@1.6.0 validate --specs --strict
 
-# Production build, slim (Piper only)
+# Production build, slim (Piper + native Silero)
 build:
     nix build .#ruvox
 
-# Production build, full (Piper + Silero sidecar)
+# Production build, full (adds the Python Silero sidecar)
 build-full:
     nix build .#ruvox-with-silero
