@@ -29,6 +29,8 @@ use std::path::PathBuf;
 use serde::Deserialize;
 use silero_native::engine::Engine;
 
+mod common;
+
 const WAV_TOL: f32 = 1e-3;
 
 #[derive(Deserialize)]
@@ -49,13 +51,6 @@ struct FixtureCase {
     torch_max_abs_diff: f32,
 }
 
-fn bundle_dir() -> Option<PathBuf> {
-    if let Ok(dir) = std::env::var("SILERO_NATIVE_BUNDLE") {
-        return Some(PathBuf::from(dir));
-    }
-    Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tmp/bundle-v5"))
-}
-
 /// Decode an int16 mono WAV fixture back to f32 in [-1, 1].
 fn read_wav(path: &std::path::Path) -> Vec<f32> {
     let mut reader = hound::WavReader::open(path)
@@ -73,12 +68,8 @@ fn frame_len(sample_rate: u32) -> usize {
 
 #[test]
 fn engine_output_matches_torch_apply_tts_golden() {
-    let dir = match bundle_dir() {
-        Some(d) if d.join("manifest.json").exists() => d,
-        _ => {
-            eprintln!("bundle not found, skipping (set SILERO_NATIVE_BUNDLE)");
-            return;
-        }
+    let Some(dir) = common::gated_bundle_dir() else {
+        return;
     };
     let engine = Engine::load(&dir).expect("bundle must load");
 

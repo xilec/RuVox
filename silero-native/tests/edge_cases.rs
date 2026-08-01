@@ -2,20 +2,12 @@
 //! invalid inputs must fail with typed `BadInput` before any inference runs.
 //! Bundle-gated like the other integration tests.
 
-use std::path::PathBuf;
-
 use silero_native::{EngineError, SileroNative};
 
+mod common;
+
 fn engine() -> Option<SileroNative> {
-    let dir = match std::env::var("SILERO_NATIVE_BUNDLE") {
-        Ok(dir) => PathBuf::from(dir),
-        Err(_) => PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tmp/bundle-v5"),
-    };
-    if !dir.join("manifest.json").exists() {
-        eprintln!("bundle not found, skipping (set SILERO_NATIVE_BUNDLE)");
-        return None;
-    }
-    SileroNative::load(&dir).ok()
+    SileroNative::load(common::gated_bundle_dir()?).ok()
 }
 
 #[test]

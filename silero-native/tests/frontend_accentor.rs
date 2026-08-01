@@ -7,13 +7,13 @@
 //! `tests/tools/regenerate_fixtures.sh`).
 //! Skipped when the bundle is absent (set SILERO_NATIVE_BUNDLE to override).
 
-use std::path::PathBuf;
-
 use serde::Deserialize;
 use silero_native::frontend::accentor::Accentor;
 use silero_native::frontend::homosolver::HomoSolver;
 use silero_native::frontend::text::{build_sequence, prepare_text_input};
 use silero_native::frontend::FrontendConfig;
+
+mod common;
 
 #[derive(Deserialize)]
 struct FixtureFile {
@@ -29,21 +29,10 @@ struct FixtureCase {
     sequence: Vec<i64>,
 }
 
-fn bundle_dir() -> Option<PathBuf> {
-    if let Ok(dir) = std::env::var("SILERO_NATIVE_BUNDLE") {
-        return Some(PathBuf::from(dir));
-    }
-    Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tmp/bundle-v5"))
-}
-
 #[test]
 fn accentor_pipeline_matches_upstream_golden() {
-    let dir = match bundle_dir() {
-        Some(d) if d.join("manifest.json").exists() => d,
-        _ => {
-            eprintln!("bundle not found, skipping (set SILERO_NATIVE_BUNDLE)");
-            return;
-        }
+    let Some(dir) = common::gated_bundle_dir() else {
+        return;
     };
     let config = FrontendConfig::load(&dir).expect("frontend.json must parse");
     let open = |name: &str| {
