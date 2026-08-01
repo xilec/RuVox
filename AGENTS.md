@@ -11,7 +11,7 @@
 - **Shell:** Tauri 2 (Rust-based desktop shell with native webview)
 - **Frontend:** React 18 + TypeScript 5 + Mantine 8
 - **Backend:** Rust (text normalization pipeline, storage, TTS subprocess manager, player wrapper)
-- **TTS engine:** Piper (primary, native Rust) + optional Python subprocess `ttsd` wrapping Silero TTS
+- **TTS engines:** Piper (default, native Rust via `piper-rs`), Silero v5 in-process on ONNX Runtime (`silero-native` crate), optional Python subprocess `ttsd` wrapping Silero TTS (fallback)
 
 **Goal** unchanged: normalize technical text (API, URLs, code identifiers, numbers) before passing it to Silero TTS, which cannot read English or special characters.
 
@@ -102,7 +102,7 @@ retry the call.
 │   └── devshell.nix  # Nix dev environment (Rust + Node + Python), wired into flake.nix
 ├── justfile          # Task runner (single entry point for routine commands)
 ├── lefthook.yml      # Git hooks (fmt/ruff pre-commit, clippy/typecheck pre-push)
-└── flake.nix         # Production build: `.#ruvox` (slim, Piper only) and `.#ruvox-with-silero` (full, Piper + ttsd Python sidecar)
+└── flake.nix         # Production build: `.#ruvox` (slim, Piper + native Silero) and `.#ruvox-with-silero` (full, adds the ttsd Python sidecar)
 ```
 
 ## Spec-driven workflow (OpenSpec)

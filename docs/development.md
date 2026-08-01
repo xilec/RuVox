@@ -36,7 +36,7 @@ nix develop -c pnpm tauri dev
 │   ├── src/
 │   │   ├── pipeline/       # Normalization: tracked_text, normalizers/, html_extractor, constants
 │   │   ├── storage/        # JSON history + audio files (schema in storage/schema.rs)
-│   │   ├── tts/            # ttsd subprocess manager
+│   │   ├── tts/            # TTS engines: piper, silero_native, ttsd subprocess manager
 │   │   ├── player/         # tauri-plugin-mpv wrapper (ensure_mpv_alive, seek-suppress)
 │   │   ├── commands/       # Tauri commands (#[tauri::command])
 │   │   ├── tray/           # System tray (close-to-tray, "Выход")
@@ -52,6 +52,7 @@ nix develop -c pnpm tauri dev
 │       ├── timestamps.py   # Word timestamp estimation
 │       ├── protocol.py     # Request/response types
 │       └── main.py         # Main stdin→stdout JSON loop
+├── silero-native/          # Native Silero v5 engine (ONNX Runtime, no Python)
 ├── docs/                   # Documentation (this directory)
 ├── scripts/                # Utilities (launch-prod, rebuild_prod)
 ├── nix/
@@ -84,7 +85,7 @@ nix build .#ruvox
 ./result/bin/ruvox
 ```
 
-`.#ruvox` builds the Tauri release binary, wraps it via `wrapProgram` (runtime `LD_LIBRARY_PATH` + `GIO_EXTRA_MODULES`), and links `ttsd` (the Silero subprocess) and `mpv` into `PATH`.
+`.#ruvox` builds the slim Tauri release binary (Piper + native Silero), wraps it via `wrapProgram` (runtime `LD_LIBRARY_PATH` + `GIO_EXTRA_MODULES`), and puts `mpv` in `PATH`. The `.#ruvox-with-silero` variant additionally links `ttsd` (the Python Silero subprocess) into `PATH`.
 
 > **First `nix build` run:** the `frontend` derivation uses `pnpm.fetchDeps` with `lib.fakeHash` — Nix will fail with a hash mismatch and print the real hash; substitute it into `flake.nix` and rerun the build. This is the standard pnpm2nix procedure.
 
