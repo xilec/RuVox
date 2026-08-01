@@ -8,9 +8,10 @@
 //! truncated), exactly as upstream — the engine does not duplicate it.
 
 use std::collections::HashSet;
+use std::ops::AddAssign;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use ort::session::Session;
 use ort::value::Tensor;
@@ -24,6 +25,44 @@ use crate::frontend::homosolver::HomoSolver;
 use crate::frontend::text::{build_sequence, prepare_text_input};
 use crate::lock_session;
 
+/// Per-stage wall times of one synthesis, collected with `Instant` around
+/// each pipeline stage (a handful of clock reads per call — negligible
+/// against an ~100 ms synthesis). Drives the per-stage breakdown printed by
+/// `examples/bench.rs` and recorded in `docs/benchmarks.md` (issue #164).
+///
+/// `wav_encode` / `concat_timestamps` live outside [`Engine`] (in
+/// `SileroNative::synthesize`), so they stay zero here.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct StageTimings {
+    /// `prepare_text_input` (normalize + symbol filter).
+    pub frontend_text: Duration,
+    pub homosolver: Duration,
+    pub accentor: Duration,
+    pub build_sequence: Duration,
+    pub tts_main: Duration,
+    pub istft: Duration,
+    /// PQMF downsample (24k/8k only; zero for 48k pass-through).
+    pub pqmf: Duration,
+    /// 16-bit PCM WAV encode of the concatenated samples.
+    pub wav_encode: Duration,
+    /// Chunk concat + word-timestamp estimation.
+    pub concat_timestamps: Duration,
+}
+
+impl AddAssign for StageTimings {
+    fn add_assign(&mut self, rhs: Self) {
+        self.frontend_text += rhs.frontend_text;
+        self.homosolver += rhs.homosolver;
+        self.accentor += rhs.accentor;
+        self.build_sequence += rhs.build_sequence;
+        self.tts_main += rhs.tts_main;
+        self.istft += rhs.istft;
+        self.pqmf += rhs.pqmf;
+        self.wav_encode += rhs.wav_encode;
+        self.concat_timestamps += rhs.concat_timestamps;
+    }
+}
+
 /// Raw synthesis output (pre-WAV).
 pub struct EngineOutput {
     /// f32 samples in [-1, 1] at `sample_rate`.
@@ -32,6 +71,8 @@ pub struct EngineOutput {
     pub duration_sec: f32,
     /// Text after the full frontend (what was actually spoken).
     pub spoken_text: String,
+    /// Per-stage wall times of this chunk's synthesis.
+    pub stage_timings: StageTimings,
 }
 
 /// The in-process Silero v5 engine.
@@ -120,25 +161,33 @@ impl Engine {
     /// timestamps are in stripped-text coordinates, so a second strip here
     /// would be both redundant and contractually confusing). Direct
     /// `Engine` callers with markup-bearing text must strip first.
-    fn prepare(&self, text: &str) -> Result<(Vec<i64>, String)> {
+    fn prepare(&self, text: &str, timings: &mut StageTimings) -> Result<(Vec<i64>, String)> {
         // ttsd parity (`sanitize_for_silero`): the pipeline keeps `\n\n` in
         // the normalized text, and the symbol filter below would drop `\n`
         // silently, gluing the surrounding words into one.
         let sanitized = crate::chunking::sanitize_for_silero(text);
+        let t = Instant::now();
         let prepared = prepare_text_input(&sanitized, &self.symbols_tail);
+        timings.frontend_text += t.elapsed();
         if !prepared.has_text {
             return Err(EngineError::BadInput(
                 "text has no speakable content after normalization".to_string(),
             ));
         }
+        let t = Instant::now();
         let homosolved = self.homosolver.resolve(&prepared.sentence)?;
+        timings.homosolver += t.elapsed();
+        let t = Instant::now();
         let accented = self.accentor.accentuate(&homosolved)?;
+        timings.accentor += t.elapsed();
+        let t = Instant::now();
         let sequence = build_sequence(
             &accented,
             &self.config.symbol_to_id,
             &self.config.sos_token,
             &self.config.eos_token,
         )?;
+        timings.build_sequence += t.elapsed();
         Ok((sequence, accented))
     }
 
@@ -179,7 +228,8 @@ impl Engine {
         if text.trim().is_empty() {
             return Err(EngineError::BadInput("empty text".to_string()));
         }
-        let (sequence, spoken_text) = self.prepare(text)?;
+        let mut timings = StageTimings::default();
+        let (sequence, spoken_text) = self.prepare(text, &mut timings)?;
 
         // tts_main: sequence + speaker + neutral dur/pitch → mag/x/y.
         let len = sequence.len();
@@ -187,6 +237,7 @@ impl Engine {
         let spk_t = Tensor::<i64>::from_array((vec![1usize], vec![speaker_id]))?;
         let durs_t = Tensor::<f32>::from_array((vec![1usize, len], vec![1.0f32; len]))?;
         let pitch_t = Tensor::<f32>::from_array((vec![1usize, len], vec![1.0f32; len]))?;
+        let t = Instant::now();
         let (mag_shape, mag, x, y) = {
             let mut session = lock_session(&self.tts_main);
             let outputs = session.run(
@@ -197,21 +248,25 @@ impl Engine {
             let (_, y) = Self::take_f32(&outputs, "y")?;
             (mag_shape, mag, x, y)
         };
+        timings.tts_main += t.elapsed();
         debug!(mel_shape = ?mag_shape, "tts_main done");
 
         // istft: mag/x/y → 48 kHz waveform.
         let mag_t = Tensor::<f32>::from_array((mag_shape.clone(), mag))?;
         let x_t = Tensor::<f32>::from_array((mag_shape.clone(), x))?;
         let y_t = Tensor::<f32>::from_array((mag_shape, y))?;
+        let t = Instant::now();
         let audio_48k = {
             let mut session = lock_session(&self.istft);
             let outputs = session.run(ort::inputs!["mag" => mag_t, "x" => x_t, "y" => y_t])?;
             let (_, audio) = Self::take_f32(&outputs, "audio")?;
             audio
         };
+        timings.istft += t.elapsed();
         debug!(samples_48k = audio_48k.len(), "istft done");
 
         // PQMF downsample for 24k/8k; 48k passes through.
+        let t = Instant::now();
         let (samples, out_rate) = match sample_rate {
             r if r == self.config.native_sample_rate => (audio_48k, r),
             r => {
@@ -242,12 +297,14 @@ impl Engine {
                 (band, r)
             }
         };
+        timings.pqmf += t.elapsed();
 
         Ok(EngineOutput {
             duration_sec: samples.len() as f32 / out_rate as f32,
             samples,
             sample_rate: out_rate,
             spoken_text,
+            stage_timings: timings,
         })
     }
 }

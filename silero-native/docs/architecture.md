@@ -64,6 +64,20 @@ unsupported sample rate), `synthesis_failed`.
   (regenerate with `tmp/gen_parity_fixtures.py`-style scripts — always
   after `unpack_q_model()`, or homograph resolution differs; this is a
   documented trap).
+- **Profile a synthesis (issue #164).** The bench example reports a
+  per-stage breakdown (frontend / tts_main / istft / pqmf / wav encode)
+  per sample rate:
+  `nix develop -c cargo run --release --manifest-path silero-native/Cargo.toml --example bench`.
+  The crate's `[profile.release]` carries `debug = "line-tables-only"`,
+  so `perf` attributes samples to source lines:
+  `nix develop -c bash -c 'cargo build --release --manifest-path silero-native/Cargo.toml --example bench && perf record -g --call-graph dwarf ./silero-native/target/release/examples/bench && perf report'`.
+  For a flamegraph swap `perf report` for
+  `nix shell nixpkgs#flamegraph -c bash -c 'perf script | stackcollapse-perf.pl | flamegraph.pl > tmp/flamegraph.svg'`
+  (or `nix shell nixpkgs#flamegraph -c cargo flamegraph --example bench`,
+  which wraps the same pipeline).
+  If `perf record` fails with a permissions error, check
+  `kernel.perf_event_paranoid` (`-1`/`1` allows user-space profiling) and
+  `kernel.kptr_restrict` — do not change system settings silently.
 - **Inspect intermediate tensors.** `tts_main.onnx` exposes `dur_hat`
   (per-symbol frame durations, frame = 12.5 ms) as its 4th output;
   `EngineOutput.spoken_text` carries the accented text the frontend

@@ -12,8 +12,9 @@ Phrase: `Сервер обрабатывает запросы и сохраня�
 chars), speaker `aidar`, 24000 Hz.
 
 - **Native**: `cargo run --release --example bench` — 1 warmup + 20 timed
-  runs of `SileroNative::synthesize` (full pipeline: frontend → tts_main →
-  istft → pqmf_24k → WAV encode), engine load excluded.
+  runs of `SileroNative::synthesize` per sample rate (full pipeline:
+  frontend → tts_main → istft → pqmf → WAV encode), engine load excluded.
+  The headline comparison number is the 24000 Hz run.
 - **Python**: `tmp/bench_python.py` — 1 warmup + 5 timed runs of
   `pack.apply_tts` on the same phrase/rate.
 
@@ -25,6 +26,40 @@ chars), speaker `aidar`, 24000 Hz.
 | Python torch `apply_tts` | 144.4 ms | — | 142.5 ms | 146.0 ms |
 
 **Speedup: ~1.3x** (warm, full pipeline on both sides).
+
+## Per-stage breakdown (issue #164)
+
+Date: 2026-08-01, same machine. Bench example now reports per-stage means
+(`StageTimings` in the engine, summed over chunks) at each sample rate,
+same phrase/speaker, 1 warmup + 20 timed runs per rate. Baseline below is
+**before any optimization**, same commit that introduced the breakdown.
+
+| stage | mean ms (24k) | % |
+|---|---|---|
+| frontend_text | 0.01 | 0.0% |
+| homosolver | 0.00 | 0.0% |
+| accentor | 0.29 | 0.3% |
+| build_sequence | 0.01 | 0.0% |
+| tts_main | 85.4 | 80.3% |
+| istft | 16.5 | 15.5% |
+| pqmf | 3.5 | 3.3% |
+| wav_encode | 0.67 | 0.6% |
+| concat_timestamps | 0.03 | 0.0% |
+
+Totals per rate: 24k mean 106.4 ms / p95 122.3; 48k mean 88.8 ms / p95
+98.7; 8k mean 103.6 ms / p95 123.3. Engine load ~437 ms (unchanged).
+
+Findings:
+
+- **tts_main dominates (~80%)**, istft is ~16%, everything else is noise.
+  The text frontend (homosolver BERT + ngram accentor) is < 0.5% —
+  frontend optimization is off the table.
+- **48k PQMF path cost: zero** (48k bypasses PQMF; `pqmf` stage reads
+  0.00). PQMF downsample to 24k costs ~3.5 ms, to 8k ~2.2 ms.
+- tts_main/istft run the *same* graphs at every rate, yet read slower at
+  the first-measured rate (24k: 85.4 vs 48k: 71.4) — CPU frequency ramp
+  over the run order. Treat cross-rate deltas of rate-independent stages
+  as noise; the headline methodology number stays 24k, same as before.
 
 ## Engine load time (issue #165)
 
