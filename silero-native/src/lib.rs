@@ -15,10 +15,11 @@ pub mod timestamps;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
+use std::time::Instant;
 
 use tracing::{debug, instrument};
 
-pub use engine::Engine;
+pub use engine::{Engine, StageTimings};
 pub use error::{EngineError, Result};
 pub use timestamps::WordTimestamp;
 
@@ -41,6 +42,8 @@ pub struct SynthesisResult {
     pub wav: Vec<u8>,
     pub timestamps: Vec<WordTimestamp>,
     pub duration_sec: f32,
+    /// Per-stage wall times, summed over chunks (issue #164 profiling).
+    pub stage_timings: StageTimings,
 }
 
 impl std::fmt::Debug for SynthesisResult {
@@ -186,6 +189,8 @@ impl SileroNative {
             )?;
         }
 
+        let mut timings_total = StageTimings::default();
+        let t = Instant::now();
         let mut samples: Vec<f32> = Vec::new();
         let mut timings: Vec<(&str, usize, f32)> = Vec::with_capacity(outputs.len());
         for co in &outputs {
@@ -194,15 +199,20 @@ impl SileroNative {
             debug_assert_eq!(co.output.sample_rate, sample_rate);
             timings.push((co.text.as_str(), co.offset, co.output.duration_sec));
             samples.extend_from_slice(&co.output.samples);
+            timings_total += co.output.stage_timings;
         }
+        let timestamps = timestamps::estimate_timestamps_chunked(&timings);
+        timings_total.concat_timestamps += t.elapsed();
 
         let duration_sec = samples.len() as f32 / sample_rate as f32;
+        let t = Instant::now();
         let wav = encode_wav(&samples, sample_rate)?;
-        let timestamps = timestamps::estimate_timestamps_chunked(&timings);
+        timings_total.wav_encode += t.elapsed();
         Ok(SynthesisResult {
             wav,
             timestamps,
             duration_sec,
+            stage_timings: timings_total,
         })
     }
 }
