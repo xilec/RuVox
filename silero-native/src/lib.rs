@@ -187,16 +187,17 @@ impl SileroNative {
         }
 
         let mut samples: Vec<f32> = Vec::new();
-        let mut out_rate = sample_rate;
         let mut timings: Vec<(&str, usize, f32)> = Vec::with_capacity(outputs.len());
         for co in &outputs {
-            out_rate = co.output.sample_rate;
+            // The engine always returns audio at the requested rate — take
+            // it from the argument, not from "the last chunk wins".
+            debug_assert_eq!(co.output.sample_rate, sample_rate);
             timings.push((co.text.as_str(), co.offset, co.output.duration_sec));
             samples.extend_from_slice(&co.output.samples);
         }
 
-        let duration_sec = samples.len() as f32 / out_rate as f32;
-        let wav = encode_wav(&samples, out_rate)?;
+        let duration_sec = samples.len() as f32 / sample_rate as f32;
+        let wav = encode_wav(&samples, sample_rate)?;
         let timestamps = timestamps::estimate_timestamps_chunked(&timings);
         Ok(SynthesisResult {
             wav,
