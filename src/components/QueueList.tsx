@@ -153,9 +153,15 @@ export function QueueList() {
   // Single Menu instance shared by all queue items — cheaper than one per item
   // and avoids stacking many hidden Menu portals that can interfere with other
   // popovers (e.g. the theme dropdown in the header).
-  const [menu, setMenu] = useState<
-    { entry: TextEntry; x: number; y: number } | null
-  >(null);
+  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(
+    null,
+  );
+  // Resolve the live entry at render time: the status may change while the
+  // menu is open (e.g. synthesis finishes), and actions must see the current
+  // state, not the snapshot taken at right-click time.
+  const menuEntry = menu
+    ? (entries.find((e) => e.id === menu.id) ?? null)
+    : null;
 
   const loadEntries = useCallback(async () => {
     const result = await commands.getEntries();
@@ -267,6 +273,19 @@ export function QueueList() {
     }
   }, []);
 
+  const handleCancelSynthesis = useCallback(async (id: string) => {
+    try {
+      await commands.cancelSynthesis(id);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      notifications.show({
+        title: 'Ошибка',
+        message: `Не удалось отменить синтез: ${message}`,
+        color: 'red',
+      });
+    }
+  }, []);
+
   const handleDelete = useCallback(
     (id: string) => {
       modals.openConfirmModal({
@@ -311,7 +330,7 @@ export function QueueList() {
                 isPlaying={playingId === entry.id}
                 onSelect={setSelectedEntry}
                 onPlay={handlePlay}
-                onContextMenu={(e, x, y) => setMenu({ entry: e, x, y })}
+                onContextMenu={(e, x, y) => setMenu({ id: e.id, x, y })}
               />
             ))}
           </Stack>
@@ -361,23 +380,29 @@ export function QueueList() {
         <Menu.Dropdown>
           <Menu.Item
             disabled={
-              menu === null ||
-              (menu.entry.status !== 'ready' && menu.entry.status !== 'playing')
+              menuEntry === null ||
+              (menuEntry.status !== 'ready' && menuEntry.status !== 'playing')
             }
-            onClick={() => menu && handlePlay(menu.entry.id)}
+            onClick={() => menuEntry && handlePlay(menuEntry.id)}
           >
             Воспроизвести
           </Menu.Item>
           <Menu.Item
-            disabled={menu === null || menu.entry.status === 'processing'}
-            onClick={() => menu && handleRegenerate(menu.entry.id)}
+            disabled={menuEntry === null || menuEntry.status === 'processing'}
+            onClick={() => menuEntry && handleRegenerate(menuEntry.id)}
           >
             Перегенерировать аудио
+          </Menu.Item>
+          <Menu.Item
+            disabled={menuEntry === null || menuEntry.status !== 'processing'}
+            onClick={() => menuEntry && handleCancelSynthesis(menuEntry.id)}
+          >
+            Отменить синтез
           </Menu.Item>
           <Menu.Divider />
           <Menu.Item
             color="red"
-            onClick={() => menu && handleDelete(menu.entry.id)}
+            onClick={() => menuEntry && handleDelete(menuEntry.id)}
           >
             Удалить
           </Menu.Item>
