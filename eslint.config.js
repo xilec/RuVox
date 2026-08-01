@@ -7,7 +7,7 @@ export default tseslint.config(
   // none of it is app code to lint. Same for Python .venv's elsewhere
   // (e.g. silero-native/export) whose vendored torch .mjs files trip the
   // type-aware parser.
-  { ignores: ['dist/', 'node_modules/', 'src-tauri/', 'ttsd/', 'scripts/', 'tmp/', '**/.venv/'] },
+  { ignores: ['dist/', 'node_modules/', 'src-tauri/', 'silero-native/', 'ttsd/', 'scripts/', 'tmp/', '**/.venv/'] },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   reactHooks.configs.flat.recommended,
