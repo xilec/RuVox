@@ -5,6 +5,7 @@
 //! `export/README.md`. Every file listed in `manifest.json` is hashed before
 //! any session is opened — a corrupt file must never reach ONNX Runtime.
 
+use std::any::Any;
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
@@ -16,6 +17,16 @@ use sha2::{Digest, Sha256};
 use tracing::{debug, info, instrument};
 
 use crate::error::{EngineError, Result};
+
+/// Render a scoped-thread panic payload for error messages (same downcast
+/// as `synthesize_with_fallback` in `lib.rs`).
+fn panic_message(payload: &Box<dyn Any + Send>) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|s| (*s).to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "unknown panic".to_string())
+}
 
 /// Names of the ONNX models the engine opens, relative to the bundle root.
 pub const TTS_MAIN: &str = "tts_main.onnx";
@@ -111,8 +122,12 @@ impl Manifest {
             handles
                 .into_iter()
                 .map(|h| {
-                    h.join()
-                        .map_err(|_| EngineError::Bundle("verify thread panicked".to_string()))?
+                    h.join().map_err(|payload| {
+                        EngineError::Bundle(format!(
+                            "verify thread panicked: {}",
+                            panic_message(&payload)
+                        ))
+                    })?
                 })
                 .collect::<Result<Vec<()>>>()
         })?;
@@ -205,30 +220,39 @@ impl Sessions {
             Ok(session)
         };
         const NAMES: [&str; 4] = [TTS_MAIN, ISTFT, HOMOSOLVER, ACCENTOR_TENSOR];
+        // Each thread tags its session with the model name so the struct is
+        // assembled by name, not by spawn position — a reordered NAMES can
+        // never silently swap sessions.
         let results = std::thread::scope(|scope| {
             let handles: Vec<_> = NAMES
                 .iter()
-                .map(|name| scope.spawn(|| open(name)))
+                .map(|name| scope.spawn(move || open(name).map(|s| (*name, s))))
                 .collect();
             handles
                 .into_iter()
                 .map(|h| {
-                    h.join()
-                        .map_err(|_| {
-                            EngineError::Bundle("session open thread panicked".to_string())
-                        })?
-                        .map(Some)
+                    h.join().map_err(|payload| {
+                        EngineError::Bundle(format!(
+                            "session open thread panicked: {}",
+                            panic_message(&payload)
+                        ))
+                    })?
                 })
                 .collect::<Result<Vec<_>>>()
         })?;
-        let mut results = results.into_iter();
-        let mut next = || results.next().flatten().expect("one result per session");
+        let mut results = results;
+        let mut take = |name: &str| {
+            let pos = results
+                .iter()
+                .position(|(n, _)| *n == name)
+                .expect("one result per session");
+            results.swap_remove(pos).1
+        };
         let sessions = Self {
-            // `results` is in NAMES order.
-            tts_main: next(),
-            istft: next(),
-            homosolver: next(),
-            accentor_tensor: next(),
+            tts_main: take(TTS_MAIN),
+            istft: take(ISTFT),
+            homosolver: take(HOMOSOLVER),
+            accentor_tensor: take(ACCENTOR_TENSOR),
         };
         info!(
             elapsed_ms = total.elapsed().as_secs_f64() * 1e3,
@@ -270,6 +294,48 @@ mod tests {
         write_manifest(tmp.path(), &[("a.bin", &sha, data.len() as u64)]);
         let manifest = Manifest::load(tmp.path()).expect("load manifest");
         manifest.verify(tmp.path()).expect("verify ok");
+    }
+
+    #[test]
+    fn verify_accepts_multiple_matching_files() {
+        // Multi-entry happy path exercises the concurrent hash fan-out.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let data_a = b"hello bundle";
+        let data_b = b"other file contents";
+        std::fs::write(tmp.path().join("a.bin"), data_a).expect("write file");
+        std::fs::write(tmp.path().join("b.bin"), data_b).expect("write file");
+        let sha_a = format!("{:x}", Sha256::new().chain_update(data_a).finalize());
+        let sha_b = format!("{:x}", Sha256::new().chain_update(data_b).finalize());
+        write_manifest(
+            tmp.path(),
+            &[
+                ("a.bin", &sha_a, data_a.len() as u64),
+                ("b.bin", &sha_b, data_b.len() as u64),
+            ],
+        );
+        let manifest = Manifest::load(tmp.path()).expect("load manifest");
+        manifest.verify(tmp.path()).expect("verify ok");
+    }
+
+    #[test]
+    fn verify_reports_first_mismatch_in_manifest_order() {
+        // Two corrupted entries: the error must name the first one in
+        // manifest order (the documented contract of `verify`).
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let data = b"hello bundle";
+        std::fs::write(tmp.path().join("a.bin"), data).expect("write file");
+        std::fs::write(tmp.path().join("b.bin"), data).expect("write file");
+        write_manifest(
+            tmp.path(),
+            &[
+                ("a.bin", &"1".repeat(64), data.len() as u64),
+                ("b.bin", &"2".repeat(64), data.len() as u64),
+            ],
+        );
+        let manifest = Manifest::load(tmp.path()).expect("load manifest");
+        let err = manifest.verify(tmp.path()).expect_err("must fail");
+        let msg = err.to_string();
+        assert!(msg.contains("a.bin"), "expected first entry: {msg}");
     }
 
     #[test]

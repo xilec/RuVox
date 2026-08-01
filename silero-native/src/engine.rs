@@ -55,7 +55,8 @@ pub struct Engine {
 }
 
 impl Engine {
-    /// Verify the bundle, open all sessions, load the frontend.
+    /// Verify the bundle, open the always-needed sessions (the rate-specific
+    /// PQMF filters are lazy-opened on first use), load the frontend.
     #[instrument(skip_all, fields(dir = %bundle_dir.display()))]
     pub fn load(bundle_dir: &Path) -> Result<Self> {
         let total = Instant::now();
@@ -75,6 +76,22 @@ impl Engine {
             elapsed_ms = t.elapsed().as_secs_f64() * 1e3,
             "frontend loaded"
         );
+        let pqmf_24k_path = manifest.file_path(bundle_dir, crate::bundle::PQMF_24K)?;
+        let pqmf_8k_path = manifest.file_path(bundle_dir, crate::bundle::PQMF_8K)?;
+        // The PQMF sessions open lazily, but a bundle that lacks the files
+        // must still fail at load — pre-lazy behavior surfaced a missing
+        // model here, not mid-synthesis.
+        for path in [&pqmf_24k_path, &pqmf_8k_path] {
+            if !path
+                .try_exists()
+                .map_err(|e| EngineError::Bundle(format!("cannot stat {}: {e}", path.display())))?
+            {
+                return Err(EngineError::Bundle(format!(
+                    "missing PQMF model {}",
+                    path.display()
+                )));
+            }
+        }
         info!(
             model = %manifest.model_id,
             elapsed_ms = total.elapsed().as_secs_f64() * 1e3,
@@ -88,9 +105,9 @@ impl Engine {
             tts_main: Mutex::new(sessions.tts_main),
             istft: Mutex::new(sessions.istft),
             pqmf_24k: Mutex::new(None),
-            pqmf_24k_path: manifest.file_path(bundle_dir, crate::bundle::PQMF_24K)?,
+            pqmf_24k_path,
             pqmf_8k: Mutex::new(None),
-            pqmf_8k_path: manifest.file_path(bundle_dir, crate::bundle::PQMF_8K)?,
+            pqmf_8k_path,
         })
     }
 

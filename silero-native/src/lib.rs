@@ -82,7 +82,8 @@ fn is_positional_overflow(e: &EngineError) -> bool {
 }
 
 impl SileroNative {
-    /// Load and verify the model bundle, open all ONNX sessions.
+    /// Load and verify the model bundle, open the always-needed ONNX
+    /// sessions (PQMF opens lazily on first use).
     pub fn load(bundle_dir: impl AsRef<Path>) -> Result<Self> {
         Ok(Self {
             engine: Engine::load(bundle_dir.as_ref())?,
