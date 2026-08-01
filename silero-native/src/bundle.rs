@@ -28,6 +28,9 @@ pub const ACCENTOR_TENSOR: &str = "accentor_tensor.onnx";
 #[derive(Debug, Clone, Deserialize)]
 pub struct Manifest {
     pub model_id: String,
+    // Provenance fields, kept so the manifest mirrors the exporter's schema
+    // and stays debuggable by hand. Intentionally unused by the loader —
+    // do not "clean up".
     pub opset: u32,
     pub export_date_utc: String,
     pub files: Vec<ManifestFile>,
@@ -43,6 +46,11 @@ pub struct ManifestFile {
 
 /// sha256 of a single file, read in 1 MiB chunks to keep memory flat even
 /// for the 117 MB homosolver model.
+///
+/// Deliberate duplicate of the async `sha256_file` in the app's downloader
+/// (`src-tauri/src/tts/silero_native/download.rs`): this is the sync engine
+/// side, and sharing one helper would drag a runtime dependency across the
+/// crate boundary. Keep both.
 fn sha256_file(path: &Path) -> Result<String> {
     let file = File::open(path)
         .map_err(|e| EngineError::Bundle(format!("cannot open {}: {e}", path.display())))?;

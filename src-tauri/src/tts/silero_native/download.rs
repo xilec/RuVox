@@ -165,6 +165,11 @@ async fn file_is_valid(dest: &Path, entry: &ManifestFile) -> bool {
 }
 
 /// sha256 of a local file, read in 1 MiB chunks (bundle files reach ~117 MB).
+///
+/// Deliberate duplicate of the sync `sha256_file` in the engine crate
+/// (`silero-native/src/bundle.rs`): this is the async downloader side, and
+/// sharing one helper would drag a runtime dependency across the crate
+/// boundary. Keep both.
 async fn sha256_file(path: &Path) -> std::io::Result<String> {
     let mut file = fs::File::open(path).await?;
     let mut hasher = Sha256::new();

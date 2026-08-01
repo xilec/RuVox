@@ -48,11 +48,14 @@ pub struct HomosolverConfig {
 pub struct FrontendConfig {
     pub symbols: String,
     pub symbol_to_id: HashMap<String, i64>,
+    // Parsed for schema fidelity with the exporter's frontend.json but
+    // intentionally unused by the engine — do not "clean up".
     pub alphabet: Vec<String>,
     pub sos_token: String,
     pub eos_token: String,
     pub speakers: Vec<String>,
     pub speaker_to_ids: Vec<HashMap<String, i64>>,
+    // Unused, same rationale as `alphabet` above.
     pub frame_window_sec: f64,
     pub sample_rates: Vec<u32>,
     pub native_sample_rate: u32,
