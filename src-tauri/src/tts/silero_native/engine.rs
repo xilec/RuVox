@@ -349,6 +349,14 @@ mod tests {
         assert!(!names.contains(&"model_loaded"));
         let (_, payload) = log.iter().find(|(n, _)| n == "model_error").unwrap();
         assert_eq!(payload["engine"], "silero_native");
+        // The missing-bundle payload must be the bare Russian message — no
+        // "ttsd error [code]:" prefix (user-facing string).
+        let message = payload["message"].as_str().unwrap();
+        assert!(
+            message.starts_with("Бандл моделей Silero"),
+            "unexpected message: {message}"
+        );
+        assert!(!message.contains("ttsd error ["), "prefixed: {message}");
     }
 
     #[test]

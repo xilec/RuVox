@@ -114,6 +114,13 @@ impl Engine {
 
     /// Synthesize one chunk of text. Validation errors (`BadInput`) are
     /// returned before any ONNX session runs.
+    ///
+    /// The input must already be free of `[[...]]` / SSML markup: the strip
+    /// runs exactly once, in
+    /// [`SileroNative::synthesize`](crate::SileroNative::synthesize), before
+    /// chunking. Direct `Engine` callers with markup-bearing text must apply
+    /// [`crate::frontend::text::strip_unsupported_markup`] first, or word
+    /// timestamps and spoken text degrade.
     #[instrument(skip_all, fields(speaker, sample_rate, text_len = text.len()))]
     pub fn synthesize(&self, text: &str, speaker: &str, sample_rate: u32) -> Result<EngineOutput> {
         let speaker_id = self.config.speaker_id(speaker).ok_or_else(|| {
