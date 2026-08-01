@@ -183,16 +183,8 @@ pub struct Sessions {
     pub accentor_tensor: Session,
 }
 
-/// Open one ONNX session.
-///
-/// Measured (issue #165, `tmp/bundle-v5`, Ryzen 9 7900): graph optimization
-/// level makes no difference to session-creation time — Level3 ≈ Level1 ≈
-/// Disable at ~310 ms for all sessions — because model parse/arena init
-/// dominates, not the optimizers. That also rules out the `.ort`
-/// compiled-model cache (it only skips optimization). Keep the defaults.
-///
-/// Intra-op thread count is pinned to 8 (issue #164). ORT's default (one
-/// thread per logical core) is catastrophically slow for these models:
+/// Intra-op thread count for every ORT session (issue #164). ORT's default
+/// (one thread per logical core) is catastrophically slow for these models:
 /// the graphs are chains of many small ops, so per-op fork/join sync across
 /// 24 threads costs more than the compute. Bench mean at 24k, full pipeline:
 /// default ≈ 104 ms, 4 threads 40 ms, 6 threads 34 ms, **8 threads 35 ms**,
@@ -205,11 +197,30 @@ pub struct Sessions {
 /// suite: 1.5e-3 at 4 threads, 2.2e-3 at 6, **9.8e-4 at 8** — 8 is the
 /// only reduced count that keeps every case inside the 1e-3 budget, and
 /// it ties 6 for speed within noise.
+///
+/// The count is deliberately NOT derived from `available_parallelism()`:
+/// the parity constraint above requires a fixed reduction order, so the
+/// value must not vary across machines. On lower-core machines ORT simply
+/// oversubscribes, which is far cheaper than the many-threads default.
+const INTRA_OP_THREADS: usize = 8;
+
+/// Open one ONNX session.
+///
+/// Measured (issue #165, `tmp/bundle-v5`, Ryzen 9 7900): graph optimization
+/// level makes no difference to session-creation time — Level3 ≈ Level1 ≈
+/// Disable at ~310 ms for all sessions — because model parse/arena init
+/// dominates, not the optimizers. That also rules out the `.ort`
+/// compiled-model cache (it only skips optimization). Keep the defaults.
 pub(crate) fn open_session(path: &Path) -> Result<Session> {
     let mut builder = Session::builder()
         .map_err(|e| EngineError::Bundle(format!("session builder: {}", e.message())))?
-        .with_intra_threads(8)
-        .map_err(|e| EngineError::Bundle(format!("with_intra_threads(8): {}", e.message())))?;
+        .with_intra_threads(INTRA_OP_THREADS)
+        .map_err(|e| {
+            EngineError::Bundle(format!(
+                "with_intra_threads({INTRA_OP_THREADS}): {}",
+                e.message()
+            ))
+        })?;
     builder
         .commit_from_file(path)
         .map_err(|e| EngineError::Bundle(format!("failed to open {}: {e}", path.display())))

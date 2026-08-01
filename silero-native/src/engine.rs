@@ -27,7 +27,7 @@ use crate::lock_session;
 
 /// Per-stage wall times of one synthesis, collected with `Instant` around
 /// each pipeline stage (a handful of clock reads per call — negligible
-/// against an ~100 ms synthesis). Drives the per-stage breakdown printed by
+/// against a ~35 ms synthesis). Drives the per-stage breakdown printed by
 /// `examples/bench.rs` and recorded in `docs/benchmarks.md` (issue #164).
 ///
 /// `wav_encode` / `concat_timestamps` live outside [`Engine`] (in
@@ -266,7 +266,6 @@ impl Engine {
         debug!(samples_48k = audio_48k.len(), "istft done");
 
         // PQMF downsample for 24k/8k; 48k passes through.
-        let t = Instant::now();
         let (samples, out_rate) = match sample_rate {
             r if r == self.config.native_sample_rate => (audio_48k, r),
             r => {
@@ -291,13 +290,16 @@ impl Engine {
                     );
                 }
                 let session = slot.as_mut().expect("just initialized");
+                // Timer placement matches the other ORT stages: around
+                // run + output extraction, after input tensor construction.
+                let t = Instant::now();
                 let outputs = session.run(ort::inputs!["audio" => audio_t])?;
                 let (_, band) = Self::take_f32(&outputs, "band0")?;
+                timings.pqmf += t.elapsed();
                 debug!(samples = band.len(), rate = r, "pqmf done");
                 (band, r)
             }
         };
-        timings.pqmf += t.elapsed();
 
         Ok(EngineOutput {
             duration_sec: samples.len() as f32 / out_rate as f32,
@@ -306,5 +308,40 @@ impl Engine {
             spoken_text,
             stage_timings: timings,
         })
+    }
+}
+
+#[cfg(test)]
+mod stage_timings_tests {
+    use super::*;
+
+    /// Full-literal field coverage: adding a stage to `StageTimings` fails
+    /// compilation here, forcing the author to also extend `AddAssign` and
+    /// the bench breakdown array — otherwise the new stage would silently
+    /// vanish into the bench's "(unaccounted)" row.
+    #[test]
+    fn add_assign_covers_every_field() {
+        let a = StageTimings {
+            frontend_text: Duration::from_millis(1),
+            homosolver: Duration::from_millis(2),
+            accentor: Duration::from_millis(3),
+            build_sequence: Duration::from_millis(4),
+            tts_main: Duration::from_millis(5),
+            istft: Duration::from_millis(6),
+            pqmf: Duration::from_millis(7),
+            wav_encode: Duration::from_millis(8),
+            concat_timestamps: Duration::from_millis(9),
+        };
+        let mut acc = a;
+        acc += a;
+        assert_eq!(acc.frontend_text, Duration::from_millis(2));
+        assert_eq!(acc.homosolver, Duration::from_millis(4));
+        assert_eq!(acc.accentor, Duration::from_millis(6));
+        assert_eq!(acc.build_sequence, Duration::from_millis(8));
+        assert_eq!(acc.tts_main, Duration::from_millis(10));
+        assert_eq!(acc.istft, Duration::from_millis(12));
+        assert_eq!(acc.pqmf, Duration::from_millis(14));
+        assert_eq!(acc.wav_encode, Duration::from_millis(16));
+        assert_eq!(acc.concat_timestamps, Duration::from_millis(18));
     }
 }
