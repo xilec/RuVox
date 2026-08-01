@@ -248,6 +248,7 @@ impl TtsEngine for EngineSwitcher {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::write_fake_bundle;
     use crate::tts::supervisor::test_helpers::recording_emitter;
 
     /// Builds a switcher backed by per-call `TempDir`s so parallel test runs
@@ -350,31 +351,6 @@ mod tests {
         }
         // The failed switch must leave the previous engine active.
         assert_eq!(sw.kind(), EngineKind::Piper);
-    }
-
-    /// Write a manifest + payload files into `dir` so the stat-only bundle
-    /// probe passes. Sizes and hashes are honest, though the probe itself
-    /// only checks presence and size.
-    fn write_fake_bundle(dir: &std::path::Path, files: &[(&str, &[u8])]) {
-        use sha2::{Digest, Sha256};
-        let entries: Vec<serde_json::Value> = files
-            .iter()
-            .map(|(name, contents)| {
-                std::fs::write(dir.join(name), contents).unwrap();
-                serde_json::json!({
-                    "path": name,
-                    "size": contents.len(),
-                    "sha256": format!("{:x}", Sha256::new().chain_update(contents).finalize()),
-                })
-            })
-            .collect();
-        let manifest = serde_json::json!({
-            "model_id": "test",
-            "opset": 17,
-            "export_date_utc": "2026-01-01T00:00:00+00:00",
-            "files": entries,
-        });
-        std::fs::write(dir.join("manifest.json"), manifest.to_string()).unwrap();
     }
 
     #[tokio::test]

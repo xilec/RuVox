@@ -394,6 +394,31 @@ pub fn build_test_app() -> TestApp {
     }
 }
 
+/// Write a silero-native manifest + payload files into `dir` so the
+/// stat-only bundle probe passes. Sizes and hashes are honest, though the
+/// probe itself only checks presence and size.
+pub fn write_fake_bundle(dir: &std::path::Path, files: &[(&str, &[u8])]) {
+    use sha2::{Digest, Sha256};
+    let entries: Vec<serde_json::Value> = files
+        .iter()
+        .map(|(name, contents)| {
+            std::fs::write(dir.join(name), contents).unwrap();
+            serde_json::json!({
+                "path": name,
+                "size": contents.len(),
+                "sha256": format!("{:x}", Sha256::new().chain_update(contents).finalize()),
+            })
+        })
+        .collect();
+    let manifest = serde_json::json!({
+        "model_id": "test",
+        "opset": 17,
+        "export_date_utc": "2026-01-01T00:00:00+00:00",
+        "files": entries,
+    });
+    std::fs::write(dir.join("manifest.json"), manifest.to_string()).unwrap();
+}
+
 // ---------------------------------------------------------------------------
 // Proof tests
 // ---------------------------------------------------------------------------
