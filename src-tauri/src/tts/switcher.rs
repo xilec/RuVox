@@ -166,13 +166,12 @@ impl EngineSwitcher {
         if !probe.available {
             return Err(TtsError::Ttsd {
                 code: "engine_unavailable".to_string(),
-                message: probe.reason.unwrap_or_else(|| {
-                    format!(
-                        "Бандл моделей Silero не скачан ({}). \
-                         Скачайте его в настройках (движок «Silero (нативный)»).",
-                        self.silero_native_bundle_dir.display()
-                    )
-                }),
+                // probe_silero_native always sets a reason when unavailable —
+                // and it is the single source of the user-facing bundle
+                // texts (no fallback copy here).
+                message: probe
+                    .reason
+                    .expect("unavailable probe always carries a reason"),
             });
         }
         Ok(Arc::new(SileroNativeEngine::new(
