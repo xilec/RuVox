@@ -326,7 +326,12 @@ completion or failure belonging to a cancelled entry SHALL be discarded: the
 entry MUST NOT flip to `ready` or `error`, any audio/timestamp files written
 by the late completion SHALL be removed, no further `entry_updated` for that
 completion is emitted, and no autoplay starts. A missing entry fails with
-`not_found`.
+`not_found`. Cancelling a `pending` entry SHALL succeed idempotently (the
+entry is queued or idle; a just-added entry may already have its synthesis
+task registered while still in `pending`, and cancellation must abort it).
+An entry whose status is `ready`, `playing`, or `error` SHALL be rejected
+with `synthesis_error` without changing its status or touching the
+synthesis registries.
 
 #### Scenario: cancel a queued synthesis
 
@@ -369,6 +374,20 @@ completion is emitted, and no autoplay starts. A missing entry fails with
 - GIVEN no entry with the given id
 - WHEN `cancel_synthesis` is invoked
 - THEN the command fails with `not_found`
+
+#### Scenario: cancel an idle entry
+
+- GIVEN an entry with status `pending` and no synthesis in flight
+- WHEN `cancel_synthesis` is invoked
+- THEN the command succeeds, the entry remains `pending`, and
+  `entry_updated` is emitted
+
+#### Scenario: cancel a terminal entry
+
+- GIVEN an entry with status `ready`, `playing`, or `error`
+- WHEN `cancel_synthesis` is invoked
+- THEN the command fails with `synthesis_error`, the entry status is left
+  unchanged, and no `entry_updated` is emitted
 
 ### Requirement: Playback Control Commands
 
