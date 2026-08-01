@@ -37,8 +37,8 @@ test-python:
 lint:
     cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
     cargo fmt --manifest-path silero-native/Cargo.toml -- --check
-    cargo clippy --manifest-path src-tauri/Cargo.toml --no-deps -- -D warnings
-    cargo clippy --manifest-path silero-native/Cargo.toml --no-deps -- -D warnings
+    cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --no-deps -- -D warnings
+    cargo clippy --manifest-path silero-native/Cargo.toml --all-targets --no-deps -- -D warnings
     cargo deny --manifest-path src-tauri/Cargo.toml check
     pnpm lint
     pnpm knip

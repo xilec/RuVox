@@ -70,8 +70,8 @@ jobs:
           workspaces: "src-tauri\nsilero-native"
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
       - run: cargo fmt --manifest-path silero-native/Cargo.toml -- --check
-      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --no-deps -- -D warnings
-      - run: cargo clippy --manifest-path silero-native/Cargo.toml --no-deps -- -D warnings
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --no-deps -- -D warnings
+      - run: cargo clippy --manifest-path silero-native/Cargo.toml --all-targets --no-deps -- -D warnings
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
