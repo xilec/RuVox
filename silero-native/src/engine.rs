@@ -38,6 +38,12 @@ pub struct Engine {
     config: FrontendConfig,
     homosolver: HomoSolver,
     accentor: Accentor,
+    /// Keep-set for text filtering, precomputed from `config.symbols` at
+    /// load so the per-chunk `prepare` does not rebuild it every call.
+    symbols_tail: HashSet<char>,
+    /// Shared empty skip-sets for the accentor call (we never skip words),
+    /// precomputed for the same reason.
+    empty_skip: HashSet<String>,
     tts_main: Mutex<Session>,
     istft: Mutex<Session>,
     pqmf_24k: Mutex<Session>,
@@ -56,6 +62,8 @@ impl Engine {
         let accentor = Accentor::load(bundle_dir, &config.accentor, sessions.accentor_tensor)?;
         info!(model = %manifest.model_id, "engine loaded");
         Ok(Self {
+            symbols_tail: config.symbols_tail(),
+            empty_skip: HashSet::new(),
             config,
             homosolver,
             accentor,
@@ -74,7 +82,7 @@ impl Engine {
         // the normalized text, and the symbol filter below would drop `\n`
         // silently, gluing the surrounding words into one.
         let sanitized = crate::chunking::sanitize_for_silero(&stripped);
-        let prepared = prepare_text_input(&sanitized, &self.config.symbols_tail());
+        let prepared = prepare_text_input(&sanitized, &self.symbols_tail);
         if !prepared.has_text {
             return Err(EngineError::BadInput(
                 "text has no speakable content after normalization".to_string(),
@@ -83,10 +91,14 @@ impl Engine {
         let homosolved = self
             .homosolver
             .resolve(&prepared.sentence, true, true, true)?;
-        let empty: HashSet<String> = HashSet::new();
-        let accented = self
-            .accentor
-            .accentuate(&homosolved, true, true, true, &empty, &empty)?;
+        let accented = self.accentor.accentuate(
+            &homosolved,
+            true,
+            true,
+            true,
+            &self.empty_skip,
+            &self.empty_skip,
+        )?;
         let sequence = build_sequence(
             &accented,
             &self.config.symbol_to_id,
