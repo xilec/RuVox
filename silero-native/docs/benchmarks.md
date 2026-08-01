@@ -1,6 +1,8 @@
 # Benchmarks
 
-Date: 2026-07-27. CPU: AMD Ryzen 9 7900 (12 cores / 24 threads).
+Date: 2026-08-01 (headline numbers re-measured after the issue #164
+optimization; previous 2026-07-27 baseline kept in the per-stage section
+below). CPU: AMD Ryzen 9 7900 (12 cores / 24 threads).
 Toolchain: Rust engine via `ort` 2.0.0-rc.12 + nixpkgs onnxruntime
 1.26.0 (`load-dynamic`); Python reference = torch CPU `apply_tts` from
 `silero-native/export/.venv` on the same `v5_ru.pt` (after
@@ -22,10 +24,12 @@ chars), speaker `aidar`, 24000 Hz.
 
 | Engine | mean | p95 | min | max |
 |---|---|---|---|---|
-| silero-native (release) | 108.8 ms | 125.5 ms | 71.9 ms | 128.4 ms |
-| Python torch `apply_tts` | 144.4 ms | — | 142.5 ms | 146.0 ms |
+| silero-native (release) | 36.6 ms | 42.6 ms | 33.7 ms | 43.6 ms |
+| Python torch `apply_tts` | 145.0 ms | — | 142.5 ms | 151.3 ms |
 
-**Speedup: ~1.3x** (warm, full pipeline on both sides).
+**Speedup: ~4.0x** (warm, full pipeline on both sides). Pre-#164 it was
+~1.3x (108.8 ms native) — the win is the pinned ORT intra-op thread
+count, see the per-stage section below.
 
 ## Per-stage breakdown (issue #164)
 
@@ -60,6 +64,56 @@ Findings:
   the first-measured rate (24k: 85.4 vs 48k: 71.4) — CPU frequency ramp
   over the run order. Treat cross-rate deltas of rate-independent stages
   as noise; the headline methodology number stays 24k, same as before.
+
+### Optimization: ORT intra-op threads = 8
+
+The profile said the win must come from ORT itself. A/B of
+`intra_op_num_threads` (bench mean at 24k, full pipeline):
+
+| intra-op threads | mean ms | worst parity-suite case |
+|---|---|---|
+| ORT default (per logical core) | 104.1 | 9.8e-4 (pre-existing) |
+| 4 | 40.0 | **1.5e-3 — over budget** |
+| 6 | 34.0 | **2.2e-3 — over budget** |
+| **8 (chosen)** | **34.6** | **9.8e-4 — inside budget** |
+| 12 | 55.3 | — |
+| 16 | 80.0 | — |
+| 24 | 115.1 | — |
+
+ORT defaults to one thread per logical core; these graphs are chains of
+many small ops, so per-op fork/join sync across 24 threads costs more
+than the compute. Parallel execution mode made it *worse* (42.6 ms at
+intra=6), inter-op threads made no positive difference.
+
+The thread count also constrains correctness: changing it changes float
+reduction order, which drifts the waveform off the Python-ONNX parity
+fixtures (generated at ORT defaults). The `stress_marker` case is the
+canary — 1.5e-3 at 4 threads, 2.2e-3 at 6, both over the suite's 1e-3
+budget; **8 is the only reduced count that keeps all 31 cases inside the
+budget** (worst 9.8e-4, same class as the pre-existing default-thread
+baseline) and ties 6 for speed within noise. So
+`bundle.rs::open_session` pins `with_intra_threads(8)` for every session.
+
+Post-optimization breakdown (24k): tts_main 25.0 ms (68.4%), istft
+9.2 ms (25.0%), pqmf 1.1 ms, wav_encode 0.8 ms, frontend < 1%.
+Totals: **24k mean 36.6 ms / p95 42.6**; 48k mean 30.2 / p95 31.0; 8k
+mean 33.2 / p95 33.7. Side effect: engine load 437 → ~345 ms (fewer
+pool threads to spawn at session creation).
+
+Measured and rejected after the optimization:
+
+- **Allocation/copy churn** (`take_f32` `.to_vec()`, chunk concat): all
+  copies sit inside the ORT-stage timings and total well under a
+  millisecond (~1 MB of tensor buffers); `concat_timestamps` reads
+  0.05 ms, `(unaccounted)` 0.01 ms. Nothing to win.
+- **Bulk WAV encode** (hound per-sample `write_sample`): 0.8 ms at 24k
+  (2.2%). Not worth churning a parity-sensitive path (upstream
+  truncates, we round) for a sub-millisecond effect.
+
+The remaining ~34 ms is ORT inference inside the exported graphs
+themselves (tts_main ~25 ms, istft ~9 ms) — irreducible from the Rust
+client side without touching the graphs/exporter, which is out of scope
+here (parity fixtures would have to be regenerated).
 
 ## Engine load time (issue #165)
 
