@@ -19,7 +19,7 @@ use crate::bundle::{Manifest, Sessions};
 use crate::error::{EngineError, Result};
 use crate::frontend::accentor::Accentor;
 use crate::frontend::homosolver::HomoSolver;
-use crate::frontend::text::{build_sequence, prepare_text_input, strip_unsupported_markup};
+use crate::frontend::text::{build_sequence, prepare_text_input};
 use crate::frontend::FrontendConfig;
 use crate::lock_session;
 
@@ -74,14 +74,20 @@ impl Engine {
         })
     }
 
-    /// Run the text frontend: strip markup → sanitize newlines → normalize →
-    /// homosolver → accentor → symbol ids.
+    /// Run the text frontend: sanitize newlines → normalize → homosolver →
+    /// accentor → symbol ids.
+    ///
+    /// The input must already be free of `[[...]]` / SSML markup:
+    /// [`crate::frontend::text::strip_unsupported_markup`] runs exactly once, in
+    /// `SileroNative::synthesize`, before chunking (chunk offsets and word
+    /// timestamps are in stripped-text coordinates, so a second strip here
+    /// would be both redundant and contractually confusing). Direct
+    /// `Engine` callers with markup-bearing text must strip first.
     fn prepare(&self, text: &str) -> Result<(Vec<i64>, String)> {
-        let stripped = strip_unsupported_markup(text);
         // ttsd parity (`sanitize_for_silero`): the pipeline keeps `\n\n` in
         // the normalized text, and the symbol filter below would drop `\n`
         // silently, gluing the surrounding words into one.
-        let sanitized = crate::chunking::sanitize_for_silero(&stripped);
+        let sanitized = crate::chunking::sanitize_for_silero(text);
         let prepared = prepare_text_input(&sanitized, &self.symbols_tail);
         if !prepared.has_text {
             return Err(EngineError::BadInput(

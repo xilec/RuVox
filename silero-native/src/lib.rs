@@ -169,6 +169,9 @@ impl SileroNative {
         speaker: &str,
         sample_rate: u32,
     ) -> Result<SynthesisResult> {
+        // The single strip point for the whole crate: markup is removed
+        // before chunking so chunk offsets and word timestamps are in
+        // stripped-text coordinates. `Engine::prepare` does NOT strip again.
         let stripped = frontend::text::strip_unsupported_markup(text);
         let chunks = chunking::split_into_chunks(&stripped);
 
