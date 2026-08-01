@@ -10,6 +10,7 @@
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Mutex;
+use std::time::Instant;
 
 use ort::session::Session;
 use ort::value::Tensor;
@@ -51,13 +52,28 @@ impl Engine {
     /// Verify the bundle, open all sessions, load the frontend.
     #[instrument(skip_all, fields(dir = %bundle_dir.display()))]
     pub fn load(bundle_dir: &Path) -> Result<Self> {
+        let total = Instant::now();
         let manifest = Manifest::load(bundle_dir)?;
+        let t = Instant::now();
         manifest.verify(bundle_dir)?;
+        info!(
+            elapsed_ms = t.elapsed().as_secs_f64() * 1e3,
+            "bundle verified"
+        );
         let sessions = Sessions::open(bundle_dir, &manifest)?;
+        let t = Instant::now();
         let config = FrontendConfig::load(bundle_dir)?;
         let homosolver = HomoSolver::load(bundle_dir, &config.homosolver, sessions.homosolver)?;
         let accentor = Accentor::load(bundle_dir, &config.accentor, sessions.accentor_tensor)?;
-        info!(model = %manifest.model_id, "engine loaded");
+        info!(
+            elapsed_ms = t.elapsed().as_secs_f64() * 1e3,
+            "frontend loaded"
+        );
+        info!(
+            model = %manifest.model_id,
+            elapsed_ms = total.elapsed().as_secs_f64() * 1e3,
+            "engine loaded"
+        );
         Ok(Self {
             symbols_tail: config.symbols_tail(),
             config,

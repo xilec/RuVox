@@ -8,6 +8,7 @@
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use ort::session::Session;
 use serde::Deserialize;
@@ -152,9 +153,17 @@ impl Sessions {
     /// Open every model session. Call only after [`Manifest::verify`].
     #[instrument(skip_all)]
     pub fn open(bundle_dir: &Path, manifest: &Manifest) -> Result<Self> {
+        let total = Instant::now();
         let open = |name: &str| -> Result<Session> {
             let path = manifest.file_path(bundle_dir, name)?;
-            open_session(&path)
+            let t = Instant::now();
+            let session = open_session(&path)?;
+            info!(
+                model = name,
+                elapsed_ms = t.elapsed().as_secs_f64() * 1e3,
+                "ONNX session opened"
+            );
+            Ok(session)
         };
         let sessions = Self {
             tts_main: open(TTS_MAIN)?,
@@ -164,7 +173,10 @@ impl Sessions {
             homosolver: open(HOMOSOLVER)?,
             accentor_tensor: open(ACCENTOR_TENSOR)?,
         };
-        info!("all six ONNX sessions initialized");
+        info!(
+            elapsed_ms = total.elapsed().as_secs_f64() * 1e3,
+            "all six ONNX sessions initialized"
+        );
         Ok(sessions)
     }
 }
