@@ -43,18 +43,14 @@ fn round3(x: f32) -> f32 {
     (x * 1000.0).round() / 1000.0
 }
 
-/// Distribute `chunk_duration` across the words of `text`, char-proportionally.
-/// Returns an empty vec when the text has no words.
-pub fn estimate_timestamps(text: &str, chunk_duration: f32) -> Vec<WordTimestamp> {
-    estimate_timestamps_chunked(&[(text, 0, chunk_duration)])
-}
-
-/// Chunked variant of [`estimate_timestamps`], porting ttsd's
-/// `estimate_timestamps_chunked`: each entry is
+/// Port of ttsd's `estimate_timestamps_chunked`: each entry is
 /// `(chunk_text, text_offset, chunk_duration)` — the chunk's duration is
 /// distributed across its words char-proportionally, `text_offset` shifts
 /// `original_pos` back into full-text coordinates, and the audio timeline
 /// advances by the accumulated chunk durations.
+///
+/// This is the only entry point: the engine always synthesizes per chunk,
+/// so a single-chunk wrapper would be dead API.
 pub fn estimate_timestamps_chunked(chunks: &[(&str, usize, f32)]) -> Vec<WordTimestamp> {
     let mut timestamps = Vec::new();
     let mut audio_offset = 0.0f32;
@@ -95,7 +91,7 @@ mod tests {
 
     #[test]
     fn durations_are_proportional_and_monotonic() {
-        let ts = estimate_timestamps("аа бббб в", 1.0);
+        let ts = estimate_timestamps_chunked(&[("аа бббб в", 0, 1.0)]);
         assert_eq!(ts.len(), 3);
         assert!((ts[0].end - ts[0].start - 2.0 / 7.0).abs() < 1e-3);
         assert!((ts[1].end - ts[1].start - 4.0 / 7.0).abs() < 1e-3);
@@ -107,8 +103,8 @@ mod tests {
 
     #[test]
     fn no_words_no_timestamps() {
-        assert!(estimate_timestamps("… — !", 1.0).is_empty());
-        assert!(estimate_timestamps("текст", 0.0).is_empty());
+        assert!(estimate_timestamps_chunked(&[("… — !", 0, 1.0)]).is_empty());
+        assert!(estimate_timestamps_chunked(&[("текст", 0, 0.0)]).is_empty());
     }
 
     #[test]
