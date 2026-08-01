@@ -223,10 +223,9 @@ fn build_engine<R: Runtime>(
     let ttsd_dir = resolve_ttsd_dir(app);
 
     let want_silero = config.engine == "silero";
-    let silero_available = want_silero
-        && tts::availability::probe(&ttsd_dir, &silero_native_bundle_dir)
-            .silero
-            .available;
+    // Targeted probe: the full availability::probe would also stat the
+    // silero-native bundle, whose result is not used on this path.
+    let silero_available = want_silero && tts::availability::probe_silero(&ttsd_dir).available;
     // Stat-only gate (manifest parses, every listed file present with the
     // recorded size) — the engine's warmup runs the full sha256 verification
     // before opening ONNX sessions.

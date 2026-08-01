@@ -54,7 +54,7 @@ pub fn probe(ttsd_dir: &Path, silero_native_bundle_dir: &Path) -> AvailableEngin
     }
 }
 
-fn probe_silero(ttsd_dir: &Path) -> EngineAvailability {
+pub fn probe_silero(ttsd_dir: &Path) -> EngineAvailability {
     let pyproject = ttsd_dir.join("pyproject.toml");
     if !pyproject.exists() {
         return EngineAvailability {
