@@ -9,8 +9,10 @@ import {
   useComputedColorScheme,
 } from '@mantine/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { TextEntry, WordTimestamp } from '../lib/tauri';
+import { notifications } from '@mantine/notifications';
+import type { EntryFormat, TextEntry, WordTimestamp } from '../lib/tauri';
 import { commands, events } from '../lib/tauri';
+import { formatError } from '../lib/errors';
 import { renderMarkdown } from '../lib/markdown';
 import { renderHtml } from '../lib/html';
 import { renderMermaidIn } from '../lib/mermaid';
@@ -18,25 +20,32 @@ import {
   findActiveTimestamp,
   applyHighlight,
   clearHighlight,
-  highlightingEnabled,
+  debugAssertSortedTimestamps,
 } from '../lib/wordHighlight';
 import { plainToWordHtml } from '../lib/plainTextHtml';
+import { makeInert } from '../lib/inertContent';
+import { copyLinkAddress } from '../lib/viewerCopy';
+import { ViewerContextMenu } from './ViewerContextMenu';
 import classes from './TextViewer.module.css';
 
-// TODO(B1/F4): add `format: "plain" | "markdown" | "html"` to TextEntry schema
-// so that the selected format is persisted alongside the entry.  Until that
-// schema change lands, the format is ephemeral client-side state.
-type Format = "plain" | "markdown" | "html";
+// Entries without a persisted format render in the viewer default mode.
+const DEFAULT_FORMAT: EntryFormat = "markdown";
 
 interface Props {
   entry: TextEntry | null;
 }
 
 export function TextViewer({ entry }: Props) {
-  const [format, setFormat] = useState<Format>("markdown");
+  const [format, setFormat] = useState<EntryFormat>(DEFAULT_FORMAT);
   const [zoomedSvg, setZoomedSvg] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const colorScheme = useComputedColorScheme("light");
+
+  // Restore the persisted display mode when another entry is selected or
+  // the entry's saved format changes (e.g. after set_entry_format lands).
+  useEffect(() => {
+    setFormat(entry?.format ?? DEFAULT_FORMAT);
+  }, [entry?.id, entry?.format]);
 
   // Timestamps for the currently playing entry, cached to avoid re-fetching on
   // every playback_position event.
@@ -57,12 +66,24 @@ export function TextViewer({ entry }: Props) {
         // works in plain mode (same approach as markdown).
         return { __html: plainToWordHtml(displayText) };
       case "html":
-        return { __html: renderHtml(displayText) };
+        // HTML-ingested entries render their sanitized source; entries that
+        // only have plain text (e.g. toggled to HTML manually) fall back to
+        // the original text.
+        return { __html: renderHtml(entry.html_source ?? displayText) };
       case "markdown":
       default:
         return { __html: renderMarkdown(displayText) };
     }
   }, [entry, displayText, format]);
+
+  // Read-only viewer (text-display spec): neutralize interactive elements
+  // after every content render. Runs post-commit over the mounted DOM, in
+  // all display modes.
+  useEffect(() => {
+    if (containerRef.current) {
+      makeInert(containerRef.current);
+    }
+  }, [content]);
 
   // Clear highlight state whenever the displayed entry or format changes so
   // stale highlights do not bleed across navigation.
@@ -91,6 +112,7 @@ export function TextViewer({ entry }: Props) {
       .getTimestamps(entry.id)
       .then((ts) => {
         if (cancelled) return;
+        debugAssertSortedTimestamps(ts);
         timestampsRef.current = ts;
         playingEntryIdRef.current = entry.id;
       })
@@ -115,11 +137,39 @@ export function TextViewer({ entry }: Props) {
   // Ctrl/Cmd+A while focus/selection is inside the viewer should select
   // only the rendered text, not the whole window. Skip when the user is
   // typing in an input/textarea/contentEditable so default behavior wins.
+  // Ctrl/Cmd+C on a link copies the link URL instead (viewer-copy-actions
+  // spec); other Ctrl/Cmd+C presses keep the default copy behavior.
+  // Matching by e.code (physical key), not e.key: under the Russian layout
+  // e.key is 'с'/'ф' and the hotkeys would silently stop working.
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
-      if (!(e.ctrlKey || e.metaKey) || e.key !== 'a') return;
+      if (!(e.ctrlKey || e.metaKey)) return;
       const container = containerRef.current;
       if (!container) return;
+
+      if (e.code === 'KeyC') {
+        const active = document.activeElement as HTMLElement | null;
+        const focusedLink =
+          active && container.contains(active)
+            ? active.closest('a[href]')
+            : null;
+        const anchorNode = window.getSelection()?.anchorNode ?? null;
+        const anchorEl =
+          anchorNode instanceof Element ? anchorNode : anchorNode?.parentElement;
+        const selectedLink = anchorEl?.closest('a[href]') ?? null;
+        const link =
+          focusedLink ??
+          (selectedLink && container.contains(selectedLink)
+            ? selectedLink
+            : null);
+        if (link) {
+          e.preventDefault();
+          void copyLinkAddress(link.getAttribute('href') ?? '');
+        }
+        return;
+      }
+
+      if (e.code !== 'KeyA') return;
       const active = document.activeElement as HTMLElement | null;
       if (
         active &&
@@ -141,12 +191,29 @@ export function TextViewer({ entry }: Props) {
     return () => document.removeEventListener('keydown', handleKey);
   }, []);
 
-  // Click-to-zoom: when user clicks a rendered mermaid SVG, show it in a modal.
+  // Read-only viewer (text-display spec): block link navigation and
+  // <details> toggling; keep the mermaid click-to-zoom behavior.
+  // Deps on entry?.id: on first mount there is often no entry yet, so the
+  // viewer renders a placeholder without the container — an effect with
+  // empty deps would see containerRef.current === null and never attach.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
+    // Links and <summary> toggles are inert on any mouse button — middle
+    // click fires auxclick, not click, and would bypass a click-only block.
+    function blockInert(e: MouseEvent): boolean {
+      const target = e.target as HTMLElement;
+      if (target.closest("a") || target.closest("summary")) {
+        e.preventDefault();
+        e.stopPropagation();
+        return true;
+      }
+      return false;
+    }
+
     function handleClick(e: MouseEvent) {
+      if (blockInert(e)) return;
       const target = e.target as HTMLElement;
       const mermaidDiv = target.closest<HTMLElement>(".mermaid");
       if (!mermaidDiv) return;
@@ -156,8 +223,12 @@ export function TextViewer({ entry }: Props) {
     }
 
     container.addEventListener("click", handleClick);
-    return () => container.removeEventListener("click", handleClick);
-  }, []);
+    container.addEventListener("auxclick", blockInert);
+    return () => {
+      container.removeEventListener("click", handleClick);
+      container.removeEventListener("auxclick", blockInert);
+    };
+  }, [entry?.id]);
 
   // Subscribe to playback events for word highlighting.
   useEffect(() => {
@@ -180,6 +251,7 @@ export function TextViewer({ entry }: Props) {
       .playbackStarted(async ({ entry_id }) => {
         try {
           const ts = await commands.getTimestamps(entry_id);
+          debugAssertSortedTimestamps(ts);
           timestampsRef.current = ts;
           playingEntryIdRef.current = entry_id;
           activeIdxRef.current = -1;
@@ -204,9 +276,12 @@ export function TextViewer({ entry }: Props) {
         const timestamps = timestampsRef.current;
         if (timestamps.length === 0) return;
 
-        // Plain mode now emits data-orig-* word spans, so highlighting works.
-        // HTML mode still uses HtmlCharSpan sentinel (0/0) — disabled below.
-        if (!highlightingEnabled(format)) return;
+        // All three display modes emit data-orig-* word spans (HTML mode
+        // gets them from annotateHtmlWords over the sanitized source).
+        // Exception: a plain-text entry manually toggled to HTML renders a
+        // whitespace-collapsed fallback, whose span offsets do not match
+        // WordTimestamp.original_pos — highlighting would be misleading.
+        if (format === 'html' && !entry.html_source) return;
 
         const newIdx = findActiveTimestamp(timestamps, position_sec);
         const prevIdx = activeIdxRef.current;
@@ -252,6 +327,18 @@ export function TextViewer({ entry }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entry?.id, format]);
 
+  // Optimistic local switch; persist on the entry and revert on failure.
+  function handleFormatChange(v: string) {
+    if (!entry) return;
+    const next = v as EntryFormat;
+    const prev = format;
+    setFormat(next);
+    commands.setEntryFormat(entry.id, next).catch((err) => {
+      setFormat(prev);
+      notifications.show({ title: 'Ошибка', message: formatError(err), color: 'red' });
+    });
+  }
+
   if (!entry) {
     return (
       <Stack h="100%">
@@ -265,7 +352,7 @@ export function TextViewer({ entry }: Props) {
       <Group justify="space-between" wrap="nowrap">
         <SegmentedControl
           value={format}
-          onChange={(v) => setFormat(v as Format)}
+          onChange={handleFormatChange}
           size="xs"
           data={[
             { label: "Plain", value: "plain" },
@@ -282,6 +369,8 @@ export function TextViewer({ entry }: Props) {
           dangerouslySetInnerHTML={content ?? { __html: "" }}
         />
       </ScrollArea>
+
+      <ViewerContextMenu containerRef={containerRef} />
 
       <Modal
         opened={zoomedSvg !== null}

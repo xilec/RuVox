@@ -3,9 +3,7 @@
 ## Purpose
 
 Covers the on-disk persistence layer of RuVox (`src-tauri/src/storage/`): the per-user cache directory layout, the `history.json` entry store, the `config.json` application configuration, synthesized audio files (`{uuid}.opus`), word-level timestamp files (`{uuid}.timestamps.json`), the legacy WAV-to-Opus migration, and cache hygiene (orphan sweep and size-based eviction).
-
 ## Requirements
-
 ### Requirement: Cache Directory Layout
 
 The system SHALL store all persistent data under a per-user cache root resolved as `dirs::cache_dir()/ruvox` (e.g. `~/.cache/ruvox/`), with the following layout:
@@ -50,13 +48,20 @@ type EntryStatus =
   | "playing"     // Runtime-only: entry is currently playing. NEVER persisted.
   | "error";      // Synthesis failed
 
+type TextFormat =
+  | "plain"
+  | "markdown"
+  | "html";
+
 interface TextEntry {
   id: EntryId;
   original_text: string;
   normalized_text: string | null;       // Output of the Rust TTS pipeline
   status: EntryStatus;
-  created_at: string;                   // Naive timestamp, e.g. "2026-02-15T11:46:51.504055" (no TZ suffix)
-  audio_generated_at: string | null;    // Naive timestamp when audio file was written
+  format: TextFormat | null;            // Display format chosen for this entry; null = never chosen
+  html_source: string | null;           // Sanitized HTML for rendering; set only for HTML-ingested entries
+  created_at: string;                   // Naive UTC timestamp, e.g. "2026-02-15T11:46:51.504055" (no TZ suffix)
+  audio_generated_at: string | null;    // Naive UTC timestamp when audio file was written
   audio_path: string | null;            // Filename relative to audio/, e.g. "{uuid}.opus"
   timestamps_path: string | null;       // Filename relative to audio/, e.g. "{uuid}.timestamps.json"
   duration_sec: number | null;          // Audio duration in seconds
@@ -65,20 +70,25 @@ interface TextEntry {
 }
 ```
 
-Status values SHALL serialize as lowercase strings. `created_at` and `audio_generated_at` SHALL be stored as naive timestamps without a timezone suffix; `created_at` is generated from the local clock (`Local::now().naive_local()`) and readers treat the values as UTC. `audio_path` and `timestamps_path` SHALL store the filename only; the full path resolves as `<cache_root>/audio/{filename}`. All optional `TextEntry` fields SHALL default when absent from the JSON, so entries written by older builds keep parsing.
+Status and format values SHALL serialize as lowercase strings. `created_at` and `audio_generated_at` SHALL be stored as naive timestamps without a timezone suffix; both SHALL be generated from the UTC clock (`Utc::now().naive_utc()`), and readers treat the values as UTC. `audio_path` and `timestamps_path` SHALL store the filename only; the full path resolves as `<cache_root>/audio/{filename}`. All optional `TextEntry` fields SHALL default when absent from the JSON, so entries written by older builds keep parsing; a missing `format` SHALL default to `null`, meaning the viewer falls back to the `text_format` config default, and a missing `html_source` SHALL default to `null`. For HTML-ingested entries, `original_text` SHALL hold the extracted plain text (the TTS pipeline input) and `html_source` SHALL hold the sanitized markup.
 
 #### Scenario: New entry is persisted
 - GIVEN an empty history
 - WHEN a new entry is added
-- THEN `history.json` contains a `version: 1` wrapper and the entry with status `"pending"`, a UUID v4 `id`, and null audio fields
+- THEN `history.json` contains a `version: 1` wrapper and the entry with status `"pending"`, a UUID v4 `id`, null audio fields, and `format: null`
+
+#### Scenario: Entry written with UTC timestamp
+- GIVEN a newly ingested entry
+- WHEN the entry is persisted to `history.json`
+- THEN its `created_at` is the current UTC time in naive form (no timezone suffix), independent of the machine's local timezone
 
 #### Scenario: History round-trips through disk
-- GIVEN an entry with `normalized_text` set and status `"ready"`
+- GIVEN an entry with `normalized_text` set, `format` set to `"html"`, `html_source` set, and status `"ready"`
 - WHEN the storage service is re-initialized against the same cache directory
-- THEN the loaded entry has the same `normalized_text` and field values as before the restart
+- THEN the loaded entry has the same `normalized_text`, `format`, `html_source`, and field values as before the restart
 
 #### Scenario: Older entries without optional fields parse
-- GIVEN a `history.json` entry that lacks `normalized_text`, `audio_path`, `was_regenerated`, and other optional fields
+- GIVEN a `history.json` entry that lacks `format`, `html_source`, `normalized_text`, `audio_path`, `was_regenerated`, and other optional fields
 - WHEN the history is loaded
 - THEN the entry parses successfully with the missing fields defaulted (null / false)
 
@@ -344,3 +354,4 @@ The on-disk format originated in the earlier PyQt implementation of RuVox, and e
 - GIVEN a `config.json` containing keys not present in the current `UIConfig` schema
 - WHEN the configuration is loaded
 - THEN it parses successfully and the unknown keys are dropped
+

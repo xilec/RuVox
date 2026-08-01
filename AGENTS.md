@@ -53,6 +53,21 @@ pre-commit, clippy and typecheck pre-push — commit and push from inside
 `nix develop` so they find the
 toolchain.
 
+### rust-analyzer MCP server
+
+The repo ships a project-level MCP config (`.kimi-code/mcp.json`) exposing
+rust-analyzer via the `rust-analyzer-mcp` server (tools: definition, references,
+hover, diagnostics, code actions, …). Prerequisites on the machine: `cargo
+install rust-analyzer-mcp` and `rust-analyzer` in `PATH`. The server starts with
+`src-tauri` as its workspace (passed as a CLI arg, resolved relative to the repo
+root). Path dependencies of `src-tauri` (e.g. the `silero-native` crate) are
+covered by this root automatically; if a genuinely separate cargo workspace
+appears in the repo, add a second named server entry to `.kimi-code/mcp.json`
+with that workspace's path as its CLI arg (the server accepts exactly one
+workspace). Cold indexing of the dependency tree takes ~1 minute; if the first
+tool call returns an empty result, indexing is still in progress — wait and
+retry the call.
+
 ## Project layout
 
 ```
@@ -105,7 +120,7 @@ This repo uses [OpenSpec](https://github.com/Fission-AI/OpenSpec). `openspec/spe
 
 General branch/workspace rules live in the global `~/.agents/AGENTS.md` (work in the current workspace by default; one branch per task off fresh `origin/main`; never commit directly to `main`; worktree — `tmp/wt/<task>/` — only when isolation is needed, e.g. parallel agents). The project layer on top:
 
-1. **Full OpenSpec cycle on the branch.** Propose → implement → **archive** the change (archiving syncs the delta specs into `openspec/specs/`).
+1. **Full OpenSpec cycle on the branch.** Propose → implement → **archive** the change (archiving syncs the delta specs into `openspec/specs/`). **Archiving is autonomous:** once implementation is done and the manual pass (if any) has confirmed the behavior, sync the delta specs and move the change to `archive/` without asking for step-by-step confirmation — the GitHub-text draft-approval rules still apply to the archive commit message itself.
 2. **PR only after archive.** Once the change is archived and specs are synced, open a pull request to `main` (it carries implementation + archive + synced specs together). Before opening it, run the **pre-PR gate**:
    1. **Commit clean.** The branch is fully committed — every commit message drafted and approved per the GitHub-text rules.
    2. **Run `ruvox-reviewer`** (read-only, non-blocking) over the branch's diff vs. the merge base on `origin/main` — skip it for docs-only diffs or diffs under ~50 changed lines (the gate stays where the risk is); **and** — *only if `tasks.md` carries a manual-test task* — start the app and hand the user a checklist for the manual pass.

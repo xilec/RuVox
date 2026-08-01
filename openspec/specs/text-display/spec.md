@@ -12,15 +12,27 @@ rendering including theme sync and click-to-zoom.
 ### Requirement: Display mode switching
 
 The `TextViewer` SHALL provide a `SegmentedControl` with the modes `Plain`,
-`Markdown`, and `HTML`, defaulting to `Markdown`. Switching modes SHALL
-re-render the same original text instantly. The selected mode is ephemeral
-client-side state and is NOT persisted with the entry.
+`Markdown`, and `HTML`. Switching modes SHALL re-render the same original
+text instantly and SHALL persist the choice on the entry via
+`set_entry_format`. When an entry is selected, the viewer SHALL show the
+entry's persisted `format`; entries with `format: null` SHALL fall back to
+the viewer default mode (Markdown). The persisted choice
+is display-only: it does not change the stored text, audio, or timestamps.
 
 #### Scenario: Switch display mode
-
 - GIVEN an entry is displayed in Markdown mode
 - WHEN the user selects `Plain` in the `SegmentedControl`
-- THEN the original text is re-rendered as-is without any IPC round-trip
+- THEN the original text is re-rendered as-is and `set_entry_format` persists `"plain"` on the entry
+
+#### Scenario: Selection restores the saved mode
+- GIVEN an entry persisted with `format: "html"`
+- WHEN the user selects that entry in the queue
+- THEN the `SegmentedControl` shows `HTML` and the text renders in HTML mode
+
+#### Scenario: Entry without a saved mode uses the default
+- GIVEN an entry with `format: null` (e.g. written by an older build)
+- WHEN the user selects that entry
+- THEN the viewer renders it in the viewer default mode (Markdown)
 
 ### Requirement: Plain text mode
 
@@ -54,10 +66,13 @@ highlighting can map timestamps onto the rendered HTML.
 
 ### Requirement: HTML mode
 
-In `html` mode the system SHALL render the text as HTML sanitized through
-`DOMPurify` before insertion into the DOM. Word highlighting is NOT
-available in HTML mode: position events MUST be ignored while the mode is
-active.
+In `html` mode the system SHALL render the entry's `html_source` (falling
+back to `original_text` when `html_source` is null) as HTML sanitized
+through `DOMPurify` before insertion into the DOM. Every word SHALL be
+wrapped in a `<span data-orig-start data-orig-end>` element carrying its
+codepoint offsets in the extracted text (`original_text`), produced by the
+same extraction walker that generated the TTS text — so playback word
+highlighting works in HTML mode.
 
 #### Scenario: Sanitized rendering
 
@@ -65,6 +80,11 @@ active.
 - WHEN the viewer is in HTML mode
 - THEN the HTML is rendered without the script content, sanitized by
   `DOMPurify`
+
+#### Scenario: HTML mode renders stored source with word spans
+- GIVEN an HTML-ingested entry with `html_source`
+- WHEN the viewer is in HTML mode
+- THEN the rendered words carry `data-orig-*` offsets matching the extracted text, and word highlighting follows playback
 
 ### Requirement: Mermaid diagram rendering
 
@@ -113,3 +133,47 @@ browser behavior SHALL apply.
 - GIVEN the text cursor or selection is inside the viewer content
 - WHEN the user presses `Ctrl+A`
 - THEN only the viewer's rendered text becomes selected
+
+### Requirement: Read-only rendered content
+
+In every display mode (plain, markdown, HTML) the rendered content SHALL be
+inert: clicking a link (`<a>`) inside the viewer SHALL NOT navigate the
+webview or trigger any external handler — the click SHALL be intercepted and
+its default action prevented. The link's original `href` (verbatim, as in the
+source markup) SHALL be visible on hover (tooltip); resolving it against the
+webview origin would yield a meaningless localhost URL for relative links.
+Interactive elements in rendered content SHALL be inoperable: buttons,
+selects, textareas and inputs SHALL be disabled; `<video>`/`<audio>` SHALL
+render without media controls; `<details>` SHALL not toggle. Neutralization
+SHALL NOT remove the elements from the rendered output and SHALL NOT rely on
+sanitization changes that alter the stored `html_source`.
+
+#### Scenario: Click on a link does not navigate
+
+- WHEN the user clicks a link inside the viewer in any display mode
+- THEN the webview stays on the application and no navigation or external
+  open occurs
+
+#### Scenario: Link URL visible on hover
+
+- GIVEN rendered content containing `<a href="/ru/users/maybe_elf/">`
+- WHEN the user hovers the link
+- THEN a tooltip shows the original href `/ru/users/maybe_elf/` verbatim
+
+#### Scenario: Form controls are disabled
+
+- GIVEN rendered content containing a `<button>` and a `<select>`
+- WHEN the content is displayed
+- THEN both controls are disabled and cannot be operated
+
+#### Scenario: Media renders without controls
+
+- GIVEN rendered content containing `<video controls src="...">`
+- WHEN the content is displayed
+- THEN the video element renders without playback controls
+
+#### Scenario: Mermaid click-to-zoom still works
+
+- WHEN the user clicks a rendered mermaid diagram
+- THEN the zoom modal opens (link interception does not affect non-link
+  clicks)

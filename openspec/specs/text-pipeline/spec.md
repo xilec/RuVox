@@ -219,6 +219,20 @@ MUST NOT match numeric dotted forms (versions `1.2.3`, dates), and MUST NOT
 re-match domains already consumed as part of a schemed URL or an email
 address.
 
+URL components (host labels, path segments, query keys and values, fragment)
+and email local parts SHALL be percent-decoded after the structural splits
+(`/`, `&`, `=`, `@`) and before lexical processing: valid percent-encoded
+UTF-8 sequences SHALL decode to their text (so an encoded Cyrillic file name
+is read as that name), `%20` and other encoded ASCII SHALL decode to their
+characters read by the existing rules, and encoded characters MUST NOT
+change the URL structure (a decoded `%2F` is not a path separator). A `+`
+inside query components SHALL be read as a word separator (space); a `+` in
+email local parts, path segments, and fragments SHALL be read as "плюс".
+Invalid percent sequences (truncated, non-hex, or non-UTF-8 byte runs) MUST
+NOT leak a literal `%`: the `%` SHALL be read as "процент" and the following
+characters read normally. No literal `%` or `+` SHALL remain in the
+normalized output.
+
 #### Scenario: HTTPS URL
 
 - GIVEN the input "https://github.com/user/repo"
@@ -260,6 +274,39 @@ address.
 - WHEN the pipeline processes it
 - THEN the output contains "собака" between the local part and the domain,
   and the domain is read with "точка ком"
+
+#### Scenario: Percent-encoded space in path
+
+- GIVEN the input "https://example.com/hello%20world"
+- WHEN the pipeline processes it
+- THEN the output contains "слэш хеллоу ворлд" ("hello" via `IT_TERMS`) and
+  no literal "%" remains
+
+#### Scenario: Percent-encoded Cyrillic file name
+
+- GIVEN the input "https://example.com/%D1%84%D0%B0%D0%B9%D0%BB"
+- WHEN the pipeline processes it
+- THEN the output contains "слэш файл" (the bytes decode to "файл")
+
+#### Scenario: Plus in query is a space
+
+- GIVEN the input "https://example.com/search?q=hello+world"
+- WHEN the pipeline processes it
+- THEN the output contains "к равно хеллоу ворлд" and no literal "+" remains
+
+#### Scenario: Plus in email local part
+
+- GIVEN the input "user+tag@example.com"
+- WHEN the pipeline processes it
+- THEN the output contains "юзер плюс таг собака экзампл точка ком" and no
+  literal "+" remains
+
+#### Scenario: Encoded percent sign and truncated sequence
+
+- GIVEN the input "https://example.com/100%25done%2"
+- WHEN the pipeline processes it
+- THEN "%25" decodes to "%" read as "процент", the truncated "%2" reads its
+  "%" as "процент" followed by "два", and no literal "%" remains
 
 #### Scenario: Unix file path
 
@@ -409,19 +456,25 @@ numeric parts SHALL be read as Russian number words.
 The system SHALL replace every remaining English word with speakable
 Cyrillic. Special language names `C++`, `C#`, `F#` (any case) SHALL be
 replaced first ("си плюс плюс", "си шарп", "эф шарп"). Single Latin letters
-(length-1 runs) SHALL be read by their English letter names via the
-letter-name spelling table ("a" → "эй", "I" → "ай", "x" → "икс"),
+(length-1 runs) SHALL be read by their English letter names via the shared
+letter-name table ("a" → "эй", "I" → "ай", "x" → "икс"),
 case-insensitively; they SHALL NOT be recorded in the unknown-words map.
 For remaining multi-letter words the resolution order SHALL be: `IT_TERMS`
 dictionary ("api" → "эй пи ай", "github" → "гитхаб"); all-uppercase words of
 length ≥ 2 via `AbbreviationNormalizer` (special cases like "ios" →
 "ай оу эс", `AS_WORD` entries like "json" → "джейсон", otherwise
-letter-by-letter via `LETTER_MAP`); `AS_WORD` dictionary for mixed-case
-entries; and finally digraph-first transliteration (`sh` → "ш", `tion` →
-"шн", longest match first). Custom terms registered via
-`EnglishNormalizer::add_custom_terms` SHALL override `IT_TERMS`. Words
-resolved by transliteration SHALL be recorded in the unknown-words map, which
-SHALL be cleared at the start of every `process_with_char_mapping` call.
+letter-by-letter via the same shared letter-name table); `AS_WORD`
+dictionary for mixed-case entries; and finally digraph-first
+transliteration (`sh` → "ш", `tion` → "шн", longest match first). Custom
+terms registered via `EnglishNormalizer::add_custom_terms` SHALL override
+`IT_TERMS`. Words resolved by transliteration SHALL be recorded in the
+unknown-words map, which SHALL be cleared at the start of every
+`process_with_char_mapping` call.
+
+The letter-name table SHALL have a single home shared by the abbreviation
+spelling, code-identifier spelling, and lone-letter reading paths; its
+canonical readings for x/y/z SHALL be "икс", "вай", "зет" — so an unknown
+abbreviation and a lone letter sound the same ("x" and "X" both → "икс").
 
 #### Scenario: Uppercase abbreviation spelled out
 
@@ -429,6 +482,13 @@ SHALL be cleared at the start of every `process_with_char_mapping` call.
 - WHEN the pipeline processes it
 - THEN the abbreviation is read letter by letter as "эй пи ай" and not
   transliterated as a word
+
+#### Scenario: Unknown abbreviation with x/y/z
+
+- GIVEN the input "формат XYZ"
+- WHEN the pipeline processes it
+- THEN the abbreviation is read "икс вай зет" — the same letter names as
+  for lone letters
 
 #### Scenario: IT term from dictionary
 
@@ -461,12 +521,17 @@ SHALL be cleared at the start of every `process_with_char_mapping` call.
 The system SHALL read standalone integers as Russian cardinal number words
 ("123" → "сто двадцать три"), including thousands, millions, and billions
 with correct declension and gender agreement ("тысяча" feminine). The number
-phase SHALL skip digits that are adjacent to a dot, another digit, or a
-Latin/Cyrillic letter, because those regions are owned by the earlier URL,
-size, date, version, range, and code-identifier phases. Non-integer input and
-integers that fail to parse SHALL be left unchanged. Number replacements
-SHALL be applied positionally by byte range, so a match that is a substring
-of another match (e.g. "1" inside "10") MUST NOT corrupt the longer number.
+phase SHALL skip digits that are adjacent to another digit or a
+Latin/Cyrillic letter, or that sit next to a dot acting as a digit
+separator (a decimal/version separator: a dot directly adjacent to digits
+on the side facing the number), because those regions are owned by the
+earlier URL, size, date, version, range, and code-identifier phases. A
+number immediately before a terminal dot (a period followed by whitespace,
+end of text, or a non-digit character) SHALL be read normally — sentence
+punctuation is not a separator. Non-integer input and integers that fail to
+parse SHALL be left unchanged. Number replacements SHALL be applied
+positionally by byte range, so a match that is a substring of another match
+(e.g. "1" inside "10") MUST NOT corrupt the longer number.
 
 #### Scenario: Plain number
 
@@ -492,6 +557,18 @@ of another match (e.g. "1" inside "10") MUST NOT corrupt the longer number.
 - GIVEN the input "33 3"
 - WHEN the pipeline processes it
 - THEN the output reads both numbers correctly as "тридцать три три"
+
+#### Scenario: Number before a sentence-ending dot
+
+- GIVEN the input "Встреча в 5."
+- WHEN the pipeline processes it
+- THEN the number is read as "пять" and the output is "Встреча в пять."
+
+#### Scenario: Dot between digits remains a separator
+
+- GIVEN a leftover fragment like "3.14" that earlier phases did not consume
+- WHEN the number phase runs
+- THEN neither "3" nor "14" is expanded by the number phase
 
 ### Requirement: Output post-processing
 
@@ -526,4 +603,53 @@ operators, whitespace handling, and mixed paragraphs.
 - WHEN `cargo test --manifest-path src-tauri/Cargo.toml --test golden` runs
 - THEN every fixture's pipeline output matches its `.expected.txt` and its
   `CharMapping` matches `.char_map.json`
+
+### Requirement: Near-linear scaling of normalization
+
+Normalization SHALL run in time that grows near-linearly with input size.
+Each pipeline phase MUST apply its replacements in a single pass over the
+text (one string rebuild per phase, not per replacement), and position-map
+bookkeeping MUST be served from a sorted interval index (binary search)
+without cloning the replacement history per query. Per-replacement
+complexity MUST NOT depend on the total document length or on the number of
+previously applied replacements.
+
+#### Scenario: Large replacement-heavy input normalizes within budget
+
+- GIVEN an input of ~1 MB of dense, replacement-heavy markup (tags,
+  attributes, URLs, entities, mixed Cyrillic/Latin text)
+- WHEN `process_with_char_mapping` runs on it
+- THEN normalization completes within 10 seconds and returns a correct
+  normalized text with a consistent `CharMapping`
+
+#### Scenario: Doubling the input scales near-linearly
+
+- GIVEN the same class of dense replacement-heavy input at sizes n and 2n
+- WHEN both are normalized
+- THEN the measured time for 2n is less than 4x the time for n (a quadratic
+  implementation grows ~4x or worse per doubling)
+
+### Requirement: Input length limit
+
+The pipeline is not required to accept unbounded input: text ingestion
+surfaces SHALL reject input longer than 100 000 codepoints before
+normalization starts (see the `ipc-commands` capability for the rejection
+surface) — but only when the active TTS engine is Piper, whose one-shot
+unchunked inference the limit protects. When the active engine is Silero,
+which synthesizes in bounded chunks, input of any length SHALL be accepted.
+Inputs at or below the limit SHALL be normalized in full without truncation.
+
+#### Scenario: Input at the limit is fully normalized
+
+- GIVEN an input of exactly 100 000 codepoints
+- WHEN the pipeline processes it
+- THEN the whole input is normalized with no content dropped
+
+#### Scenario: Oversized input is normalized when Silero is active
+
+- GIVEN the active TTS engine is Silero and an input longer than 100 000
+  codepoints
+- WHEN the pipeline processes it
+- THEN the whole input is normalized with no content dropped and no
+  length-based rejection occurs
 

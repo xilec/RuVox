@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use chrono::Local;
+use chrono::Utc;
 use parking_lot::RwLock;
 use thiserror::Error;
 use uuid::Uuid;
@@ -11,7 +11,7 @@ use uuid::Uuid;
 use crate::storage::eviction;
 pub use crate::storage::eviction::{EvictStats, StartupCleanupStats, SweepStats};
 use crate::storage::schema::{
-    EntryId, EntryStatus, HistoryFile, TextEntry, Timestamps, UIConfig, WordTimestamp,
+    EntryId, EntryStatus, HistoryFile, TextEntry, TextFormat, Timestamps, UIConfig, WordTimestamp,
 };
 
 const HISTORY_VERSION: u32 = 1;
@@ -207,6 +207,17 @@ impl StorageService {
 
     /// Add a new entry with an auto-generated UUID. Persists history.
     pub fn add_entry(&self, original_text: String) -> Result<TextEntry> {
+        self.add_entry_with_source(original_text, None, None)
+    }
+
+    /// Add a new entry with explicit display format and sanitized HTML source
+    /// (HTML ingestion path). Persists history.
+    pub fn add_entry_with_source(
+        &self,
+        original_text: String,
+        format: Option<TextFormat>,
+        html_source: Option<String>,
+    ) -> Result<TextEntry> {
         // Strip the UTF-8 BOM if present (matches what the prior Qt-based build did,
         // keeping cached entries identical between the two implementations).
         let clean_text = original_text
@@ -219,7 +230,9 @@ impl StorageService {
             original_text: clean_text,
             normalized_text: None,
             status: EntryStatus::Pending,
-            created_at: Local::now().naive_local(),
+            format,
+            html_source,
+            created_at: Utc::now().naive_utc(),
             audio_path: None,
             timestamps_path: None,
             duration_sec: None,
@@ -588,7 +601,7 @@ mod tests {
     #[test]
     fn get_all_entries_newest_first() {
         let (svc, _dir) = make_service();
-        let base = Local::now().naive_local();
+        let base = chrono::Local::now().naive_local();
         let e1 = add_entry_at(&svc, "first", base);
         let e2 = add_entry_at(&svc, "second", base + chrono::Duration::seconds(1));
 

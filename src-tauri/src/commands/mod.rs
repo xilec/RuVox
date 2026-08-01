@@ -19,9 +19,10 @@ use crate::pipeline::tracked_text::CharMapping;
 use crate::pipeline::TTSPipeline;
 use crate::state::AppState;
 use crate::storage::schema::{
-    EntryId, EntryStatus, TextEntry, UIConfig, UIConfigPatch, WordTimestamp,
+    EntryId, EntryStatus, TextEntry, TextFormat, UIConfig, UIConfigPatch, WordTimestamp,
 };
 use crate::storage::service::{StorageError, StorageService};
+use crate::tts::engine::EngineKind;
 use crate::tts::piper::download::download_voice;
 use crate::tts::{
     availability, AvailableEngines, CharMappingEntry, SynthesizeOutput, TtsEngine, TtsError,
@@ -75,6 +76,37 @@ impl From<TtsError> for CommandError {
 }
 
 type CmdResult<T> = Result<T, CommandError>;
+
+/// Maximum accepted input length in Unicode codepoints when the active engine
+/// is Piper. Piper still synthesizes the whole text in one unchunked ONNX run,
+/// so unbounded input risks both a CPU wedge and an OOM (see openspec change
+/// `fix-pipeline-quadratic` and issue #155). Silero synthesizes in bounded
+/// chunks (`ttsd/ttsd/chunking.py`), so no limit applies while it is active.
+const MAX_INPUT_CHARS: usize = 100_000;
+
+/// The rejection message for input longer than `MAX_INPUT_CHARS` codepoints
+/// when the active engine is Piper; `None` for Silero (it synthesizes in
+/// bounded chunks and accepts any length).
+fn oversized_input_message(text: &str, engine: EngineKind) -> Option<String> {
+    if engine == EngineKind::Piper && text.chars().count() > MAX_INPUT_CHARS {
+        // Keep the space-grouped literal in sync with MAX_INPUT_CHARS.
+        return Some(
+            "текст слишком длинный для движка Piper (максимум 100 000 символов); \
+             сократите текст или переключитесь на Silero в настройках"
+                .to_string(),
+        );
+    }
+    None
+}
+
+/// Reject input longer than `MAX_INPUT_CHARS` codepoints when the active
+/// engine is Piper; Silero chunks the text and accepts any length.
+fn validate_input_length(text: &str, engine: EngineKind) -> CmdResult<()> {
+    match oversized_input_message(text, engine) {
+        Some(message) => Err(CommandError::Internal { message }),
+        None => Ok(()),
+    }
+}
 
 // ── Helper: emit entry_updated ─────────────────────────────────────────────────
 
@@ -158,6 +190,7 @@ impl<R: Runtime> SynthesisDeps<R> {
 enum SynthesisError {
     PipelinePanic(String),
     EmptyText,
+    InputTooLong(String),
     TtsFailed(String),
 }
 
@@ -166,6 +199,7 @@ impl SynthesisError {
         match self {
             Self::PipelinePanic(msg) => format!("pipeline task panicked: {msg}"),
             Self::EmptyText => "нормализация вернула пустой текст".to_string(),
+            Self::InputTooLong(msg) => msg.clone(),
             Self::TtsFailed(msg) => msg.clone(),
         }
     }
@@ -424,7 +458,7 @@ fn apply_ready_if_current(
     entry.audio_path = Some(audio_filename.to_string());
     entry.timestamps_path = ts_filename;
     entry.duration_sec = Some(output.duration_sec);
-    entry.audio_generated_at = Some(chrono::Local::now().naive_local());
+    entry.audio_generated_at = Some(chrono::Utc::now().naive_utc());
 
     if let Err(e) = storage.update_entry(entry) {
         warn!("failed to update entry to ready: {e}");
@@ -496,6 +530,14 @@ pub fn spawn_synthesis<R: Runtime + 'static>(
             };
 
             let result: Result<(), SynthesisError> = async {
+                // Re-check the length guard at synthesis time: the engine may
+                // have been switched to Piper after the entry was ingested
+                // under Silero (queued synthesis or regenerate_entry), and an
+                // unchunked oversized run is exactly what the limit guards
+                // against.
+                if let Some(msg) = oversized_input_message(&entry.original_text, tts.kind()) {
+                    return Err(SynthesisError::InputTooLong(msg));
+                }
                 let (normalized, mapping) =
                     run_normalization(Arc::clone(&pipeline), entry.original_text.clone()).await?;
                 mark_processing(&storage, &app, &entry_id, &normalized);
@@ -655,14 +697,20 @@ fn ingest_text<R: Runtime>(
     state: &AppState,
     text: String,
     play_when_ready: bool,
+    format: Option<TextFormat>,
+    html_source: Option<String>,
 ) -> CmdResult<String> {
     if text.trim().is_empty() {
         return Err(CommandError::Internal {
             message: "в буфере обмена нет текста".to_string(),
         });
     }
+    validate_input_length(&text, state.tts.kind())?;
 
-    let entry = state.storage.add_entry(text).map_err(CommandError::from)?;
+    let entry = state
+        .storage
+        .add_entry_with_source(text, format, html_source)
+        .map_err(CommandError::from)?;
     let entry_id = entry.id;
 
     emit_entry_updated(&app, &entry);
@@ -681,14 +729,20 @@ fn ingest_text<R: Runtime>(
 /// Clipboard API is more robust on Wayland than the Rust-side `arboard`
 /// crate (which silently fails with `ContentNotAvailable` for
 /// WebKit-sourced clipboard data on KDE Plasma 6).
+///
+/// For HTML-ingested entries the frontend passes `format: "html"`, the
+/// extracted plain text as `text`, and the sanitized markup as
+/// `html_source` (rendering only — synthesis always normalizes `text`).
 #[tauri::command]
 pub async fn add_text_entry<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
     text: String,
     play_when_ready: bool,
+    format: Option<TextFormat>,
+    html_source: Option<String>,
 ) -> CmdResult<String> {
-    ingest_text(app, &state, text, play_when_ready)
+    ingest_text(app, &state, text, play_when_ready, format, html_source)
 }
 
 /// Read text from the system clipboard and add a new entry to the queue.
@@ -714,7 +768,7 @@ pub async fn add_clipboard_entry<R: Runtime>(
         message: format!("clipboard task panicked: {e}"),
     })??;
 
-    ingest_text(app, &state, text, play_when_ready)
+    ingest_text(app, &state, text, play_when_ready, None, None)
 }
 
 /// Pure normalization step behind [`preview_normalize`]: runs the pipeline on
@@ -744,6 +798,7 @@ pub async fn preview_normalize(
     state: State<'_, AppState>,
     text: String,
 ) -> CmdResult<PreviewNormalizeResult> {
+    validate_input_length(&text, state.tts.kind())?;
     let (normalized, _char_mapping) =
         preview_normalization(Arc::clone(&state.pipeline), text).await?;
     Ok(PreviewNormalizeResult { normalized })
@@ -821,6 +876,28 @@ pub async fn delete_audio<R: Runtime>(
     if let Some(entry) = state.storage.get_entry(&uuid) {
         emit_entry_updated(&app, &entry);
     }
+    Ok(())
+}
+
+/// Persist the display format of an entry and notify the UI.
+///
+/// Display-only: `normalized_text`, audio, and timestamps are untouched, so
+/// no `Processing` guard is needed — the change cannot race the synthesis
+/// pipeline.
+#[tauri::command]
+pub async fn set_entry_format<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    id: String,
+    format: TextFormat,
+) -> CmdResult<()> {
+    let mut entry = require_entry(&state.storage, &id)?;
+    entry.format = Some(format);
+    state
+        .storage
+        .update_entry(entry.clone())
+        .map_err(CommandError::from)?;
+    emit_entry_updated(&app, &entry);
     Ok(())
 }
 

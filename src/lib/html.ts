@@ -1,5 +1,7 @@
 import DOMPurify, { type Config as DOMPurifyConfig } from 'dompurify';
 import hljs from 'highlight.js';
+import { annotateHtmlWords, extractTextForTts } from './htmlText';
+import type { EntryFormat } from './tauri';
 
 /**
  * DOMPurify configuration.
@@ -14,9 +16,33 @@ const PURIFY_CONFIG: DOMPurifyConfig = {
   // Strip all event handlers (onclick, onload, …) and javascript: URIs.
   FORBID_ATTR: ['style'],
   FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'input'],
-  // Keep data- attributes so that future word-highlighting spans survive.
+  // Keep data- attributes so that word-highlighting spans survive.
   ALLOW_DATA_ATTR: true,
 };
+
+/**
+ * Sanitize an HTML string with the shared viewer configuration.
+ *
+ * Used both at render time and at ingestion time (html-ingestion spec): the
+ * sanitized output is what gets stored as `TextEntry.html_source`, so the
+ * stored markup, the extraction input, and the rendered document are the
+ * same content.
+ */
+export function sanitizeHtml(raw: string): string {
+  // DOMPurify.sanitize with RETURN_DOM=false (default) narrows the return
+  // type to string via the config overload.
+  return DOMPurify.sanitize(raw, { ...PURIFY_CONFIG, RETURN_DOM: false });
+}
+
+/**
+ * Text that a preview/normalization request should run on for a given
+ * source-format choice (preview-dialog spec): for `html` the markup is
+ * sanitized and extracted first, so the preview shows what will actually
+ * be narrated; other formats preview the text unchanged.
+ */
+export function previewTextFor(text: string, format: EntryFormat): string {
+  return format === 'html' ? extractTextForTts(sanitizeHtml(text)) : text;
+}
 
 /**
  * Sanitize an HTML string and return safe markup for insertion via
@@ -24,27 +50,24 @@ const PURIFY_CONFIG: DOMPurifyConfig = {
  *
  * After sanitization, `<pre><code class="language-*">` blocks are highlighted
  * by highlight.js so code inside HTML documents gets the same treatment as
- * code inside Markdown.
+ * code inside Markdown, and every word is wrapped in a data-orig span with
+ * codepoint offsets into the extracted TTS text (annotateHtmlWords), which
+ * enables word highlighting in HTML mode.
  */
 export function renderHtml(raw: string): string {
-  // DOMPurify.sanitize with RETURN_DOM=false (default) narrows the return
-  // type to string via the config overload.
-  const clean = DOMPurify.sanitize(raw, { ...PURIFY_CONFIG, RETURN_DOM: false });
-  return highlightCodeBlocks(clean);
+  const container = document.createElement('div');
+  // DOMPurify already cleaned the HTML — inserting it here is safe.
+  container.innerHTML = sanitizeHtml(raw);
+  highlightCodeBlocks(container);
+  annotateHtmlWords(container);
+  return container.innerHTML;
 }
 
 /**
- * Walk all `<pre><code class="language-*">` elements in an HTML string and
+ * Walk all `<pre><code class="language-*">` elements in the container and
  * apply highlight.js syntax highlighting in place.
- *
- * We parse, mutate, and re-serialize via a temporary `<div>` so we never
- * insert raw HTML manually.
  */
-function highlightCodeBlocks(html: string): string {
-  const container = document.createElement('div');
-  // DOMPurify already cleaned the HTML — inserting it here is safe.
-  container.innerHTML = html;
-
+function highlightCodeBlocks(container: HTMLElement): void {
   container.querySelectorAll('pre code').forEach((codeEl) => {
     const lang = extractLanguage(codeEl.className);
     if (lang && hljs.getLanguage(lang)) {
@@ -71,8 +94,6 @@ function highlightCodeBlocks(html: string): string {
       }
     }
   });
-
-  return container.innerHTML;
 }
 
 /**

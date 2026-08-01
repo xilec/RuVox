@@ -1,5 +1,4 @@
 pub mod constants;
-pub mod html_extractor;
 pub mod normalizers;
 pub mod tracked_text;
 
@@ -681,11 +680,14 @@ impl TTSPipeline {
     }
 
     fn process_numbers_tracked(&self, tracked: &mut TrackedText) {
-        // Effective pattern: `(?<![.])(\d+)(?![.])` on top of the Unicode-aware
+        // Effective pattern: `(?<![.])(\d+)(?![.]\d)` on top of the Unicode-aware
         // `\b\d+\b` from re_number(). The regex crate lacks lookbehind/lookahead,
         // and `\b` already rejects digits, letters, and underscore next to the
-        // match, so the manual guard below only needs to exclude '.' (float and
-        // version separators, owned by earlier pipeline phases).
+        // match, so the manual guard below only needs to exclude the digit
+        // separator '.': a dot directly followed by another digit (float and
+        // version separators, owned by earlier pipeline phases). A dot followed
+        // by whitespace, end of text, or a non-digit is terminal punctuation,
+        // not a separator — the number before it is read normally.
         let snapshot = tracked.text().to_string();
 
         let matches: Vec<(usize, usize, String)> = re_number()
@@ -695,7 +697,9 @@ impl TTSPipeline {
                 let end = m.end();
 
                 let preceded_ok = start == 0 || !snapshot[..start].ends_with('.');
-                let followed_ok = end >= snapshot.len() || !snapshot[end..].starts_with('.');
+                let followed_ok = end >= snapshot.len()
+                    || !snapshot[end..].starts_with('.')
+                    || !snapshot[end + 1..].starts_with(|c: char| c.is_ascii_digit());
 
                 if preceded_ok && followed_ok {
                     let replacement = self.number_normalizer.normalize_number(m.as_str());
@@ -783,6 +787,31 @@ mod tests {
     // tilde_approx (src-tauri/tests/fixtures/pipeline/).
 
     // ── Numbers adjacent to letters ──────────────────────────────────────────
+
+    #[test]
+    fn pipeline_number_before_terminal_dot_is_read() {
+        // Regression (#111): the number guard treated every trailing dot as a
+        // decimal/version separator, so a number before a sentence-ending
+        // period was left as unreadable digits.
+        let mut p = TTSPipeline::new();
+        assert_eq!(p.process("Встреча в 5."), "Встреча в пять.");
+        assert_eq!(
+            p.process("Сначала пункт 3. Потом пункт 4."),
+            "Сначала пункт три. Потом пункт четыре."
+        );
+    }
+
+    #[test]
+    fn pipeline_dot_between_digits_stays_separator() {
+        // A float-like fragment keeps its version-path reading ("точка …"),
+        // not two independently expanded numbers — the tightened guard must
+        // not change this path.
+        let mut p = TTSPipeline::new();
+        assert_eq!(
+            p.process("Остаток 3.14 в конце"),
+            "Остаток три точка четырнадцать в конце"
+        );
+    }
 
     #[test]
     fn pipeline_number_adjacent_to_letter_not_expanded() {

@@ -3,21 +3,21 @@ import type { WordTimestamp } from './tauri';
 const HIGHLIGHT_CLASS = 'word-highlight';
 
 /**
- * Whether word highlighting works for the given viewer format.
+ * Binary search: find the index of the timestamp active at `positionSec`
+ * (active when `start <= positionSec < end`).
  *
- * Plain and markdown both emit data-orig-* word spans; HTML mode uses
- * HtmlCharSpan sentinel (0/0), so there is nothing to highlight against.
- * TODO(U5): emit a proper char-mapping from the HTML pipeline.
- */
-export function highlightingEnabled(
-  format: 'plain' | 'markdown' | 'html',
-): boolean {
-  return format !== 'html';
-}
-
-/**
- * Binary search: find the index of the timestamp active at `positionSec`.
- * Returns -1 if no timestamp covers this position.
+ * `timestamps` MUST be sorted by `start` ascending and non-overlapping —
+ * the search silently misses matches otherwise. All producers (ttsd, piper,
+ * silero-native) emit sorted, contiguous lists; the sorted half of the
+ * invariant is asserted in dev builds where timestamps are loaded (see
+ * {@link debugAssertSortedTimestamps}).
+ *
+ * A position in a gap between words resolves to the closest upcoming word:
+ * by the loop invariant every word before `lo` has `end <= positionSec`
+ * and every word from `lo` on has `start > positionSec`, so the next word
+ * lights up ahead of its interval instead of the highlight blinking out
+ * during the pause. Returns -1 only when the position is at or past the
+ * last word's `end` (or the list is empty).
  */
 export function findActiveTimestamp(
   timestamps: WordTimestamp[],
@@ -40,11 +40,31 @@ export function findActiveTimestamp(
     }
   }
 
-  // positionSec is in a gap between words — find the closest upcoming word
-  if (lo < timestamps.length && positionSec < timestamps[lo].start) {
-    return -1;
+  // Gap between words — highlight the closest upcoming word.
+  return lo < timestamps.length ? lo : -1;
+}
+
+/**
+ * Dev-only assertion of the sorted-by-`start` half of the invariant
+ * {@link findActiveTimestamp} relies on (the other half — non-overlapping
+ * intervals — is guaranteed by all current producers and not checked here).
+ * Logs a console assertion for every
+ * out-of-order pair; no-op in production builds. Call once per timestamp
+ * load — the list does not change between `playback_position` events, so
+ * checking per event would be waste.
+ */
+export function debugAssertSortedTimestamps(
+  timestamps: WordTimestamp[],
+): void {
+  if (!import.meta.env.DEV) return;
+  for (let i = 1; i < timestamps.length; i++) {
+    console.assert(
+      timestamps[i].start >= timestamps[i - 1].start,
+      `word timestamps must be sorted by start; ` +
+        `entry at index ${i} starts at ${timestamps[i].start} ` +
+        `after ${timestamps[i - 1].start}`,
+    );
   }
-  return -1;
 }
 
 /**
