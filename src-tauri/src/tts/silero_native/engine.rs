@@ -29,7 +29,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde_json::json;
 use silero_native::{EngineError, SileroNative};
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 use tracing::{info, warn};
 
 use crate::tts::engine::{EngineKind, TtsEngine};
@@ -44,6 +44,10 @@ pub struct SileroNativeEngine {
     /// `spawn_initial_warmup` task can install it without holding a borrow
     /// of `&self`. `None` until the first successful load.
     loaded: Arc<RwLock<Option<Arc<SileroNative>>>>,
+    /// Serializes model loads: without it, concurrent `synthesize` /
+    /// warmup callers on a cold engine each pay for their own load
+    /// (~230 MB transient double-load).
+    load_lock: Arc<Mutex<()>>,
     /// Frontend event emitter.
     emitter: Emitter,
 }
@@ -65,6 +69,7 @@ impl SileroNativeEngine {
         Self {
             bundle_dir,
             loaded: Arc::new(RwLock::new(None)),
+            load_lock: Arc::new(Mutex::new(())),
             emitter,
         }
     }
@@ -76,25 +81,40 @@ impl SileroNativeEngine {
         bundle_dir.join("manifest.json").exists()
     }
 
-    /// Load the model unless already loaded. Concurrent callers serialize on
-    /// the write lock; the second one observes the filled slot.
-    async fn ensure_loaded(&self) -> Result<Arc<SileroNative>, TtsError> {
+    /// Load the model unless already loaded. Single-flighted by
+    /// `load_lock`: the first caller loads, concurrent callers wait and then
+    /// observe the filled slot. Shared by `ensure_loaded` and
+    /// `spawn_initial_warmup` so both walk the same path.
+    async fn load_single_flight(
+        bundle_dir: &std::path::Path,
+        loaded: &RwLock<Option<Arc<SileroNative>>>,
+        load_lock: &Mutex<()>,
+    ) -> Result<Arc<SileroNative>, TtsError> {
         {
-            let guard = self.loaded.read().await;
+            let guard = loaded.read().await;
             if let Some(engine) = guard.as_ref() {
                 return Ok(Arc::clone(engine));
             }
         }
 
-        if !Self::bundle_present(&self.bundle_dir) {
+        let _single = load_lock.lock().await;
+        // A competitor may have filled the slot while we waited.
+        {
+            let guard = loaded.read().await;
+            if let Some(engine) = guard.as_ref() {
+                return Ok(Arc::clone(engine));
+            }
+        }
+
+        if !Self::bundle_present(bundle_dir) {
             return Err(TtsError::Ttsd {
                 code: "bundle_not_installed".to_string(),
-                message: bundle_missing_message(&self.bundle_dir),
+                message: bundle_missing_message(bundle_dir),
             });
         }
 
-        let bundle_dir = self.bundle_dir.clone();
-        let engine = tokio::task::spawn_blocking(move || SileroNative::load(&bundle_dir))
+        let dir = bundle_dir.to_path_buf();
+        let engine = tokio::task::spawn_blocking(move || SileroNative::load(&dir))
             .await
             .map_err(|e| TtsError::Ttsd {
                 code: "silero_native_load_panic".to_string(),
@@ -103,10 +123,15 @@ impl SileroNativeEngine {
             .map_err(map_load_error)?;
 
         let engine = Arc::new(engine);
-        let mut guard = self.loaded.write().await;
+        let mut guard = loaded.write().await;
         *guard = Some(Arc::clone(&engine));
         info!(target: "tts::silero_native", "model bundle loaded");
         Ok(engine)
+    }
+
+    /// Load the model unless already loaded.
+    async fn ensure_loaded(&self) -> Result<Arc<SileroNative>, TtsError> {
+        Self::load_single_flight(&self.bundle_dir, &self.loaded, &self.load_lock).await
     }
 }
 
@@ -166,43 +191,29 @@ impl TtsEngine for SileroNativeEngine {
         let bundle_dir = self.bundle_dir.clone();
         let emitter = Arc::clone(&self.emitter);
         let slot = Arc::clone(&self.loaded);
+        let load_lock = Arc::clone(&self.load_lock);
 
         tokio::spawn(async move {
             (emitter)("model_loading", json!({ "engine": "silero_native" }));
 
-            if !SileroNativeEngine::bundle_present(&bundle_dir) {
-                let msg = bundle_missing_message(&bundle_dir);
-                warn!(target: "tts::silero_native", "warmup skipped: {msg}");
-                (emitter)(
-                    "model_error",
-                    json!({ "engine": "silero_native", "message": msg }),
-                );
-                return;
-            }
-
-            let load_result =
-                tokio::task::spawn_blocking(move || SileroNative::load(&bundle_dir)).await;
-
-            match load_result {
-                Ok(Ok(engine)) => {
-                    let mut guard = slot.write().await;
-                    *guard = Some(Arc::new(engine));
+            match SileroNativeEngine::load_single_flight(&bundle_dir, &slot, &load_lock).await {
+                Ok(_) => {
                     info!(target: "tts::silero_native", "warmup complete");
                     (emitter)("model_loaded", json!({ "engine": "silero_native" }));
                 }
-                Ok(Err(e)) => {
-                    let err = map_load_error(e);
+                Err(err) => {
                     warn!(target: "tts::silero_native", "warmup load failed: {err}");
+                    // Keep the user-facing payload as the bare Russian
+                    // message for a missing bundle (no error-code prefix).
+                    let message = match &err {
+                        TtsError::Ttsd { code, message } if code == "bundle_not_installed" => {
+                            message.clone()
+                        }
+                        other => other.to_string(),
+                    };
                     (emitter)(
                         "model_error",
-                        json!({ "engine": "silero_native", "message": err.to_string() }),
-                    );
-                }
-                Err(e) => {
-                    warn!(target: "tts::silero_native", "warmup task panicked: {e}");
-                    (emitter)(
-                        "model_error",
-                        json!({ "engine": "silero_native", "message": e.to_string() }),
+                        json!({ "engine": "silero_native", "message": message }),
                     );
                 }
             }
@@ -291,6 +302,30 @@ mod tests {
                 );
             }
             other => panic!("expected bundle_not_installed, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn concurrent_cold_loads_are_single_flighted() {
+        // Without a real bundle every caller fails with bundle_not_installed;
+        // what this pins is that N concurrent cold-load attempts complete
+        // (no deadlock on the load lock) and all see the same error.
+        let dir = tempfile::TempDir::new().unwrap();
+        let engine = Arc::new(engine_at(dir.path()));
+        let mut handles = Vec::new();
+        for _ in 0..8 {
+            let engine = Arc::clone(&engine);
+            handles.push(tokio::spawn(async move { engine.ensure_loaded().await }));
+        }
+        for h in handles {
+            let err = match h.await.unwrap() {
+                Ok(_) => panic!("cold load without a bundle must fail"),
+                Err(err) => err,
+            };
+            match err {
+                TtsError::Ttsd { code, .. } => assert_eq!(code, "bundle_not_installed"),
+                other => panic!("expected bundle_not_installed, got {other:?}"),
+            }
         }
     }
 
