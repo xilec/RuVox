@@ -123,6 +123,14 @@ fn re_percentage() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"\b(\d+(?:\.\d+)?)\s*%").expect("valid regex"))
 }
 
+/// Percentage range "10-20%": two integers around a dash with a single
+/// trailing "%". Must be matched before the plain percentage pattern,
+/// otherwise "20%" is consumed alone and the dash is left bare (#112).
+fn re_percentage_range() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"\b(\d+)\s*-\s*(\d+)\s*%").expect("valid regex"))
+}
+
 fn re_inline_code() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"`([^`\n]+)`").expect("valid regex"))
@@ -408,6 +416,31 @@ impl TTSPipeline {
             tracked.sub(re_date_dot(), normalize_date);
             tracked.sub(re_time(), |caps| {
                 num.normalize_time(caps.get(0).unwrap().as_str())
+            });
+        }
+
+        // ── Phase 9b: Percentage ranges (e.g. 10-20%) ────────────────────────
+        // Must precede plain percentages: otherwise the trailing "20%" is
+        // consumed alone, the range phase never sees "10-20", and the dash
+        // is left bare (#112). The range reading already puts both bounds in
+        // genitive, so the fixed genitive-plural "процентов" is always right
+        // after "до <genitive>".
+        {
+            let num = &self.number_normalizer;
+            tracked.sub(re_percentage_range(), |caps| {
+                let range = format!(
+                    "{}-{}",
+                    caps.get(1).unwrap().as_str(),
+                    caps.get(2).unwrap().as_str()
+                );
+                let read = num.normalize_range(&range);
+                if read == range {
+                    // normalize_range refused the bounds (e.g. past i64):
+                    // leave the whole match untouched, like the plain
+                    // percentage phase does on unparsable input.
+                    return caps.get(0).unwrap().as_str().to_string();
+                }
+                format!("{read} процентов")
             });
         }
 
@@ -873,6 +906,45 @@ mod tests {
         // phase runs — no double-consume, no "ноль" prefix.
         let mut p = TTSPipeline::new();
         assert_eq!(p.process("Точность 1.5"), "Точность один точка пять");
+    }
+
+    #[test]
+    fn pipeline_percentage_range_is_read_as_a_unit() {
+        // Regression (#112): after the percentages-before-ranges phase swap
+        // the trailing "20%" was consumed alone, leaving "10-" with a bare
+        // dash. The percentage-range phase must claim "N-M%" as one region.
+        let mut p = TTSPipeline::new();
+        assert_eq!(
+            p.process("Рост на 10-20% за квартал"),
+            "Рост на от десяти до двадцати процентов за квартал"
+        );
+        // Whitespace around the dash and before "%" is tolerated.
+        assert_eq!(p.process("10 - 20 %"), "от десяти до двадцати процентов");
+    }
+
+    #[test]
+    fn pipeline_percentage_range_glued_to_letter_not_expanded() {
+        // A digit glued to a letter is not a range bound: "\b" rejects the
+        // percentage-range match, so no "от … до …" reading. The plain
+        // percentage phase still claims "20%" on its own (the "-" provides
+        // its boundary) — pre-existing semantics, pinned here so a future
+        // regex change cannot quietly turn this into a range.
+        let mut p = TTSPipeline::new();
+        assert_eq!(
+            p.process("метрика x10-20%"),
+            "метрика x10-двадцать процентов"
+        );
+    }
+
+    #[test]
+    fn pipeline_plain_range_and_percentage_unchanged() {
+        // The new phase must not steal plain ranges or plain percentages.
+        let mut p = TTSPipeline::new();
+        assert_eq!(
+            p.process("диапазон 10-20"),
+            "диапазон от десяти до двадцати"
+        );
+        assert_eq!(p.process("загрузка 20%"), "загрузка двадцать процентов");
     }
 
     #[test]
