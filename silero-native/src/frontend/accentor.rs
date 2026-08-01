@@ -185,6 +185,19 @@ fn accentuate_exception(
     }
 }
 
+/// Result of [`positions`]: model vowel indices mapped to char positions
+/// in the raw word.
+struct WordPositions {
+    /// Char positions of the stressed vowels.
+    stress: Vec<usize>,
+    /// Char positions of the 'е' chars selected for ё-conversion.
+    yo: Vec<usize>,
+    /// Total vowel count in the word.
+    num_vowels: usize,
+    /// Char position of the first vowel (single-vowel stress fallback).
+    first_vowel: Option<usize>,
+}
+
 /// Port of `AccentorNgram._get_positions`: map vowel indices (model
 /// predictions count vowels) to char positions in the raw word.
 fn positions(
@@ -192,7 +205,7 @@ fn positions(
     word: &[char],
     stressed_vowel_ids: &[usize],
     yo_vowel_ids: &[usize],
-) -> (Vec<usize>, Vec<usize>, usize, Option<usize>) {
+) -> WordPositions {
     let vowel_ids: Vec<usize> = word
         .iter()
         .enumerate()
@@ -205,22 +218,22 @@ fn positions(
         .filter(|(_, c)| **c == 'е')
         .map(|(i, _)| i)
         .collect();
-    let stress_positions: Vec<usize> = stressed_vowel_ids
+    let stress: Vec<usize> = stressed_vowel_ids
         .iter()
         .filter(|idx| **idx < vowel_ids.len())
         .map(|idx| vowel_ids[*idx])
         .collect();
-    let yo_positions: Vec<usize> = yo_vowel_ids
+    let yo: Vec<usize> = yo_vowel_ids
         .iter()
         .filter(|idx| **idx > 0 && *idx - 1 < ye_ids.len())
         .map(|idx| ye_ids[*idx - 1])
         .collect();
-    (
-        stress_positions,
-        yo_positions,
-        vowel_ids.len(),
-        vowel_ids.first().copied(),
-    )
+    WordPositions {
+        stress,
+        yo,
+        num_vowels: vowel_ids.len(),
+        first_vowel: vowel_ids.first().copied(),
+    }
 }
 
 /// Numerically stable softmax, matching `torch.softmax` closely enough for
@@ -469,16 +482,15 @@ impl Accentor {
                     .collect();
             }
 
-            let (mut stress_positions, yo_positions, num_vowels, first_vowel_pos) =
-                positions(&self.vowels, &raw_lower, &stressed_vowel_ids, &yo_vowel_ids);
-            if num_vowels == 0 {
+            let mut pos = positions(&self.vowels, &raw_lower, &stressed_vowel_ids, &yo_vowel_ids);
+            if pos.num_vowels == 0 {
                 out.push_str(raw_word);
                 continue;
             }
 
             let mut word: Vec<char> = raw_word.chars().collect();
-            for yo_pos in &yo_positions {
-                if stress_positions.contains(yo_pos) && set_yo && raw_lower[*yo_pos] == 'е' {
+            for yo_pos in &pos.yo {
+                if pos.stress.contains(yo_pos) && set_yo && raw_lower[*yo_pos] == 'е' {
                     word[*yo_pos] = if word[*yo_pos].is_lowercase() {
                         'ё'
                     } else {
@@ -487,16 +499,16 @@ impl Accentor {
                 }
             }
 
-            if num_vowels == 1 {
-                stress_positions = match first_vowel_pos {
-                    Some(pos) => vec![pos],
+            if pos.num_vowels == 1 {
+                pos.stress = match pos.first_vowel {
+                    Some(first) => vec![first],
                     None => vec![],
                 };
                 set_stress = true;
             }
 
             if !have_stress && set_stress {
-                for (i, stress_pos) in stress_positions.iter().enumerate() {
+                for (i, stress_pos) in pos.stress.iter().enumerate() {
                     word.insert(stress_pos + i, self.stress_token);
                 }
             }
@@ -611,10 +623,10 @@ mod tests {
     fn positions_single_vowel_word_reports_first_vowel() {
         let vowels: HashSet<char> = "аоуыэиеяёю".chars().collect();
         let word: Vec<char> = "а".chars().collect();
-        let (stress, yo, num_vowels, first) = positions(&vowels, &word, &[0], &[0]);
-        assert_eq!(stress, vec![0]);
-        assert!(yo.is_empty());
-        assert_eq!(num_vowels, 1);
-        assert_eq!(first, Some(0));
+        let pos = positions(&vowels, &word, &[0], &[0]);
+        assert_eq!(pos.stress, vec![0]);
+        assert!(pos.yo.is_empty());
+        assert_eq!(pos.num_vowels, 1);
+        assert_eq!(pos.first_vowel, Some(0));
     }
 }
