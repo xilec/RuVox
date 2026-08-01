@@ -14,7 +14,7 @@ pre-push:
   parallel: true
   commands:
     cargo-clippy:
-      run: cargo clippy --manifest-path src-tauri/Cargo.toml --no-deps -- -D warnings
+      run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --no-deps -- -D warnings
     typescript:
       run: pnpm typecheck
     eslint:
