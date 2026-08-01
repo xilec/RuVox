@@ -508,28 +508,29 @@ mod tests {
         })
         .await;
 
-        let log = events.lock().unwrap();
-        let positions: Vec<f64> = log
-            .iter()
-            .filter(|(name, _)| name == "playback_position")
-            .map(|(_, payload)| payload["position_sec"].as_f64().unwrap())
-            .collect();
-        assert_eq!(positions, vec![0.1, 0.2, 0.3]);
-        assert!(log
-            .iter()
-            .all(|(_, payload)| payload.get("entry_id").map_or(true, |id| id == "entry-1")));
+        {
+            let log = events.lock().unwrap();
+            let positions: Vec<f64> = log
+                .iter()
+                .filter(|(name, _)| name == "playback_position")
+                .map(|(_, payload)| payload["position_sec"].as_f64().unwrap())
+                .collect();
+            assert_eq!(positions, vec![0.1, 0.2, 0.3]);
+            assert!(log
+                .iter()
+                .all(|(_, payload)| payload.get("entry_id").map_or(true, |id| id == "entry-1")));
 
-        // EOF ordering: playback_finished immediately before playback_stopped.
-        let finished_idx = log
-            .iter()
-            .position(|(name, _)| name == "playback_finished")
-            .unwrap();
-        assert_eq!(log[finished_idx + 1].0, "playback_stopped");
-        assert_eq!(
-            log[finished_idx].1,
-            serde_json::json!({ "entry_id": "entry-1" })
-        );
-        drop(log);
+            // EOF ordering: playback_finished immediately before playback_stopped.
+            let finished_idx = log
+                .iter()
+                .position(|(name, _)| name == "playback_finished")
+                .unwrap();
+            assert_eq!(log[finished_idx + 1].0, "playback_stopped");
+            assert_eq!(
+                log[finished_idx].1,
+                serde_json::json!({ "entry_id": "entry-1" })
+            );
+        }
 
         // The loop cleared the flag, so playback_finished fires exactly once.
         tokio::time::sleep(Duration::from_millis(250)).await;
