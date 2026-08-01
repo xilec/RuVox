@@ -7,6 +7,24 @@ import type { AvailableEngines, EngineKind, UIConfig } from './tauri';
 
 export type AvailabilityMap = AvailableEngines;
 
+/** Speaker id that only the Python ttsd engine supports: it picks a random
+ *  speaker per call. The native engine has no such concept and rejects it. */
+export const RANDOM_SPEAKER = 'random';
+
+/** Default Silero speaker, used when the saved/picked speaker cannot be
+ *  served by the active engine. */
+const DEFAULT_SILERO_SPEAKER = 'xenia';
+
+/**
+ * Map a speaker to one the given engine can serve. Currently only `random`
+ * needs coercion: valid for ttsd (`silero`), rejected by `silero_native`.
+ */
+function coerceSpeakerForEngine(engine: EngineKind, speaker: string): string {
+  return engine === 'silero_native' && speaker === RANDOM_SPEAKER
+    ? DEFAULT_SILERO_SPEAKER
+    : speaker;
+}
+
 export interface EngineFormState {
   engine: EngineKind;
   /** Voice the user picked for Piper. Persisted across engine flips so the
@@ -30,18 +48,23 @@ export function computeEngineFormState(
   config: Pick<UIConfig, 'engine' | 'piper_voice' | 'speaker'>,
   availability: AvailabilityMap,
 ): EngineFormState {
-  const savedEngine: EngineKind = config.engine === 'silero' ? 'silero' : 'piper';
+  const savedEngine = coerceEngineKind(config.engine);
   const savedAvailable = availability[savedEngine].available;
   const engine: EngineKind = savedAvailable
     ? savedEngine
-    : pickFallbackEngine(savedEngine, availability);
+    : pickFallbackEngine(availability);
 
   return {
     engine,
     piperVoice: config.piper_voice || DEFAULT_PIPER_VOICE,
-    sileroSpeaker: config.speaker || 'xenia',
+    sileroSpeaker: coerceSpeakerForEngine(engine, config.speaker || DEFAULT_SILERO_SPEAKER),
     coercedAwayFromUnavailable: !savedAvailable && engine !== savedEngine,
   };
+}
+
+/** Map a persisted (possibly stale / unknown) engine string to a known kind. */
+function coerceEngineKind(raw: string): EngineKind {
+  return raw === 'silero' || raw === 'silero_native' ? raw : 'piper';
 }
 
 /**
@@ -59,18 +82,20 @@ export function applyEngineChange(
   if (!availability[next].available) {
     return state;
   }
-  return { ...state, engine: next, coercedAwayFromUnavailable: false };
+  return {
+    ...state,
+    engine: next,
+    sileroSpeaker: coerceSpeakerForEngine(next, state.sileroSpeaker),
+    coercedAwayFromUnavailable: false,
+  };
 }
 
-function pickFallbackEngine(
-  unavailable: EngineKind,
-  availability: AvailabilityMap,
-): EngineKind {
-  const other: EngineKind = unavailable === 'piper' ? 'silero' : 'piper';
-  if (availability[other].available) {
-    return other;
-  }
-  // Both unavailable — return Piper so the UI still has a value to render.
+function pickFallbackEngine(availability: AvailabilityMap): EngineKind {
+  // Preference order for the automatic fallback: Piper first (in-process,
+  // always available in practice), then the Silero engines.
+  const order: EngineKind[] = ['piper', 'silero', 'silero_native'];
+  const found = order.find((e) => availability[e].available);
+  // Nothing available — return Piper so the UI still has a value to render.
   // The save attempt will fail at the backend and the user gets the error.
-  return 'piper';
+  return found ?? 'piper';
 }

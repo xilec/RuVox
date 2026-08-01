@@ -327,6 +327,7 @@ pub struct TestApp {
     _storage_dir: TempDir,
     _voices_dir: TempDir,
     _ttsd_dir: TempDir,
+    _bundle_dir: TempDir,
 }
 
 impl TestApp {
@@ -356,6 +357,7 @@ pub fn build_test_app_with_kind(kind: EngineKind) -> TestApp {
     );
     let voices_dir = TempDir::new().expect("voices tempdir");
     let ttsd_dir = TempDir::new().expect("ttsd tempdir");
+    let bundle_dir = TempDir::new().expect("bundle tempdir");
 
     let (emitter, _engine_events) = recording_emitter();
 
@@ -367,6 +369,7 @@ pub fn build_test_app_with_kind(kind: EngineKind) -> TestApp {
         Some("stub-voice".to_string()),
         voices_dir.path().to_path_buf(),
         ttsd_dir.path().to_path_buf(),
+        bundle_dir.path().to_path_buf(),
         Arc::clone(&emitter),
     ));
     let player = Arc::new(FakePlayer::new());
@@ -377,6 +380,7 @@ pub fn build_test_app_with_kind(kind: EngineKind) -> TestApp {
         engine_switcher: switcher,
         ttsd_dir: ttsd_dir.path().to_path_buf(),
         piper_voices_dir: voices_dir.path().to_path_buf(),
+        silero_native_bundle_dir: bundle_dir.path().to_path_buf(),
         emitter,
         player: player.clone(),
         pipeline: Arc::new(ParkingMutex::new(TTSPipeline::new())),
@@ -393,7 +397,33 @@ pub fn build_test_app_with_kind(kind: EngineKind) -> TestApp {
         _storage_dir: storage_dir,
         _voices_dir: voices_dir,
         _ttsd_dir: ttsd_dir,
+        _bundle_dir: bundle_dir,
     }
+}
+
+/// Write a silero-native manifest + payload files into `dir` so the
+/// stat-only bundle probe passes. Sizes and hashes are honest, though the
+/// probe itself only checks presence and size.
+pub fn write_fake_bundle(dir: &std::path::Path, files: &[(&str, &[u8])]) {
+    use sha2::{Digest, Sha256};
+    let entries: Vec<serde_json::Value> = files
+        .iter()
+        .map(|(name, contents)| {
+            std::fs::write(dir.join(name), contents).unwrap();
+            serde_json::json!({
+                "path": name,
+                "size": contents.len(),
+                "sha256": format!("{:x}", Sha256::new().chain_update(contents).finalize()),
+            })
+        })
+        .collect();
+    let manifest = serde_json::json!({
+        "model_id": "test",
+        "opset": 17,
+        "export_date_utc": "2026-01-01T00:00:00+00:00",
+        "files": entries,
+    });
+    std::fs::write(dir.join("manifest.json"), manifest.to_string()).unwrap();
 }
 
 // ---------------------------------------------------------------------------
@@ -485,28 +515,29 @@ mod tests {
         })
         .await;
 
-        let log = events.lock().unwrap();
-        let positions: Vec<f64> = log
-            .iter()
-            .filter(|(name, _)| name == "playback_position")
-            .map(|(_, payload)| payload["position_sec"].as_f64().unwrap())
-            .collect();
-        assert_eq!(positions, vec![0.1, 0.2, 0.3]);
-        assert!(log
-            .iter()
-            .all(|(_, payload)| payload.get("entry_id").map_or(true, |id| id == "entry-1")));
+        {
+            let log = events.lock().unwrap();
+            let positions: Vec<f64> = log
+                .iter()
+                .filter(|(name, _)| name == "playback_position")
+                .map(|(_, payload)| payload["position_sec"].as_f64().unwrap())
+                .collect();
+            assert_eq!(positions, vec![0.1, 0.2, 0.3]);
+            assert!(log
+                .iter()
+                .all(|(_, payload)| payload.get("entry_id").map_or(true, |id| id == "entry-1")));
 
-        // EOF ordering: playback_finished immediately before playback_stopped.
-        let finished_idx = log
-            .iter()
-            .position(|(name, _)| name == "playback_finished")
-            .unwrap();
-        assert_eq!(log[finished_idx + 1].0, "playback_stopped");
-        assert_eq!(
-            log[finished_idx].1,
-            serde_json::json!({ "entry_id": "entry-1" })
-        );
-        drop(log);
+            // EOF ordering: playback_finished immediately before playback_stopped.
+            let finished_idx = log
+                .iter()
+                .position(|(name, _)| name == "playback_finished")
+                .unwrap();
+            assert_eq!(log[finished_idx + 1].0, "playback_stopped");
+            assert_eq!(
+                log[finished_idx].1,
+                serde_json::json!({ "entry_id": "entry-1" })
+            );
+        }
 
         // The loop cleared the flag, so playback_finished fires exactly once.
         tokio::time::sleep(Duration::from_millis(250)).await;

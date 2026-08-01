@@ -168,11 +168,14 @@
             # the full ru_dict / phondata / intonations files instead of
             # the skeleton defaults that produce wrong Russian stress.
             espeak-ng
-            # onnxruntime — `ort` is configured with `load-dynamic` and
-            # dlopens libonnxruntime.so at runtime via ORT_DYLIB_PATH (set
-            # in preFixup). At build time `ort-sys` probes pkg-config for
+            # onnxruntime — shared by piper-rs and the silero-native engine
+            # (see silero-native/docs/architecture.md). `ort` (pykeio/ort
+            # v2) is configured with `load-dynamic` and dlopens
+            # libonnxruntime.so at runtime via ORT_DYLIB_PATH (set in
+            # preFixup). At build time `ort-sys` probes pkg-config for
             # libonnxruntime; nixpkgs onnxruntime ships a .pc, so the probe
-            # succeeds and the build script becomes a no-op.
+            # succeeds and the build script becomes a no-op (no prebuilt
+            # download, which the offline Nix sandbox would block anyway).
             onnxruntime
             # sonic — espeak-ng's CMakeLists has
             # `find_library(SONIC_LIB sonic)` and falls back to git-cloning

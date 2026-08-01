@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Badge,
@@ -8,6 +8,7 @@ import {
   Group,
   Modal,
   NumberInput,
+  Progress,
   Select,
   Stack,
   Switch,
@@ -19,13 +20,14 @@ import type { MantineColorScheme } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
-import { commands } from '../lib/tauri';
+import { commands, events } from '../lib/tauri';
 import type { CleanupMode, EngineKind, UIConfigPatch } from '../lib/tauri';
 import { formatError } from '../lib/errors';
 import { PIPER_VOICES } from '../lib/piperVoices';
 import {
   applyEngineChange,
   computeEngineFormState,
+  RANDOM_SPEAKER,
   type AvailabilityMap,
 } from '../lib/engineSelection';
 
@@ -44,14 +46,16 @@ interface SettingsFormValues {
 const ENGINE_OPTIONS: ReadonlyArray<{ value: EngineKind; label: string }> = [
   { value: 'piper', label: 'Piper (по умолчанию, без Python)' },
   { value: 'silero', label: 'Silero (Python ttsd)' },
+  { value: 'silero_native', label: 'Silero (нативный)' },
 ];
 
 /// Pessimistic default used until `getAvailableEngines()` resolves: Piper
-/// is always on; Silero is treated as unavailable so users don't briefly
-/// see it as enabled and click before the probe lands.
+/// is always on; the Silero engines are treated as unavailable so users
+/// don't briefly see them as enabled and click before the probe lands.
 const PESSIMISTIC_AVAILABILITY: AvailabilityMap = {
   piper: { available: true, reason: null },
   silero: { available: false, reason: 'Проверяю наличие Python-стека…' },
+  silero_native: { available: false, reason: 'Проверяю наличие бандла моделей…' },
 };
 
 interface SettingsModalProps {
@@ -70,6 +74,14 @@ const SPEAKER_OPTIONS = [
   { value: 'eugene', label: 'Eugene' },
   { value: 'random', label: 'Случайный' },
 ];
+
+/** `random` is a ttsd-only feature (the Python wrapper picks a speaker per
+ *  call); the native engine rejects it, so hide it for silero_native. */
+function speakerOptionsForEngine(engine: EngineKind) {
+  return engine === 'silero_native'
+    ? SPEAKER_OPTIONS.filter((o) => o.value !== RANDOM_SPEAKER)
+    : SPEAKER_OPTIONS;
+}
 
 const SAMPLE_RATE_OPTIONS = [
   { value: '8000', label: '8000 Гц' },
@@ -210,6 +222,20 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
   const [cacheDir, setCacheDir] = useState<string>('');
   const [coercedAlert, setCoercedAlert] = useState(false);
   const [availability, setAvailability] = useState<AvailabilityMap>(PESSIMISTIC_AVAILABILITY);
+  // Live bundle-download state: null when idle, otherwise the current file
+  // and the overall percentage derived from the progress events.
+  const [bundleDownload, setBundleDownload] = useState<{ file: string; percent: number } | null>(
+    null,
+  );
+  // Whether a download session is active — lets the invoke catch distinguish
+  // "command failed before starting" (report here) from "failed mid-download"
+  // (already reported by the finished event).
+  const downloadActiveRef = useRef(false);
+  // Whether the user touched the sample-rate selector in this dialog
+  // session. The native engine's own default is 24000 (the config field is
+  // shared and defaults to 48000), so picking «Silero (нативный)» follows
+  // the engine default only while the user made no explicit choice.
+  const sampleRateTouchedRef = useRef(false);
   const form = useForm<SettingsFormValues>({
     initialValues: {
       engine: 'piper',
@@ -229,6 +255,7 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
 
   useEffect(() => {
     if (!opened) return;
+    sampleRateTouchedRef.current = false;
     Promise.all([commands.getConfig(), commands.getAvailableEngines()])
       .then(([config, probed]) => {
         setAvailability(probed);
@@ -263,6 +290,11 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
     [],
   );
 
+  const speakerOptions = useMemo(
+    () => speakerOptionsForEngine(form.values.engine),
+    [form.values.engine],
+  );
+
   const handleEngineChange = (next: EngineKind) => {
     const current = {
       engine: form.values.engine,
@@ -272,7 +304,83 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
     };
     const updated = applyEngineChange(current, next, availability);
     form.setFieldValue('engine', updated.engine);
+    // applyEngineChange coerces ttsd-only speakers (e.g. 'random') away
+    // when the native engine is picked.
+    form.setFieldValue('speaker', updated.sileroSpeaker);
     setCoercedAlert(updated.coercedAwayFromUnavailable);
+    // The native engine defaults to 24000; follow it only while the user
+    // hasn't explicitly picked a sample rate in this dialog session.
+    if (next === 'silero_native' && !sampleRateTouchedRef.current) {
+      form.setFieldValue('sample_rate', 24000);
+    }
+  };
+
+  // Live bundle-download progress, driven by the backend's
+  // bundle_download_* events. Subscribed only while the dialog is open.
+  useEffect(() => {
+    if (!opened) return;
+    const unlisteners = [
+      events.bundleDownloadStarted(() => {
+        downloadActiveRef.current = true;
+        setBundleDownload({ file: 'manifest.json', percent: 0 });
+      }),
+      events.bundleDownloadProgress((p) => {
+        const fileFraction = p.skipped
+          ? 1
+          : p.total_bytes > 0
+            ? p.downloaded_bytes / p.total_bytes
+            : 0;
+        const percent = Math.min(
+          100,
+          ((p.file_idx + fileFraction) / Math.max(1, p.total_files)) * 100,
+        );
+        setBundleDownload({ file: p.file, percent });
+      }),
+      events.bundleDownloadFinished((p) => {
+        downloadActiveRef.current = false;
+        setBundleDownload(null);
+        if (p.ok) {
+          notifications.show({
+            title: 'Бандл моделей скачан',
+            message: 'Движок «Silero (нативный)» теперь доступен.',
+            color: 'green',
+          });
+          // Re-probe so the engine option becomes selectable immediately.
+          commands.getAvailableEngines().then(setAvailability).catch(() => {});
+        } else {
+          notifications.show({
+            title: 'Ошибка скачивания бандла',
+            message: p.message ?? 'неизвестная ошибка',
+            color: 'red',
+          });
+        }
+      }),
+    ];
+    return () => {
+      unlisteners.forEach((u) => {
+        u.then((fn) => fn()).catch(() => {});
+      });
+    };
+  }, [opened]);
+
+  const handleBundleDownload = () => {
+    // Switch to the progress view immediately — the started event lands one
+    // IPC round-trip later, and without this the button stays clickable and
+    // the user can queue a second download.
+    setBundleDownload({ file: 'manifest.json', percent: 0 });
+    commands.downloadSileroNativeBundle().catch((err) => {
+      // Mid-download failures are already reported by the
+      // bundle_download_finished { ok: false } event; only a command that
+      // failed before starting needs a notification here.
+      if (!downloadActiveRef.current) {
+        setBundleDownload(null);
+        notifications.show({
+          title: 'Не удалось скачать бандл',
+          message: formatError(err),
+          color: 'red',
+        });
+      }
+    });
   };
 
   // Reset the nested cleanup modal's visibility when Settings closes, so
@@ -356,7 +464,7 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
 
           <Select
             label="Движок"
-            description="Piper — встроенный, не требует Python."
+            description="Piper и Silero (нативный) — встроенные, не требуют Python."
             data={ENGINE_OPTIONS.map((opt) => ({
               value: opt.value,
               label: opt.label,
@@ -371,6 +479,29 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
               Silero: {availability.silero.reason}
             </Text>
           )}
+
+          {!availability.silero_native.available && availability.silero_native.reason && (
+            <Text size="xs" c="dimmed" mt={-8}>
+              Silero (нативный): {availability.silero_native.reason}
+            </Text>
+          )}
+
+          {!availability.silero_native.available &&
+            (bundleDownload ? (
+              <Stack gap={4}>
+                <Text size="xs" c="dimmed">
+                  Скачивание моделей: {bundleDownload.file} (
+                  {Math.round(bundleDownload.percent)}%)
+                </Text>
+                <Progress value={bundleDownload.percent} animated />
+              </Stack>
+            ) : (
+              <Group justify="flex-start">
+                <Button variant="default" size="xs" onClick={handleBundleDownload}>
+                  Скачать модели Silero (~230 МБ)
+                </Button>
+              </Group>
+            ))}
 
           {form.values.engine === 'piper' ? (
             <Stack gap={6}>
@@ -412,7 +543,7 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
           ) : (
             <Select
               label="Голос Silero"
-              data={SPEAKER_OPTIONS}
+              data={speakerOptions}
               key={form.key('speaker')}
               {...form.getInputProps('speaker')}
             />
@@ -422,9 +553,10 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
             label="Частота дискретизации"
             data={SAMPLE_RATE_OPTIONS}
             value={String(form.values.sample_rate)}
-            onChange={(v) =>
-              form.setFieldValue('sample_rate', v ? parseInt(v, 10) : 48000)
-            }
+            onChange={(v) => {
+              sampleRateTouchedRef.current = true;
+              form.setFieldValue('sample_rate', v ? parseInt(v, 10) : 48000);
+            }}
             error={form.errors.sample_rate}
           />
 

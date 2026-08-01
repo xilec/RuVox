@@ -14,11 +14,15 @@ dev:
     pnpm tauri dev
 
 # Run all tests (Rust + TS + Python)
-test: test-rust test-ts test-python
+test: test-rust test-silero-native test-ts test-python
 
 # Rust tests (incl. golden pipeline fixtures)
 test-rust:
     cargo test --manifest-path src-tauri/Cargo.toml
+
+# silero-native engine tests
+test-silero-native:
+    cargo test --manifest-path silero-native/Cargo.toml
 
 # TypeScript typecheck + unit tests
 test-ts:
@@ -32,7 +36,9 @@ test-python:
 # All static checks (fmt, clippy, deny, eslint, knip, typecheck, ruff)
 lint:
     cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+    cargo fmt --manifest-path silero-native/Cargo.toml -- --check
     cargo clippy --manifest-path src-tauri/Cargo.toml --no-deps -- -D warnings
+    cargo clippy --manifest-path silero-native/Cargo.toml --no-deps -- -D warnings
     cargo deny --manifest-path src-tauri/Cargo.toml check
     pnpm lint
     pnpm knip

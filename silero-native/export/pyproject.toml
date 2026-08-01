@@ -1,0 +1,22 @@
+[project]
+name = "silero-onnx-export"
+version = "0.1.0"
+description = "Production exporter: Silero TTS torch.package -> ONNX bundle for the native Rust engine"
+requires-python = ">=3.12"
+# Pinned for reproducible exports: the JIT-graph surgery in export.py is
+# sensitive to torch/onnx internals, so the export environment is fixed.
+dependencies = [
+    "torch==2.13.0",
+    "onnx==1.22.0",
+    "onnxruntime==1.28.0",
+    "scipy==1.18.0",
+    "pyyaml==6.0.2",
+]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

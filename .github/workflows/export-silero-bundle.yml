@@ -1,0 +1,74 @@
+name: export-silero-bundle
+
+# Manual-only pipeline: exports the Silero torch.package into the ONNX bundle
+# consumed by the native engine and publishes it as a GitHub Release.
+# Assets are uploaded with softprops/action-gh-release (chosen over raw
+# `gh release create` so asset upload + release creation stay one declarative
+# step and work the same on re-runs via `overwrite: true`).
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "Silero model id from models.yml"
+        required: true
+        default: "v5_ru"
+      speaker:
+        description: "Comma-separated speakers for the self-check (first is used for export examples)"
+        required: true
+        default: "aidar,kseniya"
+
+permissions:
+  contents: write # needed to create the release
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install export environment
+        working-directory: silero-native/export
+        run: uv sync --frozen
+
+      - name: Export ONNX bundle
+        working-directory: silero-native/export
+        run: uv run python export.py --model "${{ inputs.model }}" --speaker "${{ inputs.speaker }}" --out "$GITHUB_WORKSPACE/bundle"
+
+      - name: Package bundle
+        run: |
+          tar -czf "silero-onnx-bundle-${{ inputs.model }}.tar.gz" -C bundle .
+          cp bundle/manifest.json "manifest-${{ inputs.model }}.json"
+          cp bundle/selfcheck/report.json "selfcheck-${{ inputs.model }}.json"
+          # Per-file assets under the exact names the in-app downloader
+          # fetches: it builds URLs as {release}/manifest.json and then
+          # {release}/<path> for every entry the manifest lists
+          # (src-tauri/src/tts/silero_native/download.rs). Without these the
+          # release is undownloadable from the app — do not drop this step.
+          mkdir -p release-files
+          find bundle -maxdepth 1 -type f -exec cp {} release-files/ \;
+
+      - name: Upload release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "silero-models-${{ inputs.model }}"
+          name: "Silero ONNX bundle (${{ inputs.model }})"
+          body: |
+            ONNX export of the Silero TTS `${{ inputs.model }}` torch.package.
+            Produced by `silero-native/export/export.py` (see its README for
+            bundle contents, IO contracts and re-export instructions).
+            Model license: CC BY-NC-SA 4.0, Silero Team — non-commercial use only.
+          files: |
+            silero-onnx-bundle-${{ inputs.model }}.tar.gz
+            manifest-${{ inputs.model }}.json
+            selfcheck-${{ inputs.model }}.json
+            release-files/*
+          overwrite: true

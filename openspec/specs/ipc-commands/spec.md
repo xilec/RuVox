@@ -74,7 +74,7 @@ interface WordTimestamp {
 
 interface UIConfig {
   speaker: string;                 // Silero speaker, default "xenia"
-  sample_rate: number;             // default 48000
+  sample_rate: number;             // default 48000; native engine defaults to 24000
   speech_rate: number;             // playback speed multiplier, default 1.0
   notify_on_ready: boolean;
   notify_on_error: boolean;
@@ -86,7 +86,7 @@ interface UIConfig {
   player_hotkeys: Record<string, string>;
   window_geometry: [number, number, number, number] | null;
   preview_dialog_enabled: boolean;
-  engine: string;                  // "piper" (default) | "silero"
+  engine: string;                  // "piper" (default) | "silero" | "silero_native"
   piper_voice: string;             // default "ruslan"
 }
 ```
@@ -442,18 +442,30 @@ availability (`AvailableEngines`):
 
 ```typescript
 interface EngineAvailability { available: boolean; reason: string | null }
-interface AvailableEngines { piper: EngineAvailability; silero: EngineAvailability }
+interface AvailableEngines {
+  piper: EngineAvailability;
+  silero: EngineAvailability;
+  silero_native: EngineAvailability;
+}
 ```
 
 Piper (in-process) SHALL always report `available: true`. Silero SHALL report
 availability based on a cheap probe: presence of `pyproject.toml` in the ttsd
-directory and a successful `uv --version` exec. When unavailable, `reason`
-SHALL be a Russian-language user-facing string.
+directory and a successful `uv --version` exec. Silero Native SHALL report
+availability based on presence and manifest validity of the downloaded model
+bundle in the app data dir. When unavailable, `reason` SHALL be a
+Russian-language user-facing string.
 
 #### Scenario: probe on a system without ttsd
 - GIVEN no `pyproject.toml` in the resolved ttsd directory
 - WHEN `get_available_engines` is invoked
 - THEN `silero.available` is `false` with a Russian `reason`, and `piper.available` is `true`
+
+#### Scenario: native engine unavailable before bundle download
+- GIVEN no model bundle in the app data dir
+- WHEN `get_available_engines` is invoked
+- THEN `silero_native.available` is `false` with a Russian `reason` explaining
+  that the model bundle must be downloaded
 
 ### Requirement: Piper Voice Download Command
 
@@ -467,6 +479,29 @@ reports only the final outcome. An unknown voice id fails with
 - GIVEN the voice files already exist on disk
 - WHEN `download_piper_voice` is invoked for that voice
 - THEN the command succeeds and progress events report the files as skipped
+
+### Requirement: Silero Native Bundle Download Command
+
+The system SHALL provide `download_silero_native_bundle()` which downloads the
+model bundle files from the project's GitHub Releases into the app data dir,
+verifying each file's sha256 against the bundle manifest, skipping files
+already present and valid (idempotent). A failed checksum MUST abort the
+download with a typed error and leave the engine unavailable; partial files
+MUST NOT be treated as installed on the next run.
+
+#### Scenario: fresh download succeeds
+
+- GIVEN no bundle in the data dir and network access to GitHub Releases
+- WHEN `download_silero_native_bundle` is invoked
+- THEN all bundle files land in the data dir, checksums verify, and a
+  subsequent `get_available_engines` reports `silero_native.available: true`
+
+#### Scenario: checksum failure aborts
+
+- GIVEN a download where one file's sha256 does not match the manifest
+- WHEN the verification step runs
+- THEN the command fails with a typed error, the invalid file is removed or
+  quarantined, and `silero_native.available` stays `false`
 
 ### Requirement: Timestamp Query Command
 
@@ -614,4 +649,19 @@ During `download_piper_voice` the backend SHALL emit:
 - GIVEN a voice that is not installed
 - WHEN `download_piper_voice` runs
 - THEN `voice_download_started` fires first, `voice_download_progress` events carry cumulative byte counts per file, and a terminal `voice_download_finished` with `ok: true` completes the sequence
+
+### Requirement: Bundle Download Events
+
+During `download_silero_native_bundle` the backend SHALL emit:
+
+- `bundle_download_started` — `{ engine: "silero_native" }`
+- `bundle_download_progress` — `{ engine, file, file_idx, total_files, downloaded_bytes, total_bytes }`, throttled to roughly one event per 256 KB, plus `skipped: true` for files already present and valid
+- `bundle_download_finished` — `{ engine, ok: true }` on success or `{ engine, ok: false, message }` on failure
+
+#### Scenario: download progress reporting
+- GIVEN a bundle that is not installed
+- WHEN `download_silero_native_bundle` runs
+- THEN `bundle_download_started` fires first, progress events carry cumulative
+  byte counts per file, and a terminal `bundle_download_finished` completes
+  the sequence
 

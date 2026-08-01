@@ -50,8 +50,13 @@ pkgs.mkShell {
     llvmPackages.libclang
 
     # ── Piper TTS native runtime ───────────────────────────────────────────
-    # piper-rs links libonnxruntime via `ort` with the `load-dynamic` feature
-    # (set ORT_DYLIB_PATH below). espeak-rs-sys vendors libespeak-ng and
+    # onnxruntime is load-bearing for BOTH native TTS engines: piper-rs and
+    # the silero-native engine (see silero-native/docs/architecture.md) link
+    # libonnxruntime via `ort` (pykeio/ort v2) with the `load-dynamic`
+    # feature, which dlopens the shared library at runtime from
+    # ORT_DYLIB_PATH (set below). Do not download ort's prebuilt binaries:
+    # impure in dev and impossible in the offline Nix build sandbox.
+    # espeak-rs-sys vendors libespeak-ng and
     # builds it via cmake, so we don't need the package for linking — but
     # the cmake build's espeak-ng-data ends up in target/debug/build/.../out
     # which espeak-rs never looks at (it checks $CWD/espeak-ng-data and
@@ -190,6 +195,16 @@ pkgs.mkShell {
 
   shellHook = ''
     export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:$LD_LIBRARY_PATH"
+
+    # espeak-rs-sys 0.2.0 finds the system libsonic via CMake's
+    # find_library() and links it into the static espeak-ng target with
+    # `target_link_libraries(... PRIVATE ''${SONIC_LIB})`. CMake does not
+    # propagate PRIVATE link libraries of a STATIC target to consumers, so
+    # build.rs never emits `cargo:rustc-link-lib=sonic` and dev/test
+    # binaries fail to link with undefined references to sonic* symbols.
+    # Same workaround as the production build (flake.nix `env.RUSTFLAGS`);
+    # the -L search path comes from buildInputs' `sonic` via NIX_LDFLAGS.
+    export RUSTFLAGS="-C link-arg=-lsonic''${RUSTFLAGS:+ $RUSTFLAGS}"
 
     # bindgen needs the C system include paths from stdenv.cc — without these,
     # `#include <stdio.h>` fails inside the espeak-rs-sys / sonic-rs-sys build

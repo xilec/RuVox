@@ -289,12 +289,13 @@ async fn synthesize_audio(
     };
 
     // Voice id is engine-specific: Piper uses `piper_voice` (e.g. "ruslan"),
-    // Silero uses `speaker` (e.g. "xenia"). Keeping them in two distinct
-    // config fields means flipping engines preserves each side's choice.
-    let voice = if config.engine == "silero" {
-        config.speaker.clone()
-    } else {
+    // both Silero engines (ttsd and native) use `speaker` (e.g. "xenia").
+    // Keeping them in two distinct config fields means flipping engines
+    // preserves each side's choice.
+    let voice = if config.engine == "piper" {
         config.piper_voice.clone()
+    } else {
+        config.speaker.clone()
     };
 
     // Track the entry as "inside the TTS stage" so `cancel_synthesis` knows
@@ -1154,17 +1155,33 @@ pub async fn download_piper_voice(state: State<'_, AppState>, voice_id: String) 
 /// Probe which TTS engines can be selected on the running system.
 ///
 /// Piper is in-process and always available. Silero requires the `ttsd/`
-/// Python package and the `uv` toolchain — see [`tts::availability`].
-/// Cheap (filesystem stat + one `uv --version` exec); safe to call on
-/// every Settings dialog open.
+/// Python package and the `uv` toolchain; Silero Native requires the
+/// downloaded model bundle — see [`tts::availability`]. Cheap (filesystem
+/// stats + one `uv --version` exec); safe to call on every Settings dialog
+/// open.
 #[tauri::command]
 pub async fn get_available_engines(state: State<'_, AppState>) -> CmdResult<AvailableEngines> {
     let ttsd_dir = state.ttsd_dir.clone();
-    tokio::task::spawn_blocking(move || availability::probe(&ttsd_dir))
+    let bundle_dir = state.silero_native_bundle_dir.clone();
+    tokio::task::spawn_blocking(move || availability::probe(&ttsd_dir, &bundle_dir))
         .await
         .map_err(|e| CommandError::Internal {
             message: format!("availability probe panicked: {e}"),
         })
+}
+
+/// Download the Silero Native model bundle on user demand. Idempotent —
+/// files already present with a matching checksum are skipped. Progress is
+/// delivered via the `bundle_download_started` / `bundle_download_progress`
+/// / `bundle_download_finished` events; the `Result` here only reports the
+/// final outcome so the frontend can show one final notification.
+#[tauri::command]
+pub async fn download_silero_native_bundle(state: State<'_, AppState>) -> CmdResult<()> {
+    let bundle_dir = state.silero_native_bundle_dir.clone();
+    let emitter = Arc::clone(&state.emitter);
+    crate::tts::silero_native::download::download_bundle(&bundle_dir, &emitter)
+        .await
+        .map_err(CommandError::from)
 }
 
 /// Merge a partial config patch into the current configuration, swap the

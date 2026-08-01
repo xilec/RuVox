@@ -1,10 +1,12 @@
 //! Engine-agnostic interface for the TTS layer.
 //!
-//! Two concrete impls exist:
+//! Three concrete impls exist:
 //! - [`crate::tts::supervisor::TtsSupervisor`] — Silero, runs as a Python
 //!   `ttsd` sidecar that can die and respawn.
 //! - [`crate::tts::piper::PiperEngine`] — Piper, runs in-process via the
 //!   `piper-rs` ONNX wrapper.
+//! - [`crate::tts::silero_native::SileroNativeEngine`] — Silero v5, runs
+//!   in-process via the `silero-native` crate on ONNX Runtime.
 //!
 //! [`crate::state::AppState::tts`] holds a `Arc<dyn TtsEngine>` so the rest of
 //! the codebase (commands, synthesis worker, tray) is engine-agnostic.
@@ -23,6 +25,7 @@ use super::{CharMappingEntry, SynthesizeOutput, TtsError};
 pub enum EngineKind {
     Silero,
     Piper,
+    SileroNative,
 }
 
 impl EngineKind {
@@ -30,6 +33,7 @@ impl EngineKind {
         match self {
             EngineKind::Silero => "silero",
             EngineKind::Piper => "piper",
+            EngineKind::SileroNative => "silero_native",
         }
     }
 }

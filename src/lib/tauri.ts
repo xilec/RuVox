@@ -48,7 +48,7 @@ export interface WordTimestamp {
 
 type Theme = 'light' | 'dark' | 'auto';
 
-export type EngineKind = 'piper' | 'silero';
+export type EngineKind = 'piper' | 'silero' | 'silero_native';
 
 interface EngineAvailability {
   /** Whether the engine can be selected from the UI. Phase 3 of #42 wires
@@ -63,10 +63,14 @@ interface EngineAvailability {
 export interface AvailableEngines {
   piper: EngineAvailability;
   silero: EngineAvailability;
+  silero_native: EngineAvailability;
 }
 
 export interface UIConfig {
   speaker: string;
+  /** Shared across engines. Global default 48000; the native Silero engine
+   *  defaults to 24000 (the Settings dialog offers it when the engine is
+   *  picked without an explicit sample-rate choice). */
   sample_rate: number;
   speech_rate: number;
   notify_on_ready: boolean;
@@ -180,6 +184,9 @@ export const commands = {
   downloadPiperVoice: (voice_id: string): Promise<void> =>
     tauriInvoke('download_piper_voice', { voiceId: voice_id }),
 
+  downloadSileroNativeBundle: (): Promise<void> =>
+    tauriInvoke('download_silero_native_bundle'),
+
   getTimestamps: (id: EntryId): Promise<WordTimestamp[]> =>
     tauriInvoke('get_timestamps', { id }),
 
@@ -228,6 +235,28 @@ export interface VoiceDownloadProgressPayload {
 export interface VoiceDownloadFinishedPayload {
   engine: 'piper';
   voice: string;
+  ok: boolean;
+  /** Russian-language failure message, present when ok=false. */
+  message?: string;
+}
+
+export interface BundleDownloadStartedPayload {
+  engine: 'silero_native';
+}
+export interface BundleDownloadProgressPayload {
+  engine: 'silero_native';
+  /** Bundle-relative file path from the manifest. */
+  file: string;
+  file_idx: number;
+  total_files: number;
+  downloaded_bytes: number;
+  /** Expected size from the manifest. */
+  total_bytes: number;
+  /** Set when the file was already on disk and valid (sha256 match). */
+  skipped?: boolean;
+}
+export interface BundleDownloadFinishedPayload {
+  engine: 'silero_native';
   ok: boolean;
   /** Russian-language failure message, present when ok=false. */
   message?: string;
@@ -287,4 +316,13 @@ export const events = {
 
   voiceDownloadFinished: (cb: (p: VoiceDownloadFinishedPayload) => void): Promise<UnlistenFn> =>
     tauriListen<VoiceDownloadFinishedPayload>('voice_download_finished', (e) => cb(e.payload)),
+
+  bundleDownloadStarted: (cb: (p: BundleDownloadStartedPayload) => void): Promise<UnlistenFn> =>
+    tauriListen<BundleDownloadStartedPayload>('bundle_download_started', (e) => cb(e.payload)),
+
+  bundleDownloadProgress: (cb: (p: BundleDownloadProgressPayload) => void): Promise<UnlistenFn> =>
+    tauriListen<BundleDownloadProgressPayload>('bundle_download_progress', (e) => cb(e.payload)),
+
+  bundleDownloadFinished: (cb: (p: BundleDownloadFinishedPayload) => void): Promise<UnlistenFn> =>
+    tauriListen<BundleDownloadFinishedPayload>('bundle_download_finished', (e) => cb(e.payload)),
 };

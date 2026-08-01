@@ -3,9 +3,11 @@ import tseslint from 'typescript-eslint';
 import reactHooks from 'eslint-plugin-react-hooks';
 
 export default tseslint.config(
-  // tmp/ holds scratch work (repro crates, worktrees); their generated
-  // build artifacts include .ts files that break the typed lint.
-  { ignores: ['dist/', 'node_modules/', 'src-tauri/', 'ttsd/', 'scripts/', 'tmp/'] },
+  // tmp/ is the repo-designated scratch dir (spikes, benches, .venv's) —
+  // none of it is app code to lint. Same for Python .venv's elsewhere
+  // (e.g. silero-native/export) whose vendored torch .mjs files trip the
+  // type-aware parser.
+  { ignores: ['dist/', 'node_modules/', 'src-tauri/', 'silero-native/', 'ttsd/', 'scripts/', 'tmp/', '**/.venv/'] },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   reactHooks.configs.flat.recommended,

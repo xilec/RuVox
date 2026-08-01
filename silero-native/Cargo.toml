@@ -1,0 +1,38 @@
+[package]
+name = "silero-native"
+version = "0.1.0"
+description = "In-process Silero TTS v5 engine on ONNX Runtime (Rust port of the Python ttsd path)"
+authors = []
+license = "GPL-3.0-only"
+repository = "https://github.com/xilec/RuVox"
+edition = "2021"
+rust-version = "1.80"
+
+# `ort`/`ort-sys` pins mirror src-tauri/Cargo.toml exactly (see the long
+# comment there): `load-dynamic` + `disable-linking` mean onnxruntime is
+# dlopened at runtime from `ORT_DYLIB_PATH` (set by nix/devshell.nix and the
+# flake wrapper) instead of fetching a prebuilt blob at build time, which
+# does not work inside the nix sandbox. Feature unification with src-tauri
+# (which depends on this crate by path) requires identical flags here.
+[dependencies]
+# NOTE: do not add `default-features = false` here — with ort rc.12 the
+# minimal feature set miscompiles against the ort-sys bindings
+# (`SessionOptionsAppendExecutionProvider_VitisAI` missing on `OrtApi`).
+# The prebuilt-blob download is still blocked by the ort-sys
+# `disable-linking` pin below (same pattern as src-tauri).
+ort = { version = "=2.0.0-rc.12", features = ["load-dynamic"] }
+ort-sys = { version = "=2.0.0-rc.12", default-features = false, features = ["disable-linking"] }
+thiserror = "2"
+tracing = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+flate2 = "1"
+hound = "3"
+# Underscore-named crate; the only unicode-category crate available in the
+# offline registry. Used for the BERT tokenizer's category checks.
+unicode_categories = "0.1"
+
+[dev-dependencies]
+tempfile = "3"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

@@ -185,17 +185,21 @@ fn resolve_ttsd_dir<R: Runtime>(app: &AppHandle<R>) -> std::path::PathBuf {
 /// - `engine = "silero"` but probe says unavailable → silent migration to
 ///   Piper; the user's `engine` value on disk is left untouched so they
 ///   can roll back by installing the Silero stack.
+/// - `engine = "silero_native"` *and* the model bundle is on disk →
+///   in-process [`tts::SileroNativeEngine`]. A missing bundle falls back
+///   to Piper the same way; the config value is preserved.
 ///
 /// Voice models live at `<data_local_dir>/ruvox/voices/piper/<voice>/…`
-/// — see `tts::piper::catalog`. Phase 4 of #42 adds on-demand download;
-/// for now, if the default voice isn't on disk, warmup emits `model_error`
-/// and the first synthesize returns `voice_not_installed`.
+/// — see `tts::piper::catalog`. The Silero Native model bundle lives next
+/// to them at `<data_local_dir>/ruvox/voices/silero-native/` and is fetched
+/// on demand via `download_silero_native_bundle`.
 /// Returns the active engine layer plus the runtime paths and emitter the
 /// rest of the app needs (Phase 4 download command, Phase 3 probe).
 type EngineWiring = (
     Arc<tts::EngineSwitcher>,
     std::path::PathBuf, // ttsd_dir
     std::path::PathBuf, // piper_voices_dir
+    std::path::PathBuf, // silero_native_bundle_dir
     tts::supervisor::Emitter,
 );
 
@@ -203,11 +207,12 @@ fn build_engine<R: Runtime>(
     app: &AppHandle<R>,
     storage: &StorageService,
 ) -> Result<EngineWiring, SetupError> {
-    let voices_dir = dirs::data_local_dir()
+    let data_dir = dirs::data_local_dir()
         .ok_or("dirs::data_local_dir() returned None")?
         .join("ruvox")
-        .join("voices")
-        .join("piper");
+        .join("voices");
+    let voices_dir = data_dir.join("piper");
+    let silero_native_bundle_dir = data_dir.join("silero-native");
 
     let app_handle_for_emitter = app.clone();
     let emitter: tts::supervisor::Emitter = Arc::new(move |event_name, payload| {
@@ -218,9 +223,22 @@ fn build_engine<R: Runtime>(
     let ttsd_dir = resolve_ttsd_dir(app);
 
     let want_silero = config.engine == "silero";
-    let silero_available = want_silero && tts::availability::probe(&ttsd_dir).silero.available;
+    // Targeted probe: the full availability::probe would also stat the
+    // silero-native bundle, whose result is not used on this path.
+    let silero_available = want_silero && tts::availability::probe_silero(&ttsd_dir).available;
+    // Stat-only gate (manifest parses, every listed file present with the
+    // recorded size) — the engine's warmup runs the full sha256 verification
+    // before opening ONNX sessions.
+    let want_silero_native = config.engine == "silero_native"
+        && tts::availability::probe_silero_native(&silero_native_bundle_dir).available;
 
-    let (initial_engine, initial_kind, initial_voice) = if silero_available {
+    let (initial_engine, initial_kind, initial_voice) = if want_silero_native {
+        let engine: Arc<dyn tts::TtsEngine> = Arc::new(tts::SileroNativeEngine::new(
+            silero_native_bundle_dir.clone(),
+            Arc::clone(&emitter),
+        ));
+        (engine, tts::EngineKind::SileroNative, None)
+    } else if silero_available {
         match try_build_silero(&ttsd_dir, Arc::clone(&emitter)) {
             Ok(sup) => {
                 let engine: Arc<dyn tts::TtsEngine> = sup;
@@ -235,6 +253,11 @@ fn build_engine<R: Runtime>(
         if want_silero {
             tracing::info!("Silero requested in config but unavailable; serving Piper this run");
         }
+        if config.engine == "silero_native" {
+            tracing::info!(
+                "Silero Native requested in config but the bundle is missing or incomplete; serving Piper this run"
+            );
+        }
         build_piper_initial(&voices_dir, &config.piper_voice, &emitter)
     };
 
@@ -244,9 +267,16 @@ fn build_engine<R: Runtime>(
         initial_voice,
         voices_dir.clone(),
         ttsd_dir.clone(),
+        silero_native_bundle_dir.clone(),
         Arc::clone(&emitter),
     ));
-    Ok((switcher, ttsd_dir, voices_dir, emitter))
+    Ok((
+        switcher,
+        ttsd_dir,
+        voices_dir,
+        silero_native_bundle_dir,
+        emitter,
+    ))
 }
 
 fn build_piper_initial(
@@ -383,6 +413,7 @@ pub(crate) fn invoke_handler<R: Runtime>(
         update_config,
         get_available_engines,
         download_piper_voice,
+        download_silero_native_bundle,
         get_timestamps,
         clear_cache,
         get_cache_stats,
@@ -407,7 +438,7 @@ pub fn run() {
             let storage = Arc::new(StorageService::new().expect("failed to open storage"));
             spawn_audio_migration_and_cleanup(Arc::clone(&storage));
 
-            let (engine_switcher, ttsd_dir, piper_voices_dir, emitter) =
+            let (engine_switcher, ttsd_dir, piper_voices_dir, silero_native_bundle_dir, emitter) =
                 build_engine(app.handle(), &storage)?;
             let tts: Arc<dyn tts::TtsEngine> = engine_switcher.clone();
             // Warm up the model in background. The engine owns the
@@ -441,6 +472,7 @@ pub fn run() {
                 engine_switcher,
                 ttsd_dir,
                 piper_voices_dir,
+                silero_native_bundle_dir,
                 emitter,
                 player,
                 pipeline,
