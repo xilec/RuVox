@@ -29,8 +29,8 @@ use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
 use super::catalog;
-use crate::tts::supervisor::Emitter;
 use crate::tts::TtsError;
+use crate::tts::supervisor::Emitter;
 
 /// Throttle progress events to ~1 per 256 KB so the IPC bridge does not
 /// drown the renderer.

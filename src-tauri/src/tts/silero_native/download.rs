@@ -31,8 +31,8 @@ use silero_native::bundle::{Manifest, ManifestFile};
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
-use crate::tts::supervisor::Emitter;
 use crate::tts::TtsError;
+use crate::tts::supervisor::Emitter;
 
 /// Base URL of the GitHub Release that hosts the bundle files. The release
 /// may not exist yet — a 404 surfaces as a typed `bundle_download_failed`

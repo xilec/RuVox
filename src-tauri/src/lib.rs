@@ -11,8 +11,8 @@ pub mod tts;
 mod test_support;
 
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use parking_lot::Mutex;
 use serde_json::json;
@@ -389,8 +389,8 @@ fn spawn_tray_handler<R: Runtime + 'static>(
 /// Extracted from `run()` so the test harness (`test_support`) registers the
 /// identical command set on its `MockRuntime` app — no drift between the
 /// production handler list and what tests exercise.
-pub(crate) fn invoke_handler<R: Runtime>(
-) -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static {
+pub(crate) fn invoke_handler<R: Runtime>()
+-> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
         add_clipboard_entry,
         add_text_entry,

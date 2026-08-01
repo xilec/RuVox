@@ -15,8 +15,8 @@ use tauri::{AppHandle, Emitter, Runtime, State};
 use tokio::task::AbortHandle;
 use tracing::{info, warn};
 
-use crate::pipeline::tracked_text::CharMapping;
 use crate::pipeline::TTSPipeline;
+use crate::pipeline::tracked_text::CharMapping;
 use crate::state::AppState;
 use crate::storage::schema::{
     EntryId, EntryStatus, TextEntry, TextFormat, UIConfig, UIConfigPatch, WordTimestamp,
@@ -25,7 +25,7 @@ use crate::storage::service::{StorageError, StorageService};
 use crate::tts::engine::EngineKind;
 use crate::tts::piper::download::download_voice;
 use crate::tts::{
-    availability, AvailableEngines, CharMappingEntry, SynthesizeOutput, TtsEngine, TtsError,
+    AvailableEngines, CharMappingEntry, SynthesizeOutput, TtsEngine, TtsError, availability,
 };
 
 // ── Error type ─────────────────────────────────────────────────────────────────

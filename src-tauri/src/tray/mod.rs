@@ -1,8 +1,8 @@
 use tauri::{
+    AppHandle, Emitter, Manager, Runtime,
     image::Image,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, Manager, Runtime,
 };
 
 use crate::state::AppState;

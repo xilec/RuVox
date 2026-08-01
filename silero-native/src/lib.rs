@@ -12,7 +12,7 @@ pub mod error;
 pub mod frontend;
 pub mod timestamps;
 
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 

@@ -5,8 +5,8 @@ description = "In-process Silero TTS v5 engine on ONNX Runtime (Rust port of the
 authors = []
 license = "GPL-3.0-only"
 repository = "https://github.com/xilec/RuVox"
-edition = "2021"
-rust-version = "1.80"
+edition = "2024"
+rust-version = "1.85"
 
 # `ort`/`ort-sys` pins mirror src-tauri/Cargo.toml exactly (see the long
 # comment there): `load-dynamic` + `disable-linking` mean onnxruntime is

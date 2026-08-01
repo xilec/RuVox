@@ -17,10 +17,10 @@ use tracing::{debug, info, instrument};
 
 use crate::bundle::{Manifest, Sessions};
 use crate::error::{EngineError, Result};
+use crate::frontend::FrontendConfig;
 use crate::frontend::accentor::Accentor;
 use crate::frontend::homosolver::HomoSolver;
 use crate::frontend::text::{build_sequence, prepare_text_input};
-use crate::frontend::FrontendConfig;
 use crate::lock_session;
 
 /// Raw synthesis output (pre-WAV).

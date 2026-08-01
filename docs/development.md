@@ -100,7 +100,7 @@ nix build .#ruvox
 
 ### Rust
 
-- Edition 2021 (or newer if a dependency requires it).
+- Edition 2024 (MSRV 1.85).
 - `tracing` for logs, `thiserror` for domain errors, `anyhow::Result` only at boundaries.
 - `unwrap` is forbidden in production paths — use `?` + typed errors.
 - `cargo fmt` and `cargo clippy` must be clean.

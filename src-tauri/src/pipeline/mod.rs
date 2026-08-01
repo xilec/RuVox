@@ -13,7 +13,7 @@ use crate::pipeline::normalizers::code_blocks::CodeBlockHandler;
 use crate::pipeline::normalizers::english::EnglishNormalizer;
 use crate::pipeline::normalizers::numbers::NumberNormalizer;
 use crate::pipeline::normalizers::symbols::SymbolNormalizer;
-use crate::pipeline::normalizers::urls::{is_known_tld, URLPathNormalizer};
+use crate::pipeline::normalizers::urls::{URLPathNormalizer, is_known_tld};
 use crate::pipeline::tracked_text::{CharMapping, TrackedText};
 
 // ── Static compiled regexes ───────────────────────────────────────────────────
@@ -592,7 +592,7 @@ impl TTSPipeline {
                     // "[" is a 1-byte ASCII char.
                     let bracket_start = full_m.start();
                     let bracket_end = bracket_start + 1; // just "["
-                                                         // "](url)" starts right after the link text.
+                    // "](url)" starts right after the link text.
                     let suffix_start = text_m.end(); // byte after last char of link text
                     let suffix_end = full_m.end();
                     (bracket_start, bracket_end, suffix_start, suffix_end)

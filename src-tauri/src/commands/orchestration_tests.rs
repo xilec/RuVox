@@ -7,7 +7,7 @@
 use super::*;
 use crate::player::PlayerBackend;
 use crate::test_support::{
-    build_test_app, build_test_app_with_kind, record_events, wait_until, PlayerCall, TestApp,
+    PlayerCall, TestApp, build_test_app, build_test_app_with_kind, record_events, wait_until,
 };
 use crate::tts::engine::EngineKind;
 use std::time::Duration;
@@ -121,11 +121,12 @@ async fn delete_entry_of_other_entry_keeps_playback_running() {
     play_entry(t.state(), playing.clone()).await.unwrap();
     delete_entry(t.state(), other.clone()).await.unwrap();
 
-    assert!(t
-        .player
-        .calls()
-        .iter()
-        .all(|c| !matches!(c, PlayerCall::Stop)));
+    assert!(
+        t.player
+            .calls()
+            .iter()
+            .all(|c| !matches!(c, PlayerCall::Stop))
+    );
     assert!(t.player.is_playing());
     assert_eq!(
         t.player.current_entry_id().as_deref(),
@@ -166,9 +167,10 @@ async fn regenerate_entry_replaces_audio_and_resynthesizes() {
 
     // The command emitted entry_updated carrying was_regenerated: true.
     let log = events.lock().unwrap();
-    assert!(log
-        .iter()
-        .any(|(_, p)| p["entry"]["id"] == id && p["entry"]["was_regenerated"] == true));
+    assert!(
+        log.iter()
+            .any(|(_, p)| p["entry"]["id"] == id && p["entry"]["was_regenerated"] == true)
+    );
 }
 
 /// Regeneration is rejected while the entry is `processing`; the
@@ -276,9 +278,10 @@ async fn cancel_synthesis_on_idle_entry_succeeds_and_stays_pending() {
     let stored = t.state().storage.get_entry(&entry.id).unwrap();
     assert_eq!(stored.status, EntryStatus::Pending);
     let log = events.lock().unwrap();
-    assert!(log
-        .iter()
-        .any(|(_, p)| p["entry"]["id"] == id && p["entry"]["status"] == "pending"));
+    assert!(
+        log.iter()
+            .any(|(_, p)| p["entry"]["id"] == id && p["entry"]["status"] == "pending")
+    );
 }
 
 // ── play_entry ───────────────────────────────────────────────────────
@@ -553,11 +556,13 @@ async fn tts_failure_emits_entry_updated_error_then_tts_error() {
 
     let entry = t.state().storage.get_entry(&uuid).unwrap();
     assert_eq!(entry.status, EntryStatus::Error);
-    assert!(entry
-        .error_message
-        .as_deref()
-        .unwrap_or_default()
-        .contains("stub synthesis boom"));
+    assert!(
+        entry
+            .error_message
+            .as_deref()
+            .unwrap_or_default()
+            .contains("stub synthesis boom")
+    );
 
     let log = events.lock().unwrap();
     let err_idx = log
@@ -570,10 +575,12 @@ async fn tts_failure_emits_entry_updated_error_then_tts_error() {
         .expect("tts_error must be emitted");
     assert!(err_idx < tts_idx, "entry_updated(error) precedes tts_error");
     assert_eq!(log[tts_idx].1["entry_id"], id);
-    assert!(log[tts_idx].1["message"]
-        .as_str()
-        .unwrap()
-        .contains("stub synthesis boom"));
+    assert!(
+        log[tts_idx].1["message"]
+            .as_str()
+            .unwrap()
+            .contains("stub synthesis boom")
+    );
 }
 
 /// `seek_to` forwards the absolute position to the player. (The
@@ -585,11 +592,12 @@ async fn tts_failure_emits_entry_updated_error_then_tts_error() {
 async fn seek_to_forwards_absolute_seek_to_player() {
     let t = build_test_app();
     seek_to(t.state(), 2.0).await.unwrap();
-    assert!(t
-        .player
-        .calls()
-        .iter()
-        .any(|c| matches!(c, PlayerCall::Seek(p) if (*p - 2.0).abs() < f64::EPSILON)));
+    assert!(
+        t.player
+            .calls()
+            .iter()
+            .any(|c| matches!(c, PlayerCall::Seek(p) if (*p - 2.0).abs() < f64::EPSILON))
+    );
 }
 
 // ── preview_normalize (restored from the plan journal: removed as a
@@ -794,11 +802,12 @@ async fn set_speed_rejects_out_of_range() {
             "speed {speed} must be rejected with config_error, got {err:?}"
         );
     }
-    assert!(t
-        .player
-        .calls()
-        .iter()
-        .all(|c| !matches!(c, PlayerCall::SetSpeed(_))));
+    assert!(
+        t.player
+            .calls()
+            .iter()
+            .all(|c| !matches!(c, PlayerCall::SetSpeed(_)))
+    );
 }
 
 /// The real `set_volume` command accepts the documented inclusive range
@@ -836,9 +845,10 @@ async fn set_volume_rejects_out_of_range() {
             "volume {volume} must be rejected with config_error, got {err:?}"
         );
     }
-    assert!(t
-        .player
-        .calls()
-        .iter()
-        .all(|c| !matches!(c, PlayerCall::SetVolume(_))));
+    assert!(
+        t.player
+            .calls()
+            .iter()
+            .all(|c| !matches!(c, PlayerCall::SetVolume(_)))
+    );
 }

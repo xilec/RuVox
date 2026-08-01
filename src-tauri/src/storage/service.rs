@@ -454,11 +454,7 @@ impl StorageService {
         let map = self.entries.read();
         let filename = map.get(id)?.audio_path.as_ref()?.clone();
         let full = self.audio_dir.join(filename);
-        if full.exists() {
-            Some(full)
-        } else {
-            None
-        }
+        if full.exists() { Some(full) } else { None }
     }
 
     // ── Stats ──────────────────────────────────────────────────────────────

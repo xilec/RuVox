@@ -13,8 +13,8 @@ use ort::session::Session;
 use ort::value::Tensor;
 use tracing::{debug, instrument};
 
-use super::bert::BertTokenizer;
 use super::HomosolverConfig;
+use super::bert::BertTokenizer;
 use crate::error::{EngineError, Result};
 
 /// Char classes of the upstream word pattern `[а-яё+]+` (IGNORECASE).

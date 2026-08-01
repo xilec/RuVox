@@ -826,9 +826,11 @@ mod tests {
     #[test_case("file:///home/user/doc.txt", "файл"; "file")]
     fn protocol(url: &str, expected_prefix: &str) {
         let (_, nn) = mk_normalizer();
-        assert!(norm_no_en(&nn)
-            .normalize_url(url)
-            .starts_with(expected_prefix));
+        assert!(
+            norm_no_en(&nn)
+                .normalize_url(url)
+                .starts_with(expected_prefix)
+        );
     }
 
     // ---- Email normalization ----
