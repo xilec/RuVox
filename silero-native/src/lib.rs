@@ -16,14 +16,13 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 
-use ort::session::Session;
 use tracing::{debug, instrument};
 
 pub use engine::Engine;
 pub use error::{EngineError, Result};
 pub use timestamps::WordTimestamp;
 
-/// Lock an engine session mutex, recovering from poisoning.
+/// Lock an engine mutex, recovering from poisoning.
 ///
 /// Poisoning here means a previous inference panicked while holding the
 /// lock — which the public API already converts into a typed error via
@@ -31,7 +30,7 @@ pub use timestamps::WordTimestamp;
 /// `run` calls, so reusing a session after a panic is safe; returning the
 /// inner guard keeps the engine usable for subsequent calls (spec:
 /// "engine panic is contained").
-pub(crate) fn lock_session(m: &Mutex<Session>) -> MutexGuard<'_, Session> {
+pub(crate) fn lock_session<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 

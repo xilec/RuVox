@@ -26,6 +26,51 @@ chars), speaker `aidar`, 24000 Hz.
 
 **Speedup: ~1.3x** (warm, full pipeline on both sides).
 
+## Engine load time (issue #165)
+
+Date: 2026-08-01, same machine. "Load" = `SileroNative::load` (manifest
+verify + ONNX session creation + frontend), measured by the bench
+example's `load_ms` (and the `RUST_LOG=silero_native=info` per-phase
+timings). ttsd baseline = spawn `uv run python -m ttsd` → `warmup` →
+ok-response → `shutdown`, 5 runs (`tmp/bench_ttsd_spawn.py`).
+
+| Path | mean | min | max |
+|---|---|---|---|
+| ttsd spawn-to-ready (Python sidecar) | 1680.8 ms | 1654.1 ms | 1708.4 ms |
+| silero-native load — baseline (sequential sessions) | 651.6 ms | — | — |
+| silero-native load — optimized | ~440 ms | 416.7 ms | 464.7 ms |
+
+Baseline breakdown (warm page cache): manifest verify 115 ms, six
+sequential session opens 507 ms (tts_main 223, homosolver 214, istft 53,
+accentor 13, pqmf ~3), frontend 30 ms.
+
+Optimizations applied:
+
+- **Concurrent session creation** (`Sessions::open`): the sessions are
+  independent, so they open on scoped threads. 507 ms → ~340 ms.
+- **Concurrent sha256 verify** (`Manifest::verify`): hashing is pure CPU
+  once the page cache is warm. 115 ms → ~60 ms.
+- **Lazy PQMF sessions**: `pqmf_24k`/`pqmf_8k` open on the first synthesis
+  at that rate instead of at load (~3 ms saved at load; the real win is
+  not paying for a rate that is never requested).
+
+Measured and rejected:
+
+- **ORT graph optimization level**: Level3 ≈ Level1 ≈ Disable (~310 ms
+  sessions either way) — session creation is dominated by model parse /
+  arena init, not the optimizers. This also rules out the **`.ort`
+  compiled-model cache** (it only skips optimization).
+- **Warm the engine at app start**: already implemented in the app layer
+  (`spawn_initial_warmup` via the engine switcher, `src-tauri/src/lib.rs`)
+  — the selected engine warms in the background at startup and on every
+  engine switch.
+
+The remaining floor is ORT session init for `tts_main` (~220 ms class)
+and `homosolver` (~210 ms class), which overlap under concurrent open but
+do not vanish. **Native load is ~3.8x faster than ttsd spawn-to-ready**
+on the same machine, so the issue's acceptance target (native ≤ ttsd) is
+met with margin.
+
 ## Note on the spike's "~10x"
 
 `tmp/onnx-spike/REPORT.md` quoted ~10x (torch `apply_tts` ~0.5 s vs ORT

@@ -94,30 +94,52 @@ impl Manifest {
     }
 
     /// Verify every listed file against size and sha256. Returns the first
-    /// mismatch as a typed `Bundle` error naming the file.
+    /// mismatch (in manifest order) as a typed `Bundle` error naming the
+    /// file.
+    ///
+    /// Files are hashed concurrently: sha256 of ~230 MB of models is pure
+    /// CPU once the page cache is warm, and sequentially it costs ~115 ms
+    /// of engine load time.
     #[instrument(skip(self), fields(files = self.files.len()))]
     pub fn verify(&self, bundle_dir: &Path) -> Result<()> {
-        for entry in &self.files {
-            let path = bundle_dir.join(&entry.path);
-            let meta = std::fs::metadata(&path)
-                .map_err(|e| EngineError::Bundle(format!("cannot stat {}: {e}", path.display())))?;
-            if meta.len() != entry.size {
-                return Err(EngineError::Bundle(format!(
-                    "size mismatch for {}: expected {}, got {}",
-                    entry.path,
-                    entry.size,
-                    meta.len()
-                )));
-            }
-            let actual = sha256_file(&path)?;
-            if !actual.eq_ignore_ascii_case(&entry.sha256) {
-                return Err(EngineError::Bundle(format!(
-                    "sha256 mismatch for {}",
-                    entry.path
-                )));
-            }
-            debug!(file = %entry.path, "bundle file verified");
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = self
+                .files
+                .iter()
+                .map(|entry| scope.spawn(|| self.verify_entry(bundle_dir, entry)))
+                .collect();
+            handles
+                .into_iter()
+                .map(|h| {
+                    h.join()
+                        .map_err(|_| EngineError::Bundle("verify thread panicked".to_string()))?
+                })
+                .collect::<Result<Vec<()>>>()
+        })?;
+        Ok(())
+    }
+
+    /// Size + sha256 check of one manifest entry.
+    fn verify_entry(&self, bundle_dir: &Path, entry: &ManifestFile) -> Result<()> {
+        let path = bundle_dir.join(&entry.path);
+        let meta = std::fs::metadata(&path)
+            .map_err(|e| EngineError::Bundle(format!("cannot stat {}: {e}", path.display())))?;
+        if meta.len() != entry.size {
+            return Err(EngineError::Bundle(format!(
+                "size mismatch for {}: expected {}, got {}",
+                entry.path,
+                entry.size,
+                meta.len()
+            )));
         }
+        let actual = sha256_file(&path)?;
+        if !actual.eq_ignore_ascii_case(&entry.sha256) {
+            return Err(EngineError::Bundle(format!(
+                "sha256 mismatch for {}",
+                entry.path
+            )));
+        }
+        debug!(file = %entry.path, "bundle file verified");
         Ok(())
     }
 
@@ -133,24 +155,41 @@ impl Manifest {
     }
 }
 
-/// Open ONNX sessions for all six models of the bundle.
+/// Open ONNX sessions for the always-needed models of the bundle.
+///
+/// The rate-specific PQMF filters are NOT opened here: they are tiny, but
+/// each is only needed when synthesis at that sample rate is actually
+/// requested, so the engine lazy-opens them on first use (see
+/// `Engine::synthesize`).
 pub struct Sessions {
     pub tts_main: Session,
     pub istft: Session,
-    pub pqmf_24k: Session,
-    pub pqmf_8k: Session,
     pub homosolver: Session,
     pub accentor_tensor: Session,
 }
 
-fn open_session(path: &Path) -> Result<Session> {
+/// Open one ONNX session with default settings.
+///
+/// Measured (issue #165, `tmp/bundle-v5`, Ryzen 9 7900): graph optimization
+/// level makes no difference to session-creation time — Level3 ≈ Level1 ≈
+/// Disable at ~310 ms for all sessions — because model parse/arena init
+/// dominates, not the optimizers. That also rules out the `.ort`
+/// compiled-model cache (it only skips optimization). Keep the defaults.
+pub(crate) fn open_session(path: &Path) -> Result<Session> {
     Session::builder()
         .and_then(|mut b| b.commit_from_file(path))
         .map_err(|e| EngineError::Bundle(format!("failed to open {}: {e}", path.display())))
 }
 
 impl Sessions {
-    /// Open every model session. Call only after [`Manifest::verify`].
+    /// Open the always-needed model sessions. Call only after
+    /// [`Manifest::verify`].
+    ///
+    /// The sessions are independent, so they are opened concurrently —
+    /// sequentially the total is the *sum* of per-session times (~500 ms,
+    /// dominated by tts_main and homosolver at ~220 ms each), concurrently
+    /// it approaches the *max*. ONNX Runtime session creation is thread-safe
+    /// across independent sessions, and `Session` is `Send`.
     #[instrument(skip_all)]
     pub fn open(bundle_dir: &Path, manifest: &Manifest) -> Result<Self> {
         let total = Instant::now();
@@ -165,17 +204,35 @@ impl Sessions {
             );
             Ok(session)
         };
+        const NAMES: [&str; 4] = [TTS_MAIN, ISTFT, HOMOSOLVER, ACCENTOR_TENSOR];
+        let results = std::thread::scope(|scope| {
+            let handles: Vec<_> = NAMES
+                .iter()
+                .map(|name| scope.spawn(|| open(name)))
+                .collect();
+            handles
+                .into_iter()
+                .map(|h| {
+                    h.join()
+                        .map_err(|_| {
+                            EngineError::Bundle("session open thread panicked".to_string())
+                        })?
+                        .map(Some)
+                })
+                .collect::<Result<Vec<_>>>()
+        })?;
+        let mut results = results.into_iter();
+        let mut next = || results.next().flatten().expect("one result per session");
         let sessions = Self {
-            tts_main: open(TTS_MAIN)?,
-            istft: open(ISTFT)?,
-            pqmf_24k: open(PQMF_24K)?,
-            pqmf_8k: open(PQMF_8K)?,
-            homosolver: open(HOMOSOLVER)?,
-            accentor_tensor: open(ACCENTOR_TENSOR)?,
+            // `results` is in NAMES order.
+            tts_main: next(),
+            istft: next(),
+            homosolver: next(),
+            accentor_tensor: next(),
         };
         info!(
             elapsed_ms = total.elapsed().as_secs_f64() * 1e3,
-            "all six ONNX sessions initialized"
+            "ONNX sessions initialized"
         );
         Ok(sessions)
     }

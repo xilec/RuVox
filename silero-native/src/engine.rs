@@ -8,7 +8,7 @@
 //! truncated), exactly as upstream — the engine does not duplicate it.
 
 use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Instant;
 
@@ -44,8 +44,14 @@ pub struct Engine {
     symbols_tail: HashSet<char>,
     tts_main: Mutex<Session>,
     istft: Mutex<Session>,
-    pqmf_24k: Mutex<Session>,
-    pqmf_8k: Mutex<Session>,
+    /// Rate-specific PQMF downsamplers, lazy-opened on first synthesis at
+    /// that rate: they are only needed for 24k/8k output, so an engine that
+    /// only ever serves 48 kHz (or is never used at all) does not pay for
+    /// them at load. The paths were verified by `Manifest::verify` at load.
+    pqmf_24k: Mutex<Option<Session>>,
+    pqmf_24k_path: PathBuf,
+    pqmf_8k: Mutex<Option<Session>>,
+    pqmf_8k_path: PathBuf,
 }
 
 impl Engine {
@@ -81,8 +87,10 @@ impl Engine {
             accentor,
             tts_main: Mutex::new(sessions.tts_main),
             istft: Mutex::new(sessions.istft),
-            pqmf_24k: Mutex::new(sessions.pqmf_24k),
-            pqmf_8k: Mutex::new(sessions.pqmf_8k),
+            pqmf_24k: Mutex::new(None),
+            pqmf_24k_path: manifest.file_path(bundle_dir, crate::bundle::PQMF_24K)?,
+            pqmf_8k: Mutex::new(None),
+            pqmf_8k_path: manifest.file_path(bundle_dir, crate::bundle::PQMF_8K)?,
         })
     }
 
@@ -192,12 +200,25 @@ impl Engine {
             r => {
                 let n = audio_48k.len();
                 let audio_t = Tensor::<f32>::from_array((vec![1usize, 1, n], audio_48k))?;
-                let pqmf = if r == 24000 {
-                    &self.pqmf_24k
+                let (slot, path) = if r == 24000 {
+                    (&self.pqmf_24k, &self.pqmf_24k_path)
                 } else {
-                    &self.pqmf_8k
+                    (&self.pqmf_8k, &self.pqmf_8k_path)
                 };
-                let mut session = lock_session(pqmf);
+                // Lazy open: first synthesis at this rate pays the (~2 ms)
+                // session creation here instead of every engine load paying
+                // it up front.
+                let mut slot = lock_session(slot);
+                if slot.is_none() {
+                    let t = Instant::now();
+                    *slot = Some(crate::bundle::open_session(path)?);
+                    info!(
+                        model = %path.file_name().unwrap_or_default().to_string_lossy(),
+                        elapsed_ms = t.elapsed().as_secs_f64() * 1e3,
+                        "lazy PQMF session opened"
+                    );
+                }
+                let session = slot.as_mut().expect("just initialized");
                 let outputs = session.run(ort::inputs!["audio" => audio_t])?;
                 let (_, band) = Self::take_f32(&outputs, "band0")?;
                 debug!(samples = band.len(), rate = r, "pqmf done");
