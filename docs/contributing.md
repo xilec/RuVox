@@ -95,7 +95,7 @@ Multi-character operators (`===`, `=>`, `>=`) are handled in `pipeline/mod.rs::T
 
 See full rules in [development.md](development.md#code-rules). In short:
 
-- Rust: edition 2021, `tracing` + `thiserror`, no `unwrap` in production paths, `cargo fmt` + `cargo clippy`.
+- Rust: edition 2024 (MSRV 1.85), `tracing` + `thiserror`, no `unwrap` in production paths, `cargo fmt` + `cargo clippy`.
 - TypeScript: `strict: true`, no `React.FC`, no `any`, functional components + hooks.
 - Mantine 8: CSS Modules + `classNames` prop. No `sx`, `createStyles`, `emotion`, or Mantine 6/7 legacy.
 - Python (ttsd): 3.12, uv-managed, clean `ruff check`, JSON over stdin/stdout, logs to stderr.

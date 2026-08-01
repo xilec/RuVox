@@ -21,15 +21,15 @@
 
 use std::panic::AssertUnwindSafe;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use parking_lot::Mutex;
 use serde_json::json;
 use tauri::{AppHandle, Emitter, Runtime};
 use tauri_plugin_mpv::{MpvCommand, MpvConfig, MpvExt};
-use tokio::time::{interval, Duration};
+use tokio::time::{Duration, interval};
 use tracing::{debug, warn};
 
 pub const WINDOW_LABEL: &str = "main";

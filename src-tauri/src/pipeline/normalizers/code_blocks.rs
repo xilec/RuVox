@@ -265,11 +265,7 @@ impl CodeBlockHandler {
             .into_iter()
             .filter_map(|t| {
                 let n = self.normalize_token(t);
-                if n.is_empty() {
-                    None
-                } else {
-                    Some(n)
-                }
+                if n.is_empty() { None } else { Some(n) }
             })
             .collect();
         normalized.join(" ")

@@ -35,7 +35,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use serde_json::json;
 use tokio::process::Command;
-use tokio::sync::{watch, Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, watch};
 use tokio::time::sleep;
 use tracing::{error, info, warn};
 

@@ -9,7 +9,7 @@
 
 use regex::Regex;
 
-use crate::tts::{map_via_spans, CharMappingEntry, WordTimestamp};
+use crate::tts::{CharMappingEntry, WordTimestamp, map_via_spans};
 
 /// Estimate per-word timestamps for `text` over a single audio chunk of length
 /// `total_duration_sec`. `char_mapping`, when present, maps normalized-text

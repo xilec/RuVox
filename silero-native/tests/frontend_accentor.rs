@@ -8,10 +8,10 @@
 //! Skipped when the bundle is absent (set SILERO_NATIVE_BUNDLE to override).
 
 use serde::Deserialize;
+use silero_native::frontend::FrontendConfig;
 use silero_native::frontend::accentor::Accentor;
 use silero_native::frontend::homosolver::HomoSolver;
 use silero_native::frontend::text::{build_sequence, prepare_text_input};
-use silero_native::frontend::FrontendConfig;
 
 mod common;
 

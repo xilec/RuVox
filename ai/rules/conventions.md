@@ -65,7 +65,7 @@ Craft rules (layout, test quality, duplication, idiom, correctness) live in
 
 ## Rust
 
-- Edition 2021 (or newer if a dependency requires it).
+- Edition 2024 (MSRV 1.85).
 - `tracing` for logging, `thiserror` for domain errors, `anyhow::Result` only
   at boundaries.
 - No `unwrap` in production paths — use `?` + typed errors. `expect()` only for

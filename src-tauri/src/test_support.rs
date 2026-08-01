@@ -29,7 +29,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use parking_lot::Mutex as ParkingMutex;
 use serde_json::Value;
-use tauri::test::{mock_builder, mock_context, noop_assets, MockRuntime};
+use tauri::test::{MockRuntime, mock_builder, mock_context, noop_assets};
 use tauri::{App, Listener, Manager};
 use tempfile::TempDir;
 
@@ -523,9 +523,10 @@ mod tests {
                 .map(|(_, payload)| payload["position_sec"].as_f64().unwrap())
                 .collect();
             assert_eq!(positions, vec![0.1, 0.2, 0.3]);
-            assert!(log
-                .iter()
-                .all(|(_, payload)| payload.get("entry_id").map_or(true, |id| id == "entry-1")));
+            assert!(
+                log.iter()
+                    .all(|(_, payload)| payload.get("entry_id").is_none_or(|id| id == "entry-1"))
+            );
 
             // EOF ordering: playback_finished immediately before playback_stopped.
             let finished_idx = log
