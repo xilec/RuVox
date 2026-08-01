@@ -41,9 +41,6 @@ pub struct Engine {
     /// Keep-set for text filtering, precomputed from `config.symbols` at
     /// load so the per-chunk `prepare` does not rebuild it every call.
     symbols_tail: HashSet<char>,
-    /// Shared empty skip-sets for the accentor call (we never skip words),
-    /// precomputed for the same reason.
-    empty_skip: HashSet<String>,
     tts_main: Mutex<Session>,
     istft: Mutex<Session>,
     pqmf_24k: Mutex<Session>,
@@ -63,7 +60,6 @@ impl Engine {
         info!(model = %manifest.model_id, "engine loaded");
         Ok(Self {
             symbols_tail: config.symbols_tail(),
-            empty_skip: HashSet::new(),
             config,
             homosolver,
             accentor,
@@ -94,17 +90,8 @@ impl Engine {
                 "text has no speakable content after normalization".to_string(),
             ));
         }
-        let homosolved = self
-            .homosolver
-            .resolve(&prepared.sentence, true, true, true)?;
-        let accented = self.accentor.accentuate(
-            &homosolved,
-            true,
-            true,
-            true,
-            &self.empty_skip,
-            &self.empty_skip,
-        )?;
+        let homosolved = self.homosolver.resolve(&prepared.sentence)?;
+        let accented = self.accentor.accentuate(&homosolved)?;
         let sequence = build_sequence(
             &accented,
             &self.config.symbol_to_id,

@@ -5,7 +5,7 @@
 //! without a regex engine: maximal runs of Cyrillic letters and `+` that
 //! contain at least one letter.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -67,7 +67,6 @@ pub struct HomoSolver {
     /// homograph (lowercase) → accented variants (as shipped, unsorted).
     homodict: HashMap<String, Vec<String>>,
     session: Mutex<Session>,
-    vowels: HashSet<char>,
 }
 
 impl HomoSolver {
@@ -87,7 +86,6 @@ impl HomoSolver {
             tokenizer,
             homodict,
             session: Mutex::new(session),
-            vowels: "аоуыэиеяёю".chars().collect(),
         })
     }
 
@@ -102,17 +100,11 @@ impl HomoSolver {
     /// Port of `HomoSolver.__call__`: tag every homograph with
     /// `[HOMO]`/`[/HOMO]`, let the BERT pick the variant, splice the
     /// resolved words back into the sentence.
+    ///
+    /// Upstream's flags are fixed to the only values the pipeline (and
+    /// ttsd) ever passes: put_stress = put_yo = stress_single_vowel = true.
     #[instrument(skip_all, fields(sentence_len = sentence.len()))]
-    pub fn resolve(
-        &self,
-        sentence: &str,
-        put_stress: bool,
-        put_yo: bool,
-        stress_single_vowel: bool,
-    ) -> Result<String> {
-        if !put_stress && !put_yo {
-            return Ok(sentence.to_string());
-        }
+    pub fn resolve(&self, sentence: &str) -> Result<String> {
         let chars: Vec<char> = sentence.chars().collect();
         let spans = find_word_spans(&chars);
 
@@ -208,15 +200,8 @@ impl HomoSolver {
                     variants.len()
                 )));
             }
-            let mut word_pred = variants[pred].clone();
-            if !put_yo {
-                word_pred = word_pred.replace('ё', "е");
-            }
+            let word_pred = variants[pred].clone();
             let pred_chars: Vec<char> = word_pred.chars().collect();
-            let n_vowels = pred_chars
-                .iter()
-                .filter(|c| self.vowels.contains(c))
-                .count();
             let stress_idx = pred_chars.iter().position(|c| *c == '+');
             let no_stress: Vec<char> = pred_chars.iter().copied().filter(|c| *c != '+').collect();
             // Case-map onto the original word's letters (zip truncation).
@@ -234,11 +219,9 @@ impl HomoSolver {
                 .collect();
             let start = (homo.start as i64 + offset) as usize;
             let end = start + word_chars.len();
-            if (n_vowels > 1 || stress_single_vowel) && put_stress {
-                if let Some(idx) = stress_idx {
-                    resolved.insert(idx, '+');
-                    offset += 1;
-                }
+            if let Some(idx) = stress_idx {
+                resolved.insert(idx, '+');
+                offset += 1;
             }
             out.splice(start..end, resolved);
         }

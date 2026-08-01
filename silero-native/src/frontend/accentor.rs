@@ -394,19 +394,12 @@ impl Accentor {
 
     /// Port of `AccentorNgram.__call__` (see upstream for the decision tree;
     /// branching order and thresholds are kept verbatim).
+    ///
+    /// Upstream's flags are fixed to the only values the pipeline (and
+    /// ttsd) ever passes: put_stress = put_yo = stress_single_vowel = true,
+    /// with empty skip-word sets.
     #[instrument(skip_all, fields(sentence_len = sentence.len()))]
-    pub fn accentuate(
-        &self,
-        sentence: &str,
-        put_stress: bool,
-        put_yo: bool,
-        stress_single_vowel: bool,
-        skip_stress_words: &HashSet<String>,
-        skip_yo_words: &HashSet<String>,
-    ) -> Result<String> {
-        if !put_stress && !put_yo {
-            return Ok(sentence.to_string());
-        }
+    pub fn accentuate(&self, sentence: &str) -> Result<String> {
         let tokens = self.tokenize(sentence);
         if tokens.raw.is_empty() {
             return Ok(sentence.to_string());
@@ -429,14 +422,7 @@ impl Accentor {
                 out.push_str(raw_word);
                 continue;
             }
-            if !have_stress && have_yo && put_stress {
-                let vowel_count = raw_lower.iter().filter(|c| self.vowels.contains(c)).count();
-                let no_yo: String = clean_word.replace('ё', "е");
-                if (vowel_count == 1 && !stress_single_vowel) || skip_stress_words.contains(&no_yo)
-                {
-                    out.push_str(raw_word);
-                    continue;
-                }
+            if !have_stress && have_yo {
                 // User-set ё: put stress on each of them.
                 let yo_positions: Vec<usize> = raw_lower
                     .iter()
@@ -464,21 +450,14 @@ impl Accentor {
                 continue;
             }
 
-            let no_yo: String = clean_word.replace('ё', "е");
             let mut stressed_vowel_ids = vec![stress_preds[word_idx]];
-            let passed_stress = stress_probs[word_idx][stressed_vowel_ids[0]]
-                > if put_stress {
-                    self.stress_threshold
-                } else {
-                    1.0
-                };
-            let mut set_stress =
-                passed_stress && !have_stress && !skip_stress_words.contains(&no_yo);
+            let passed_stress =
+                stress_probs[word_idx][stressed_vowel_ids[0]] > self.stress_threshold;
+            let mut set_stress = passed_stress && !have_stress;
 
             let yo_vowel_ids = vec![yo_preds[word_idx]];
-            let passed_yo =
-                yo_probs[word_idx][yo_vowel_ids[0]] > if put_yo { self.yo_threshold } else { 1.0 };
-            let set_yo = passed_yo && !skip_yo_words.contains(&no_yo);
+            let passed_yo = yo_probs[word_idx][yo_vowel_ids[0]] > self.yo_threshold;
+            let set_yo = passed_yo;
 
             if have_stress {
                 // User stress positions as cumulative vowel counts per
@@ -513,7 +492,7 @@ impl Accentor {
                     Some(pos) => vec![pos],
                     None => vec![],
                 };
-                set_stress = stress_single_vowel && put_stress;
+                set_stress = true;
             }
 
             if !have_stress && set_stress {

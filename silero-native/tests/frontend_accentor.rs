@@ -48,7 +48,6 @@ fn accentor_pipeline_matches_upstream_golden() {
     let raw = include_str!("fixtures/frontend/accentor.json");
     let fixtures: FixtureFile = serde_json::from_str(raw).expect("fixture JSON must parse");
     let symbols_tail = config.symbols_tail();
-    let empty: std::collections::HashSet<String> = Default::default();
 
     for case in &fixtures.cases {
         let prepared = prepare_text_input(&case.input, &symbols_tail);
@@ -58,16 +57,14 @@ fn accentor_pipeline_matches_upstream_golden() {
             case.input
         );
         let homosolved = homosolver
-            .resolve(&prepared.sentence, true, true, true)
+            .resolve(&prepared.sentence)
             .expect("homosolver must run");
         assert_eq!(
             homosolved, case.homosolved,
             "homosolved mismatch for {:?}",
             case.input
         );
-        let accented = accentor
-            .accentuate(&homosolved, true, true, true, &empty, &empty)
-            .expect("accentor must run");
+        let accented = accentor.accentuate(&homosolved).expect("accentor must run");
         assert_eq!(
             accented, case.accented,
             "accented mismatch for {:?}",
