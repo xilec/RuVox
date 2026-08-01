@@ -170,3 +170,10 @@ git push -u origin feat/short-description  # push (after approval)
 ```
 
 New features and fixes follow the standard feature-branch flow.
+
+### Git hooks (lefthook)
+
+`lefthook install` runs from the devshell `shellHook`. Fast checks (fmt, ruff) gate the commit; heavy checks (clippy, typecheck, eslint, knip) gate the push.
+
+Known upstream quirk: lefthook v2 computes pre-push files via `git diff HEAD @{push}`, and on the **first push of a branch** (no upstream yet) falls back to diffing against the *local* branch named by `origin/HEAD` — i.e. local `main`. If local `main` is absent (deleted, or checked out in another worktree/clone), every pre-push hook exits 128 and the push is rejected. The devshell `shellHook` keeps a local `main` ref around as a workaround — if you ever run the hooks outside `nix develop` and hit `fatal: ambiguous argument 'main'`, create it manually: `git branch --no-track main origin/main`. Do **not** "fix" this with `--no-verify`.
+

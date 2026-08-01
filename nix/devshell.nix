@@ -241,6 +241,19 @@ pkgs.mkShell {
     # checkout or when lefthook.yml is absent)
     lefthook install > /dev/null 2>&1 || true
 
+    # lefthook v2 computes pre-push files via `git diff --name-only HEAD
+    # @{push}`; on the FIRST push of a branch there is no upstream yet, so it
+    # falls back to diffing against the *local* branch named by
+    # refs/remotes/origin/HEAD (i.e. `main`).  When local `main` is absent
+    # (deleted, or checked out in another clone/worktree), that diff fails
+    # and every pre-push hook exits 128, rejecting the push — only
+    # `--no-verify` helps.  Keep a local `main` ref around so the fallback
+    # never breaks (best-effort, offline-safe, idempotent; staleness is
+    # harmless because our pre-push hooks don't use the file list).
+    git show-ref --verify --quiet refs/heads/main \
+      || git branch --no-track main origin/main > /dev/null 2>&1 \
+      || true
+
     echo "RuVox 2.0 development environment"
     echo "  Rust:   $(rustc --version)"
     echo "  Node:   $(node --version)"
