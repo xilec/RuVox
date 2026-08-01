@@ -1,7 +1,11 @@
 //! Benchmark: N syntheses of a fixed ~50-char phrase at 24000 Hz,
-//! reporting mean / p95 wall time per synthesis (engine load excluded).
-//! Results are recorded in `docs/benchmarks.md` next to the Python
-//! `apply_tts` comparison (see tmp/bench_python.py).
+//! reporting engine load time (`load_ms`) plus mean / p95 wall time per
+//! synthesis. Results are recorded in `docs/benchmarks.md` next to the
+//! Python `apply_tts` comparison (see tmp/bench_python.py) and the
+//! engine-load / ttsd spawn-to-ready comparison (tmp/bench_ttsd_spawn.py).
+//!
+//! `RUST_LOG=silero_native=info` surfaces per-phase load timings
+//! (manifest verify, per-session open, frontend).
 //!
 //! Usage: cargo run --release --example bench -- [bundle_dir]
 //! (default: ../tmp/bundle-v5 relative to the crate, or SILERO_NATIVE_BUNDLE).
@@ -17,9 +21,16 @@ const PHRASE: &str = "Сервер обрабатывает запросы и с
 const RUNS: usize = 20;
 
 fn main() {
+    // `RUST_LOG=silero_native=info` surfaces the per-session load timings.
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .init();
+
     let dir = common::bundle_dir_arg();
 
+    let t = Instant::now();
     let engine = SileroNative::load(&dir).expect("bundle must load");
+    let load = t.elapsed();
 
     // Warmup (JIT-less, but first-run ORT optimizations/arena allocs).
     engine
@@ -45,7 +56,8 @@ fn main() {
     println!("runs: {RUNS} @ 24000 Hz, speaker aidar");
     println!("mean {mean:.1?} | p95 {p95:.1?} | min {min:.1?} | max {max:.1?}");
     println!(
-        "mean_ms={:.1} p95_ms={:.1} min_ms={:.1} max_ms={:.1}",
+        "load_ms={:.1} mean_ms={:.1} p95_ms={:.1} min_ms={:.1} max_ms={:.1}",
+        load.as_secs_f64() * 1e3,
         mean.as_secs_f64() * 1e3,
         p95.as_secs_f64() * 1e3,
         min.as_secs_f64() * 1e3,

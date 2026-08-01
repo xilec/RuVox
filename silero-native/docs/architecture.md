@@ -29,10 +29,14 @@ text (one chunk)
   → 16-bit PCM WAV + char-proportional word timestamps
 ```
 
-All sessions are created once at `SileroNative::load` and guarded by
-mutexes (`Session::run` needs `&mut`); a panic inside inference is
-contained with `catch_unwind` and the poisoned mutex is recovered — the
-engine stays usable after a failed call.
+Sessions for the always-needed models (`tts_main`, `istft`, `homosolver`,
+`accentor_tensor`) are opened concurrently at `SileroNative::load`
+(independent ORT sessions are thread-safe to create in parallel); the
+rate-specific `pqmf_24k`/`pqmf_8k` sessions are lazy-opened on the first
+synthesis requesting that rate. All sessions are guarded by mutexes
+(`Session::run` needs `&mut`); a panic inside inference is contained with
+`catch_unwind` and the poisoned mutex is recovered — the engine stays
+usable after a failed call.
 
 ## Bundle format
 

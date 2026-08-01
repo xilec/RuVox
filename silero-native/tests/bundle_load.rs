@@ -15,5 +15,5 @@ fn valid_bundle_loads_all_sessions() {
     manifest
         .verify(&dir)
         .expect("bundle files must match sha256");
-    Sessions::open(&dir, &manifest).expect("all six sessions must open");
+    Sessions::open(&dir, &manifest).expect("always-needed sessions must open");
 }
