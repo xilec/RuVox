@@ -4,7 +4,7 @@ name: export-silero-bundle
 # consumed by the native engine and publishes it as a GitHub Release.
 # Assets are uploaded with softprops/action-gh-release (chosen over raw
 # `gh release create` so asset upload + release creation stay one declarative
-# step and work the same on re-runs via `overwrite: true`).
+# step and work the same on re-runs via `overwrite_files: true`).
 
 on:
   workflow_dispatch:
@@ -71,4 +71,4 @@ jobs:
             manifest-${{ inputs.model }}.json
             selfcheck-${{ inputs.model }}.json
             release-files/*
-          overwrite: true
+          overwrite_files: true
