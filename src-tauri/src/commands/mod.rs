@@ -957,6 +957,15 @@ pub async fn regenerate_entry<R: Runtime>(
 /// synthesis task (if registered) and flip the entry back to `pending`.
 /// Returns the updated entry plus whether the task had entered the TTS
 /// stage — the caller kills ttsd only in that case.
+///
+/// Only a `processing` or `pending` entry may be cancelled: the spec
+/// sanctions just the `processing → pending` transition, and silently
+/// regressing a `ready` / `error` entry to `pending` would orphan its
+/// audio from the state machine (playback requires `ready`). `pending`
+/// is allowed: cancellation is idempotent for a queued/idle entry, and a
+/// just-added entry briefly sits in `pending` with its synthesis task
+/// already registered — cancelling must still abort it. `ready`,
+/// `playing` and `error` fail with `synthesis_error` and change nothing.
 fn cancel_entry(
     storage: &StorageService,
     synthesis_tasks: &Mutex<HashMap<EntryId, AbortHandle>>,
@@ -965,6 +974,15 @@ fn cancel_entry(
 ) -> CmdResult<(TextEntry, bool)> {
     let mut entry = require_entry(storage, id)?;
     let uuid = entry.id;
+
+    if !matches!(entry.status, EntryStatus::Processing | EntryStatus::Pending) {
+        return Err(CommandError::SynthesisError {
+            message: format!(
+                "entry {id} cannot be cancelled (status: {:?})",
+                entry.status
+            ),
+        });
+    }
 
     // An aborted task is destroyed at its next yield point and never runs
     // its own registry cleanup, so both keys are removed here. Aborting an
@@ -1616,6 +1634,71 @@ mod synthesis_tests {
             CommandError::NotFound { message } => assert!(message.contains("entry not found")),
             other => panic!("expected NotFound, got {other:?}"),
         }
+    }
+
+    /// Cancelling a `ready` or `error` entry fails with `synthesis_error`
+    /// and changes nothing: the stored status is untouched and the
+    /// registries keep their keys. (`playing` can't be exercised here —
+    /// storage normalizes it to `ready` on save; the guard covers it the
+    /// same way.)
+    #[tokio::test]
+    async fn cancel_entry_rejects_terminal_statuses() {
+        for status in [EntryStatus::Ready, EntryStatus::Error] {
+            let (storage, _dir) = make_service();
+            let entry = storage.add_entry("текст".to_string()).unwrap();
+            set_status(&storage, &entry, status);
+            let id = entry.id;
+
+            let tasks: Mutex<HashMap<EntryId, AbortHandle>> = Mutex::new(HashMap::new());
+            let entered: Mutex<HashSet<EntryId>> = Mutex::new(HashSet::new());
+            let sleeper = tokio::spawn(async {
+                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            });
+            tasks.lock().insert(id, sleeper.abort_handle());
+            entered.lock().insert(id);
+
+            let err = cancel_entry(&storage, &tasks, &entered, &id.to_string()).unwrap_err();
+            match err {
+                CommandError::SynthesisError { message } => {
+                    assert!(
+                        message.contains("cannot be cancelled"),
+                        "{status:?}: {message}"
+                    );
+                }
+                other => panic!("{status:?}: expected SynthesisError, got {other:?}"),
+            }
+            assert_eq!(storage.get_entry(&id).unwrap().status, status);
+            assert!(tasks.lock().contains_key(&id));
+            assert!(entered.lock().contains(&id));
+
+            sleeper.abort();
+        }
+    }
+
+    /// Cancelling a `pending` entry is allowed and idempotent: a just-added
+    /// entry briefly sits in `pending` with its synthesis task already
+    /// registered, and cancelling must still abort that task.
+    #[tokio::test]
+    async fn cancel_entry_pending_entry_aborts_registered_task() {
+        let (storage, _dir) = make_service();
+        let entry = storage.add_entry("текст".to_string()).unwrap(); // pending
+        let id = entry.id;
+
+        let tasks: Mutex<HashMap<EntryId, AbortHandle>> = Mutex::new(HashMap::new());
+        let entered: Mutex<HashSet<EntryId>> = Mutex::new(HashSet::new());
+        let sleeper = tokio::spawn(async {
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+        });
+        tasks.lock().insert(id, sleeper.abort_handle());
+
+        let (updated, entered_tts) =
+            cancel_entry(&storage, &tasks, &entered, &id.to_string()).unwrap();
+
+        assert_eq!(updated.status, EntryStatus::Pending);
+        assert!(!entered_tts);
+        assert!(tasks.lock().is_empty());
+        let join_err = sleeper.await.unwrap_err();
+        assert!(join_err.is_cancelled());
     }
 
     /// Cancel flips the entry to `pending`, removes both registry keys, and
