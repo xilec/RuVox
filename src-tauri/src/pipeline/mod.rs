@@ -102,6 +102,17 @@ fn re_version() -> &'static Regex {
     })
 }
 
+/// Bare decimal fraction without the integer part (".5"). The dot must be
+/// at text start or preceded by anything except a letter, digit,
+/// underscore, dot, or path separator — otherwise it is a float tail
+/// ("1.5"), dotted label ("example.5"), version chain, ellipsis, or path
+/// fragment owned by earlier phases. Group 1 is the boundary context kept
+/// verbatim, group 2 the fractional digits.
+fn re_leading_dot_decimal() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"(^|[^\p{L}\p{N}_./\\])\.(\d+)").expect("valid regex"))
+}
+
 fn re_range() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"\b(\d+)\s*-\s*(\d+)\b").expect("valid regex"))
@@ -431,6 +442,23 @@ impl TTSPipeline {
             });
         }
 
+        // ── Phase 12b: Leading-dot decimals (e.g. ".5" → "ноль точка пять") ───
+        // Must run after versions (so "1.5" keeps its version reading) and
+        // before operators/numbers (so the fraction digits are consumed
+        // before the number phase — and its dot guard — runs).
+        {
+            let num = &self.number_normalizer;
+            tracked.sub(re_leading_dot_decimal(), |caps| {
+                let boundary = caps.get(1).unwrap().as_str();
+                let digits = caps.get(2).unwrap().as_str();
+                format!(
+                    "{}{}",
+                    boundary,
+                    num.normalize_float(&format!("0.{digits}"))
+                )
+            });
+        }
+
         // ── Phase 13: Operators ───────────────────────────────────────────────
         // Operators run before symbols so that multi-char operators like "=="
         // are matched before single "=".
@@ -685,7 +713,10 @@ impl TTSPipeline {
         // and `\b` already rejects digits, letters, and underscore next to the
         // match, so the manual guard below only needs to exclude the digit
         // separator '.': a dot directly followed by another digit (float and
-        // version separators, owned by earlier pipeline phases). A dot followed
+        // version separators, owned by earlier pipeline phases; bare
+        // integer-less decimals like ".5" are consumed by the leading-dot
+        // decimal phase, so a surviving "dot + digit" fragment belongs to a
+        // dotted label like "example.5"). A dot followed
         // by whitespace, end of text, or a non-digit is terminal punctuation,
         // not a separator — the number before it is read normally.
         let snapshot = tracked.text().to_string();
@@ -811,6 +842,37 @@ mod tests {
             p.process("Остаток 3.14 в конце"),
             "Остаток три точка четырнадцать в конце"
         );
+    }
+
+    #[test]
+    fn pipeline_leading_dot_decimal_is_read_as_zero_point() {
+        // Regression (#147): the number guard skipped any digit directly
+        // preceded by a dot, so a bare decimal fraction survived as
+        // unreadable digits. Read it as a proper decimal, identical to the
+        // explicit-zero form.
+        let mut p = TTSPipeline::new();
+        assert_eq!(p.process("Вес .5 кг"), "Вес ноль точка пять кг");
+        assert_eq!(
+            p.process(".75 вероятность"),
+            "ноль точка семь пять вероятность"
+        );
+    }
+
+    #[test]
+    fn pipeline_leading_dot_decimal_after_letter_is_untouched() {
+        // A dot preceded by a letter belongs to a dotted label ("example.5"),
+        // not a decimal — the leading-dot phase must skip it, and the number
+        // phase guard keeps the digit unexpanded as before.
+        let mut p = TTSPipeline::new();
+        assert_eq!(p.process("файл example.5"), "файл экзампл.5");
+    }
+
+    #[test]
+    fn pipeline_float_keeps_version_reading() {
+        // "1.5" is consumed by the version phase before the leading-dot
+        // phase runs — no double-consume, no "ноль" prefix.
+        let mut p = TTSPipeline::new();
+        assert_eq!(p.process("Точность 1.5"), "Точность один точка пять");
     }
 
     #[test]
