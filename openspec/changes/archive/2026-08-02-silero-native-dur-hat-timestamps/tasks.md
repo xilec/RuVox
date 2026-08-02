@@ -26,4 +26,4 @@
 
 - [x] 5.1 `nix develop -c cargo test --manifest-path silero-native/Cargo.toml` green (unit tier; bundle-gated tier with `SILERO_NATIVE_BUNDLE` set if a bundle is available)
 - [x] 5.2 `nix develop -c just lint` green
-- [ ] 5.3 Manual pass: run the app with the Silero Native engine, narrate a text with numbers and punctuation, confirm word highlighting tracks audible narration (checklist for the user)
+- [x] 5.3 Manual pass: run the app with the Silero Native engine, narrate a text with numbers and punctuation, confirm word highlighting tracks audible narration (checklist for the user)
