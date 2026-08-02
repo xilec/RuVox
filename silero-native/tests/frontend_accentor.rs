@@ -78,7 +78,7 @@ fn accentor_pipeline_matches_upstream_golden() {
         )
         .expect("sequence must build");
         assert_eq!(
-            sequence, case.sequence,
+            sequence.ids, case.sequence,
             "sequence mismatch for {:?}",
             case.input
         );

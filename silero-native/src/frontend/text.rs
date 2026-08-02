@@ -137,6 +137,15 @@ pub fn prepare_text_input(
     }
 }
 
+/// The model input sequence plus the char each id was emitted from, sos/eos
+/// included. `chars` is aligned 1:1 with `ids` and is the provenance the
+/// timestamp layer uses to align `dur_hat` frames back to text positions.
+/// Chars dropped for lacking a symbol id (the `^` marker) do not appear.
+pub struct BuiltSequence {
+    pub ids: Vec<i64>,
+    pub chars: Vec<char>,
+}
+
 /// Build the model input sequence: `sos + sentence + eos` mapped through
 /// `symbol_to_id`.
 ///
@@ -151,24 +160,41 @@ pub fn build_sequence(
     symbol_to_id: &HashMap<String, i64>,
     sos_token: &str,
     eos_token: &str,
-) -> Result<Vec<i64>> {
+) -> Result<BuiltSequence> {
     let sos = symbol_to_id.get(sos_token).ok_or_else(|| {
         EngineError::Bundle(format!("sos token {sos_token:?} missing from symbol_to_id"))
     })?;
     let eos = symbol_to_id.get(eos_token).ok_or_else(|| {
         EngineError::Bundle(format!("eos token {eos_token:?} missing from symbol_to_id"))
     })?;
+    let single_char = |token: &str| {
+        let mut chars = token.chars();
+        match (chars.next(), chars.next()) {
+            (Some(c), None) => Ok(c),
+            _ => Err(EngineError::Bundle(format!(
+                "sos/eos token {token:?} is not a single char"
+            ))),
+        }
+    };
+    let sos_char = single_char(sos_token)?;
+    let eos_char = single_char(eos_token)?;
     let mut ids = Vec::with_capacity(sentence.chars().count() + 2);
+    let mut chars = Vec::with_capacity(ids.capacity());
     ids.push(*sos);
+    chars.push(sos_char);
     for c in sentence.chars() {
         let key = c.to_string();
         match symbol_to_id.get(&key) {
-            Some(id) => ids.push(*id),
+            Some(id) => {
+                ids.push(*id);
+                chars.push(c);
+            }
             None => debug!(char = %c, "dropping char without symbol id"),
         }
     }
     ids.push(*eos);
-    Ok(ids)
+    chars.push(eos_char);
+    Ok(BuiltSequence { ids, chars })
 }
 
 #[cfg(test)]
@@ -211,18 +237,32 @@ mod tests {
         assert_eq!(clean_star_text("^"), "");
     }
 
-    #[test]
-    fn sequence_wraps_with_sos_eos() {
-        let map: HashMap<String, i64> = [
+    fn sequence_map() -> HashMap<String, i64> {
+        [
             ("|".to_string(), 2),
             ("~".to_string(), 1),
             ("а".to_string(), 11),
             ("б".to_string(), 12),
+            (" ".to_string(), 3),
         ]
         .into_iter()
-        .collect();
-        let ids = build_sequence("аб", &map, "|", "~").expect("sequence");
-        assert_eq!(ids, vec![2, 11, 12, 1]);
+        .collect()
+    }
+
+    #[test]
+    fn sequence_wraps_with_sos_eos() {
+        let seq = build_sequence("аб", &sequence_map(), "|", "~").expect("sequence");
+        assert_eq!(seq.ids, vec![2, 11, 12, 1]);
+        assert_eq!(seq.chars, vec!['|', 'а', 'б', '~']);
+    }
+
+    #[test]
+    fn chars_track_dropped_symbols() {
+        // '^' has no symbol id and must not appear in either vec.
+        let seq = build_sequence("а^б а", &sequence_map(), "|", "~").expect("sequence");
+        assert_eq!(seq.ids, vec![2, 11, 12, 3, 11, 1]);
+        assert_eq!(seq.chars, vec!['|', 'а', 'б', ' ', 'а', '~']);
+        assert_eq!(seq.ids.len(), seq.chars.len());
     }
 
     #[test]

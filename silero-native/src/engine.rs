@@ -22,8 +22,9 @@ use crate::error::{EngineError, Result};
 use crate::frontend::FrontendConfig;
 use crate::frontend::accentor::Accentor;
 use crate::frontend::homosolver::HomoSolver;
-use crate::frontend::text::{build_sequence, prepare_text_input};
+use crate::frontend::text::{BuiltSequence, build_sequence, prepare_text_input};
 use crate::lock_session;
+use crate::timestamps::SymbolDuration;
 
 /// Per-stage wall times of one synthesis, collected with `Instant` around
 /// each pipeline stage (a handful of clock reads per call — negligible
@@ -45,7 +46,7 @@ pub struct StageTimings {
     pub pqmf: Duration,
     /// 16-bit PCM WAV encode of the concatenated samples.
     pub wav_encode: Duration,
-    /// Chunk concat + word-timestamp estimation.
+    /// Chunk concat + word-timestamp computation.
     pub concat_timestamps: Duration,
 }
 
@@ -71,6 +72,10 @@ pub struct EngineOutput {
     pub duration_sec: f32,
     /// Text after the full frontend (what was actually spoken).
     pub spoken_text: String,
+    /// Exact frame count the model rendered per input symbol (sos/eos
+    /// included), from the `dur_hat` output of `tts_main`. Aligned 1:1 with
+    /// the built sequence; the timestamp layer's letter-level anchor.
+    pub durations: Vec<SymbolDuration>,
     /// Per-stage wall times of this chunk's synthesis.
     pub stage_timings: StageTimings,
 }
@@ -161,7 +166,7 @@ impl Engine {
     /// timestamps are in stripped-text coordinates, so a second strip here
     /// would be both redundant and contractually confusing). Direct
     /// `Engine` callers with markup-bearing text must strip first.
-    fn prepare(&self, text: &str, timings: &mut StageTimings) -> Result<(Vec<i64>, String)> {
+    fn prepare(&self, text: &str, timings: &mut StageTimings) -> Result<(BuiltSequence, String)> {
         // ttsd parity (`sanitize_for_silero`): the pipeline keeps `\n\n` in
         // the normalized text, and the symbol filter below would drop `\n`
         // silently, gluing the surrounding words into one.
@@ -191,12 +196,18 @@ impl Engine {
         Ok((sequence, accented))
     }
 
-    /// Extract a (1, …, N) f32 output tensor as a flat owned vec.
+    /// Extract a (1, …, N) f32 output tensor as a flat owned vec. A missing
+    /// output is a typed error, not a panic: `dur_hat` is absent from bundles
+    /// exported before it was wired through, and that must surface as a
+    /// bundle-contract failure rather than an `Index` panic.
     fn take_f32(
         outputs: &ort::session::SessionOutputs,
         name: &str,
     ) -> Result<(Vec<i64>, Vec<f32>)> {
-        let (shape, data) = outputs[name]
+        let value = outputs
+            .get(name)
+            .ok_or_else(|| EngineError::Synthesis(format!("model output {name} missing")))?;
+        let (shape, data) = value
             .try_extract_tensor::<f32>()
             .map_err(|e| EngineError::Synthesis(format!("cannot read output {name}: {e}")))?;
         Ok((shape.to_vec(), data.to_vec()))
@@ -232,13 +243,13 @@ impl Engine {
         let (sequence, spoken_text) = self.prepare(text, &mut timings)?;
 
         // tts_main: sequence + speaker + neutral dur/pitch → mag/x/y.
-        let len = sequence.len();
-        let seq_t = Tensor::<i64>::from_array((vec![1usize, len], sequence))?;
+        let len = sequence.ids.len();
+        let seq_t = Tensor::<i64>::from_array((vec![1usize, len], sequence.ids.clone()))?;
         let spk_t = Tensor::<i64>::from_array((vec![1usize], vec![speaker_id]))?;
         let durs_t = Tensor::<f32>::from_array((vec![1usize, len], vec![1.0f32; len]))?;
         let pitch_t = Tensor::<f32>::from_array((vec![1usize, len], vec![1.0f32; len]))?;
         let t = Instant::now();
-        let (mag_shape, mag, x, y) = {
+        let (mag_shape, mag, x, y, dur_hat) = {
             let mut session = lock_session(&self.tts_main);
             let outputs = session.run(
                 ort::inputs!["sequence" => seq_t, "speaker_ids" => spk_t, "durs_rate" => durs_t, "pitch_coefs" => pitch_t],
@@ -246,10 +257,31 @@ impl Engine {
             let (mag_shape, mag) = Self::take_f32(&outputs, "mag")?;
             let (_, x) = Self::take_f32(&outputs, "x")?;
             let (_, y) = Self::take_f32(&outputs, "y")?;
-            (mag_shape, mag, x, y)
+            let (_, dur_hat) = Self::take_f32(&outputs, "dur_hat")?;
+            (mag_shape, mag, x, y, dur_hat)
         };
         timings.tts_main += t.elapsed();
         debug!(mel_shape = ?mag_shape, "tts_main done");
+
+        // dur_hat: per-symbol durations in 600-sample frames @48kHz. The
+        // exported graph renders audio via repeat_interleave(trunc(dur + 0.5))
+        // after the baked-in sos/eos clamps, so truncating here reproduces
+        // the exact per-symbol frame counts of the rendered waveform.
+        if dur_hat.len() != len {
+            return Err(EngineError::Synthesis(format!(
+                "dur_hat length {} does not match sequence length {len}",
+                dur_hat.len()
+            )));
+        }
+        let durations: Vec<SymbolDuration> = sequence
+            .chars
+            .iter()
+            .zip(dur_hat.iter())
+            .map(|(&ch, &dur)| SymbolDuration {
+                ch,
+                frames: (dur + 0.5).trunc().max(0.0) as u32,
+            })
+            .collect();
 
         // istft: mag/x/y → 48 kHz waveform.
         let mag_t = Tensor::<f32>::from_array((mag_shape.clone(), mag))?;
@@ -306,6 +338,7 @@ impl Engine {
             samples,
             sample_rate: out_rate,
             spoken_text,
+            durations,
             stage_timings: timings,
         })
     }

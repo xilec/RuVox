@@ -17,7 +17,7 @@ silero-native/
 │   │   ├── homosolver.rs#   homograph disambiguation (+ homosolver.onnx)
 │   │   └── bert.rs      #   BasicTokenizer + WordPiece port
 │   ├── engine.rs        # tts_main → istft → pqmf synthesis pipeline
-│   ├── timestamps.rs    # char-proportional word timestamps (v1)
+│   ├── timestamps.rs    # dur_hat-based word timestamps
 │   └── error.rs         # thiserror domain errors
 ├── export/              # maintainer tool: .pt → ONNX bundle (uv project)
 ├── tests/               # unit (no model) + bundle-gated (parity) tests

@@ -1,10 +1,18 @@
-//! Word-level timestamps, v1: char-proportional estimation.
+//! Word-level timestamps from the model's own duration predictor.
 //!
-//! Semantics ported from `ttsd/ttsd/timestamps.py`: each chunk's duration is
-//! distributed across its words proportionally to the word's char count.
-//! Precise `dur_hat`-based timestamps are deferred (issue #145).
+//! `tts_main` exports `dur_hat`: per-symbol durations in 600-sample frames
+//! (12.5 ms @ 48 kHz), already carrying the sos/eos clamps baked into the
+//! graph. The engine converts them to the exact integer frame counts the
+//! graph renders (`trunc(dur + 0.5)`) and pairs each with the char the
+//! symbol was emitted from ([`SymbolDuration`]). This module aligns the
+//! words of the original chunk text to that symbol stream letter-by-letter
+//! and converts the matched frame ranges to seconds.
 
 use serde::{Deserialize, Serialize};
+use tracing::debug;
+
+/// Duration of one `dur_hat` frame in seconds (600 samples @ 48 kHz).
+const FRAME_SEC: f32 = 600.0 / 48000.0;
 
 /// Word-level timestamp, mirroring `ttsd.protocol.WordTimestamp`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -16,6 +24,27 @@ pub struct WordTimestamp {
     /// (already the "original" positions at this layer; mapping back through
     /// the normalization pipeline is the caller's job, as in ttsd).
     pub original_pos: (usize, usize),
+}
+
+/// One input symbol of `tts_main` and the exact frame count the exported
+/// graph rendered for it (`trunc(dur_hat + 0.5)`; sos/eos included).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SymbolDuration {
+    pub ch: char,
+    pub frames: u32,
+}
+
+/// One synthesized chunk for [`timestamps_from_durations`].
+pub struct ChunkTiming<'a> {
+    /// Chunk text in synthesized-text coordinates (what `synthesize` got).
+    pub text: &'a str,
+    /// Char offset of the chunk in the full synthesized text.
+    pub text_offset: usize,
+    /// Actual audio duration of the chunk in seconds.
+    pub duration_sec: f32,
+    /// Per-symbol frame counts aligned with the model input sequence
+    /// (sos/eos included).
+    pub durations: &'a [SymbolDuration],
 }
 
 /// `\b\w+\b` equivalent: maximal runs of alphanumeric chars or `_`.
@@ -43,43 +72,146 @@ fn round3(x: f32) -> f32 {
     (x * 1000.0).round() / 1000.0
 }
 
-/// Port of ttsd's `estimate_timestamps_chunked`: each entry is
-/// `(chunk_text, text_offset, chunk_duration)` — the chunk's duration is
-/// distributed across its words char-proportionally, `text_offset` shifts
-/// `original_pos` back into full-text coordinates, and the audio timeline
-/// advances by the accumulated chunk durations.
-///
-/// This is the only entry point: the engine always synthesizes per chunk,
-/// so a single-chunk wrapper would be dead API.
-pub fn estimate_timestamps_chunked(chunks: &[(&str, usize, f32)]) -> Vec<WordTimestamp> {
+/// Case- and ё-insensitive letter key for matching original-text words
+/// against the symbol stream: the frontend lowercases, and the accentor may
+/// substitute `е`↔`ё`, so both sides compare through this.
+fn letter_key(c: char) -> char {
+    let lower = c.to_lowercase().next().unwrap_or(c);
+    if lower == 'ё' { 'е' } else { lower }
+}
+
+/// Compute word timestamps for all chunks. Per chunk, words are aligned to
+/// the symbol stream in order; the audio timeline then advances by the
+/// actual chunk duration, exactly as ttsd's chunked estimator does.
+pub fn timestamps_from_durations(chunks: &[ChunkTiming]) -> Vec<WordTimestamp> {
     let mut timestamps = Vec::new();
     let mut audio_offset = 0.0f32;
-    for &(chunk_text, text_offset, chunk_duration) in chunks {
-        let words = extract_words_with_positions(chunk_text);
-        let total_chars: usize = words.iter().map(|(w, _, _)| w.chars().count()).sum();
-        if total_chars == 0 || chunk_duration <= 0.0 {
-            audio_offset += chunk_duration.max(0.0);
-            continue;
-        }
-        let mut current = 0.0f32;
-        for (word, start, end) in words {
-            let word_duration = (word.chars().count() as f32 / total_chars as f32) * chunk_duration;
-            timestamps.push(WordTimestamp {
-                word,
-                start: round3(audio_offset + current),
-                end: round3(audio_offset + current + word_duration),
-                original_pos: (text_offset + start, text_offset + end),
-            });
-            current += word_duration;
-        }
-        audio_offset += chunk_duration;
+    for chunk in chunks {
+        align_chunk(chunk, audio_offset, &mut timestamps);
+        audio_offset += chunk.duration_sec.max(0.0);
     }
     timestamps
+}
+
+/// Align one chunk's words to its symbol stream.
+///
+/// The stream cursor only moves forward, so timestamps are monotonic by
+/// construction. Symbols that are not letters (`^` markers, punctuation,
+/// spaces, sos/eos) are skipped during matching; their frames still count
+/// through the cumulative timeline, so pauses surface as gaps between words
+/// and markers inside a word are covered by its range. `+` stress markers
+/// are the exception: the accentor emits them immediately before the
+/// stressed vowel and the model renders real audio frames for them, so a
+/// run of `+` directly ahead of the word's first letter opens the word's
+/// range (the audible onset includes them). A word whose first letter does
+/// not match (e.g. digits the frontend filtered out) gets a zero-length
+/// timestamp at the cursor; a mid-word mismatch closes the word at its last
+/// matched letter.
+fn align_chunk(chunk: &ChunkTiming, audio_offset: f32, out: &mut Vec<WordTimestamp>) {
+    // cum[i] = start time of symbol i in seconds; cum[len] = total.
+    let mut cum = Vec::with_capacity(chunk.durations.len() + 1);
+    cum.push(0.0f32);
+    for sd in chunk.durations {
+        cum.push(cum.last().copied().unwrap_or(0.0) + sd.frames as f32 * FRAME_SEC);
+    }
+
+    let mut cursor = 0usize;
+    for (word, start, end) in extract_words_with_positions(chunk.text) {
+        let mut first_match: Option<usize> = None;
+        let mut last_match: Option<usize> = None;
+        for wc in word.chars() {
+            if !wc.is_alphabetic() {
+                // Digits / '_' can appear in extracted words but never in the
+                // model alphabet — they match nothing by construction.
+                if first_match.is_some() {
+                    break;
+                }
+                continue;
+            }
+            // Skip non-letter symbols between/inside words, except `+`:
+            // stress markers ahead of the first letter belong to the word.
+            while cursor < chunk.durations.len()
+                && !chunk.durations[cursor].ch.is_alphabetic()
+                && !(first_match.is_none() && chunk.durations[cursor].ch == '+')
+            {
+                cursor += 1;
+            }
+            // Fold a leading `+` run into the word's range.
+            while first_match.is_none()
+                && cursor < chunk.durations.len()
+                && chunk.durations[cursor].ch == '+'
+            {
+                first_match = Some(cursor);
+                cursor += 1;
+            }
+            match chunk.durations.get(cursor) {
+                Some(sd) if letter_key(sd.ch) == letter_key(wc) => {
+                    first_match.get_or_insert(cursor);
+                    last_match = Some(cursor);
+                    cursor += 1;
+                }
+                Some(sd) => {
+                    // Mismatch: keep the symbol for the next word. With no
+                    // match yet the whole word is unspoken; mid-word it is
+                    // truncated (e.g. filtered-out tail).
+                    debug!(
+                        word = %word,
+                        stream_char = %sd.ch,
+                        word_char = %wc,
+                        "word alignment mismatch"
+                    );
+                    break;
+                }
+                None => break,
+            }
+        }
+
+        let (local_start, local_end) = match (first_match, last_match) {
+            (Some(first), Some(last)) => (cum[first], cum[last + 1]),
+            // Unspoken word: zero-length where the next spoken content
+            // starts (a leading `+` run belongs to the next word, so the
+            // zero-length lands no later than that word's start).
+            _ => {
+                while cursor < chunk.durations.len()
+                    && !chunk.durations[cursor].ch.is_alphabetic()
+                    && chunk.durations[cursor].ch != '+'
+                {
+                    cursor += 1;
+                }
+                (cum[cursor], cum[cursor])
+            }
+        };
+        let ts_start = round3(audio_offset + local_start);
+        let ts_end = round3((audio_offset + local_end).min(audio_offset + chunk.duration_sec));
+        out.push(WordTimestamp {
+            word,
+            start: ts_start,
+            // Clamping to the chunk duration must not invert the range.
+            end: ts_end.max(ts_start),
+            original_pos: (chunk.text_offset + start, chunk.text_offset + end),
+        });
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn sd(ch: char, frames: u32) -> SymbolDuration {
+        SymbolDuration { ch, frames }
+    }
+
+    /// sos + "аб в" + eos, one frame per symbol except sos (2).
+    fn simple_durations() -> Vec<SymbolDuration> {
+        vec![
+            sd('|', 2),
+            sd('а', 1),
+            sd('б', 1),
+            sd(' ', 1),
+            sd('в', 1),
+            sd('~', 3),
+        ]
+    }
 
     #[test]
     fn words_split_on_punctuation() {
@@ -90,43 +222,246 @@ mod tests {
     }
 
     #[test]
-    fn durations_are_proportional_and_monotonic() {
-        let ts = estimate_timestamps_chunked(&[("аа бббб в", 0, 1.0)]);
-        assert_eq!(ts.len(), 3);
-        assert!((ts[0].end - ts[0].start - 2.0 / 7.0).abs() < 1e-3);
-        assert!((ts[1].end - ts[1].start - 4.0 / 7.0).abs() < 1e-3);
-        for pair in ts.windows(2) {
-            assert!(pair[0].end <= pair[1].start + 1e-3);
-        }
-        assert!((ts.last().map(|t| t.end).unwrap_or(0.0) - 1.0).abs() < 2e-3);
+    fn word_ranges_follow_symbol_frames() {
+        let durations = simple_durations();
+        let ts = timestamps_from_durations(&[ChunkTiming {
+            text: "аб в",
+            text_offset: 0,
+            duration_sec: 9.0 * FRAME_SEC,
+            durations: &durations,
+        }]);
+        assert_eq!(ts.len(), 2);
+        // "аб" starts after sos (2 frames) and spans 2 frames.
+        assert!((ts[0].start - 2.0 * FRAME_SEC).abs() < 1e-3);
+        assert!((ts[0].end - 4.0 * FRAME_SEC).abs() < 1e-3);
+        // "в" starts after the space frame; eos is excluded from its end.
+        assert!((ts[1].start - 5.0 * FRAME_SEC).abs() < 1e-3);
+        assert!((ts[1].end - 6.0 * FRAME_SEC).abs() < 1e-3);
+        assert_eq!(ts[1].original_pos, (3, 4));
     }
 
     #[test]
-    fn no_words_no_timestamps() {
-        assert!(estimate_timestamps_chunked(&[("… — !", 0, 1.0)]).is_empty());
-        assert!(estimate_timestamps_chunked(&[("текст", 0, 0.0)]).is_empty());
+    fn punctuation_pause_becomes_a_gap() {
+        let durations = vec![
+            sd('|', 1),
+            sd('а', 2),
+            sd(',', 4),
+            sd(' ', 1),
+            sd('б', 2),
+            sd('~', 1),
+        ];
+        let ts = timestamps_from_durations(&[ChunkTiming {
+            text: "а, б",
+            text_offset: 0,
+            duration_sec: 11.0 * FRAME_SEC,
+            durations: &durations,
+        }]);
+        assert_eq!(ts.len(), 2);
+        // The comma's 4 frames belong to no word.
+        assert!((ts[0].end - 3.0 * FRAME_SEC).abs() < 1e-3);
+        assert!((ts[1].start - 8.0 * FRAME_SEC).abs() < 1e-3);
+        assert!(ts[1].start > ts[0].end);
+    }
+
+    #[test]
+    fn stress_markers_are_covered_by_the_word_range() {
+        // Accentor output "а+б": '+' is not a letter but sits inside the
+        // word — the word range spans it, with no gap.
+        let durations = vec![sd('|', 1), sd('а', 1), sd('+', 1), sd('б', 1), sd('~', 1)];
+        let ts = timestamps_from_durations(&[ChunkTiming {
+            text: "аб",
+            text_offset: 0,
+            duration_sec: 5.0 * FRAME_SEC,
+            durations: &durations,
+        }]);
+        assert_eq!(ts.len(), 1);
+        assert!((ts[0].start - FRAME_SEC).abs() < 1e-3);
+        assert!((ts[0].end - 4.0 * FRAME_SEC).abs() < 1e-3);
+    }
+
+    #[test]
+    fn yo_matches_e() {
+        // Accentor replaced 'е' with 'ё' in the stream.
+        let durations = vec![sd('|', 1), sd('с', 1), sd('ё', 1), sd('л', 1), sd('~', 1)];
+        let ts = timestamps_from_durations(&[ChunkTiming {
+            text: "сел",
+            text_offset: 0,
+            duration_sec: 5.0 * FRAME_SEC,
+            durations: &durations,
+        }]);
+        assert_eq!(ts.len(), 1);
+        assert!((ts[0].end - 4.0 * FRAME_SEC).abs() < 1e-3);
+    }
+
+    #[test]
+    fn uppercase_word_matches_lowercase_stream() {
+        let durations = vec![sd('|', 1), sd('а', 1), sd('б', 1), sd('~', 1)];
+        let ts = timestamps_from_durations(&[ChunkTiming {
+            text: "АБ",
+            text_offset: 0,
+            duration_sec: 4.0 * FRAME_SEC,
+            durations: &durations,
+        }]);
+        assert_eq!(ts.len(), 1);
+        assert!((ts[0].end - 3.0 * FRAME_SEC).abs() < 1e-3);
+    }
+
+    #[test]
+    fn unspoken_word_gets_zero_length_at_cursor() {
+        // "123" was filtered out before the model; "аб" follows in the stream.
+        let durations = simple_durations();
+        let ts = timestamps_from_durations(&[ChunkTiming {
+            text: "123 аб в",
+            text_offset: 0,
+            duration_sec: 9.0 * FRAME_SEC,
+            durations: &durations,
+        }]);
+        assert_eq!(ts.len(), 3);
+        assert_eq!(ts[0].start, ts[0].end);
+        assert!((ts[0].start - 2.0 * FRAME_SEC).abs() < 1e-3);
+        // The following words still align to their own symbols.
+        assert!((ts[1].start - 2.0 * FRAME_SEC).abs() < 1e-3);
+        assert!((ts[1].end - 4.0 * FRAME_SEC).abs() < 1e-3);
+        assert_eq!(ts[1].original_pos, (4, 6));
+    }
+
+    #[test]
+    fn mid_word_mismatch_truncates_at_last_matched_letter() {
+        // "война2024": only "война" reached the model.
+        let durations = vec![
+            sd('|', 1),
+            sd('в', 1),
+            sd('о', 1),
+            sd('й', 1),
+            sd('н', 1),
+            sd('а', 1),
+            sd('~', 1),
+        ];
+        let ts = timestamps_from_durations(&[ChunkTiming {
+            text: "война2024",
+            text_offset: 0,
+            duration_sec: 7.0 * FRAME_SEC,
+            durations: &durations,
+        }]);
+        assert_eq!(ts.len(), 1);
+        assert!((ts[0].start - FRAME_SEC).abs() < 1e-3);
+        assert!((ts[0].end - 6.0 * FRAME_SEC).abs() < 1e-3);
+        // The position still covers the full original word.
+        assert_eq!(ts[0].original_pos, (0, 9));
+    }
+
+    #[test]
+    fn zero_frame_symbols_keep_words_ordered() {
+        // Model assigned zero frames to 'б' and ','.
+        let durations = vec![
+            sd('|', 1),
+            sd('а', 1),
+            sd('б', 0),
+            sd(',', 0),
+            sd(' ', 1),
+            sd('в', 1),
+            sd('~', 1),
+        ];
+        let ts = timestamps_from_durations(&[ChunkTiming {
+            text: "аб, в",
+            text_offset: 0,
+            duration_sec: 5.0 * FRAME_SEC,
+            durations: &durations,
+        }]);
+        assert_eq!(ts.len(), 2);
+        for pair in ts.windows(2) {
+            assert!(pair[0].end <= pair[1].start);
+            assert!(pair[0].start <= pair[0].end);
+        }
+        // 'б' has zero frames: word "аб" ends where 'а' ends.
+        assert!((ts[0].end - 2.0 * FRAME_SEC).abs() < 1e-3);
+    }
+
+    #[test]
+    fn end_is_clamped_to_chunk_duration() {
+        // Frames sum beyond the actual (PQMF-rounded) audio duration.
+        let durations = simple_durations();
+        let ts = timestamps_from_durations(&[ChunkTiming {
+            text: "аб в",
+            text_offset: 0,
+            duration_sec: 5.5 * FRAME_SEC,
+            durations: &durations,
+        }]);
+        let last = ts.last().expect("timestamps");
+        assert!(last.end <= 5.5 * FRAME_SEC + 1e-3);
+        assert!(last.end >= last.start);
     }
 
     #[test]
     fn chunked_shifts_time_and_positions() {
-        let ts = estimate_timestamps_chunked(&[("аа бб", 0, 1.0), ("вв гг", 100, 2.0)]);
+        let durations = simple_durations();
+        let chunk = |text: &'static str, offset: usize, dur: f32| ChunkTiming {
+            text,
+            text_offset: offset,
+            duration_sec: dur,
+            durations: &durations,
+        };
+        let ts = timestamps_from_durations(&[chunk("аб в", 0, 1.0), chunk("аб в", 100, 2.0)]);
         assert_eq!(ts.len(), 4);
-        // Second chunk starts where the first ended.
-        assert!((ts[2].start - 1.0).abs() < 2e-3);
-        assert!((ts[3].end - 3.0).abs() < 2e-3);
-        // Positions are shifted into full-text coordinates.
+        // Second chunk starts on the accumulated audio offset, not on its
+        // own frame timeline.
+        assert!((ts[2].start - (1.0 + 2.0 * FRAME_SEC)).abs() < 1e-3);
         assert_eq!(ts[2].original_pos, (100, 102));
-        assert_eq!(ts[3].original_pos, (103, 105));
+        assert_eq!(ts[3].original_pos, (103, 104));
         for pair in ts.windows(2) {
             assert!(pair[0].end <= pair[1].start + 1e-3);
         }
     }
 
     #[test]
-    fn chunked_skips_wordless_chunks_but_keeps_the_timeline() {
-        let ts = estimate_timestamps_chunked(&[("… !", 0, 1.5), ("слова", 10, 1.0)]);
+    fn no_words_no_timestamps_but_timeline_advances() {
+        let durations = simple_durations();
+        let ts = timestamps_from_durations(&[
+            ChunkTiming {
+                text: "… !",
+                text_offset: 0,
+                duration_sec: 1.5,
+                durations: &durations,
+            },
+            ChunkTiming {
+                text: "аб в",
+                text_offset: 10,
+                duration_sec: 1.0,
+                durations: &durations,
+            },
+        ]);
+        assert_eq!(ts.len(), 2);
+        assert!((ts[0].start - (1.5 + 2.0 * FRAME_SEC)).abs() < 1e-3);
+        assert_eq!(ts[0].original_pos, (10, 12));
+    }
+
+    #[test]
+    fn leading_stress_marker_opens_the_word_range() {
+        // Accentor output "+я" (stressed single-vowel word): the '+' frames
+        // are rendered audio — the word starts at the marker, not at 'я'.
+        let durations = vec![sd('|', 5), sd('+', 11), sd('я', 9), sd('~', 3)];
+        let ts = timestamps_from_durations(&[ChunkTiming {
+            text: "Я",
+            text_offset: 0,
+            duration_sec: 28.0 * FRAME_SEC,
+            durations: &durations,
+        }]);
         assert_eq!(ts.len(), 1);
-        assert!((ts[0].start - 1.5).abs() < 1e-3);
-        assert_eq!(ts[0].original_pos, (10, 15));
+        assert!((ts[0].start - 5.0 * FRAME_SEC).abs() < 1e-3);
+        assert!((ts[0].end - 25.0 * FRAME_SEC).abs() < 1e-3);
+    }
+
+    #[test]
+    fn timestamps_are_millisecond_rounded() {
+        let durations = vec![sd('|', 1), sd('а', 1), sd('~', 1)];
+        let ts = timestamps_from_durations(&[ChunkTiming {
+            text: "а",
+            text_offset: 0,
+            duration_sec: 3.0 * FRAME_SEC,
+            durations: &durations,
+        }]);
+        // 1 frame = 12.5 ms exactly → 0.012 / 0.025 after ms rounding.
+        assert_eq!(ts[0].start, 0.013);
+        assert_eq!(ts[0].end, 0.025);
     }
 }

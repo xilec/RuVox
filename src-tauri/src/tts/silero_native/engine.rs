@@ -14,14 +14,14 @@
 //! - WAV write failure → `TtsError::Ipc(io::Error)`
 //!
 //! ## Word timestamps
-//! The engine returns char-proportional timestamps whose `original_pos` are
-//! char offsets into the text it synthesized (after stripping unsupported
-//! markup). The app pipeline never emits `[[...]]` / SSML markup, so those
-//! offsets line up with the normalized text; we then map them back to
-//! original-text offsets through the pipeline `char_mapping` with the same
-//! span-merge logic ttsd uses (`tts::map_via_spans`). When
-//! markup *is* present the positions degrade to an approximation — the same
-//! class of drift the ttsd path has.
+//! The engine derives timestamps from the model's `dur_hat` output (exact
+//! per-symbol frame durations); their `original_pos` are char offsets into
+//! the text it synthesized (after stripping unsupported markup). The app
+//! pipeline never emits `[[...]]` / SSML markup, so those offsets line up
+//! with the normalized text; we then map them back to original-text offsets
+//! through the pipeline `char_mapping` with the same span-merge logic ttsd
+//! uses (`tts::map_via_spans`). When markup *is* present the positions
+//! degrade to an approximation — the same class of drift the ttsd path has.
 
 use std::path::PathBuf;
 use std::sync::Arc;
