@@ -99,6 +99,7 @@ fn word_onsets_follow_reference_within_50ms() {
         return;
     };
     let native = SileroNative::load(&dir).expect("bundle must load");
+    let engine = Engine::load(&dir).expect("bundle must load");
 
     for case in &fixtures().cases {
         let result = native
@@ -139,6 +140,34 @@ fn word_onsets_follow_reference_within_50ms() {
             case.id,
             ts[0].start,
             expected_start
+        );
+
+        // Anchor the other end of the timeline too: the last word ends at
+        // the reference cumsum up to the last letter symbol (trailing
+        // punctuation/eos frames belong to no word). Symbol identity comes
+        // from the engine's provenance, frame counts from the fixture, so
+        // the reference stays independent of the alignment code.
+        let out = engine
+            .synthesize(&case.input, &case.speaker, case.sample_rate)
+            .unwrap_or_else(|e| panic!("synthesis failed for {}: {e}", case.id));
+        let last_letter = out
+            .durations
+            .iter()
+            .rposition(|sd| sd.ch.is_alphabetic())
+            .expect("fixture phrases end with a spoken word");
+        let ref_end_frames: f32 = case.dur_hat[..=last_letter]
+            .iter()
+            .map(|d| (d + 0.5).trunc().max(0.0))
+            .sum();
+        let expected_end = ref_end_frames * FRAME_SEC;
+        let last = ts.last().expect("timestamps");
+        let diff = (last.end - expected_end).abs();
+        assert!(
+            diff <= ONSET_TOL_SEC,
+            "last word end mismatch for {}: got {:.3}s, reference implies {:.3}s",
+            case.id,
+            last.end,
+            expected_end
         );
     }
     eprintln!("word onsets: all cases within {ONSET_TOL_SEC}s of reference");

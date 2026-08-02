@@ -122,7 +122,9 @@ fn attached_plus_run_end(durations: &[SymbolDuration], i: usize) -> Option<usize
 /// An attached `+` run directly ahead of the word's first letter opens the
 /// word's range: the accentor emits stress markers immediately before the
 /// stressed vowel and the model renders real audio frames for them (the
-/// audible onset includes them).
+/// audible onset includes them). The fold is committed only when the letter
+/// after the run actually matches the word — an unspoken word ahead of it
+/// (latin "usb" before accentor's "+яблоко") must not steal the marker.
 ///
 /// The stream letters are an in-order subsequence of the original text's
 /// letters: the frontend only drops characters it cannot map (latin,
@@ -152,9 +154,9 @@ fn align_chunk(chunk: &ChunkTiming, audio_offset: f32, out: &mut Vec<WordTimesta
             }
             let seeking_first = last_match.is_none();
             // Skip non-letter symbols between/inside words. While seeking the
-            // word's first letter, stop at an attached `+` run — it belongs
-            // to this word. Mid-word `+` is skipped (already inside the
-            // range via the cumulative timeline).
+            // word's first letter, stop at an attached `+` run — the fold
+            // below decides whether it belongs to this word. Mid-word `+` is
+            // skipped (already inside the range via the cumulative timeline).
             while cursor < chunk.durations.len() {
                 if chunk.durations[cursor].ch.is_alphabetic() {
                     break;
@@ -164,11 +166,29 @@ fn align_chunk(chunk: &ChunkTiming, audio_offset: f32, out: &mut Vec<WordTimesta
                 }
                 cursor += 1;
             }
-            // Fold an attached `+` run into the word's range.
+            // Fold an attached `+` run into the word's range — but only once
+            // the letter after the run proves to be this word's letter.
+            // Committing the fold earlier would let an unspoken word (e.g.
+            // latin "usb" before accentor's "+яблоко") steal the marker
+            // frames and orphan them in a gap.
             if seeking_first {
                 if let Some(run_end) = attached_plus_run_end(chunk.durations, cursor) {
-                    first_match.get_or_insert(cursor);
-                    cursor = run_end;
+                    let sd = &chunk.durations[run_end];
+                    if letter_key(sd.ch) == letter_key(wc) {
+                        first_match.get_or_insert(cursor);
+                        last_match = Some(run_end);
+                        cursor = run_end + 1;
+                    } else {
+                        // The run belongs to a later word; this letter never
+                        // reached the stream — skip it, keep the cursor.
+                        debug!(
+                            word = %word,
+                            stream_char = %sd.ch,
+                            word_char = %wc,
+                            "skipping letter absent from the symbol stream"
+                        );
+                    }
+                    continue;
                 }
             }
             match chunk.durations.get(cursor) {
@@ -210,7 +230,7 @@ fn align_chunk(chunk: &ChunkTiming, audio_offset: f32, out: &mut Vec<WordTimesta
                 (cum[cursor], cum[cursor])
             }
         };
-        let ts_start = round3(audio_offset + local_start);
+        let ts_start = round3((audio_offset + local_start).min(audio_offset + chunk.duration_sec));
         let ts_end = round3((audio_offset + local_end).min(audio_offset + chunk.duration_sec));
         out.push(WordTimestamp {
             word,
@@ -507,6 +527,37 @@ mod tests {
         // "вг" starts at 'в' (after the standalone '+'), spans 2 frames.
         assert!((ts[1].start - 10.0 * FRAME_SEC).abs() < 1e-3);
         assert!((ts[1].end - 12.0 * FRAME_SEC).abs() < 1e-3);
+    }
+
+    #[test]
+    fn unspoken_word_does_not_steal_stress_marker_frames() {
+        // "usb яблоко": the accentor emits "+яблоко". The unspoken latin
+        // word reaches the marker first but must not fold it — the '+'
+        // frames belong to "яблоко"'s audible onset.
+        let durations = vec![
+            sd('|', 1),
+            sd('+', 3),
+            sd('я', 2),
+            sd('б', 1),
+            sd('л', 1),
+            sd('о', 1),
+            sd('к', 1),
+            sd('о', 1),
+            sd('~', 1),
+        ];
+        let ts = timestamps_from_durations(&[ChunkTiming {
+            text: "usb яблоко",
+            text_offset: 0,
+            duration_sec: 12.0 * FRAME_SEC,
+            durations: &durations,
+        }]);
+        assert_eq!(ts.len(), 2);
+        // "usb": zero-length before the marker, not after it.
+        assert_eq!(ts[0].start, ts[0].end);
+        assert!((ts[0].start - 1.0 * FRAME_SEC).abs() < 1e-3, "{:?}", ts[0]);
+        // "яблоко" starts at the '+' marker and spans through its last letter.
+        assert!((ts[1].start - 1.0 * FRAME_SEC).abs() < 1e-3, "{:?}", ts[1]);
+        assert!((ts[1].end - 11.0 * FRAME_SEC).abs() < 1e-3, "{:?}", ts[1]);
     }
 
     #[test]

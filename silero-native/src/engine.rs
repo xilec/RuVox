@@ -241,10 +241,11 @@ impl Engine {
         }
         let mut timings = StageTimings::default();
         let (sequence, spoken_text) = self.prepare(text, &mut timings)?;
+        let BuiltSequence { ids, chars } = sequence;
 
         // tts_main: sequence + speaker + neutral dur/pitch → mag/x/y.
-        let len = sequence.ids.len();
-        let seq_t = Tensor::<i64>::from_array((vec![1usize, len], sequence.ids.clone()))?;
+        let len = ids.len();
+        let seq_t = Tensor::<i64>::from_array((vec![1usize, len], ids))?;
         let spk_t = Tensor::<i64>::from_array((vec![1usize], vec![speaker_id]))?;
         let durs_t = Tensor::<f32>::from_array((vec![1usize, len], vec![1.0f32; len]))?;
         let pitch_t = Tensor::<f32>::from_array((vec![1usize, len], vec![1.0f32; len]))?;
@@ -273,8 +274,7 @@ impl Engine {
                 dur_hat.len()
             )));
         }
-        let durations: Vec<SymbolDuration> = sequence
-            .chars
+        let durations: Vec<SymbolDuration> = chars
             .iter()
             .zip(dur_hat.iter())
             .map(|(&ch, &dur)| SymbolDuration {
