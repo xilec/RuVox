@@ -49,9 +49,10 @@ Craft rules (layout, test quality, duplication, idiom, correctness) live in
 - **ttsd** (Python sidecar) speaks strictly the stdin/stdout JSON protocol
   (`ttsd/ttsd/protocol.py`, spec `openspec/specs/ttsd-protocol/`): JSON requests
   on stdin, JSON responses on stdout, logs on **stderr only**.
-- **TTS engines:** Piper is the default engine; Silero v5 runs in-process
-  via the `silero-native` crate; Silero via ttsd is the opt-in fallback
-  (flake flag `withSilero`). Slim `.#ruvox` must not pull in ttsd — gated in CI.
+- **TTS engines:** Silero v5 in-process via the `silero-native` crate is the
+  default engine; Piper is the zero-dependency fallback; Silero via ttsd is
+  the opt-in fallback (flake flag `withSilero`). Slim `.#ruvox` must not pull
+  in ttsd — gated in CI.
 
 ## The TTS constraint (load-bearing)
 

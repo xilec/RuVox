@@ -98,8 +98,8 @@ corepack enable pnpm
 
 ## 5. (Optional) Python 3.12 + uv — for the Python Silero engine (`ttsd`)
 
-Skip this whole section if you only want Piper (the default engine) or
-the native Silero engine — both synthesize in-process without Python;
+Skip this whole section if you only want the native Silero engine (the
+default) or Piper — both synthesize in-process without Python;
 the Settings dialog will simply grey out the Python Silero option, and
 the other engines handle every narration locally.
 

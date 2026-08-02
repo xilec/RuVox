@@ -3,7 +3,7 @@
 // here so it can be unit-tested with Vitest in isolation from the Tauri shell.
 
 import { DEFAULT_PIPER_VOICE } from './piperVoices';
-import type { AvailableEngines, EngineKind, UIConfig } from './tauri';
+import type { AvailableEngines, EngineKind, UIConfig, UIConfigPatch } from './tauri';
 
 export type AvailabilityMap = AvailableEngines;
 
@@ -12,8 +12,8 @@ export type AvailabilityMap = AvailableEngines;
 export const RANDOM_SPEAKER = 'random';
 
 /** Default Silero speaker, used when the saved/picked speaker cannot be
- *  served by the active engine. */
-const DEFAULT_SILERO_SPEAKER = 'xenia';
+ *  served by the active engine. Matches the config default. */
+const DEFAULT_SILERO_SPEAKER = 'aidar';
 
 /**
  * Map a speaker to one the given engine can serve. Currently only `random`
@@ -98,4 +98,20 @@ function pickFallbackEngine(availability: AvailabilityMap): EngineKind {
   // Nothing available — return Piper so the UI still has a value to render.
   // The save attempt will fail at the backend and the user gets the error.
   return found ?? 'piper';
+}
+
+/**
+ * Build the `UIConfigPatch` for a Settings save. When `coerced` is set the
+ * form's engine was forced away from the saved one because that engine is
+ * currently unavailable (and the user never picked another — a real pick
+ * clears the flag), so `engine` is left out of the patch: persisting the
+ * fallback would overwrite the saved engine — or, on a bundle-less fresh
+ * install, kill the silero_native default before the bundle is downloaded.
+ */
+export function buildSettingsPatch(
+  values: Omit<UIConfigPatch, 'engine'> & { engine: EngineKind },
+  coerced: boolean,
+): UIConfigPatch {
+  const { engine, ...rest } = values;
+  return coerced ? rest : { ...rest, engine };
 }

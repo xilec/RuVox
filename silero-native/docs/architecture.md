@@ -5,7 +5,7 @@
 A third TTS engine («Silero (нативный)») that runs the exported Silero v5
 ONNX graphs (`tts_main.onnx`, `istft.onnx`, `pqmf_*.onnx`, `homosolver.onnx`,
 `accentor_tensor.onnx`) in-process via the `ort` crate, replacing the
-Python `ttsd` subprocess for this engine. Piper stays the default; `ttsd`
+Python `ttsd` subprocess for this engine. It is the default engine; `ttsd`
 remains as fallback.
 
 ## Synthesis pipeline

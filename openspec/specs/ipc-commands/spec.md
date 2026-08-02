@@ -73,8 +73,8 @@ interface WordTimestamp {
 }
 
 interface UIConfig {
-  speaker: string;                 // Silero speaker, default "xenia"
-  sample_rate: number;             // default 48000; native engine defaults to 24000
+  speaker: string;                 // Silero speaker, default "aidar"
+  sample_rate: number;             // default 24000 (the native engine's own default)
   speech_rate: number;             // playback speed multiplier, default 1.0
   notify_on_ready: boolean;
   notify_on_error: boolean;
@@ -86,7 +86,7 @@ interface UIConfig {
   player_hotkeys: Record<string, string>;
   window_geometry: [number, number, number, number] | null;
   preview_dialog_enabled: boolean;
-  engine: string;                  // "piper" (default) | "silero" | "silero_native"
+  engine: string;                  // "piper" | "silero" | "silero_native" (default)
   piper_voice: string;             // default "ruslan"
 }
 ```
@@ -99,7 +99,7 @@ interface UIConfig {
 #### Scenario: UIConfig defaults include engine fields
 - GIVEN a fresh installation with no `config.json`
 - WHEN the frontend calls `invoke("get_config")`
-- THEN the response contains `engine: "piper"` and `piper_voice: "ruslan"` alongside the legacy fields
+- THEN the response contains `engine: "silero_native"` and `piper_voice: "ruslan"` alongside the legacy fields
 
 ### Requirement: Frontend Parameter Casing
 

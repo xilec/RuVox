@@ -178,14 +178,14 @@ fn resolve_ttsd_dir<R: Runtime>(app: &AppHandle<R>) -> std::path::PathBuf {
 ///
 /// The initial engine is chosen from the persisted config and the Silero
 /// availability probe (Phase 3 of #42):
-/// - `engine = "piper"` (default) → in-process [`tts::PiperEngine`].
+/// - `engine = "piper"` → in-process [`tts::PiperEngine`].
 /// - `engine = "silero"` *and* probe says Silero is available →
 ///   [`tts::TtsSupervisor`] over `uv run python -m ttsd`. Spawn failure
 ///   (race between probe and spawn) silently falls back to Piper.
 /// - `engine = "silero"` but probe says unavailable → silent migration to
 ///   Piper; the user's `engine` value on disk is left untouched so they
 ///   can roll back by installing the Silero stack.
-/// - `engine = "silero_native"` *and* the model bundle is on disk →
+/// - `engine = "silero_native"` (default) *and* the model bundle is on disk →
 ///   in-process [`tts::SileroNativeEngine`]. A missing bundle falls back
 ///   to Piper the same way; the config value is preserved.
 ///

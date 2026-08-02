@@ -7,7 +7,7 @@
 
 A desktop application for narrating technical Russian-language texts.
 
-Normalizes English terms, abbreviations, code, numbers, and URLs, then pipes the result into one of three TTS engines: [Piper](https://github.com/rhasspy/piper) (in-process via `piper-rs`, default), Silero TTS v5 in-process on ONNX Runtime (the [`silero-native`](silero-native/) crate, model bundle downloaded on demand), or, optionally, [Silero TTS](https://github.com/snakers4/silero-models) out-of-process via the `ttsd` Python sidecar (kept as a fallback). Unlike a bare TTS, RuVox knows how to read `getUserData()` as «гет юзер дата», `API` as «эй пи ай», and `/api/v2/users` as a path rather than letter by letter.
+Normalizes English terms, abbreviations, code, numbers, and URLs, then pipes the result into one of three TTS engines: Silero TTS v5 in-process on ONNX Runtime (the [`silero-native`](silero-native/) crate, default; model bundle downloaded on demand), [Piper](https://github.com/rhasspy/piper) (in-process via `piper-rs`, zero-dependency fallback), or, optionally, [Silero TTS](https://github.com/snakers4/silero-models) out-of-process via the `ttsd` Python sidecar (kept as a fallback). Unlike a bare TTS, RuVox knows how to read `getUserData()` as «гет юзер дата», `API` as «эй пи ай», and `/api/v2/users` as a path rather than letter by letter.
 
 All synthesis runs locally on your machine — no cloud TTS, nothing is sent anywhere. The network is used only to download voice models on demand, once per voice.
 
@@ -20,7 +20,7 @@ All synthesis runs locally on your machine — no cloud TTS, nothing is sent any
 | Shell | [Tauri 2](https://tauri.app/) (Rust + native webview) |
 | Frontend | React 18 + TypeScript 5 + [Mantine 8](https://mantine.dev/) |
 | Backend | Rust (normalization pipeline, storage, TTS manager) |
-| TTS | Piper (in-process, `piper-rs` + `onnxruntime`, default); Silero v5 native (in-process, ONNX Runtime, [`silero-native`](silero-native/) crate); Silero via `ttsd` (optional Python 3.12 subprocess, fallback) |
+| TTS | Silero v5 native (in-process, ONNX Runtime, [`silero-native`](silero-native/) crate, default); Piper (in-process, `piper-rs` + `onnxruntime`, fallback); Silero via `ttsd` (optional Python 3.12 subprocess, fallback) |
 | Audio | `tauri-plugin-mpv` (libmpv with `scaletempo2`) |
 
 ## Features

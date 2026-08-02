@@ -11,7 +11,7 @@
 - **Shell:** Tauri 2 (Rust-based desktop shell with native webview)
 - **Frontend:** React 18 + TypeScript 5 + Mantine 8
 - **Backend:** Rust (text normalization pipeline, storage, TTS subprocess manager, player wrapper)
-- **TTS engines:** Piper (default, native Rust via `piper-rs`), Silero v5 in-process on ONNX Runtime (`silero-native` crate), optional Python subprocess `ttsd` wrapping Silero TTS (fallback)
+- **TTS engines:** Silero v5 in-process on ONNX Runtime (`silero-native` crate, default), Piper (native Rust via `piper-rs`, zero-dependency fallback), optional Python subprocess `ttsd` wrapping Silero TTS (fallback)
 
 **Goal** unchanged: normalize technical text (API, URLs, code identifiers, numbers) before passing it to Silero TTS, which cannot read English or special characters.
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   applyEngineChange,
+  buildSettingsPatch,
   computeEngineFormState,
   type AvailabilityMap,
 } from './engineSelection';
@@ -83,7 +84,7 @@ describe('computeEngineFormState', () => {
       BOTH_AVAILABLE,
     );
     expect(s.piperVoice).toBe('ruslan');
-    expect(s.sileroSpeaker).toBe('xenia');
+    expect(s.sileroSpeaker).toBe('aidar');
   });
 
   it('preserves a saved silero_native engine when it is available', () => {
@@ -110,7 +111,7 @@ describe('computeEngineFormState', () => {
       ALL_AVAILABLE,
     );
     expect(s.engine).toBe('silero_native');
-    expect(s.sileroSpeaker).toBe('xenia');
+    expect(s.sileroSpeaker).toBe('aidar');
   });
 
   it('keeps a saved random speaker for the ttsd engine', () => {
@@ -158,7 +159,7 @@ describe('applyEngineChange', () => {
     );
     const next = applyEngineChange(onSilero, 'silero_native', ALL_AVAILABLE);
     expect(next.engine).toBe('silero_native');
-    expect(next.sileroSpeaker).toBe('xenia');
+    expect(next.sileroSpeaker).toBe('aidar');
   });
 
   it('keeps the random speaker when switching to engines that support it', () => {
@@ -168,5 +169,30 @@ describe('applyEngineChange', () => {
     expect(applyEngineChange(withRandom, 'silero', BOTH_AVAILABLE).sileroSpeaker).toBe('random');
     // Piper does not use the Silero speaker at all — keep it for the round-trip.
     expect(applyEngineChange(withRandom, 'piper', BOTH_AVAILABLE).sileroSpeaker).toBe('random');
+  });
+});
+
+describe('buildSettingsPatch', () => {
+  const values = {
+    engine: 'piper' as const,
+    piper_voice: 'ruslan',
+    speaker: 'aidar',
+    sample_rate: 24000,
+    theme: 'dark' as const,
+  };
+
+  it('includes the engine on a normal save', () => {
+    const patch = buildSettingsPatch(values, false);
+    expect(patch.engine).toBe('piper');
+    expect(patch.speaker).toBe('aidar');
+  });
+
+  it('omits the engine while the form is coerced away from an unavailable one', () => {
+    // A coerced form shows the fallback engine; persisting it would overwrite
+    // the saved engine (or the silero_native default on a bundle-less fresh
+    // install), so the patch must leave `engine` out.
+    const patch = buildSettingsPatch(values, true);
+    expect('engine' in patch).toBe(false);
+    expect(patch.theme).toBe('dark');
   });
 });
