@@ -93,20 +93,45 @@ pub fn timestamps_from_durations(chunks: &[ChunkTiming]) -> Vec<WordTimestamp> {
     timestamps
 }
 
+/// End index (exclusive) of a `+` run starting at `i` when the run is
+/// directly attached to a following letter — an accentor stress marker
+/// (`+я`, `сто+ю`). A standalone literal `+` (surrounded by spaces, as in
+/// "правило + команда") is not attached and returns `None`.
+fn attached_plus_run_end(durations: &[SymbolDuration], i: usize) -> Option<usize> {
+    if durations.get(i)?.ch != '+' {
+        return None;
+    }
+    let mut end = i;
+    while durations.get(end).is_some_and(|sd| sd.ch == '+') {
+        end += 1;
+    }
+    if durations.get(end).is_some_and(|sd| sd.ch.is_alphabetic()) {
+        Some(end)
+    } else {
+        None
+    }
+}
+
 /// Align one chunk's words to its symbol stream.
 ///
 /// The stream cursor only moves forward, so timestamps are monotonic by
 /// construction. Symbols that are not letters (`^` markers, punctuation,
-/// spaces, sos/eos) are skipped during matching; their frames still count
-/// through the cumulative timeline, so pauses surface as gaps between words
-/// and markers inside a word are covered by its range. `+` stress markers
-/// are the exception: the accentor emits them immediately before the
-/// stressed vowel and the model renders real audio frames for them, so a
-/// run of `+` directly ahead of the word's first letter opens the word's
-/// range (the audible onset includes them). A word whose first letter does
-/// not match (e.g. digits the frontend filtered out) gets a zero-length
-/// timestamp at the cursor; a mid-word mismatch closes the word at its last
-/// matched letter.
+/// spaces, sos/eos, standalone `+`) are skipped during matching; their
+/// frames still count through the cumulative timeline, so pauses surface as
+/// gaps between words and markers inside a word are covered by its range.
+/// An attached `+` run directly ahead of the word's first letter opens the
+/// word's range: the accentor emits stress markers immediately before the
+/// stressed vowel and the model renders real audio frames for them (the
+/// audible onset includes them).
+///
+/// The stream letters are an in-order subsequence of the original text's
+/// letters: the frontend only drops characters it cannot map (latin,
+/// digits, symbols) and never reorders or drops Cyrillic. A mismatched word
+/// letter was therefore dropped before synthesis — it is skipped without
+/// consuming the stream symbol, and the cursor only advances on matches, so
+/// one unmapped word (e.g. "get_variablesслэш") cannot misalign the rest of
+/// the chunk. A word with no matched letters at all (pure latin, digits)
+/// gets a zero-length timestamp at the cursor.
 fn align_chunk(chunk: &ChunkTiming, audio_offset: f32, out: &mut Vec<WordTimestamp>) {
     // cum[i] = start time of symbol i in seconds; cum[len] = total.
     let mut cum = Vec::with_capacity(chunk.durations.len() + 1);
@@ -123,26 +148,28 @@ fn align_chunk(chunk: &ChunkTiming, audio_offset: f32, out: &mut Vec<WordTimesta
             if !wc.is_alphabetic() {
                 // Digits / '_' can appear in extracted words but never in the
                 // model alphabet — they match nothing by construction.
-                if first_match.is_some() {
-                    break;
-                }
                 continue;
             }
-            // Skip non-letter symbols between/inside words, except `+`:
-            // stress markers ahead of the first letter belong to the word.
-            while cursor < chunk.durations.len()
-                && !chunk.durations[cursor].ch.is_alphabetic()
-                && !(first_match.is_none() && chunk.durations[cursor].ch == '+')
-            {
+            let seeking_first = last_match.is_none();
+            // Skip non-letter symbols between/inside words. While seeking the
+            // word's first letter, stop at an attached `+` run — it belongs
+            // to this word. Mid-word `+` is skipped (already inside the
+            // range via the cumulative timeline).
+            while cursor < chunk.durations.len() {
+                if chunk.durations[cursor].ch.is_alphabetic() {
+                    break;
+                }
+                if seeking_first && attached_plus_run_end(chunk.durations, cursor).is_some() {
+                    break;
+                }
                 cursor += 1;
             }
-            // Fold a leading `+` run into the word's range.
-            while first_match.is_none()
-                && cursor < chunk.durations.len()
-                && chunk.durations[cursor].ch == '+'
-            {
-                first_match = Some(cursor);
-                cursor += 1;
+            // Fold an attached `+` run into the word's range.
+            if seeking_first {
+                if let Some(run_end) = attached_plus_run_end(chunk.durations, cursor) {
+                    first_match.get_or_insert(cursor);
+                    cursor = run_end;
+                }
             }
             match chunk.durations.get(cursor) {
                 Some(sd) if letter_key(sd.ch) == letter_key(wc) => {
@@ -151,16 +178,18 @@ fn align_chunk(chunk: &ChunkTiming, audio_offset: f32, out: &mut Vec<WordTimesta
                     cursor += 1;
                 }
                 Some(sd) => {
-                    // Mismatch: keep the symbol for the next word. With no
-                    // match yet the whole word is unspoken; mid-word it is
-                    // truncated (e.g. filtered-out tail).
+                    // Mismatch: this letter never reached the stream (the
+                    // frontend dropped it — latin, digits, symbols). Skip the
+                    // letter and keep the stream symbol for the next one;
+                    // consuming or stopping here cascades the misalignment
+                    // into every following word.
                     debug!(
                         word = %word,
                         stream_char = %sd.ch,
                         word_char = %wc,
-                        "word alignment mismatch"
+                        "skipping letter absent from the symbol stream"
                     );
-                    break;
+                    continue;
                 }
                 None => break,
             }
@@ -169,12 +198,12 @@ fn align_chunk(chunk: &ChunkTiming, audio_offset: f32, out: &mut Vec<WordTimesta
         let (local_start, local_end) = match (first_match, last_match) {
             (Some(first), Some(last)) => (cum[first], cum[last + 1]),
             // Unspoken word: zero-length where the next spoken content
-            // starts (a leading `+` run belongs to the next word, so the
+            // starts (an attached `+` run belongs to the next word, so the
             // zero-length lands no later than that word's start).
             _ => {
                 while cursor < chunk.durations.len()
                     && !chunk.durations[cursor].ch.is_alphabetic()
-                    && chunk.durations[cursor].ch != '+'
+                    && attached_plus_run_end(chunk.durations, cursor).is_none()
                 {
                     cursor += 1;
                 }
@@ -449,6 +478,158 @@ mod tests {
         assert_eq!(ts.len(), 1);
         assert!((ts[0].start - 5.0 * FRAME_SEC).abs() < 1e-3);
         assert!((ts[0].end - 25.0 * FRAME_SEC).abs() < 1e-3);
+    }
+
+    #[test]
+    fn standalone_plus_does_not_open_next_word() {
+        // A literal '+' in the text ("правило + команда") is surrounded by
+        // spaces — it is NOT a stress marker and must not start the next
+        // word's range. Regression: it used to fold into "команда" and
+        // cascade-misalign every following word.
+        let durations = vec![
+            sd('|', 1),
+            sd('а', 1),
+            sd('б', 1),
+            sd(' ', 1),
+            sd('+', 5),
+            sd(' ', 1),
+            sd('в', 1),
+            sd('г', 1),
+            sd('~', 2),
+        ];
+        let ts = timestamps_from_durations(&[ChunkTiming {
+            text: "аб + вг",
+            text_offset: 0,
+            duration_sec: 14.0 * FRAME_SEC,
+            durations: &durations,
+        }]);
+        assert_eq!(ts.len(), 2);
+        // "вг" starts at 'в' (after the standalone '+'), spans 2 frames.
+        assert!((ts[1].start - 10.0 * FRAME_SEC).abs() < 1e-3);
+        assert!((ts[1].end - 12.0 * FRAME_SEC).abs() < 1e-3);
+    }
+
+    #[test]
+    fn attached_plus_without_space_opens_next_word() {
+        // "аб +вг": a `+` directly attached to the next letter is
+        // syntactically an explicit stress marker (like user-typed "з+амок")
+        // — its frames are part of the audible word onset and open the
+        // word's range. Contrast with the standalone '+' above.
+        let durations = vec![
+            sd('|', 1),
+            sd('а', 1),
+            sd('б', 1),
+            sd(' ', 1),
+            sd('+', 5),
+            sd('в', 1),
+            sd('г', 1),
+            sd('~', 2),
+        ];
+        let ts = timestamps_from_durations(&[ChunkTiming {
+            text: "аб +вг",
+            text_offset: 0,
+            duration_sec: 13.0 * FRAME_SEC,
+            durations: &durations,
+        }]);
+        assert_eq!(ts.len(), 2);
+        assert!((ts[1].start - 4.0 * FRAME_SEC).abs() < 1e-3);
+        assert!((ts[1].end - 11.0 * FRAME_SEC).abs() < 1e-3);
+    }
+
+    #[test]
+    fn words_after_standalone_plus_stay_aligned() {
+        // The production failure: after "правило +", fourteen following
+        // words collapsed to zero-length timestamps at one instant.
+        let durations = vec![
+            sd('|', 1),
+            sd('а', 1),
+            sd('б', 1),
+            sd(' ', 1),
+            sd('+', 5),
+            sd(' ', 1),
+            sd('в', 1),
+            sd('г', 1),
+            sd(' ', 1),
+            sd('д', 1),
+            sd('е', 1),
+            sd(' ', 1),
+            sd('ж', 1),
+            sd('з', 1),
+            sd('~', 2),
+        ];
+        let ts = timestamps_from_durations(&[ChunkTiming {
+            text: "аб + вг де жз",
+            text_offset: 0,
+            duration_sec: 18.0 * FRAME_SEC,
+            durations: &durations,
+        }]);
+        assert_eq!(ts.len(), 4);
+        let expected = [(1.0, 3.0), (10.0, 12.0), (13.0, 15.0), (16.0, 18.0)];
+        for (t, &(s, e)) in ts.iter().zip(&expected) {
+            assert!((t.start - s * FRAME_SEC).abs() < 1e-3, "{}: {t:?}", t.word);
+            assert!((t.end - e * FRAME_SEC).abs() < 1e-3, "{}: {t:?}", t.word);
+        }
+    }
+
+    #[test]
+    fn dropped_latin_letters_do_not_cascade() {
+        // The production failure: "get_variablesслэш" — the latin prefix was
+        // dropped by the frontend, only "слэш" reached the stream. The word
+        // must span its Cyrillic tail and the next word must stay aligned
+        // (a mismatch used to shift every following word by one).
+        let durations = vec![
+            sd('|', 1),
+            sd('с', 1),
+            sd('л', 1),
+            sd('э', 1),
+            sd('ш', 1),
+            sd(' ', 1),
+            sd('с', 1),
+            sd('е', 1),
+            sd('т', 1),
+            sd('~', 2),
+        ];
+        let ts = timestamps_from_durations(&[ChunkTiming {
+            text: "get_variablesслэш сет",
+            text_offset: 0,
+            duration_sec: 11.0 * FRAME_SEC,
+            durations: &durations,
+        }]);
+        assert_eq!(ts.len(), 2);
+        // "get_variablesслэш" spans only its spoken tail "слэш".
+        assert!((ts[0].start - 1.0 * FRAME_SEC).abs() < 1e-3, "{:?}", ts[0]);
+        assert!((ts[0].end - 5.0 * FRAME_SEC).abs() < 1e-3, "{:?}", ts[0]);
+        // "сет" aligns to its own symbols, not shifted into the tail.
+        assert!((ts[1].start - 6.0 * FRAME_SEC).abs() < 1e-3, "{:?}", ts[1]);
+        assert!((ts[1].end - 9.0 * FRAME_SEC).abs() < 1e-3, "{:?}", ts[1]);
+    }
+
+    #[test]
+    fn latin_only_word_zero_length_without_cascade() {
+        // A fully unspoken word ("abc") gets a zero-length timestamp and the
+        // following words keep their own alignment.
+        let durations = vec![
+            sd('|', 1),
+            sd('д', 1),
+            sd('е', 1),
+            sd(' ', 1),
+            sd('ж', 1),
+            sd('з', 1),
+            sd('~', 2),
+        ];
+        let ts = timestamps_from_durations(&[ChunkTiming {
+            text: "abc де жз",
+            text_offset: 0,
+            duration_sec: 9.0 * FRAME_SEC,
+            durations: &durations,
+        }]);
+        assert_eq!(ts.len(), 3);
+        assert_eq!(ts[0].start, ts[0].end);
+        assert!((ts[0].start - 1.0 * FRAME_SEC).abs() < 1e-3);
+        assert!((ts[1].start - 1.0 * FRAME_SEC).abs() < 1e-3);
+        assert!((ts[1].end - 3.0 * FRAME_SEC).abs() < 1e-3);
+        assert!((ts[2].start - 4.0 * FRAME_SEC).abs() < 1e-3);
+        assert!((ts[2].end - 6.0 * FRAME_SEC).abs() < 1e-3);
     }
 
     #[test]

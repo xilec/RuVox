@@ -145,6 +145,53 @@ fn word_onsets_follow_reference_within_50ms() {
 }
 
 #[test]
+fn highlight_never_jumps_ahead_on_tricky_text() {
+    let Some(dir) = common::gated_bundle_dir() else {
+        return;
+    };
+    let native = SileroNative::load(&dir).expect("bundle must load");
+
+    // Regression for the literal-'+' misalignment: a standalone '+' in the
+    // text ("правило + команда") used to cascade fourteen words into
+    // zero-length timestamps at one instant, so highlighting raced ahead.
+    // The second sentence covers the latin-prefix variant: letters the
+    // frontend drops ("get_variables" in "get_variablesслэш") must not
+    // shift the alignment of the following words either.
+    let text = "Тот же паттерн «правило + команда» работает и для документации \
+                дизайн-системы. Отдельное правило прямо запрещает агенту \
+                выдумывать усе кейс. Он верен только для одного конкретного \
+                сценария — когда эй ай получает текстовый промпт. \
+                У пенкил эм си пи есть прямые функции get_variablesслэш \
+                сет вариаблес - можно буквально попросить агента пройдись \
+                по файлу и приведи переменные в соответствие.";
+    let result = native.synthesize(text, "aidar", 24000).expect("synthesis");
+    let ts = &result.timestamps;
+    assert!(!ts.is_empty());
+
+    // Emulate playback highlighting in 150 ms steps, mirroring
+    // `findActiveTimestamp` (src/lib/wordHighlight.ts): the active word is
+    // the one containing t, or the closest upcoming word in a gap. Speech
+    // is slower than 2 words per 150 ms, so a larger advance means broken
+    // timestamps.
+    let mut prev_idx = 0usize;
+    let mut t = 0.0f32;
+    while t < result.duration_sec {
+        let idx = ts.partition_point(|w| t >= w.end);
+        if idx < ts.len() {
+            let advance = idx.saturating_sub(prev_idx);
+            assert!(
+                advance <= 2,
+                "highlight jumped {prev_idx} -> {idx} ({:?}) at {t:.2}s",
+                ts[idx].word
+            );
+            prev_idx = prev_idx.max(idx);
+        }
+        t += 0.15;
+    }
+    eprintln!("playback emulation: {} words, no jumps", ts.len());
+}
+
+#[test]
 fn timestamps_are_sample_rate_invariant() {
     let Some(dir) = common::gated_bundle_dir() else {
         return;
