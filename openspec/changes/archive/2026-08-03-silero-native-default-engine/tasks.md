@@ -13,4 +13,4 @@
 - [x] 6. `nix develop -c just lint` green.
 - [x] 7. `nix develop -c pnpm dlx @fission-ai/openspec validate --specs --strict` green.
 - [x] 9. Reviewer fixes: Settings save omits `engine` while coerced (`buildSettingsPatch` + unit tests), `save_and_load_config` uses non-default values, CHANGELOG entry for the default switch; `ui` spec delta for the coerce-save behavior.
-- [ ] 8. Manual check: run the app with the current user config (explicit values — must be unaffected), then with a config whose `engine`/`speaker`/`sample_rate` keys are removed, and confirm it starts on Silero Native / aidar / 24000 (bundle present on this machine).
+- [x] 8. Manual check: run the app with the current user config (explicit values — must be unaffected), then with a config whose `engine`/`speaker`/`sample_rate` keys are removed, and confirm it starts on Silero Native / aidar / 24000 (bundle present on this machine).

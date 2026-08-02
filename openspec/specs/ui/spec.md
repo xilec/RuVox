@@ -133,6 +133,8 @@ The form SHALL expose: TTS engine (Piper / Silero / «Silero (нативный)�
 
 When «Silero (нативный)» is unavailable because the model bundle is not downloaded, the form SHALL show a download action next to the engine option; triggering it calls `commands.downloadSileroNativeBundle()` and displays live progress from the `bundle_download_*` events.
 
+When the form's engine was coerced away from the saved engine because that engine is currently unavailable, and the user did not pick another engine, saving the dialog SHALL omit `engine` from the `UIConfigPatch` so the saved (or default) engine value is preserved instead of persisting the temporary fallback.
+
 A "Очистить кэш…" button SHALL open a nested `CleanupCacheModal` with a target-MB input (disabled by "Очистить полностью"), a "Удалять тексты" checkbox, and a red warning when both full cleanup and text deletion are selected; confirmation calls `commands.clearCache({ mode, delete_texts })`.
 
 #### Scenario: Save applies config and theme
@@ -146,6 +148,12 @@ A "Очистить кэш…" button SHALL open a nested `CleanupCacheModal` wi
 - GIVEN `getAvailableEngines` reports Silero as unavailable
 - WHEN the Settings dialog opens
 - THEN the Silero option is disabled with its reason shown, and a config saved with Silero is coerced to Piper with a yellow alert
+
+#### Scenario: Save while coerced preserves the saved engine
+
+- GIVEN the saved engine is unavailable and the form was coerced to the fallback engine
+- WHEN the user saves the dialog without picking an engine
+- THEN the `UIConfigPatch` sent to `commands.updateConfig` does not contain `engine`, so the previously saved (or default) engine value stays in effect
 
 #### Scenario: Native engine offers bundle download
 
