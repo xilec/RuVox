@@ -26,7 +26,7 @@ text (one chunk)
                             → mag/x/y (1,1201,T) + dur_hat
   → istft.onnx              mag/x/y → audio 48 kHz (n_fft 2400, hop 600)
   → pqmf_24k/8k.onnx        only for 24000/8000 output (48k skips this)
-  → 16-bit PCM WAV + char-proportional word timestamps
+  → 16-bit PCM WAV + dur_hat-based word timestamps
 ```
 
 Sessions for the always-needed models (`tts_main`, `istft`, `homosolver`,

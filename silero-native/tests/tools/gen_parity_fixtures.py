@@ -123,10 +123,15 @@ def main() -> None:
             stress_single_vowel=True,
         )
 
-    def onnx_tts(text: str, speaker: str, sample_rate: int) -> np.ndarray:
-        """The reference ONNX pipeline: tts_main -> istft -> (pqmf)."""
+    def onnx_tts(text: str, speaker: str, sample_rate: int):
+        """The reference ONNX pipeline: tts_main -> istft -> (pqmf).
+
+        Returns (audio, dur_hat, sequence): `dur_hat` (per-symbol frame
+        durations, 4th output of tts_main) and the model input sequence are
+        captured for the word-timestamp parity test (issue #145).
+        """
         sequence, sp_ids, durs_rate, pitch_coefs = build_model_input(pack, text, speaker)
-        mag, x, y, _dur_hat = sess_main.run(
+        mag, x, y, dur_hat = sess_main.run(
             None,
             {
                 "sequence": sequence.numpy(),
@@ -139,14 +144,14 @@ def main() -> None:
         if sample_rate != 48000:
             (band,) = sess_pqmf[sample_rate].run(None, {"audio": audio.reshape(1, 1, -1)})
             audio = band.reshape(1, -1)
-        return audio[0]
+        return audio[0], dur_hat[0], sequence.numpy()[0]
 
     out_dir.mkdir(parents=True, exist_ok=True)
     cases = []
     for phrase_id, text, extra in PHRASES:
         spoken = spoken_text(text)
         for speaker, rate in [("aidar", 48000)] + extra:
-            onnx_audio = onnx_tts(text, speaker, rate)
+            onnx_audio, dur_hat, sequence = onnx_tts(text, speaker, rate)
             torch_audio = pack.apply_tts(text=text, speaker=speaker, sample_rate=rate).numpy()
             n = min(len(onnx_audio), len(torch_audio))
             torch_diff = float(np.abs(torch_audio[:n] - onnx_audio[:n]).max()) if n else float("inf")
@@ -161,6 +166,8 @@ def main() -> None:
                     "spoken_text": spoken,
                     "wav": wav_name,
                     "samples": int(onnx_audio.shape[-1]),
+                    "sequence": sequence.tolist(),
+                    "dur_hat": dur_hat.tolist(),
                     "torch_max_abs_diff": torch_diff,
                     "torch_len_diff": abs(len(torch_audio) - len(onnx_audio)),
                 }
