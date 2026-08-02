@@ -1,6 +1,6 @@
 # RuVox
 
-**RuVox** is a desktop application for voicing technical Russian texts with local TTS engines: Piper (default), native Silero v5 on ONNX Runtime (the `silero-native` crate), or Silero via the Python `ttsd` sidecar (fallback). It normalizes English terms, abbreviations, code, numbers, and URLs before passing them to the TTS engine, so the synthesizer can correctly read material it wasn't designed for.
+**RuVox** is a desktop application for voicing technical Russian texts with local TTS engines: native Silero v5 on ONNX Runtime (the `silero-native` crate, default), Piper (fallback), or Silero via the Python `ttsd` sidecar (fallback). It normalizes English terms, abbreviations, code, numbers, and URLs before passing them to the TTS engine, so the synthesizer can correctly read material it wasn't designed for.
 
 ## Problem → Solution
 
@@ -32,7 +32,7 @@ A bare Russian TTS engine cannot correctly pronounce:
 | Shell | [Tauri 2](https://tauri.app/) (Rust + native webview) |
 | Frontend | React 18 + TypeScript 5 + [Mantine 8](https://mantine.dev/) |
 | Backend | Rust (normalization pipeline, storage, TTS manager, player wrapper) |
-| TTS | Piper (in-process, `piper-rs`, default); native Silero v5 (in-process, ONNX Runtime, `silero-native` crate); Silero via Python 3.12 subprocess `ttsd` (fallback) |
+| TTS | native Silero v5 (in-process, ONNX Runtime, `silero-native` crate, default); Piper (in-process, `piper-rs`, fallback); Silero via Python 3.12 subprocess `ttsd` (fallback) |
 | Audio | [`tauri-plugin-mpv`](https://crates.io/crates/tauri-plugin-mpv) (libmpv with `scaletempo2`) |
 | Build environment | Nix (`flake.nix`; dev shell in `nix/devshell.nix`) |
 

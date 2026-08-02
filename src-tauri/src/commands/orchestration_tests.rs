@@ -335,7 +335,7 @@ async fn play_entry_loads_audio_and_starts_playback() {
 async fn update_config_failed_engine_switch_preserves_previous_config() {
     let t = build_test_app();
     let before = get_config(t.state()).await.unwrap();
-    assert_eq!(before.engine, "piper");
+    assert_eq!(before.engine, "silero_native");
 
     let patch = UIConfigPatch {
         engine: Some("nemo".to_string()),
@@ -366,7 +366,7 @@ async fn update_config_failed_engine_switch_preserves_previous_config() {
 async fn update_config_silero_native_without_bundle_preserves_previous_config() {
     let t = build_test_app();
     let before = get_config(t.state()).await.unwrap();
-    assert_eq!(before.engine, "piper");
+    assert_eq!(before.engine, "silero_native");
 
     let patch = UIConfigPatch {
         engine: Some("silero_native".to_string()),

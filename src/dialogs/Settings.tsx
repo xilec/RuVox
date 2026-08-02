@@ -26,6 +26,7 @@ import { formatError } from '../lib/errors';
 import { PIPER_VOICES } from '../lib/piperVoices';
 import {
   applyEngineChange,
+  buildSettingsPatch,
   computeEngineFormState,
   RANDOM_SPEAKER,
   type AvailabilityMap,
@@ -44,9 +45,9 @@ interface SettingsFormValues {
 }
 
 const ENGINE_OPTIONS: ReadonlyArray<{ value: EngineKind; label: string }> = [
-  { value: 'piper', label: 'Piper (по умолчанию, без Python)' },
-  { value: 'silero', label: 'Silero (Python ttsd)' },
-  { value: 'silero_native', label: 'Silero (нативный)' },
+  { value: 'silero_native', label: 'Silero (нативный, рекомендуемый)' },
+  { value: 'piper', label: 'Piper' },
+  { value: 'silero', label: 'Silero (Python)' },
 ];
 
 /// Pessimistic default used until `getAvailableEngines()` resolves: Piper
@@ -232,16 +233,16 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
   // (already reported by the finished event).
   const downloadActiveRef = useRef(false);
   // Whether the user touched the sample-rate selector in this dialog
-  // session. The native engine's own default is 24000 (the config field is
-  // shared and defaults to 48000), so picking «Silero (нативный)» follows
-  // the engine default only while the user made no explicit choice.
+  // session. The config default is 24000 (the native engine's own default);
+  // picking «Silero (нативный)» follows it only while the user made no
+  // explicit choice.
   const sampleRateTouchedRef = useRef(false);
   const form = useForm<SettingsFormValues>({
     initialValues: {
-      engine: 'piper',
+      engine: 'silero_native',
       piper_voice: 'ruslan',
-      speaker: 'xenia',
-      sample_rate: 48000,
+      speaker: 'aidar',
+      sample_rate: 24000,
       notify_on_ready: true,
       notify_on_error: true,
       preview_dialog_enabled: true,
@@ -405,17 +406,20 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
   };
 
   const handleSubmit = async (values: SettingsFormValues) => {
-    const patch: UIConfigPatch = {
-      engine: values.engine,
-      piper_voice: values.piper_voice,
-      speaker: values.speaker,
-      sample_rate: values.sample_rate,
-      notify_on_ready: values.notify_on_ready,
-      notify_on_error: values.notify_on_error,
-      preview_dialog_enabled: values.preview_dialog_enabled,
-      max_cache_size_mb: values.max_cache_size_mb,
-      theme: values.theme as UIConfigPatch['theme'],
-    };
+    const patch = buildSettingsPatch(
+      {
+        engine: values.engine,
+        piper_voice: values.piper_voice,
+        speaker: values.speaker,
+        sample_rate: values.sample_rate,
+        notify_on_ready: values.notify_on_ready,
+        notify_on_error: values.notify_on_error,
+        preview_dialog_enabled: values.preview_dialog_enabled,
+        max_cache_size_mb: values.max_cache_size_mb,
+        theme: values.theme as UIConfigPatch['theme'],
+      },
+      coercedAlert,
+    );
 
     try {
       await commands.updateConfig(patch);
@@ -555,7 +559,7 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
             value={String(form.values.sample_rate)}
             onChange={(v) => {
               sampleRateTouchedRef.current = true;
-              form.setFieldValue('sample_rate', v ? parseInt(v, 10) : 48000);
+              form.setFieldValue('sample_rate', v ? parseInt(v, 10) : 24000);
             }}
             error={form.errors.sample_rate}
           />

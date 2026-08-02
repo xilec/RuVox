@@ -743,24 +743,26 @@ mod tests {
     fn save_and_load_config() {
         let (svc, _dir) = make_service();
 
+        // Non-default values (the defaults are aidar/24000): proves explicit
+        // values survive the round-trip instead of being re-defaulted.
         let cfg = UIConfig {
-            speaker: "aidar".to_string(),
-            sample_rate: 24000,
+            speaker: "xenia".to_string(),
+            sample_rate: 48000,
             ..UIConfig::default()
         };
         svc.save_config(&cfg).unwrap();
 
         let loaded = svc.load_config().unwrap();
-        assert_eq!(loaded.speaker, "aidar");
-        assert_eq!(loaded.sample_rate, 24000);
+        assert_eq!(loaded.speaker, "xenia");
+        assert_eq!(loaded.sample_rate, 48000);
     }
 
     #[test]
     fn load_config_returns_default_when_missing() {
         let (svc, _dir) = make_service();
         let cfg = svc.load_config().unwrap();
-        assert_eq!(cfg.speaker, "xenia");
-        assert_eq!(cfg.sample_rate, 48000);
+        assert_eq!(cfg.speaker, "aidar");
+        assert_eq!(cfg.sample_rate, 24000);
     }
 
     #[test]

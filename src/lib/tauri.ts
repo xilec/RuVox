@@ -68,9 +68,9 @@ export interface AvailableEngines {
 
 export interface UIConfig {
   speaker: string;
-  /** Shared across engines. Global default 48000; the native Silero engine
-   *  defaults to 24000 (the Settings dialog offers it when the engine is
-   *  picked without an explicit sample-rate choice). */
+  /** Shared across engines. Global default 24000 — the native Silero
+   *  engine's own default; Piper ignores the field (output rate is fixed
+   *  by the voice model). */
   sample_rate: number;
   speech_rate: number;
   notify_on_ready: boolean;
@@ -83,8 +83,8 @@ export interface UIConfig {
   player_hotkeys: Record<string, string>;
   window_geometry: [number, number, number, number] | null;
   preview_dialog_enabled: boolean;
-  /** Active TTS engine. Defaults to "piper" on fresh installs and on configs
-   *  that pre-date the engine selector. */
+  /** Active TTS engine. Defaults to "silero_native" on fresh installs and on
+   *  configs that pre-date the engine selector. */
   engine: EngineKind;
   /** Active Piper voice id (e.g. "ruslan", "irina"). See piperVoices.ts. */
   piper_voice: string;
