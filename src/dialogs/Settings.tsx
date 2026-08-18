@@ -24,6 +24,7 @@ import { commands, events } from '../lib/tauri';
 import type { CleanupMode, EngineKind, UIConfigPatch } from '../lib/tauri';
 import { formatError } from '../lib/errors';
 import { PIPER_VOICES } from '../lib/piperVoices';
+import { checkForUpdatesManual, UPDATER_ENABLED } from '../lib/updater';
 import {
   applyEngineChange,
   buildSettingsPatch,
@@ -642,6 +643,22 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
             key={form.key('theme')}
             {...form.getInputProps('theme')}
           />
+
+          {UPDATER_ENABLED && (
+            <>
+              <Divider />
+
+              <Text size="sm" fw={500} c="dimmed">
+                Обновления
+              </Text>
+
+              <Group justify="flex-start">
+                <Button variant="default" onClick={() => void checkForUpdatesManual()}>
+                  Проверить обновления
+                </Button>
+              </Group>
+            </>
+          )}
 
           <Group justify="flex-end" mt="md">
             <Button variant="subtle" onClick={() => form.reset()}>

@@ -16,6 +16,7 @@ jobs:
       ttsd: ${{ steps.filter.outputs.ttsd }}
       nix: ${{ steps.filter.outputs.nix }}
       openspec: ${{ steps.filter.outputs.openspec }}
+      windows: ${{ steps.filter.outputs.windows }}
     steps:
       - uses: actions/checkout@v5
       - uses: dorny/paths-filter@v4
@@ -47,6 +48,42 @@ jobs:
             openspec:
               - 'openspec/**'
               - '.github/workflows/ci.yml'
+            windows:
+              - 'src-tauri/**'
+              - 'silero-native/**'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/release.yml'
+              - 'scripts/fetch-windows-resources.sh'
+
+  # Compile-only guard for the Windows port: catches cfg/platform breakage
+  # on the real MSVC toolchain without bundling (no resource downloads, no
+  # NSIS). The full installer path lives in release.yml.
+  windows-build:
+    name: Windows build (no bundle)
+    needs: changes
+    if: needs.changes.outputs.windows == 'true'
+    runs-on: windows-latest
+    env:
+      # cmake 4.x on the runner image errors out on the vendored opus'
+      # ancient cmake_minimum_required — pin the compat floor (design D5
+      # of windows-installer-and-release).
+      CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri\nsilero-native"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm tauri build --no-bundle
+
 
   rust:
     name: Rust (clippy + test)

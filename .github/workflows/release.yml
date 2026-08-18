@@ -1,0 +1,129 @@
+name: release
+
+# Tag push `v*` (or a manual dispatch with an explicit tag) builds the
+# Windows NSIS installer and publishes a DRAFT GitHub release with the
+# installer + updater artifacts. The draft is published manually after the
+# VM checklist passes (OpenSpec change windows-installer-and-release, D1).
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create (e.g. v0.3.0)"
+        required: true
+
+permissions:
+  contents: write # needed to create the draft release
+
+env:
+  # cmake 4.x on the runner image errors out on the vendored opus'
+  # ancient cmake_minimum_required — pin the compat floor (design D5).
+  CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri\nsilero-native"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Guard tag matches app version
+        shell: bash
+        # A tag pushed without bumping tauri.conf.json would make the freshly
+        # installed app older than latest.json — an update prompt loop on
+        # every start. Fail fast, before the expensive build.
+        run: |
+          set -euo pipefail
+          tag="${{ inputs.tag || github.ref_name }}"
+          conf_version=$(jq -r .version src-tauri/tauri.conf.json)
+          if [ "$conf_version" != "${tag#v}" ]; then
+            echo "::error::tag $tag does not match tauri.conf.json version $conf_version — bump the version first"
+            exit 1
+          fi
+
+      # mpv + onnxruntime.dll, pinned + sha256-verified. Must happen before
+      # `tauri build` because bundle.resources references them.
+      - name: Fetch third-party resources
+        shell: bash
+        run: bash scripts/fetch-windows-resources.sh
+
+      # espeak-ng-data is produced BY the build (espeak-rs-sys vendors and
+      # compiles espeak-ng) — so build first, then copy the data out of the
+      # build tree, then bundle. The second cargo invocation inside
+      # `tauri build` is a cache hit.
+      - name: cargo build (produces espeak-ng-data)
+        run: cargo build --release --manifest-path src-tauri/Cargo.toml
+
+      - name: Extract espeak-ng-data into bundle resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          src=$(ls -d src-tauri/target/release/build/espeak-rs-sys-*/out/share/espeak-ng-data | head -1)
+          # Sanity: the Russian pipeline needs these three at minimum.
+          test -f "$src/ru_dict" && test -f "$src/phondata" && test -f "$src/intonations"
+          # The destination dir exists in the checkout (committed PLACEHOLDER)
+          # — `cp -r src dest` would NEST into it. Copy the contents instead.
+          cp -r "$src/." src-tauri/resources/espeak-ng-data/
+          # Post-copy check at the level the app actually reads
+          # (init_platform_env sets PIPER_ESPEAKNG_DATA_DIRECTORY to the dir
+          # containing espeak-ng-data).
+          test -f src-tauri/resources/espeak-ng-data/ru_dict
+
+      - name: Build NSIS installer + updater artifacts
+        run: pnpm tauri build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      # tauri-plugin-updater manifest. `releases/latest/download/latest.json`
+      # starts resolving only once the draft is PUBLISHED — before that the
+      # in-app check 404s, which the app treats as "no update".
+      - name: Generate latest.json updater manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ inputs.tag || github.ref_name }}"
+          version="${tag#v}"
+          nsis_dir=src-tauri/target/release/bundle/nsis
+          zip=$(ls "$nsis_dir"/*_x64-setup.nsis.zip | head -1)
+          sig=$(cat "$zip.sig")
+          jq -n \
+            --arg v "$version" \
+            --arg tag "$tag" \
+            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg sig "$sig" \
+            --arg url "https://github.com/${{ github.repository }}/releases/download/$tag/$(basename "$zip")" \
+            '{version: $v, notes: "https://github.com/${{ github.repository }}/releases/tag/\($tag)", pub_date: $date, platforms: {"windows-x86_64": {signature: $sig, url: $url}}}' \
+            > latest.json
+          cat latest.json
+
+      - name: Draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          draft: true
+          generate_release_notes: true
+          files: |
+            src-tauri/target/release/bundle/nsis/*_x64-setup.exe
+            src-tauri/target/release/bundle/nsis/*_x64-setup.nsis.zip
+            src-tauri/target/release/bundle/nsis/*_x64-setup.nsis.zip.sig
+            latest.json

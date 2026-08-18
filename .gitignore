@@ -75,6 +75,14 @@ src-tauri/target/
 silero-native/target/
 silero-native/Cargo.lock
 src-tauri/gen/
+# Third-party Windows binaries fetched at release-build time by
+# scripts/fetch-windows-resources.sh. Placeholders (README/PLACEHOLDER,
+# empty onnxruntime.dll) ARE committed — tauri-build checks resource path
+# existence at compile time.
+src-tauri/resources/mpv/*
+!src-tauri/resources/mpv/PLACEHOLDER
+src-tauri/resources/espeak-ng-data/*
+!src-tauri/resources/espeak-ng-data/PLACEHOLDER
 
 # pnpm
 .pnpm-debug.log
