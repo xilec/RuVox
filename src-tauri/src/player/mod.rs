@@ -38,21 +38,25 @@ pub const WINDOW_LABEL: &str = "main";
 ///
 /// Windows: prefer the bundled `mpv/mpv.exe` in the app's resource
 /// directory (shipped by the NSIS installer, together with mpv's DLLs),
-/// fall back to a PATH lookup when the bundle is absent (dev runs).
+/// fall back to a PATH lookup when the bundle is absent (dev runs) or the
+/// resource dir could not be resolved (`None` — probing a relative
+/// `mpv/mpv.exe` against the process CWD would risk executing a foreign
+/// binary).
 /// Other platforms: plain `mpv` from PATH (the nix wrapper puts it there).
 #[cfg(windows)]
-fn resolve_mpv_path(resource_dir: &std::path::Path) -> std::path::PathBuf {
-    let bundled = resource_dir.join("mpv").join("mpv.exe");
-    if bundled.exists() {
-        bundled
-    } else {
-        std::path::PathBuf::from("mpv")
+fn resolve_mpv_path(resource_dir: Option<&std::path::Path>) -> std::path::PathBuf {
+    if let Some(dir) = resource_dir {
+        let bundled = dir.join("mpv").join("mpv.exe");
+        if bundled.exists() {
+            return bundled;
+        }
     }
+    std::path::PathBuf::from("mpv")
 }
 
 /// Non-Windows resolution — always PATH (see the Windows variant above).
 #[cfg(not(windows))]
-fn resolve_mpv_path(_resource_dir: &std::path::Path) -> std::path::PathBuf {
+fn resolve_mpv_path(_resource_dir: Option<&std::path::Path>) -> std::path::PathBuf {
     std::path::PathBuf::from("mpv")
 }
 
@@ -132,12 +136,11 @@ impl<R: Runtime> Player<R> {
     /// `new()` and `ensure_mpv_alive()` (re-init after the plugin destroys
     /// mpv on the main window's CloseRequested event).
     fn init_mpv(app: &AppHandle<R>) -> Result<()> {
-        // resource_dir() failing leaves an empty base, so the bundled path
-        // will not exist and we fall back to PATH — a soft degradation, not
-        // an init error.
-        let resource_dir = app.path().resource_dir().unwrap_or_default();
+        // resource_dir() failing degrades to a PATH lookup — soft
+        // degradation, not an init error.
+        let resource_dir = app.path().resource_dir().ok();
         let config = MpvConfig {
-            path: resolve_mpv_path(&resource_dir)
+            path: resolve_mpv_path(resource_dir.as_deref())
                 .to_string_lossy()
                 .into_owned(),
             args: vec![
@@ -735,9 +738,15 @@ mod tests {
     fn mpv_path_falls_back_to_path_without_bundle() {
         let dir = tempfile::TempDir::new().unwrap();
         assert_eq!(
-            resolve_mpv_path(dir.path()),
+            resolve_mpv_path(Some(dir.path())),
             std::path::PathBuf::from("mpv")
         );
+    }
+
+    /// Unresolvable resource dir → PATH lookup, never a CWD-relative probe.
+    #[test]
+    fn mpv_path_falls_back_to_path_without_resource_dir() {
+        assert_eq!(resolve_mpv_path(None), std::path::PathBuf::from("mpv"));
     }
 
     /// The bundled `mpv/mpv.exe` wins — Windows-only by construction (the
@@ -749,7 +758,7 @@ mod tests {
         let bundled = dir.path().join("mpv").join("mpv.exe");
         std::fs::create_dir_all(bundled.parent().unwrap()).unwrap();
         std::fs::write(&bundled, b"").unwrap();
-        assert_eq!(resolve_mpv_path(dir.path()), bundled);
+        assert_eq!(resolve_mpv_path(Some(dir.path())), bundled);
     }
 
     /// On non-Windows the resolver ignores the resource dir entirely, even
@@ -762,7 +771,7 @@ mod tests {
         std::fs::create_dir_all(bundled.parent().unwrap()).unwrap();
         std::fs::write(&bundled, b"").unwrap();
         assert_eq!(
-            resolve_mpv_path(dir.path()),
+            resolve_mpv_path(Some(dir.path())),
             std::path::PathBuf::from("mpv")
         );
     }

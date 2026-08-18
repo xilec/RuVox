@@ -463,8 +463,9 @@ mod tests {
         assert!(matches!(result, Err(TtsError::Spawn(_))));
     }
 
-    // The four tests below spawn `cat`/`tail` — Unix-only binaries — and
-    // are gated accordingly; they compile everywhere but only run on Unix.
+    // The four tests below spawn `cat`/`tail` — Unix-only binaries — so
+    // `#[cfg(unix)]` strips them from compilation on other targets, keeping
+    // `cargo check --all-targets` clean on Windows.
     #[cfg(unix)]
     #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn respawn_exhausts_after_three_attempts_and_emits_fatal() {

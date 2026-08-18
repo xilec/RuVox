@@ -174,8 +174,6 @@ mod tests {
         // ttsd is not shipped on Windows, so `uv` will be missing there —
         // the probe must degrade to unavailable (with a Russian reason),
         // not propagate an error.
-        let dir = tempfile::TempDir::new().unwrap();
-        std::fs::write(dir.path().join("pyproject.toml"), b"[project]").unwrap();
         let res = check_uv_binary("/nonexistent/uv/binary/that/should/never/exist");
         let msg = res.expect_err("spawn failure must be an Err mapped to unavailable");
         assert!(
