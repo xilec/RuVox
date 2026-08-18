@@ -35,6 +35,12 @@ type SetupError = Box<dyn std::error::Error>;
 /// parent_pid no longer exists, the corresponding mpv is an orphan that
 /// survived a crash/SIGKILL.  Find those mpv PIDs via `/proc/<pid>/cmdline`
 /// search and send SIGTERM.
+///
+/// Unix-only: on Windows the plugin uses named pipes instead of /tmp
+/// sockets and there is no /proc — the code would not even compile
+/// (`libc::kill`).  A crashed mpv child there exits with its parent or
+/// lingers harmlessly until reboot; a named-pipe reaper is a non-goal.
+#[cfg(unix)]
 fn reap_orphan_mpv() {
     let Ok(entries) = std::fs::read_dir("/tmp") else {
         return;
@@ -421,7 +427,35 @@ pub(crate) fn invoke_handler<R: Runtime>()
     ]
 }
 
+/// Platform-specific startup environment. Windows: point piper-rs at the
+/// bundled `espeak-ng-data/` directory (espeak-rs expects
+/// `PIPER_ESPEAKNG_DATA_DIRECTORY` to name the directory *containing*
+/// `espeak-ng-data`). MUST be called at the top of `main`, before Tokio or
+/// Tauri spawn any threads — `std::env::set_var` is `unsafe` in edition
+/// 2024 because it races with concurrent environment readers.
+///
+/// Linux gets the variable from the nix wrapper instead (flake.nix
+/// preFixup); dev runs on Windows without the bundled dir fall back to
+/// Piper's built-in search (degraded Russian stress, still functional).
+#[cfg(windows)]
+pub fn init_platform_env() {
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    let Some(exe_dir) = exe.parent() else { return };
+    if exe_dir.join("espeak-ng-data").exists() {
+        // SAFETY: called from main before any threads exist.
+        unsafe { std::env::set_var("PIPER_ESPEAKNG_DATA_DIRECTORY", exe_dir) };
+    }
+}
+
+/// No-op on platforms whose environment is provided by the packaging
+/// (nix wrapper sets `PIPER_ESPEAKNG_DATA_DIRECTORY` on Linux).
+#[cfg(not(windows))]
+pub fn init_platform_env() {}
+
 pub fn run() {
+    #[cfg(unix)]
     reap_orphan_mpv();
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())

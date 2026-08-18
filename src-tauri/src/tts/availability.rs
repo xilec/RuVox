@@ -78,13 +78,22 @@ pub fn probe_silero(ttsd_dir: &Path) -> EngineAvailability {
 }
 
 fn check_uv() -> Result<(), String> {
-    let out = Command::new("uv").arg("--version").output();
+    check_uv_binary("uv")
+}
+
+/// Split from `check_uv` so tests can probe a guaranteed-nonexistent binary
+/// without depending on the host actually lacking `uv`.
+fn check_uv_binary(binary: &str) -> Result<(), String> {
+    let out = Command::new(binary).arg("--version").output();
     match out {
         Ok(o) if o.status.success() => Ok(()),
         Ok(o) => Err(format!(
             "uv найден, но `uv --version` вернул {}",
             o.status
         )),
+        // Covers spawn failure (binary missing) — the normal case on
+        // Windows, where ttsd is not shipped: the engine must report
+        // unavailable, not error the command.
         Err(_) => Err("`uv` не найден в PATH. Установите его или используйте `nix develop` с включённым Silero-флагом.".to_string()),
     }
 }
@@ -157,6 +166,19 @@ mod tests {
         assert!(
             reason.chars().any(|c| matches!(c, 'А'..='я' | 'ё' | 'Ё')),
             "reason should be Russian: {reason}"
+        );
+    }
+
+    #[test]
+    fn silero_unavailable_when_uv_cannot_be_spawned() {
+        // ttsd is not shipped on Windows, so `uv` will be missing there —
+        // the probe must degrade to unavailable (with a Russian reason),
+        // not propagate an error.
+        let res = check_uv_binary("/nonexistent/uv/binary/that/should/never/exist");
+        let msg = res.expect_err("spawn failure must be an Err mapped to unavailable");
+        assert!(
+            msg.chars().any(|c| matches!(c, 'А'..='я' | 'ё' | 'Ё')),
+            "reason should be Russian: {msg}"
         );
     }
 
