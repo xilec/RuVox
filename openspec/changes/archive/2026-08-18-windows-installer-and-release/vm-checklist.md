@@ -52,5 +52,5 @@ quickemu --vm windows-10-22H2.conf   # the .conf quickget generated
    - [ ] «Установка и удаление программ» → uninstall works, no errors.
 5. **Release pipeline**
    - [ ] Tag push produced a **draft** release with: `*-setup.exe`,
-     `*-setup.nsis.zip`, `*.sig`, `latest.json`.
+     `*-setup.exe.sig`, `latest.json`.
    - [ ] Publish the draft only after this checklist passes.
