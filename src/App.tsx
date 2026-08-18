@@ -6,6 +6,7 @@ import { ModalsProvider } from '@mantine/modals';
 import { Notifications } from '@mantine/notifications';
 import { AppShell } from './components/AppShell';
 import { setupNotificationBridge } from './lib/notificationBridge';
+import { checkForUpdatesOnStartup } from './lib/updater';
 import { theme } from './theme';
 
 export function App() {
@@ -14,6 +15,9 @@ export function App() {
     void setupNotificationBridge().then((fn) => {
       cleanup = fn;
     });
+
+    // Silent auto-update check (no-op off Windows); failures stay invisible.
+    void checkForUpdatesOnStartup();
 
     // Disable the default webview context menu; editable elements keep their
     // native menu (cut/copy/paste) so the Edit-mode Textarea still works.

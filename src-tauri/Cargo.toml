@@ -49,6 +49,12 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "webp"
 # mpv commands via command(["get_property", "time-pos"]) for position polling,
 # and integrates with the Tauri AppHandle we already hold.
 tauri-plugin-mpv = "0.5"
+# Auto-update (Windows installer channel): check GitHub releases for
+# latest.json, download the signed NSIS zip, install + relaunch. Signing
+# key lives in TAURI_SIGNING_PRIVATE_KEY (CI secret), pubkey in
+# tauri.conf.json. tauri-plugin-process provides relaunch() after install.
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }
