@@ -19,7 +19,9 @@ const UPDATE_TOAST_ID = 'app-update';
 
 /** Download + install + relaunch, with progress reflected in a toast. */
 async function installAndRelaunch(update: Update) {
-  notifications.update({
+  // NOTE: Mantine's notifications.update is a no-op for an id that was
+  // never shown — the FIRST call must be `show`, updates follow.
+  notifications.show({
     id: UPDATE_TOAST_ID,
     title: 'Скачиваю обновление',
     message: 'Подготовка…',

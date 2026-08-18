@@ -10,7 +10,7 @@
     "clipboard-manager:allow-write-text",
     "clipboard-manager:allow-write-image",
     "updater:default",
-    "process:default",
+    "process:allow-restart",
     {
       "identifier": "http:default",
       "allow": [{ "url": "https://*" }, { "url": "http://*" }]

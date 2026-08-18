@@ -46,6 +46,20 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Guard tag matches app version
+        shell: bash
+        # A tag pushed without bumping tauri.conf.json would make the freshly
+        # installed app older than latest.json — an update prompt loop on
+        # every start. Fail fast, before the expensive build.
+        run: |
+          set -euo pipefail
+          tag="${{ inputs.tag || github.ref_name }}"
+          conf_version=$(jq -r .version src-tauri/tauri.conf.json)
+          if [ "$conf_version" != "${tag#v}" ]; then
+            echo "::error::tag $tag does not match tauri.conf.json version $conf_version — bump the version first"
+            exit 1
+          fi
+
       # mpv + onnxruntime.dll, pinned + sha256-verified. Must happen before
       # `tauri build` because bundle.resources references them.
       - name: Fetch third-party resources
@@ -66,7 +80,13 @@ jobs:
           src=$(ls -d src-tauri/target/release/build/espeak-rs-sys-*/out/share/espeak-ng-data | head -1)
           # Sanity: the Russian pipeline needs these three at minimum.
           test -f "$src/ru_dict" && test -f "$src/phondata" && test -f "$src/intonations"
-          cp -r "$src" src-tauri/resources/espeak-ng-data
+          # The destination dir exists in the checkout (committed PLACEHOLDER)
+          # — `cp -r src dest` would NEST into it. Copy the contents instead.
+          cp -r "$src/." src-tauri/resources/espeak-ng-data/
+          # Post-copy check at the level the app actually reads
+          # (init_platform_env sets PIPER_ESPEAKNG_DATA_DIRECTORY to the dir
+          # containing espeak-ng-data).
+          test -f src-tauri/resources/espeak-ng-data/ru_dict
 
       - name: Build NSIS installer + updater artifacts
         run: pnpm tauri build

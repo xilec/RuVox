@@ -1,0 +1,121 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+// Mantine notifications/modals and the Tauri updater/process plugins are
+// mocked wholesale: the tests pin our orchestration (which toast when,
+// show-before-update, silent startup), not the plugins themselves.
+vi.mock('@mantine/notifications', () => ({
+  notifications: {
+    show: vi.fn(),
+    update: vi.fn(),
+    hide: vi.fn(),
+  },
+}));
+vi.mock('@mantine/modals', () => ({
+  modals: { openConfirmModal: vi.fn() },
+}));
+vi.mock('@tauri-apps/plugin-updater', () => ({
+  check: vi.fn(),
+}));
+vi.mock('@tauri-apps/plugin-process', () => ({
+  relaunch: vi.fn(),
+}));
+
+import { notifications } from '@mantine/notifications';
+import { modals } from '@mantine/modals';
+import { check } from '@tauri-apps/plugin-updater';
+import { relaunch } from '@tauri-apps/plugin-process';
+import { checkForUpdatesManual, checkForUpdatesOnStartup, UPDATER_ENABLED } from './updater';
+
+const checkMock = vi.mocked(check);
+const showMock = vi.mocked(notifications.show);
+const updateMock = vi.mocked(notifications.update);
+const modalMock = vi.mocked(modals.openConfirmModal);
+const relaunchMock = vi.mocked(relaunch);
+
+function fakeUpdate() {
+  return {
+    version: '9.9.9',
+    downloadAndInstall: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
+describe('checkForUpdatesOnStartup', () => {
+  // jsdom's userAgent has no "Windows" — UPDATER_ENABLED is false here, so
+  // the startup check must be a complete no-op (Linux ships via nix).
+  it('is a no-op off Windows', async () => {
+    expect(UPDATER_ENABLED).toBe(false);
+    await checkForUpdatesOnStartup();
+    expect(checkMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('checkForUpdatesManual', () => {
+  it('reports "no updates" when check returns null', async () => {
+    checkMock.mockResolvedValue(null);
+    await checkForUpdatesManual();
+    expect(showMock).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Обновлений нет', color: 'green' }),
+    );
+    expect(modalMock).not.toHaveBeenCalled();
+  });
+
+  it('opens the confirm modal when an update is available', async () => {
+    checkMock.mockResolvedValue(fakeUpdate() as never);
+    await checkForUpdatesManual();
+    expect(modalMock).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Доступна новая версия 9.9.9' }),
+    );
+  });
+
+  it('shows a red toast when the check fails (manual = not silent)', async () => {
+    checkMock.mockRejectedValue(new Error('network down'));
+    await checkForUpdatesManual();
+    expect(showMock).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Не удалось проверить обновления', color: 'red' }),
+    );
+  });
+});
+
+describe('install flow (confirm → downloadAndInstall → relaunch)', () => {
+  it('shows the progress toast with `show` before any `update`', async () => {
+    const update = fakeUpdate();
+    checkMock.mockResolvedValue(update as never);
+    await checkForUpdatesManual();
+
+    // Simulate the user pressing «Обновить и перезапустить».
+    const onConfirm = modalMock.mock.calls[0][0].onConfirm as () => void;
+    onConfirm();
+    await vi.waitFor(() => expect(relaunchMock).toHaveBeenCalled());
+
+    // Regression pin: Mantine drops `update` for unknown ids, so the first
+    // progress call must be `show` with the stable toast id.
+    expect(showMock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'app-update', loading: true }),
+    );
+    expect(update.downloadAndInstall).toHaveBeenCalled();
+  });
+
+  it('reports install failure via the same toast id', async () => {
+    const update = fakeUpdate();
+    update.downloadAndInstall.mockRejectedValue(new Error('broken pipe'));
+    checkMock.mockResolvedValue(update as never);
+    await checkForUpdatesManual();
+
+    const onConfirm = modalMock.mock.calls[0][0].onConfirm as () => void;
+    onConfirm();
+    await vi.waitFor(() =>
+      expect(updateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'app-update',
+          title: 'Не удалось установить обновление',
+          color: 'red',
+        }),
+      ),
+    );
+    expect(relaunchMock).not.toHaveBeenCalled();
+  });
+});

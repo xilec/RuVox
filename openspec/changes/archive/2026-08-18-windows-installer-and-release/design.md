@@ -132,3 +132,9 @@ implementation time and recorded in the workflow.
   modal with "Обновить и перезапустить". Update UI is gated on Windows
   (`navigator.userAgent`) — Linux ships via nix and has no platform entry
   in `latest.json`.
+- **`bundle.targets: ["nsis"]` intentionally drops Linux bundles** — Linux
+  packaging is nix-only (flake outputs), so `pnpm tauri build` on Linux now
+  produces no bundles. Maintainer-only consequence, noted for visibility.
+- **Tag ↔ version guard**: `release.yml` fails fast when the pushed tag
+  doesn't match `tauri.conf.json`'s `version` — a forgotten version bump
+  would otherwise loop the update prompt on every start.
