@@ -463,6 +463,9 @@ mod tests {
         assert!(matches!(result, Err(TtsError::Spawn(_))));
     }
 
+    // The four tests below spawn `cat`/`tail` — Unix-only binaries — and
+    // are gated accordingly; they compile everywhere but only run on Unix.
+    #[cfg(unix)]
     #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn respawn_exhausts_after_three_attempts_and_emits_fatal() {
         let counter = Arc::new(AtomicUsize::new(0));
@@ -495,6 +498,7 @@ mod tests {
         assert_eq!(counter.load(Ordering::SeqCst), 4);
     }
 
+    #[cfg(unix)]
     #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn respawn_is_single_flight_under_concurrent_died() {
         // Several callers observing `Died` on the same handle must share a
@@ -541,6 +545,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn with_retry_propagates_non_died_error_without_respawn() {
         // A non-`Died` error (here `Timeout`) must be surfaced to the caller
@@ -571,6 +576,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn op_is_not_attempted_while_warming_up() {
         // `tail -f /dev/null` accepts stdin writes but never reads them and

@@ -451,31 +451,8 @@ async fn driver_task(
                     warn!(target: "ttsd", "wait() failed: {e}");
                 }
                 Err(_) => {
-                    // Escalate in stages: SIGTERM gives the Python process a
-                    // chance to run cleanup (flush logs, atexit handlers);
-                    // SIGKILL only if it is still alive after the grace.
-                    warn!(target: "ttsd", "did not exit within 5 s, sending SIGTERM");
-                    if let Some(pid) = child.id() {
-                        // SAFETY: plain signal send. The pid is still ours:
-                        // the timed-out wait() above is cancel-safe and only
-                        // dropped the future, so the child has not been
-                        // reaped — it is alive or a zombie, and a zombie
-                        // holds its pid, so the OS cannot have recycled it.
-                        let _ = unsafe { libc::kill(pid as i32, libc::SIGTERM) };
-                    }
-                    match timeout(Duration::from_secs(2), child.wait()).await {
-                        Ok(Ok(status)) => {
-                            info!(target: "ttsd", "exited after SIGTERM: {status}");
-                        }
-                        Ok(Err(e)) => {
-                            warn!(target: "ttsd", "wait() after SIGTERM failed: {e}");
-                        }
-                        Err(_) => {
-                            warn!(target: "ttsd", "still alive 2 s after SIGTERM, sending SIGKILL");
-                            let _ = child.start_kill();
-                            let _ = child.wait().await;
-                        }
-                    }
+                    warn!(target: "ttsd", "did not exit within 5 s, escalating");
+                    force_kill(&mut child).await;
                 }
             }
             return;
@@ -488,6 +465,44 @@ async fn driver_task(
             return;
         }
     }
+}
+
+/// Forcibly terminate a ttsd child that ignored the clean-shutdown EOF.
+///
+/// Escalates in stages: SIGTERM gives the Python process a chance to run
+/// cleanup (flush logs, atexit handlers); SIGKILL only if it is still
+/// alive after the grace period.
+#[cfg(unix)]
+async fn force_kill(child: &mut Child) {
+    if let Some(pid) = child.id() {
+        // SAFETY: plain signal send. The pid is still ours: the caller's
+        // timed-out wait() is cancel-safe and only dropped the future, so
+        // the child has not been reaped — it is alive or a zombie, and a
+        // zombie holds its pid, so the OS cannot have recycled it.
+        let _ = unsafe { libc::kill(pid as i32, libc::SIGTERM) };
+    }
+    match timeout(Duration::from_secs(2), child.wait()).await {
+        Ok(Ok(status)) => {
+            info!(target: "ttsd", "exited after SIGTERM: {status}");
+        }
+        Ok(Err(e)) => {
+            warn!(target: "ttsd", "wait() after SIGTERM failed: {e}");
+        }
+        Err(_) => {
+            warn!(target: "ttsd", "still alive 2 s after SIGTERM, sending SIGKILL");
+            let _ = child.start_kill();
+            let _ = child.wait().await;
+        }
+    }
+}
+
+/// Windows has no SIGTERM (and no `libc::kill` to send it with) — go
+/// straight to start_kill. ttsd is not shipped on Windows anyway; this
+/// variant exists so the crate compiles there.
+#[cfg(not(unix))]
+async fn force_kill(child: &mut Child) {
+    let _ = child.start_kill();
+    let _ = child.wait().await;
 }
 
 /// Write one request to stdin and read one response line from stdout.

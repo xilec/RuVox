@@ -27,12 +27,34 @@ use std::time::Instant;
 
 use parking_lot::Mutex;
 use serde_json::json;
-use tauri::{AppHandle, Emitter, Runtime};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 use tauri_plugin_mpv::{MpvCommand, MpvConfig, MpvExt};
 use tokio::time::{Duration, interval};
 use tracing::{debug, warn};
 
 pub const WINDOW_LABEL: &str = "main";
+
+/// Resolve the mpv executable per platform.
+///
+/// Windows: prefer the bundled `mpv/mpv.exe` in the app's resource
+/// directory (shipped by the NSIS installer, together with mpv's DLLs),
+/// fall back to a PATH lookup when the bundle is absent (dev runs).
+/// Other platforms: plain `mpv` from PATH (the nix wrapper puts it there).
+#[cfg(windows)]
+fn resolve_mpv_path(resource_dir: &std::path::Path) -> std::path::PathBuf {
+    let bundled = resource_dir.join("mpv").join("mpv.exe");
+    if bundled.exists() {
+        bundled
+    } else {
+        std::path::PathBuf::from("mpv")
+    }
+}
+
+/// Non-Windows resolution — always PATH (see the Windows variant above).
+#[cfg(not(windows))]
+fn resolve_mpv_path(_resource_dir: &std::path::Path) -> std::path::PathBuf {
+    std::path::PathBuf::from("mpv")
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum PlayerError {
@@ -110,8 +132,14 @@ impl<R: Runtime> Player<R> {
     /// `new()` and `ensure_mpv_alive()` (re-init after the plugin destroys
     /// mpv on the main window's CloseRequested event).
     fn init_mpv(app: &AppHandle<R>) -> Result<()> {
+        // resource_dir() failing leaves an empty base, so the bundled path
+        // will not exist and we fall back to PATH — a soft degradation, not
+        // an init error.
+        let resource_dir = app.path().resource_dir().unwrap_or_default();
         let config = MpvConfig {
-            path: "mpv".to_string(),
+            path: resolve_mpv_path(&resource_dir)
+                .to_string_lossy()
+                .into_owned(),
             args: vec![
                 "--no-video".to_string(),
                 "--no-ytdl".to_string(),
@@ -698,6 +726,45 @@ mod tests {
     #[test_case(PlayerError::FileNotFound("/tmp/x.wav".to_string()) => "file not found: /tmp/x.wav"; "file_not_found")]
     fn player_error_display(err: PlayerError) -> String {
         err.to_string()
+    }
+
+    // -- resolve_mpv_path ----------------------------------------------------
+
+    /// No bundled mpv anywhere → PATH lookup on every platform.
+    #[test]
+    fn mpv_path_falls_back_to_path_without_bundle() {
+        let dir = tempfile::TempDir::new().unwrap();
+        assert_eq!(
+            resolve_mpv_path(dir.path()),
+            std::path::PathBuf::from("mpv")
+        );
+    }
+
+    /// The bundled `mpv/mpv.exe` wins — Windows-only by construction (the
+    /// non-Windows resolver is a constant).
+    #[cfg(windows)]
+    #[test]
+    fn mpv_path_prefers_bundled_on_windows() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let bundled = dir.path().join("mpv").join("mpv.exe");
+        std::fs::create_dir_all(bundled.parent().unwrap()).unwrap();
+        std::fs::write(&bundled, b"").unwrap();
+        assert_eq!(resolve_mpv_path(dir.path()), bundled);
+    }
+
+    /// On non-Windows the resolver ignores the resource dir entirely, even
+    /// if something mpv-like sits there (the nix wrapper owns mpv on Linux).
+    #[cfg(not(windows))]
+    #[test]
+    fn mpv_path_ignores_resource_dir_off_windows() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let bundled = dir.path().join("mpv").join("mpv.exe");
+        std::fs::create_dir_all(bundled.parent().unwrap()).unwrap();
+        std::fs::write(&bundled, b"").unwrap();
+        assert_eq!(
+            resolve_mpv_path(dir.path()),
+            std::path::PathBuf::from("mpv")
+        );
     }
 
     // -- is_eof ------------------------------------------------------------
