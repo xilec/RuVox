@@ -18,6 +18,10 @@ quickemu --vm windows-10-22H2.conf   # the .conf quickget generated
   cwd. Free space needed: ~6 GB ISO + ~30 GB disk image per VM.
 - Do this inside `tmp/` (e.g. `tmp/win-vm/`) so nothing lands outside the
   session tree.
+- **If the automated ISO download fails** (anti-bot blocks, HTML stub
+  instead of an ISO): check the local project memory
+  (`~/.agents/memory/RuVox/`) for a known workaround; if there is none,
+  ask the user.
 - WebView2 note: the installer embeds the bootstrapper
   (`webviewInstallMode: embedBootstrapper`), so it works on a machine
   without WebView2 **if online**. Evaluation VMs have no WebView2

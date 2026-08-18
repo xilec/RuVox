@@ -1,6 +1,6 @@
 [package]
 name = "ruvox-tauri"
-version = "0.2.0"
+version = "0.3.0"
 description = "RuVox — desktop app for reading technical texts aloud"
 authors = []
 license = "GPL-3.0-only"
