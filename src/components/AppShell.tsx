@@ -220,8 +220,11 @@ export function AppShell() {
             break;
           }
         }
-      } catch {
-        // No HTML clipboard access — continue with plain text.
+      } catch (err) {
+        // No HTML clipboard access — continue with plain text. Logged so a
+        // genuinely broken read stays diagnosable instead of looking like
+        // "no HTML flavor" forever.
+        console.warn('clipboard HTML read failed:', err);
       }
 
       // Read via tauri-plugin-clipboard-manager: the plugin goes through
@@ -237,7 +240,11 @@ export function AppShell() {
       let clipboardText: string;
       try {
         clipboardText = (await readClipboardText()) ?? '';
-      } catch {
+      } catch (err) {
+        // Windows reports an *empty* clipboard as an error, so the failure
+        // still maps to the neutral hint — but the error is logged to tell
+        // a real read failure apart from an empty clipboard.
+        console.warn('clipboard text read failed:', err);
         clipboardText = '';
       }
 
