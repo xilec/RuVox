@@ -96,13 +96,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      # cache-apt-pkgs after the 2026-08-19 incident: azure.archive.ubuntu.com
+      # throttled package downloads to KB/s, so raw apt-get install of the
+      # webkit/mpv dev tree (~140 packages incl. libav*) hung for 40-60 min
+      # on two consecutive runs. On cache hit this restores .debs from the
+      # Actions cache in seconds and skips the mirror entirely; on miss it
+      # installs and populates the cache. Bump `version` to refresh.
       - name: Install Tauri system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libwebkit2gtk-4.1-dev libsoup-3.0-dev libgtk-3-dev \
-            librsvg2-dev libayatana-appindicator3-dev \
-            libmpv-dev pkg-config build-essential
+        uses: awalsh128/cache-apt-pkgs-action@v1
+        with:
+          packages: libwebkit2gtk-4.1-dev libsoup-3.0-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libmpv-dev pkg-config build-essential
+          version: 1
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
