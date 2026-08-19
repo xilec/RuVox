@@ -16,6 +16,7 @@ import type { EntryFormat, UIConfig } from '../lib/tauri';
 import { formatError } from '../lib/errors';
 import { resolveIngest } from '../lib/ingest';
 import { resolveAddAction } from '../lib/addFlow';
+import { shouldOfferBundleDownload } from '../lib/bundlePrompt';
 import { TextViewer } from './TextViewer';
 import { Player } from './Player';
 import { QueueList } from './QueueList';
@@ -23,6 +24,7 @@ import { useSelectedEntry } from '../stores/selectedEntry';
 import { useSearchQuery } from '../stores/searchQuery';
 import { PreviewDialog } from '../dialogs/PreviewDialog';
 import { SettingsModal } from '../dialogs/Settings';
+import { SileroBundlePrompt } from '../dialogs/SileroBundlePrompt';
 import { IconSearch } from './icons';
 
 export function AppShell() {
@@ -36,8 +38,15 @@ export function AppShell() {
   // flow auto-detected an HTML clipboard flavor, null = use the configured
   // viewer default (#195).
   const [previewFormat, setPreviewFormat] = useState<EntryFormat | null>(null);
+  // Plain flavor carried alongside an auto-detected HTML opening of the
+  // preview dialog: when the markup yields no readable text, synthesis falls
+  // back to it (same rule as the ungated direct path). Null when the dialog
+  // was opened with plain text — an explicit `html` selector choice then
+  // keeps the red error on failed extraction (preview-dialog spec).
+  const [previewPlainFallback, setPreviewPlainFallback] = useState<string | null>(null);
   const [config, setConfig] = useState<UIConfig | null>(null);
   const configLoaded = useRef(false);
+  const [bundlePromptOpen, setBundlePromptOpen] = useState(false);
   const [navWidth, setNavWidth] = useState(280);
   const navResizeRef = useRef<{
     pointerId: number;
@@ -92,6 +101,17 @@ export function AppShell() {
       // sync it to the persisted backend theme on first load so the saved
       // choice survives across launches.
       setColorScheme(cfg.theme);
+      // First-run bundle prompt (ui spec): when the persisted engine is
+      // silero_native but the bundle probe reports it missing, offer the
+      // one-time download. A failed probe is non-fatal — no prompt.
+      commands
+        .getAvailableEngines()
+        .then((availability) => {
+          if (shouldOfferBundleDownload(cfg, availability)) {
+            setBundlePromptOpen(true);
+          }
+        })
+        .catch(() => {});
     }).catch(() => {
       // Config load failure is non-fatal; preview will be skipped
     });
@@ -113,27 +133,36 @@ export function AppShell() {
       if (!rawHtml.trim() && !plain.trim()) return;
       e.preventDefault();
       setPending(true);
-      if (rawHtml.trim()) {
-        void addHtmlEntry(rawHtml, true)
-          .then((added) => {
-            if (added) return undefined;
-            // HTML-only clipboard whose markup yields no readable text
-            // (e.g. pure nav/button chrome): nothing to ingest — skip the
-            // plain fallback, which would submit an empty text and surface
-            // a spurious backend error.
-            if (!plain.trim()) {
-              setPending(false);
-              return undefined;
-            }
-            return doAddEntry(plain, true);
-          })
-          .catch((err) => {
+      // Paste shares the Add-flow decision with the preview gate always off
+      // (the dialog gates the Add button only — preview-dialog spec) and
+      // stays silent on an empty extraction: a passive paste event must not
+      // nag with the empty-clipboard hint, unlike the explicit Add click.
+      const action = resolveAddAction({
+        html: rawHtml,
+        plain,
+        previewEnabled: false,
+        // Unused while the preview gate is off; a constant avoids closing
+        // over `config` in this long-lived listener.
+        defaultFormat: 'plain',
+      });
+      switch (action.kind) {
+        case 'empty':
+          setPending(false);
+          return;
+        case 'direct-html':
+          void runDirectHtml(action.html, action.plainFallback, false).catch((err) => {
             notifications.show({ title: 'Ошибка', message: formatError(err), color: 'red' });
             setPending(false);
           });
-        return;
+          return;
+        case 'direct-plain':
+          void doAddEntry(action.text, true);
+          return;
+        case 'preview':
+          // Unreachable: previewEnabled is hard-coded false above.
+          setPending(false);
+          return;
       }
-      void doAddEntry(plain, true);
     }
     window.addEventListener('paste', handlePaste);
     return () => window.removeEventListener('paste', handlePaste);
@@ -141,6 +170,36 @@ export function AppShell() {
     // state-independent (they only touch commands, notifications, stores).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pending]);
+
+  // Neutral hint for an explicit Add click that found nothing ingestible
+  // (#194: an empty clipboard must not look like an app failure). Shared by
+  // the `empty` and the no-plain-fallback `direct-html` arms.
+  function showEmptyClipboardHint() {
+    notifications.show({
+      title: 'Буфер обмена пуст',
+      message: 'Скопируйте текст и нажмите Add ещё раз',
+      color: 'blue',
+    });
+  }
+
+  // Shared direct-HTML executor for the Add button and the paste listener.
+  // HTML whose markup yields no readable text (e.g. pure nav/button chrome)
+  // falls back to the plain flavor; with no plain flavor there is nothing
+  // to ingest — `notifyOnEmpty` decides between the explicit-click hint and
+  // a silent no-op (paste stays silent by design).
+  async function runDirectHtml(
+    html: string,
+    plainFallback: string | null,
+    notifyOnEmpty: boolean,
+  ): Promise<void> {
+    if (await addHtmlEntry(html, true)) return;
+    if (plainFallback) {
+      await doAddEntry(plainFallback, true);
+      return;
+    }
+    if (notifyOnEmpty) showEmptyClipboardHint();
+    setPending(false);
+  }
 
   async function addEntry() {
     if (pending) return;
@@ -161,8 +220,11 @@ export function AppShell() {
             break;
           }
         }
-      } catch {
-        // No HTML clipboard access — continue with plain text.
+      } catch (err) {
+        // No HTML clipboard access — continue with plain text. Logged so a
+        // genuinely broken read stays diagnosable instead of looking like
+        // "no HTML flavor" forever.
+        console.warn('clipboard HTML read failed:', err);
       }
 
       // Read via tauri-plugin-clipboard-manager: the plugin goes through
@@ -178,7 +240,11 @@ export function AppShell() {
       let clipboardText: string;
       try {
         clipboardText = (await readClipboardText()) ?? '';
-      } catch {
+      } catch (err) {
+        // Windows reports an *empty* clipboard as an error, so the failure
+        // still maps to the neutral hint — but the error is logged to tell
+        // a real read failure apart from an empty clipboard.
+        console.warn('clipboard text read failed:', err);
         clipboardText = '';
       }
 
@@ -191,11 +257,7 @@ export function AppShell() {
 
       switch (action.kind) {
         case 'empty':
-          notifications.show({
-            title: 'Буфер обмена пуст',
-            message: 'Скопируйте текст и нажмите Add ещё раз',
-            color: 'blue',
-          });
+          showEmptyClipboardHint();
           setPending(false);
           return;
         case 'preview':
@@ -204,26 +266,12 @@ export function AppShell() {
           // instead of being ingested directly behind the user's back.
           setPreviewText(action.text);
           setPreviewFormat(action.format);
+          setPreviewPlainFallback(action.plainFallback);
           setPreviewOpen(true);
           setPending(false);
           return;
         case 'direct-html':
-          // HTML-only clipboard whose markup yields no readable text
-          // (e.g. pure nav/button chrome): nothing to ingest — skip the
-          // plain fallback, which would submit an empty text and surface
-          // a spurious backend error. The user still gets the neutral
-          // empty-clipboard hint rather than a silent no-op.
-          if (await addHtmlEntry(action.html, true)) return;
-          if (!action.plainFallback) {
-            notifications.show({
-              title: 'Буфер обмена пуст',
-              message: 'Скопируйте текст и нажмите Add ещё раз',
-              color: 'blue',
-            });
-            setPending(false);
-            return;
-          }
-          await doAddEntry(action.plainFallback, true);
+          await runDirectHtml(action.html, action.plainFallback, true);
           return;
         case 'direct-plain':
           await doAddEntry(action.text, true);
@@ -292,6 +340,8 @@ export function AppShell() {
   ) {
     setPreviewOpen(false);
     setPreviewFormat(null);
+    const plainFallback = previewPlainFallback;
+    setPreviewPlainFallback(null);
     if (skipShortTexts && config) {
       // Persist user preference: disable preview dialog
       commands.updateConfig({ preview_dialog_enabled: false }).catch(() => {});
@@ -305,6 +355,14 @@ export function AppShell() {
     const action = resolveIngest(finalText || previewText, sourceFormat);
     switch (action.kind) {
       case 'reject':
+        // Auto-detected HTML flavor (the dialog itself opened with the raw
+        // markup and the plain flavor was carried along) falls back to the
+        // plain text, exactly like the ungated direct path. With no carried
+        // fallback the `html` selection was explicit — keep the red error.
+        if (sourceFormat === 'html' && plainFallback) {
+          void doAddEntry(plainFallback, playWhenReady);
+          return;
+        }
         notifications.show({
           title: 'Ошибка',
           message: 'Не удалось извлечь текст из HTML',
@@ -324,6 +382,7 @@ export function AppShell() {
   function handlePreviewCancel() {
     setPreviewOpen(false);
     setPreviewFormat(null);
+    setPreviewPlainFallback(null);
     setPending(false);
   }
 
@@ -343,6 +402,11 @@ export function AppShell() {
         onSaved={() => {
           commands.getConfig().then(setConfig).catch(() => {});
         }}
+      />
+
+      <SileroBundlePrompt
+        opened={bundlePromptOpen}
+        onClose={() => setBundlePromptOpen(false)}
       />
 
       <MantineAppShell.Navbar p="md">

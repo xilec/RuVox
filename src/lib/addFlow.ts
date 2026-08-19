@@ -7,7 +7,7 @@ import type { EntryFormat } from './tauri';
  */
 export type AddAction =
   | { kind: 'empty' }
-  | { kind: 'preview'; text: string; format: EntryFormat }
+  | { kind: 'preview'; text: string; format: EntryFormat; plainFallback: string | null }
   | { kind: 'direct-html'; html: string; plainFallback: string | null }
   | { kind: 'direct-plain'; text: string };
 
@@ -21,6 +21,12 @@ export type AddAction =
  * With the preview gate enabled, HTML content opens the dialog too — it
  * must not bypass the gate (on WebView2 `navigator.clipboard.read()`
  * succeeds, so without this the dialog would never appear on Windows).
+ * The `preview` variant also carries `plainFallback` when the dialog is
+ * opened from an auto-detected HTML flavor and a plain flavor exists:
+ * markup that yields no readable text then falls back to the plain text,
+ * exactly like the ungated direct path. An explicit `html` selector choice
+ * in a dialog opened with plain text carries no fallback (`null`) and a
+ * failed extraction stays a red error (preview-dialog spec).
  */
 export function resolveAddAction(input: {
   html: string | null;
@@ -32,9 +38,11 @@ export function resolveAddAction(input: {
   const plain = input.plain.trim() ? input.plain : null;
 
   if (input.previewEnabled) {
-    if (html !== null) return { kind: 'preview', text: html, format: 'html' };
+    if (html !== null) {
+      return { kind: 'preview', text: html, format: 'html', plainFallback: plain };
+    }
     if (plain !== null) {
-      return { kind: 'preview', text: plain, format: input.defaultFormat };
+      return { kind: 'preview', text: plain, format: input.defaultFormat, plainFallback: null };
     }
     return { kind: 'empty' };
   }
