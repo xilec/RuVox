@@ -15,6 +15,7 @@ import { commands, toEntryFormat } from '../lib/tauri';
 import type { EntryFormat, UIConfig } from '../lib/tauri';
 import { formatError } from '../lib/errors';
 import { resolveIngest } from '../lib/ingest';
+import { resolveAddAction } from '../lib/addFlow';
 import { TextViewer } from './TextViewer';
 import { Player } from './Player';
 import { QueueList } from './QueueList';
@@ -31,6 +32,10 @@ export function AppShell() {
   const [settingsOpened, setSettingsOpened] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewText, setPreviewText] = useState('');
+  // Per-opening format override for the preview dialog: 'html' when the Add
+  // flow auto-detected an HTML clipboard flavor, null = use the configured
+  // viewer default (#195).
+  const [previewFormat, setPreviewFormat] = useState<EntryFormat | null>(null);
   const [config, setConfig] = useState<UIConfig | null>(null);
   const configLoaded = useRef(false);
   const [navWidth, setNavWidth] = useState(280);
@@ -144,13 +149,15 @@ export function AppShell() {
     try {
       // Best-effort HTML detection: navigator.clipboard.read() may be
       // unavailable or blocked in the WKWebView — any failure just falls
-      // through to the plain-text path below.
+      // through to the plain-text path below. On WebView2 (Windows) the
+      // read succeeds after a one-time permission grant.
+      let clipboardHtml: string | null = null;
       try {
         const items = await navigator.clipboard.read();
         for (const item of items) {
           if (item.types.includes('text/html')) {
             const rawHtml = await (await item.getType('text/html')).text();
-            if (rawHtml.trim() && (await addHtmlEntry(rawHtml, true))) return;
+            if (rawHtml.trim()) clipboardHtml = rawHtml;
             break;
           }
         }
@@ -174,26 +181,60 @@ export function AppShell() {
       } catch {
         clipboardText = '';
       }
-      if (!clipboardText.trim()) {
-        notifications.show({
-          title: 'Буфер обмена пуст',
-          message: 'Скопируйте текст и нажмите Add ещё раз',
-          color: 'blue',
-        });
-        setPending(false);
-        return;
+
+      const action = resolveAddAction({
+        html: clipboardHtml,
+        plain: clipboardText,
+        previewEnabled: config?.preview_dialog_enabled ?? false,
+        defaultFormat: toEntryFormat(config?.text_format),
+      });
+
+      switch (action.kind) {
+        case 'empty':
+          notifications.show({
+            title: 'Буфер обмена пуст',
+            message: 'Скопируйте текст и нажмите Add ещё раз',
+            color: 'blue',
+          });
+          setPending(false);
+          return;
+        case 'preview':
+          // The preview gate applies to the HTML flavor too (#195): the raw
+          // markup goes into the dialog with the selector pre-set to html,
+          // instead of being ingested directly behind the user's back.
+          setPreviewText(action.text);
+          setPreviewFormat(action.format);
+          setPreviewOpen(true);
+          setPending(false);
+          return;
+        case 'direct-html':
+          // HTML-only clipboard whose markup yields no readable text
+          // (e.g. pure nav/button chrome): nothing to ingest — skip the
+          // plain fallback, which would submit an empty text and surface
+          // a spurious backend error. The user still gets the neutral
+          // empty-clipboard hint rather than a silent no-op.
+          if (await addHtmlEntry(action.html, true)) return;
+          if (!action.plainFallback) {
+            notifications.show({
+              title: 'Буфер обмена пуст',
+              message: 'Скопируйте текст и нажмите Add ещё раз',
+              color: 'blue',
+            });
+            setPending(false);
+            return;
+          }
+          await doAddEntry(action.plainFallback, true);
+          return;
+        case 'direct-plain':
+          await doAddEntry(action.text, true);
+          return;
+        default: {
+          // Exhaustiveness guard: a new AddAction variant must break the
+          // build here instead of leaving the Add button stuck in pending.
+          const exhaustive: never = action;
+          throw new Error(`unknown add action: ${JSON.stringify(exhaustive)}`);
+        }
       }
-
-      const previewEnabled = config?.preview_dialog_enabled ?? false;
-
-      if (previewEnabled) {
-        setPreviewText(clipboardText);
-        setPreviewOpen(true);
-        setPending(false);
-        return;
-      }
-
-      await doAddEntry(clipboardText, true);
     } catch (err) {
       const message = formatError(err);
       notifications.show({ title: 'Ошибка', message, color: 'red' });
@@ -250,6 +291,7 @@ export function AppShell() {
     sourceFormat: EntryFormat,
   ) {
     setPreviewOpen(false);
+    setPreviewFormat(null);
     if (skipShortTexts && config) {
       // Persist user preference: disable preview dialog
       commands.updateConfig({ preview_dialog_enabled: false }).catch(() => {});
@@ -281,6 +323,7 @@ export function AppShell() {
 
   function handlePreviewCancel() {
     setPreviewOpen(false);
+    setPreviewFormat(null);
     setPending(false);
   }
 
@@ -394,7 +437,7 @@ export function AppShell() {
       <PreviewDialog
         opened={previewOpen}
         text={previewText}
-        defaultFormat={toEntryFormat(config?.text_format)}
+        defaultFormat={previewFormat ?? toEntryFormat(config?.text_format)}
         onSynthesize={handlePreviewSynthesize}
         onCancel={handlePreviewCancel}
       />
