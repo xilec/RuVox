@@ -1,95 +1,95 @@
 # <img src="docs/images/logo.svg" width="40" align="top" alt=""/> RuVox
 
-[Русская версия](./README.ru.md)
+[English version](./README.en.md)
 
 [![CI](https://github.com/xilec/RuVox/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/xilec/RuVox/actions/workflows/ci.yml)
 ![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-green)
 
-A desktop application for narrating technical Russian-language texts.
+Desktop-приложение для озвучивания технических текстов на русском языке.
 
-Normalizes English terms, abbreviations, code, numbers, and URLs, then pipes the result into one of three TTS engines: Silero TTS v5 in-process on ONNX Runtime (the [`silero-native`](silero-native/) crate, default; model bundle downloaded on demand), [Piper](https://github.com/rhasspy/piper) (in-process via `piper-rs`, zero-dependency fallback), or, optionally, [Silero TTS](https://github.com/snakers4/silero-models) out-of-process via the `ttsd` Python sidecar (kept as a fallback). Unlike a bare TTS, RuVox knows how to read `getUserData()` as «гет юзер дата», `API` as «эй пи ай», and `/api/v2/users` as a path rather than letter by letter.
+Нормализует английские термины, аббревиатуры, код, числа, URL и передаёт результат в один из трёх TTS-движков: Silero TTS v5 in-process на ONNX Runtime (крейт [`silero-native`](silero-native/), движок по умолчанию, бандл модели скачивается по запросу), [Piper](https://github.com/rhasspy/piper) (in-process, через `piper-rs`, запасной вариант без внешних зависимостей) или, опционально, [Silero TTS](https://github.com/snakers4/silero-models) out-of-process через Python-сайдкар `ttsd` (оставлен как fallback). В отличие от голого TTS, RuVox умеет читать `getUserData()` как «гет юзер дата», `API` как «эй пи ай», `/api/v2/users` как путь, а не по буквам.
 
-All synthesis runs locally on your machine — no cloud TTS, nothing is sent anywhere. The network is used only to download voice models on demand, once per voice.
+Синтез полностью локальный — никаких облачных TTS, текст никуда не отправляется. Сеть используется только для одноразового скачивания голосовых моделей по запросу.
 
-![RuVox screenshot](docs/images/screenshot.png)
+![Скриншот RuVox](docs/images/screenshot.png)
 
-## Stack
+## Стек
 
-| Layer | Technology |
-|-------|------------|
-| Shell | [Tauri 2](https://tauri.app/) (Rust + native webview) |
+| Слой | Технология |
+|------|------------|
+| Shell | [Tauri 2](https://tauri.app/) (Rust + нативный webview) |
 | Frontend | React 18 + TypeScript 5 + [Mantine 8](https://mantine.dev/) |
-| Backend | Rust (normalization pipeline, storage, TTS manager) |
-| TTS | Silero v5 native (in-process, ONNX Runtime, [`silero-native`](silero-native/) crate, default); Piper (in-process, `piper-rs` + `onnxruntime`, fallback); Silero via `ttsd` (optional Python 3.12 subprocess, fallback) |
-| Audio | `tauri-plugin-mpv` (libmpv with `scaletempo2`) |
+| Backend | Rust (pipeline нормализации, storage, TTS-менеджер) |
+| TTS | Silero v5 нативный (in-process, ONNX Runtime, крейт [`silero-native`](silero-native/), по умолчанию); Piper (in-process, `piper-rs` + `onnxruntime`, fallback); Silero через `ttsd` (опциональный Python 3.12 subprocess, fallback) |
+| Аудио | `tauri-plugin-mpv` (libmpv с `scaletempo2`) |
 
-## Features
+## Возможности
 
-- **Normalization** — English (camelCase / snake_case), abbreviations, numbers, dates, URLs, email, code.
-- **Markdown + HTML** — rendered and narrated while preserving meaning.
-- **Mermaid diagrams** — visualized in the UI; replaced with a «тут мермэйд диаграмма» marker for TTS.
-- **Word highlight** — synchronous highlighting of the currently narrated word during playback.
-- **Preview dialog** — preview the normalized text before synthesis.
-- **System tray** — close-to-tray, background mode.
+- **Нормализация** — английский (camelCase/snake_case), аббревиатуры, числа, даты, URL, email, код.
+- **Markdown + HTML** — рендер и озвучивание с сохранением смысла.
+- **Mermaid-диаграммы** — визуализация в UI; для TTS заменяются маркером «тут мермэйд диаграмма».
+- **Подсветка слов** — синхронная подсветка читаемого слова в тексте во время воспроизведения.
+- **Preview-диалог** — предпросмотр нормализованного текста до синтеза.
+- **Системный трей** — close-to-tray, фоновый режим.
 
-## Requirements
+## Требования
 
-- **OS:** Linux (X11 or Wayland).
-- **Nix:** recommended — the entire toolchain (Rust, Node, Python, Tauri deps) is built from `flake.nix` (dev shell lives in `nix/devshell.nix`).
-- **Without Nix:** Linux distribution that ships `webkit2gtk-4.1` (Ubuntu 24.04+, Debian 13+, Fedora 40+, Arch). Detailed step-by-step build guide: [docs/install.md](docs/install.md). Python 3.12 + `uv` are only required for the Python Silero engine (the `ttsd` sidecar) — Piper and the native Silero engine need neither.
+- **ОС:** Linux (X11 или Wayland).
+- **Nix:** рекомендуется — всё окружение (Rust, Node, Python, Tauri-deps) собирается из `flake.nix` (dev-shell живёт в `nix/devshell.nix`).
+- **Без Nix:** дистрибутив Linux, в котором есть `webkit2gtk-4.1` (Ubuntu 24.04+, Debian 13+, Fedora 40+, Arch). Подробная пошаговая инструкция по сборке: [docs/install.md](docs/install.md) (на английском). Python 3.12 + `uv` нужны только для Python-движка Silero (сайдкар `ttsd`) — Piper и нативный движок Silero в них не нуждаются.
 
-## Dev environment
+## Dev-окружение
 
 ```bash
-# Interactive shell
+# Интерактивная оболочка
 nix develop
 pnpm install
 pnpm tauri dev
 
-# Or run a single command without entering the shell
+# Или одну команду без входа в оболочку
 nix develop -c pnpm install
 nix develop -c pnpm tauri dev
 ```
 
-All commands in the docs assume execution inside `nix develop` (or via `nix develop -c ...`).
+Все команды в документации подразумевают запуск внутри `nix develop` (либо через `nix develop -c ...`).
 
-## Production build
+## Сборка production-бинаря
 
 ```bash
-# Default (slim) — Piper + native Silero, no Python/torch in the closure.
+# По умолчанию (slim) — Piper + нативный Silero, без Python/torch в closure.
 nix build .#ruvox
 ./result/bin/ruvox
 
-# Opt-in (full) — additionally bundles the ttsd sidecar, so the Python
-# Silero engine is also available.
+# Опционально (full) — дополнительно встраивает сайдкар ttsd, чтобы был
+# доступен Python-движок Silero.
 nix build .#ruvox-with-silero
 ./result/bin/ruvox
 ```
 
-Both variants build the Tauri release binary and wrap it via `wrapProgram` (runtime `LD_LIBRARY_PATH` + `GIO_EXTRA_MODULES`) with `mpv` in `PATH`. `.#ruvox-with-silero` additionally puts the `ttsd` (Silero Python subprocess) binary in `PATH`; `.#ruvox` does not, and the Settings dialog greys the Python Silero engine out at runtime. The native Silero engine works in both variants — its ~230 MB ONNX model bundle is downloaded on demand from Settings.
+Оба варианта собирают release-бинарь Tauri и оборачивают его через `wrapProgram` (runtime `LD_LIBRARY_PATH` + `GIO_EXTRA_MODULES`); `mpv` в обоих случаях попадает в `PATH`. Вариант `.#ruvox-with-silero` дополнительно кладёт в `PATH` бинарь `ttsd` (Silero Python subprocess). Slim-вариант его не содержит — на runtime в Settings опция Python-движка Silero окрашена серым. Нативный движок Silero работает в обоих вариантах — его бандл ONNX-моделей (~230 МБ) скачивается по запросу из Settings.
 
-> **First `nix build` run:** the `frontend` derivation uses `pnpm.fetchDeps` with `lib.fakeHash` — Nix will fail with a hash mismatch and print the real hash; substitute it into `flake.nix` and re-run the build. This is the standard pnpm2nix procedure.
+> **Первый запуск `nix build`:** derivation `frontend` использует `pnpm.fetchDeps` с `lib.fakeHash` — Nix упадёт с hash mismatch, напишет реальный hash; его нужно подставить в `flake.nix` и повторить build. Это стандартная процедура pnpm2nix.
 
-## Tests
+## Тесты
 
 ```bash
 pnpm typecheck                                                  # TypeScript
-cargo test --manifest-path src-tauri/Cargo.toml                 # Rust (incl. pipeline golden tests)
-cargo test --manifest-path src-tauri/Cargo.toml --test golden   # golden tests only
-cargo test --manifest-path silero-native/Cargo.toml             # native Silero engine (bundle-gated tests skip without SILERO_NATIVE_BUNDLE)
+cargo test --manifest-path src-tauri/Cargo.toml                 # Rust (включая golden-тесты pipeline)
+cargo test --manifest-path src-tauri/Cargo.toml --test golden   # только golden-тесты
+cargo test --manifest-path silero-native/Cargo.toml             # нативный движок Silero (bundle-gated тесты скипаются без SILERO_NATIVE_BUNDLE)
 cd ttsd && uv run python -m pytest                              # Python subprocess
 ```
 
-## Documentation
+## Документация
 
-| File | Description |
-|------|-------------|
-| [AGENTS.md](AGENTS.md) | Development rules, project structure, conventions |
-| [docs/install.md](docs/install.md) | Building from source on Linux without Nix (Ubuntu 24.04+) |
-| [silero-native/](silero-native/) | Native Silero v5 engine crate (ONNX Runtime): architecture, bundle export, parity tests |
-| [openspec/specs/](openspec/specs/) | Behavior specs (OpenSpec): IPC, storage, pipeline, UI, playback |
-| [CHANGELOG.md](CHANGELOG.md) | Change history |
+| Файл | Описание |
+|------|----------|
+| [AGENTS.md](AGENTS.md) | Правила разработки, структура проекта, соглашения |
+| [docs/install.md](docs/install.md) | Сборка из исходников на Linux без Nix (Ubuntu 24.04+, на английском) |
+| [silero-native/](silero-native/) | Крейт нативного движка Silero v5 (ONNX Runtime): архитектура, экспорт бандла, parity-тесты (на английском) |
+| [openspec/specs/](openspec/specs/) | Спецификации поведения (OpenSpec): IPC, хранилище, pipeline, UI, плеер |
+| [CHANGELOG.md](CHANGELOG.md) | Хронология изменений |
 
-## License
+## Лицензия
 
-GPL-3.0 — see [LICENSE.md](LICENSE.md).
+GPL-3.0 — см. [LICENSE.md](LICENSE.md).

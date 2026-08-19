@@ -2,6 +2,13 @@
 
 Guide to contributing to RuVox.
 
+## Language
+
+Development happens in English: write issues, PRs, and commit messages in English
+(this also feeds the auto-generated `CHANGELOG.md`). The user-facing `README.md`
+is Russian with an English mirror (`README.en.md`); the repository short
+description is Russian. Full policy: [Repository language policy](../AGENTS.md#repository-language-policy).
+
 ## Ways to help
 
 1. **Extending dictionaries** — adding IT terms, abbreviations, operators.

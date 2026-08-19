@@ -14,9 +14,9 @@ Craft rules (layout, test quality, duplication, idiom, correctness) live in
 
 - Code (identifiers, comments) is in English. User-facing strings (UI,
   notifications, logs visible to the user) are in Russian.
-- Repo documentation (`docs/`, `README.md`, `AGENTS.md`, GitHub issues/PRs, code
-  comments) is in English. `README.ru.md` is the only translated artifact and
-  must be updated in the same PR as `README.md`.
+- Dev-facing repo docs (`docs/`, `AGENTS.md`, GitHub issues/PRs, code comments)
+  are in English. The user-facing `README.md` is Russian (primary); `README.en.md`
+  is its English mirror and must be updated in the same PR as `README.md`.
 - No emoji in code or commit messages.
 - Commit format: `<type>(<module>): <short desc>`, type ∈ {feat, fix, chore,
   refactor, docs, test, build}. Subject and body in English. No AI-assistant

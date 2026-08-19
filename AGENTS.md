@@ -145,6 +145,25 @@ The load-bearing summary: code and comments in English, user-facing UI strings i
 
 When a CI step, script flag, or workaround exists because of a specific incident, leave a comment explaining why it is load-bearing (see the slim/full gate in `.github/workflows/ci.yml`, the `shellHook` comments in `nix/devshell.nix`).
 
+## Repository language policy
+
+RuVox targets Russian-speaking end users but is developed in English. The split is
+by **audience**, not by file type:
+
+- **User-facing entry (Russian, primary):** the repository short description and
+  `README.md` (Russian). `README.en.md` is the English mirror.
+- **Developer-facing (English, canonical):** code, comments, issues, PRs, commit
+  messages, `CHANGELOG.md`, and release notes. `CHANGELOG.md` is generated from
+  PRs, so PR/commit titles **must stay in English** to keep it coherent.
+
+Translation between the two is cheap (LLMs), so there is no obligation to
+localize deep docs by hand. If the audience grows, user docs move to a dedicated
+site; the repo stays English-canonical for developers.
+
+The authoritative hard rule lives in
+[ai/rules/conventions.md](ai/rules/conventions.md#language). When you edit
+`README.md`, regenerate `README.en.md` from it — do not hand-maintain both.
+
 ## Tests
 
 ```bash
