@@ -28,11 +28,11 @@
 - [x] Delta specs: `ipc-commands` (synthesis voice selection by active
       engine; Piper auto-download retry), `ui` (first-run bundle prompt)
 - [x] `openspec validate` green
-- [ ] Verify change vs implementation, then archive
+- [x] Verify change vs implementation, then archive
 
 ## Gates
 
-- [ ] `just test` green (Rust + TS + Python)
-- [ ] `just lint` green
-- [ ] ruvox-reviewer pass over the branch diff
-- [ ] Manual VM pass is tracked in the epic plan (task F), not here
+- [x] `just test` green (Rust + TS + Python)
+- [x] `just lint` green
+- [x] ruvox-reviewer pass over the branch diff
+- [x] Manual VM pass is tracked in the epic plan (task F), not here
