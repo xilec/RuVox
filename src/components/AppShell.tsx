@@ -133,27 +133,36 @@ export function AppShell() {
       if (!rawHtml.trim() && !plain.trim()) return;
       e.preventDefault();
       setPending(true);
-      if (rawHtml.trim()) {
-        void addHtmlEntry(rawHtml, true)
-          .then((added) => {
-            if (added) return undefined;
-            // HTML-only clipboard whose markup yields no readable text
-            // (e.g. pure nav/button chrome): nothing to ingest — skip the
-            // plain fallback, which would submit an empty text and surface
-            // a spurious backend error.
-            if (!plain.trim()) {
-              setPending(false);
-              return undefined;
-            }
-            return doAddEntry(plain, true);
-          })
-          .catch((err) => {
+      // Paste shares the Add-flow decision with the preview gate always off
+      // (the dialog gates the Add button only — preview-dialog spec) and
+      // stays silent on an empty extraction: a passive paste event must not
+      // nag with the empty-clipboard hint, unlike the explicit Add click.
+      const action = resolveAddAction({
+        html: rawHtml,
+        plain,
+        previewEnabled: false,
+        // Unused while the preview gate is off; a constant avoids closing
+        // over `config` in this long-lived listener.
+        defaultFormat: 'plain',
+      });
+      switch (action.kind) {
+        case 'empty':
+          setPending(false);
+          return;
+        case 'direct-html':
+          void runDirectHtml(action.html, action.plainFallback, false).catch((err) => {
             notifications.show({ title: 'Ошибка', message: formatError(err), color: 'red' });
             setPending(false);
           });
-        return;
+          return;
+        case 'direct-plain':
+          void doAddEntry(action.text, true);
+          return;
+        case 'preview':
+          // Unreachable: previewEnabled is hard-coded false above.
+          setPending(false);
+          return;
       }
-      void doAddEntry(plain, true);
     }
     window.addEventListener('paste', handlePaste);
     return () => window.removeEventListener('paste', handlePaste);
@@ -161,6 +170,36 @@ export function AppShell() {
     // state-independent (they only touch commands, notifications, stores).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pending]);
+
+  // Neutral hint for an explicit Add click that found nothing ingestible
+  // (#194: an empty clipboard must not look like an app failure). Shared by
+  // the `empty` and the no-plain-fallback `direct-html` arms.
+  function showEmptyClipboardHint() {
+    notifications.show({
+      title: 'Буфер обмена пуст',
+      message: 'Скопируйте текст и нажмите Add ещё раз',
+      color: 'blue',
+    });
+  }
+
+  // Shared direct-HTML executor for the Add button and the paste listener.
+  // HTML whose markup yields no readable text (e.g. pure nav/button chrome)
+  // falls back to the plain flavor; with no plain flavor there is nothing
+  // to ingest — `notifyOnEmpty` decides between the explicit-click hint and
+  // a silent no-op (paste stays silent by design).
+  async function runDirectHtml(
+    html: string,
+    plainFallback: string | null,
+    notifyOnEmpty: boolean,
+  ): Promise<void> {
+    if (await addHtmlEntry(html, true)) return;
+    if (plainFallback) {
+      await doAddEntry(plainFallback, true);
+      return;
+    }
+    if (notifyOnEmpty) showEmptyClipboardHint();
+    setPending(false);
+  }
 
   async function addEntry() {
     if (pending) return;
@@ -211,11 +250,7 @@ export function AppShell() {
 
       switch (action.kind) {
         case 'empty':
-          notifications.show({
-            title: 'Буфер обмена пуст',
-            message: 'Скопируйте текст и нажмите Add ещё раз',
-            color: 'blue',
-          });
+          showEmptyClipboardHint();
           setPending(false);
           return;
         case 'preview':
@@ -229,22 +264,7 @@ export function AppShell() {
           setPending(false);
           return;
         case 'direct-html':
-          // HTML-only clipboard whose markup yields no readable text
-          // (e.g. pure nav/button chrome): nothing to ingest — skip the
-          // plain fallback, which would submit an empty text and surface
-          // a spurious backend error. The user still gets the neutral
-          // empty-clipboard hint rather than a silent no-op.
-          if (await addHtmlEntry(action.html, true)) return;
-          if (!action.plainFallback) {
-            notifications.show({
-              title: 'Буфер обмена пуст',
-              message: 'Скопируйте текст и нажмите Add ещё раз',
-              color: 'blue',
-            });
-            setPending(false);
-            return;
-          }
-          await doAddEntry(action.plainFallback, true);
+          await runDirectHtml(action.html, action.plainFallback, true);
           return;
         case 'direct-plain':
           await doAddEntry(action.text, true);
