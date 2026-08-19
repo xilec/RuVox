@@ -24,7 +24,7 @@ pub enum StorageError {
     Json(#[from] serde_json::Error),
     #[error("entry not found: {0}")]
     NotFound(EntryId),
-    #[error("cache dir unavailable: dirs::cache_dir() returned None")]
+    #[error("per-user data dir unavailable (dirs resolution returned None)")]
     NoCacheDir,
 }
 
@@ -52,11 +52,10 @@ pub struct StorageService {
 }
 
 impl StorageService {
-    /// Construct using the default cache dir (`~/.cache/ruvox/`).
+    /// Construct using the default per-user data root (resolved per-OS by
+    /// [`crate::paths::storage_root`], e.g. `~/.cache/ruvox/` on Linux).
     pub fn new() -> Result<Self> {
-        let cache_dir = dirs::cache_dir()
-            .ok_or(StorageError::NoCacheDir)?
-            .join("ruvox");
+        let cache_dir = crate::paths::storage_root().ok_or(StorageError::NoCacheDir)?;
         Self::with_cache_dir(cache_dir)
     }
 

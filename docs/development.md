@@ -149,9 +149,11 @@ nix build .#ruvox
 
 In debug builds Tauri's webview enables DevTools. For prod builds you have to either explicitly allow them in `tauri.conf.json` or build with the `devtools` feature.
 
-### Reading `~/.cache/ruvox/`
+### Reading the data directory
 
-The storage cache lives in `~/.cache/ruvox/`:
+The storage cache lives in `~/.cache/ruvox/` on Linux (on Windows:
+`%LOCALAPPDATA%\com.ruvox.app\` — the bundle identifier dir, so the NSIS
+uninstaller's "Delete the application data" checkbox can remove it):
 - `history.json` — list of `TextEntry`. You can open it manually.
 - `audio/{uuid}.opus` — Ogg-Opus audio (32 kbps VOIP, mono). Plays in any modern player (mpv, VLC, browsers, ...).
 - `audio/{uuid}.timestamps.json` — word timings.
