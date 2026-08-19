@@ -55,6 +55,12 @@ tauri-plugin-mpv = "0.5"
 # tauri.conf.json. tauri-plugin-process provides relaunch() after install.
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+# tauri-plugin-log: file logging (LogDir) for support diagnostics. The
+# `tracing` feature bridges our existing tracing::{info,warn,error} call
+# sites into the plugin — without a subscriber they were silent no-ops
+# everywhere (#202).
+tauri-plugin-log = { version = "2", features = ["tracing"] }
+log = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }

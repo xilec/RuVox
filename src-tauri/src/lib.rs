@@ -453,10 +453,35 @@ pub fn init_platform_env() {
 #[cfg(not(windows))]
 pub fn init_platform_env() {}
 
+/// Diagnostic logging: LogDir always, Stdout in debug builds (#202).
+/// `RUST_LOG` overrides the level (level names only, default `info`).
+fn logging_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
+
+    let level = std::env::var("RUST_LOG")
+        .ok()
+        .and_then(|v| v.parse::<log::LevelFilter>().ok())
+        .unwrap_or(log::LevelFilter::Info);
+
+    let mut targets = vec![Target::new(TargetKind::LogDir { file_name: None })];
+    if cfg!(debug_assertions) {
+        targets.push(Target::new(TargetKind::Stdout));
+    }
+
+    tauri_plugin_log::Builder::new()
+        .targets(targets)
+        .rotation_strategy(RotationStrategy::KeepSome(4))
+        .max_file_size(5 * 1024 * 1024)
+        .level(level)
+        .build()
+}
+
 pub fn run() {
     #[cfg(unix)]
     reap_orphan_mpv();
     tauri::Builder::default()
+        // Registered first so the other plugins' init records are captured.
+        .plugin(logging_plugin())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_http::init())
