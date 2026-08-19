@@ -213,8 +213,14 @@ controls how the text is interpreted when "Синтезировать" is presse
   extracted on the frontend (`sanitizeHtml` + `extractTextForTts`) — and
   the entry SHALL be created with `format: "html"`, the extracted text as
   `original_text`, and the sanitized markup as `html_source`. If extraction
-  yields no readable text, the system SHALL reject ingestion with a red
-  error notification and create no entry.
+  yields no readable text, the outcome depends on how the `html` selection
+  came about:
+  - the dialog was opened from an **auto-detected** HTML clipboard flavor
+    and a plain flavor was carried along → the system SHALL fall back to
+    ingesting the plain text (the same rule as the ungated direct path);
+  - otherwise (an explicit selector choice, or no plain flavor on the
+    clipboard) → the system SHALL reject ingestion with a red error
+    notification and create no entry.
 
 The right preview pane SHALL reflect the selection: with `html` it shows
 the normalization of the extracted text (what will actually be narrated);
@@ -231,10 +237,20 @@ Changing the selector SHALL re-trigger the debounced preview.
 
 #### Scenario: HTML choice with no extractable text
 
-- GIVEN the dialog text is markup that yields no readable text (e.g. only
-  excluded elements) and `html` is selected
+- GIVEN the dialog was opened with plain text, the user explicitly selected
+  `html`, and the text is markup that yields no readable text (e.g. only
+  excluded elements)
 - WHEN the user presses "Синтезировать"
 - THEN a red error notification is shown and no entry is created
+
+#### Scenario: Auto-detected HTML with no extractable text falls back to plain
+
+- GIVEN the dialog was opened from an auto-detected HTML clipboard flavor
+  (selector pre-set to `html`, plain flavor carried), and the markup is
+  chrome that yields no readable text while the plain flavor has content
+- WHEN the user presses "Синтезировать" without changing the selector
+- THEN the plain clipboard text is ingested as a normal entry and no error
+  is shown
 
 #### Scenario: Markdown choice persists display format
 
