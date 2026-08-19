@@ -16,6 +16,7 @@ import type { EntryFormat, UIConfig } from '../lib/tauri';
 import { formatError } from '../lib/errors';
 import { resolveIngest } from '../lib/ingest';
 import { resolveAddAction } from '../lib/addFlow';
+import { shouldOfferBundleDownload } from '../lib/bundlePrompt';
 import { TextViewer } from './TextViewer';
 import { Player } from './Player';
 import { QueueList } from './QueueList';
@@ -23,6 +24,7 @@ import { useSelectedEntry } from '../stores/selectedEntry';
 import { useSearchQuery } from '../stores/searchQuery';
 import { PreviewDialog } from '../dialogs/PreviewDialog';
 import { SettingsModal } from '../dialogs/Settings';
+import { SileroBundlePrompt } from '../dialogs/SileroBundlePrompt';
 import { IconSearch } from './icons';
 
 export function AppShell() {
@@ -38,6 +40,7 @@ export function AppShell() {
   const [previewFormat, setPreviewFormat] = useState<EntryFormat | null>(null);
   const [config, setConfig] = useState<UIConfig | null>(null);
   const configLoaded = useRef(false);
+  const [bundlePromptOpen, setBundlePromptOpen] = useState(false);
   const [navWidth, setNavWidth] = useState(280);
   const navResizeRef = useRef<{
     pointerId: number;
@@ -92,6 +95,17 @@ export function AppShell() {
       // sync it to the persisted backend theme on first load so the saved
       // choice survives across launches.
       setColorScheme(cfg.theme);
+      // First-run bundle prompt (ui spec): when the persisted engine is
+      // silero_native but the bundle probe reports it missing, offer the
+      // one-time download. A failed probe is non-fatal — no prompt.
+      commands
+        .getAvailableEngines()
+        .then((availability) => {
+          if (shouldOfferBundleDownload(cfg, availability)) {
+            setBundlePromptOpen(true);
+          }
+        })
+        .catch(() => {});
     }).catch(() => {
       // Config load failure is non-fatal; preview will be skipped
     });
@@ -343,6 +357,11 @@ export function AppShell() {
         onSaved={() => {
           commands.getConfig().then(setConfig).catch(() => {});
         }}
+      />
+
+      <SileroBundlePrompt
+        opened={bundlePromptOpen}
+        onClose={() => setBundlePromptOpen(false)}
       />
 
       <MantineAppShell.Navbar p="md">

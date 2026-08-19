@@ -292,10 +292,13 @@ async fn synthesize_audio(
     // both Silero engines (ttsd and native) use `speaker` (e.g. "xenia").
     // Keeping them in two distinct config fields means flipping engines
     // preserves each side's choice.
-    let voice = if config.engine == "piper" {
-        config.piper_voice.clone()
-    } else {
-        config.speaker.clone()
+    // The choice keys on the engine actually serving this request
+    // (`tts.kind()`), not the persisted `config.engine`: when the startup
+    // fallback swapped engines (e.g. silero_native without a bundle runs
+    // Piper for the session), the active engine must get its own voice id.
+    let voice = match tts.kind() {
+        EngineKind::Piper => config.piper_voice.clone(),
+        _ => config.speaker.clone(),
     };
 
     // Track the entry as "inside the TTS stage" so `cancel_synthesis` knows
@@ -316,7 +319,7 @@ async fn synthesize_audio(
     let output = match attempt {
         Ok(o) => o,
         Err(TtsError::Ttsd { code, message })
-            if code == "voice_not_installed" && config.engine == "piper" =>
+            if code == "voice_not_installed" && tts.kind() == EngineKind::Piper =>
         {
             info!("voice \"{voice}\" not installed; auto-downloading then retrying ({message})");
             crate::tts::piper::download::download_voice(piper_voices_dir, &voice, emitter)
@@ -2281,6 +2284,201 @@ mod tests {
 
         let err = load_timestamps_for_entry(&storage, &id).unwrap_err();
         assert_not_found(err, "entry not found");
+    }
+
+    // ── synthesize_audio: voice selection and retry gate follow the active engine ──
+
+    use async_trait::async_trait;
+    use std::collections::HashSet;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use crate::tts::supervisor::test_helpers::recording_emitter;
+    use tempfile::TempDir;
+
+    /// Fake engine that records every `voice` argument it is called with.
+    /// `kind` reports whichever engine the test wants to simulate as active
+    /// (mimicking the `EngineSwitcher` after a startup fallback);
+    /// `fail_first_call` makes the first `synthesize` fail the way a Piper
+    /// engine with missing voice files does.
+    struct RecordingEngine {
+        kind: EngineKind,
+        voices: std::sync::Mutex<Vec<String>>,
+        fail_first_call: AtomicBool,
+    }
+
+    impl RecordingEngine {
+        fn new(kind: EngineKind) -> Self {
+            Self {
+                kind,
+                voices: std::sync::Mutex::new(Vec::new()),
+                fail_first_call: AtomicBool::new(false),
+            }
+        }
+
+        fn failing_first_call(kind: EngineKind) -> Self {
+            let engine = Self::new(kind);
+            engine.fail_first_call.store(true, Ordering::SeqCst);
+            engine
+        }
+
+        fn recorded_voices(&self) -> Vec<String> {
+            self.voices.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait]
+    impl TtsEngine for RecordingEngine {
+        fn kind(&self) -> EngineKind {
+            self.kind
+        }
+
+        async fn warmup(&self) -> Result<(), TtsError> {
+            Ok(())
+        }
+
+        async fn spawn_initial_warmup(&self) {}
+
+        async fn synthesize(
+            &self,
+            _text: String,
+            voice: String,
+            _sample_rate: u32,
+            _out_wav: String,
+            _char_mapping: Option<Vec<CharMappingEntry>>,
+        ) -> Result<SynthesizeOutput, TtsError> {
+            self.voices.lock().unwrap().push(voice);
+            if self.fail_first_call.swap(false, Ordering::SeqCst) {
+                return Err(TtsError::Ttsd {
+                    code: "voice_not_installed".to_string(),
+                    message: "voice not installed".to_string(),
+                });
+            }
+            Ok(SynthesizeOutput {
+                timestamps: Vec::new(),
+                duration_sec: 1.0,
+            })
+        }
+
+        async fn shutdown(&self) -> Result<(), TtsError> {
+            Ok(())
+        }
+    }
+
+    fn empty_mapping() -> CharMapping {
+        CharMapping {
+            original: String::new(),
+            transformed: String::new(),
+            char_map: vec![],
+        }
+    }
+
+    /// Persist the config a fresh-install session would have: the default
+    /// `silero_native` engine plus per-engine voice ids.
+    fn persist_config(storage: &StorageService, engine: &str) {
+        storage
+            .save_config(&UIConfig {
+                engine: engine.to_string(),
+                piper_voice: "ruslan".to_string(),
+                speaker: "aidar".to_string(),
+                ..UIConfig::default()
+            })
+            .unwrap();
+    }
+
+    /// A Piper fallback session (persisted config names `silero_native`, the
+    /// bundle is missing, so the switcher serves Piper) must pass the Piper
+    /// voice id to the engine, not the Silero speaker id.
+    #[tokio::test]
+    async fn synthesize_audio_on_piper_fallback_uses_piper_voice() {
+        let (storage, _dir) = make_service();
+        persist_config(&storage, "silero_native");
+        let engine = RecordingEngine::new(EngineKind::Piper);
+        let (emitter, _log) = recording_emitter();
+        let voices_dir = TempDir::new().unwrap();
+        let entered = Mutex::new(HashSet::new());
+
+        synthesize_audio(
+            &engine,
+            &storage,
+            voices_dir.path(),
+            &emitter,
+            &entered,
+            &uuid::Uuid::new_v4(),
+            "текст".to_string(),
+            &empty_mapping(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(engine.recorded_voices(), vec!["ruslan"]);
+    }
+
+    /// The reverse case must not coerce either: an active Silero Native
+    /// engine gets the Silero `speaker` even when the persisted config names
+    /// `piper`.
+    #[tokio::test]
+    async fn synthesize_audio_on_silero_native_uses_speaker_even_with_piper_config() {
+        let (storage, _dir) = make_service();
+        persist_config(&storage, "piper");
+        let engine = RecordingEngine::new(EngineKind::SileroNative);
+        let (emitter, _log) = recording_emitter();
+        let voices_dir = TempDir::new().unwrap();
+        let entered = Mutex::new(HashSet::new());
+
+        synthesize_audio(
+            &engine,
+            &storage,
+            voices_dir.path(),
+            &emitter,
+            &entered,
+            &uuid::Uuid::new_v4(),
+            "текст".to_string(),
+            &empty_mapping(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(engine.recorded_voices(), vec!["aidar"]);
+    }
+
+    /// A `voice_not_installed` failure on the active Piper engine enters the
+    /// auto-download path even when the persisted config names a Silero
+    /// engine. The voice files are pre-seeded in the temp voices dir, so
+    /// `download_voice` runs fully offline (both files skipped) and the
+    /// retry succeeds; the `voice_download_started` event and the second
+    /// synthesize call pin that the gate keyed on the active engine.
+    #[tokio::test]
+    async fn synthesize_audio_on_piper_fallback_auto_downloads_missing_voice() {
+        let (storage, _dir) = make_service();
+        persist_config(&storage, "silero_native");
+        let engine = RecordingEngine::failing_first_call(EngineKind::Piper);
+        let (emitter, log) = recording_emitter();
+        let voices_dir = TempDir::new().unwrap();
+        let voice_dir = voices_dir.path().join("ruslan");
+        std::fs::create_dir_all(&voice_dir).unwrap();
+        std::fs::write(voice_dir.join("ru_RU-ruslan-medium.onnx.json"), b"{}").unwrap();
+        std::fs::write(voice_dir.join("ru_RU-ruslan-medium.onnx"), b"onnx").unwrap();
+        let entered = Mutex::new(HashSet::new());
+
+        synthesize_audio(
+            &engine,
+            &storage,
+            voices_dir.path(),
+            &emitter,
+            &entered,
+            &uuid::Uuid::new_v4(),
+            "текст".to_string(),
+            &empty_mapping(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(engine.recorded_voices(), vec!["ruslan", "ruslan"]);
+        let log = log.lock().unwrap();
+        assert!(
+            log.iter().any(|(name, _)| name == "voice_download_started"),
+            "expected a voice_download_started event, got {log:?}"
+        );
     }
 }
 
