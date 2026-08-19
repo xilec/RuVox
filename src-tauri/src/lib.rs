@@ -1,5 +1,6 @@
 pub mod audio;
 pub mod commands;
+pub mod paths;
 pub mod pipeline;
 pub mod player;
 pub mod state;
@@ -195,10 +196,11 @@ fn resolve_ttsd_dir<R: Runtime>(app: &AppHandle<R>) -> std::path::PathBuf {
 ///   in-process [`tts::SileroNativeEngine`]. A missing bundle falls back
 ///   to Piper the same way; the config value is preserved.
 ///
-/// Voice models live at `<data_local_dir>/ruvox/voices/piper/<voice>/…`
-/// — see `tts::piper::catalog`. The Silero Native model bundle lives next
-/// to them at `<data_local_dir>/ruvox/voices/silero-native/` and is fetched
-/// on demand via `download_silero_native_bundle`.
+/// Voice models live at `<voices_root>/piper/<voice>/…` — see
+/// `tts::piper::catalog`. The Silero Native model bundle lives next to
+/// them at `<voices_root>/silero-native/` and is fetched on demand via
+/// `download_silero_native_bundle`. The voices root itself is resolved
+/// per-OS by [`crate::paths::voices_root`].
 /// Returns the active engine layer plus the runtime paths and emitter the
 /// rest of the app needs (Phase 4 download command, Phase 3 probe).
 type EngineWiring = (
@@ -213,10 +215,7 @@ fn build_engine<R: Runtime>(
     app: &AppHandle<R>,
     storage: &StorageService,
 ) -> Result<EngineWiring, SetupError> {
-    let data_dir = dirs::data_local_dir()
-        .ok_or("dirs::data_local_dir() returned None")?
-        .join("ruvox")
-        .join("voices");
+    let data_dir = crate::paths::voices_root().ok_or("no per-user data dir for voices")?;
     let voices_dir = data_dir.join("piper");
     let silero_native_bundle_dir = data_dir.join("silero-native");
 

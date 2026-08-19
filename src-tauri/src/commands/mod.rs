@@ -1351,8 +1351,8 @@ pub struct CacheSizeInfo {
     pub audio_file_count: u32,
 }
 
-/// Absolute path to the on-disk cache directory (`~/.cache/ruvox/` by default,
-/// or wherever `XDG_CACHE_HOME`/`dirs::cache_dir()` resolved to at startup).
+/// Absolute path to the on-disk data directory (`~/.cache/ruvox/` on Linux,
+/// `%LOCALAPPDATA%\com.ruvox.app` on Windows — see `crate::paths`).
 /// The frontend uses this to display the path in Settings and to pass it to
 /// `revealItemInDir` for opening the folder in the OS file manager.
 #[tauri::command]
@@ -2114,7 +2114,7 @@ mod tests {
     #[test_case(
         StorageError::NoCacheDir,
         "storage_error",
-        "cache dir unavailable: dirs::cache_dir() returned None";
+        "per-user data dir unavailable (dirs resolution returned None)";
         "other_variant"
     )]
     fn command_error_from_storage(
