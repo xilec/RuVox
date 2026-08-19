@@ -6,16 +6,21 @@ Covers the on-disk persistence layer of RuVox (`src-tauri/src/storage/`): the pe
 ## Requirements
 ### Requirement: Cache Directory Layout
 
-The system SHALL store all persistent data under a per-user cache root resolved as `dirs::cache_dir()/ruvox` (e.g. `~/.cache/ruvox/`), with the following layout:
+The system SHALL store all persistent data under a per-user cache root, with the following layout:
 
 ```
-~/.cache/ruvox/
+<cache_root>/
 ├── history.json                         # Versioned list of TextEntry records
 ├── config.json                          # Application configuration (UIConfig)
 └── audio/
     ├── {uuid}.opus                      # Ogg-Opus audio (32 kbps VOIP, mono)
     └── {uuid}.timestamps.json           # Word-level timestamps for the entry
 ```
+
+The cache root is platform-dependent:
+
+- **Windows:** `dirs::data_local_dir()/<bundle identifier>` (`%LOCALAPPDATA%\com.ruvox.app`). It MUST NOT coincide with the NSIS install dir (`%LOCALAPPDATA%\<productName>`) and MUST match the directory the NSIS uninstaller removes via its "Delete the application data" checkbox.
+- **Other platforms:** `dirs::cache_dir()/ruvox` (e.g. `~/.cache/ruvox/`).
 
 The storage service SHALL create the cache root and the `audio/` subdirectory on initialization if they do not exist.
 
@@ -27,7 +32,7 @@ The storage service SHALL create the cache root and the `audio/` subdirectory on
 #### Scenario: Default cache root location
 - GIVEN no custom cache directory is configured
 - WHEN the storage service is constructed with defaults
-- THEN the cache root is the platform per-user cache directory joined with `ruvox`
+- THEN the cache root is the platform per-user location described above (`%LOCALAPPDATA%\com.ruvox.app` on Windows, `~/.cache/ruvox/` on Linux)
 
 ### Requirement: History File Schema
 
