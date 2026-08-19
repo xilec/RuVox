@@ -164,14 +164,21 @@ export function AppShell() {
       // silently fails with `ContentNotAvailable` on KDE Plasma 6, and
       // unlike `navigator.clipboard.readText` which is gated by WebKit
       // permission policies in the WKWebView.
+      // An empty clipboard must not look like an app failure (#194): the Add
+      // button doubles as "read what I just copied", so both an empty result
+      // and a read failure (Windows reports an empty clipboard as an error)
+      // surface as a neutral hint instead of a red error.
       let clipboardText: string;
       try {
         clipboardText = (await readClipboardText()) ?? '';
       } catch {
+        clipboardText = '';
+      }
+      if (!clipboardText.trim()) {
         notifications.show({
-          title: 'Ошибка',
-          message: 'Не удалось прочитать буфер обмена',
-          color: 'red',
+          title: 'Буфер обмена пуст',
+          message: 'Скопируйте текст и нажмите Add ещё раз',
+          color: 'blue',
         });
         setPending(false);
         return;
