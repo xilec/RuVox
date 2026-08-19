@@ -38,6 +38,12 @@ export function AppShell() {
   // flow auto-detected an HTML clipboard flavor, null = use the configured
   // viewer default (#195).
   const [previewFormat, setPreviewFormat] = useState<EntryFormat | null>(null);
+  // Plain flavor carried alongside an auto-detected HTML opening of the
+  // preview dialog: when the markup yields no readable text, synthesis falls
+  // back to it (same rule as the ungated direct path). Null when the dialog
+  // was opened with plain text — an explicit `html` selector choice then
+  // keeps the red error on failed extraction (preview-dialog spec).
+  const [previewPlainFallback, setPreviewPlainFallback] = useState<string | null>(null);
   const [config, setConfig] = useState<UIConfig | null>(null);
   const configLoaded = useRef(false);
   const [bundlePromptOpen, setBundlePromptOpen] = useState(false);
@@ -218,6 +224,7 @@ export function AppShell() {
           // instead of being ingested directly behind the user's back.
           setPreviewText(action.text);
           setPreviewFormat(action.format);
+          setPreviewPlainFallback(action.plainFallback);
           setPreviewOpen(true);
           setPending(false);
           return;
@@ -306,6 +313,8 @@ export function AppShell() {
   ) {
     setPreviewOpen(false);
     setPreviewFormat(null);
+    const plainFallback = previewPlainFallback;
+    setPreviewPlainFallback(null);
     if (skipShortTexts && config) {
       // Persist user preference: disable preview dialog
       commands.updateConfig({ preview_dialog_enabled: false }).catch(() => {});
@@ -319,6 +328,14 @@ export function AppShell() {
     const action = resolveIngest(finalText || previewText, sourceFormat);
     switch (action.kind) {
       case 'reject':
+        // Auto-detected HTML flavor (the dialog itself opened with the raw
+        // markup and the plain flavor was carried along) falls back to the
+        // plain text, exactly like the ungated direct path. With no carried
+        // fallback the `html` selection was explicit — keep the red error.
+        if (sourceFormat === 'html' && plainFallback) {
+          void doAddEntry(plainFallback, playWhenReady);
+          return;
+        }
         notifications.show({
           title: 'Ошибка',
           message: 'Не удалось извлечь текст из HTML',
@@ -338,6 +355,7 @@ export function AppShell() {
   function handlePreviewCancel() {
     setPreviewOpen(false);
     setPreviewFormat(null);
+    setPreviewPlainFallback(null);
     setPending(false);
   }
 

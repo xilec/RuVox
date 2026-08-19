@@ -14,7 +14,7 @@ describe('resolveAddAction', () => {
         previewEnabled: true,
         defaultFormat: 'plain',
       }),
-    ).toEqual({ kind: 'preview', text: HTML, format: 'html' });
+    ).toEqual({ kind: 'preview', text: HTML, format: 'html', plainFallback: PLAIN });
   });
 
   it('opens the dialog with plain text and the configured default format', () => {
@@ -25,7 +25,7 @@ describe('resolveAddAction', () => {
         previewEnabled: true,
         defaultFormat: 'markdown',
       }),
-    ).toEqual({ kind: 'preview', text: PLAIN, format: 'markdown' });
+    ).toEqual({ kind: 'preview', text: PLAIN, format: 'markdown', plainFallback: null });
   });
 
   it('reports empty when neither flavor has text (preview enabled)', () => {
@@ -92,5 +92,27 @@ describe('resolveAddAction', () => {
         defaultFormat: 'plain',
       }),
     ).toEqual({ kind: 'direct-html', html: HTML, plainFallback: null });
+  });
+
+  it('preview of auto-detected HTML carries no fallback when plain is blank', () => {
+    expect(
+      resolveAddAction({
+        html: HTML,
+        plain: '',
+        previewEnabled: true,
+        defaultFormat: 'plain',
+      }),
+    ).toEqual({ kind: 'preview', text: HTML, format: 'html', plainFallback: null });
+  });
+
+  it('preview ignores a whitespace-only HTML flavor and opens with the plain text', () => {
+    expect(
+      resolveAddAction({
+        html: '  ',
+        plain: PLAIN,
+        previewEnabled: true,
+        defaultFormat: 'markdown',
+      }),
+    ).toEqual({ kind: 'preview', text: PLAIN, format: 'markdown', plainFallback: null });
   });
 });
