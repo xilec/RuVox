@@ -298,7 +298,7 @@ async fn synthesize_audio(
     // Piper for the session), the active engine must get its own voice id.
     let voice = match tts.kind() {
         EngineKind::Piper => config.piper_voice.clone(),
-        _ => config.speaker.clone(),
+        EngineKind::Silero | EngineKind::SileroNative => config.speaker.clone(),
     };
 
     // Track the entry as "inside the TTS stage" so `cancel_synthesis` knows
@@ -2479,6 +2479,46 @@ mod tests {
             log.iter().any(|(name, _)| name == "voice_download_started"),
             "expected a voice_download_started event, got {log:?}"
         );
+    }
+
+    /// When the auto-download itself fails, the error surfaces instead of a
+    /// retry loop: the persisted config names a catalog-unknown Piper voice,
+    /// so `download_voice` fails fast with `voice_unknown` (no network).
+    #[tokio::test]
+    async fn synthesize_audio_on_piper_fallback_surfaces_failed_voice_download() {
+        let (storage, _dir) = make_service();
+        storage
+            .save_config(&UIConfig {
+                engine: "silero_native".to_string(),
+                piper_voice: "ghost".to_string(),
+                speaker: "aidar".to_string(),
+                ..UIConfig::default()
+            })
+            .unwrap();
+        let engine = RecordingEngine::failing_first_call(EngineKind::Piper);
+        let (emitter, _log) = recording_emitter();
+        let voices_dir = TempDir::new().unwrap();
+        let entered = Mutex::new(HashSet::new());
+
+        let err = synthesize_audio(
+            &engine,
+            &storage,
+            voices_dir.path(),
+            &emitter,
+            &entered,
+            &uuid::Uuid::new_v4(),
+            "текст".to_string(),
+            &empty_mapping(),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(
+            matches!(err, SynthesisError::TtsFailed(_)),
+            "expected TtsFailed, got {err:?}"
+        );
+        // One pre-download attempt, no retry after the failed download.
+        assert_eq!(engine.recorded_voices(), vec!["ghost"]);
     }
 }
 

@@ -3,6 +3,7 @@ import { Alert, Button, Group, Modal, Progress, Stack, Text } from '@mantine/cor
 import { notifications } from '@mantine/notifications';
 import { commands, events } from '../lib/tauri';
 import { formatError } from '../lib/errors';
+import { bundleDownloadPercent } from '../lib/bundleDownload';
 
 interface SileroBundlePromptProps {
   opened: boolean;
@@ -39,16 +40,7 @@ export function SileroBundlePrompt({ opened, onClose }: SileroBundlePromptProps)
         setDownload({ file: 'manifest.json', percent: 0 });
       }),
       events.bundleDownloadProgress((p) => {
-        const fileFraction = p.skipped
-          ? 1
-          : p.total_bytes > 0
-            ? p.downloaded_bytes / p.total_bytes
-            : 0;
-        const percent = Math.min(
-          100,
-          ((p.file_idx + fileFraction) / Math.max(1, p.total_files)) * 100,
-        );
-        setDownload({ file: p.file, percent });
+        setDownload({ file: p.file, percent: bundleDownloadPercent(p) });
       }),
       events.bundleDownloadFinished((p) => {
         downloadActiveRef.current = false;
@@ -57,12 +49,24 @@ export function SileroBundlePrompt({ opened, onClose }: SileroBundlePromptProps)
           // The persisted engine is already silero_native; the update only
           // makes the EngineSwitcher rebuild onto the native engine for this
           // session now that the bundle exists.
-          commands.updateConfig({ engine: 'silero_native' }).catch(() => {});
-          notifications.show({
-            title: 'Движок Silero готов',
-            message: 'Бандл моделей скачан, движок «Silero (нативный)» активирован.',
-            color: 'green',
-          });
+          commands
+            .updateConfig({ engine: 'silero_native' })
+            .then(() => {
+              notifications.show({
+                title: 'Движок Silero готов',
+                message: 'Бандл моделей скачан, движок «Silero (нативный)» активирован.',
+                color: 'green',
+              });
+            })
+            .catch((err) => {
+              // The bundle is on disk but the engine failed to start — do
+              // not claim activation; the next launch picks it up.
+              notifications.show({
+                title: 'Бандл скачан, но движок не запустился',
+                message: formatError(err),
+                color: 'red',
+              });
+            });
           onClose();
         } else {
           setError(p.message ?? 'неизвестная ошибка');

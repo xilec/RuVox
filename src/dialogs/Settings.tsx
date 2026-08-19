@@ -23,6 +23,7 @@ import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { commands, events } from '../lib/tauri';
 import type { CleanupMode, EngineKind, UIConfigPatch } from '../lib/tauri';
 import { formatError } from '../lib/errors';
+import { bundleDownloadPercent } from '../lib/bundleDownload';
 import { PIPER_VOICES } from '../lib/piperVoices';
 import { checkForUpdatesManual, UPDATER_ENABLED } from '../lib/updater';
 import {
@@ -327,16 +328,7 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
         setBundleDownload({ file: 'manifest.json', percent: 0 });
       }),
       events.bundleDownloadProgress((p) => {
-        const fileFraction = p.skipped
-          ? 1
-          : p.total_bytes > 0
-            ? p.downloaded_bytes / p.total_bytes
-            : 0;
-        const percent = Math.min(
-          100,
-          ((p.file_idx + fileFraction) / Math.max(1, p.total_files)) * 100,
-        );
-        setBundleDownload({ file: p.file, percent });
+        setBundleDownload({ file: p.file, percent: bundleDownloadPercent(p) });
       }),
       events.bundleDownloadFinished((p) => {
         downloadActiveRef.current = false;
