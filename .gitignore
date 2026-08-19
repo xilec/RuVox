@@ -83,6 +83,8 @@ src-tauri/resources/mpv/*
 !src-tauri/resources/mpv/PLACEHOLDER
 src-tauri/resources/espeak-ng-data/*
 !src-tauri/resources/espeak-ng-data/PLACEHOLDER
+src-tauri/resources/crt/*
+!src-tauri/resources/crt/PLACEHOLDER.dll
 
 # pnpm
 .pnpm-debug.log
