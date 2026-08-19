@@ -15,7 +15,7 @@
   (Windows-target check skipped locally: no windows target installed and
   xwin not set up in this workspace; the CI "Windows build (no bundle)"
   job on windows-latest covers compilation of the windows arm.)
-- [ ] Archive the change (sync delta specs into `openspec/specs/`).
+- [x] Archive the change (sync delta specs into `openspec/specs/`).
 - [ ] VM verification (manual, after the release rebuild): install v0.3.0
   on the Win10 VM, synthesize, uninstall with "Delete the application
   data" checked → `%LOCALAPPDATA%\com.ruvox.app` and the install dir are
