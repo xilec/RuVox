@@ -10,6 +10,10 @@
 #                subprocess; lands at <install>/mpv/mpv.exe
 #   onnxruntime  microsoft/onnxruntime release (zip) — DL'd by ort
 #                (load-dynamic); lands next to the exe
+#   VC++ CRT     copied app-local from the runner's Visual Studio
+#                (license allows shipping these DLLs next to the exe).
+#                A clean Windows has no MSVCP140.dll — the first v0.3.0
+#                VM run failed to start without it.
 #
 # espeak-ng-data is NOT here: it is extracted from the espeak-rs-sys build
 # tree after `cargo build` (see release.yml), so it always matches the
@@ -60,5 +64,20 @@ cp "$TMP_DIR/mpv-Copyright" "$RESOURCES_DIR/mpv/Copyright"
   "onnxruntime-win-x64-${ORT_VERSION}/lib/onnxruntime.dll" >/dev/null
 cp "$TMP_DIR/ort/onnxruntime-win-x64-${ORT_VERSION}/lib/onnxruntime.dll" \
   "$RESOURCES_DIR/onnxruntime.dll"
+
+# VC++ 2015-2022 CRT, app-local. Not a download: copied from the runner's
+# Visual Studio install (newest MSVC toolset dir wins). Off-runner (local
+# NixOS) the path does not exist — warn and skip, Linux builds don't need it.
+CRT_SRC=$(ls -d "/c/Program Files/Microsoft Visual Studio/"2022/*/VC/Redist/MSVC/*/x64/Microsoft.VC143.CRT 2>/dev/null | sort -V | tail -1 || true)
+if [ -n "$CRT_SRC" ]; then
+  mkdir -p "$RESOURCES_DIR/crt"
+  cp "$CRT_SRC"/*.dll "$RESOURCES_DIR/crt/"
+  # The committed placeholder only exists to satisfy tauri-build's
+  # compile-time glob check; it must NOT reach the installer.
+  rm -f "$RESOURCES_DIR/crt/PLACEHOLDER.dll"
+  echo ">> CRT bundled app-local from $CRT_SRC"
+else
+  echo ">> WARN: VS CRT redist not found (expected off-runner); skipping app-local CRT"
+fi
 
 echo "OK: resources ready in $RESOURCES_DIR"
