@@ -11,8 +11,10 @@ rotation, level control, and how `tracing` records reach the log
 ### Requirement: Diagnostic log file
 
 The app SHALL write diagnostic logs to a per-user log directory via
-`tauri-plugin-log` (its `tracing` feature SHALL be enabled so existing
-`tracing` records reach the log). The log directory is the Tauri per-app
+`tauri-plugin-log`. Our code logs via `tracing`; since no tracing
+subscriber is installed, the `tracing` crate's `log` feature SHALL be
+enabled so tracing macros fall back to emitting `log` records, which the
+plugin's global logger captures. The log directory is the Tauri per-app
 log dir: `%LOCALAPPDATA%\com.ruvox.app\logs` on Windows,
 `~/.local/share/com.ruvox.app/logs` on Linux, inside the app's
 `Library/Logs` dir on macOS. This is a second data location, separate

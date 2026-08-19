@@ -37,7 +37,11 @@ export default defineConfig(() => ({
         }
       : undefined,
     watch: {
-      ignored: ["**/src-tauri/**"],
+      // tmp/ is the repo-local scratch dir (VM disks, xwin caches with
+      // symlink loops, etc.) — watching it once crashed the dev server
+      // with ELOOP on a recursive symlink. src-tauri/ is covered by
+      // cargo's own watcher.
+      ignored: ["**/src-tauri/**", "**/tmp/**"],
     },
   },
 }));
