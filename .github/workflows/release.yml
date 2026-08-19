@@ -43,6 +43,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: "src-tauri\nsilero-native"
+          # Shared with the ci.yml windows-build job (same key, same cache).
+          shared-key: win-msvc
 
       - run: pnpm install --frozen-lockfile
 
@@ -68,10 +70,15 @@ jobs:
 
       # espeak-ng-data is produced BY the build (espeak-rs-sys vendors and
       # compiles espeak-ng) — so build first, then copy the data out of the
-      # build tree, then bundle. The second cargo invocation inside
-      # `tauri build` is a cache hit.
-      - name: cargo build (produces espeak-ng-data)
-        run: cargo build --release --manifest-path src-tauri/Cargo.toml
+      # build tree, then bundle. Must go through `tauri build --no-bundle`
+      # (not plain `cargo build`): the Tauri CLI enables the
+      # `tauri/custom-protocol` feature for production builds, and a plain
+      # cargo build with a different feature set forces the second cargo
+      # invocation inside `tauri build` to recompile tauri + all plugins +
+      # the app crate (~3.5 min). With the same feature set that invocation
+      # is a real cache hit and only NSIS bundling runs.
+      - name: tauri build --no-bundle (produces espeak-ng-data)
+        run: pnpm tauri build --no-bundle
 
       - name: Extract espeak-ng-data into bundle resources
         shell: bash
