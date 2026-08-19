@@ -8,6 +8,8 @@
 #
 #   mpv          shinchiro/mpv-winbuild-cmake release (7z) — the player
 #                subprocess; lands at <install>/mpv/mpv.exe
+#   vulkan-1.dll copied from the runner's System32 — mpv.exe hard-imports
+#                it, and a clean Windows without GPU drivers lacks it
 #   onnxruntime  microsoft/onnxruntime release (zip) — DL'd by ort
 #                (load-dynamic); lands next to the exe
 #   VC++ CRT     copied app-local from the runner's Visual Studio,
@@ -56,6 +58,19 @@ fetch "$MPV_COPYRIGHT_URL" "$TMP_DIR/mpv-Copyright" "$MPV_COPYRIGHT_SHA256"
 mkdir -p "$RESOURCES_DIR/mpv"
 7z x -y -o"$RESOURCES_DIR/mpv" "$TMP_DIR/$MPV_ARCHIVE" >/dev/null
 cp "$TMP_DIR/mpv-Copyright" "$RESOURCES_DIR/mpv/Copyright"
+
+# The shinchiro mpv.exe has vulkan-1.dll as a HARD import (delay import
+# table is empty — verified with objdump), so it cannot start at all on a
+# clean Windows without GPU drivers (second v0.3.0 VM failure). Copy the
+# Khronos loader (Apache-2.0, redistributable) from the runner's System32
+# next to mpv.exe; with no ICD present, mpv just never picks the Vulkan
+# path. Off-runner the DLL does not exist — warn and skip.
+if [ -f /c/Windows/System32/vulkan-1.dll ]; then
+  cp /c/Windows/System32/vulkan-1.dll "$RESOURCES_DIR/mpv/"
+  echo ">> vulkan-1.dll bundled next to mpv.exe"
+else
+  echo ">> WARN: vulkan-1.dll not found (expected off-runner); skipping"
+fi
 
 # Only the runtime DLL is bundled; the zip also carries headers/libs/pdb.
 # `7z x` + include pattern (paths preserved, then moved flat) — `7z e`
