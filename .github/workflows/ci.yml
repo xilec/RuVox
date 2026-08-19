@@ -81,6 +81,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: "src-tauri\nsilero-native"
+          # Shared with the release.yml windows-installer job: without this the
+          # cache key includes the job id, so the release rebuilt all ~600 deps
+          # from scratch on every run (~8.5 min lost).
+          shared-key: win-msvc
       - run: pnpm install --frozen-lockfile
       - run: pnpm tauri build --no-bundle
 
