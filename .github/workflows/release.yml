@@ -26,6 +26,8 @@ env:
 jobs:
   windows-installer:
     runs-on: windows-latest
+    # Observed 12-14 min warm (two builds + NSIS); cold cargo cache ~20 min.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
 

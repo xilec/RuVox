@@ -101,6 +101,13 @@ Craft rules (layout, test quality, duplication, idiom, correctness) live in
 - Logs to stderr; JSON requests on stdin, JSON responses on stdout.
 - `ruff check` and `pytest` must be green.
 
+## CI
+
+- Every workflow job declares `timeout-minutes`, sized at ~2-3x the worst
+  observed duration of that job. A hung job must fail fast with logs instead
+  of idling until the 6h GitHub default (2026-08-19 apt-mirror throttling
+  incident, #204).
+
 ## Testing gates
 
 - `just lint` runs all static checks: `cargo fmt --check`, `clippy -D warnings`,
