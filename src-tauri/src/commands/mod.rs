@@ -434,40 +434,34 @@ fn apply_ready_if_current(
     ts_filename: Option<String>,
     audio_filename: &str,
 ) -> bool {
-    // A late result whose entry vanished or left `processing` is dropped
-    // together with the files it just wrote.
-    let discard = |ts_filename: Option<String>| {
+    // Atomic under a single storage lock (issue #179): the `processing` check
+    // and the ready-field mutation cannot be raced by a concurrent cancel.
+    let applied = storage.update_entry_if(
+        entry_id,
+        |e| completion_is_current(e.status),
+        |e| {
+            e.status = EntryStatus::Ready;
+            e.audio_path = Some(audio_filename.to_string());
+            e.timestamps_path = ts_filename.clone();
+            e.duration_sec = Some(output.duration_sec);
+            e.audio_generated_at = Some(chrono::Utc::now().naive_utc());
+        },
+    );
+
+    if !applied {
+        // A late result whose entry vanished or left `processing` is dropped
+        // together with the files it just wrote.
+        if let Some(status) = storage.get_entry(entry_id).map(|e| e.status) {
+            info!("discarding stale completion for {entry_id} (status: {status:?})");
+        }
         discard_late_files(
             storage,
             [Some(audio_filename.to_string()), ts_filename]
                 .into_iter()
                 .flatten(),
         );
-        false
-    };
-
-    let Some(mut entry) = storage.get_entry(entry_id) else {
-        // Vanished mid-synthesis (deleted).
-        return discard(ts_filename);
-    };
-    if !completion_is_current(entry.status) {
-        info!(
-            "discarding stale completion for {entry_id} (status: {:?})",
-            entry.status
-        );
-        return discard(ts_filename);
     }
-
-    entry.status = EntryStatus::Ready;
-    entry.audio_path = Some(audio_filename.to_string());
-    entry.timestamps_path = ts_filename;
-    entry.duration_sec = Some(output.duration_sec);
-    entry.audio_generated_at = Some(chrono::Utc::now().naive_utc());
-
-    if let Err(e) = storage.update_entry(entry) {
-        warn!("failed to update entry to ready: {e}");
-    }
-    true
+    applied
 }
 
 /// Phase 6: apply the synthesis result and, when it was applied, emit
@@ -649,30 +643,40 @@ fn apply_error_if_current(
     message: &str,
     require_processing: bool,
 ) -> bool {
-    let Some(mut entry) = storage.get_entry(entry_id) else {
-        return false;
-    };
-    if require_processing && !completion_is_current(entry.status) {
-        info!(
-            "discarding stale failure for {entry_id} (status: {:?})",
-            entry.status
-        );
-        // The exact filename is unknown on the failure path (a dying ttsd
-        // may have left a partial WAV); remove every candidate.
-        discard_late_files(
-            storage,
-            [
-                format!("{entry_id}.wav"),
-                format!("{entry_id}.opus"),
-                format!("{entry_id}.timestamps.json"),
-            ],
-        );
-        return false;
+    // Atomic under a single storage lock (issue #179): when `require_processing`
+    // is set, the `processing` check and the error mutation cannot be raced by a
+    // concurrent cancel. Normalization-stage failures pass `false` (the entry is
+    // legitimately still `pending` before `mark_processing` runs), so the
+    // predicate always applies.
+    let applied = storage.update_entry_if(
+        entry_id,
+        |e| !require_processing || completion_is_current(e.status),
+        |e| {
+            e.status = EntryStatus::Error;
+            e.error_message = Some(message.to_string());
+        },
+    );
+
+    if !applied && require_processing {
+        // The entry vanished (deleted) or left `processing`: this stale failure
+        // is dropped. A dying ttsd may have left a partial WAV; remove every
+        // candidate file so it does not orphan.
+        match storage.get_entry(entry_id).map(|e| e.status) {
+            Some(status) if !completion_is_current(status) => {
+                info!("discarding stale failure for {entry_id} (status: {status:?})");
+                discard_late_files(
+                    storage,
+                    [
+                        format!("{entry_id}.wav"),
+                        format!("{entry_id}.opus"),
+                        format!("{entry_id}.timestamps.json"),
+                    ],
+                );
+            }
+            _ => {}
+        }
     }
-    entry.status = EntryStatus::Error;
-    entry.error_message = Some(message.to_string());
-    let _ = storage.update_entry(entry);
-    true
+    applied
 }
 
 fn set_entry_error<R: Runtime>(
@@ -976,30 +980,62 @@ fn cancel_entry(
     synthesize_entered: &Mutex<HashSet<EntryId>>,
     id: &str,
 ) -> CmdResult<(TextEntry, bool)> {
-    let mut entry = require_entry(storage, id)?;
-    let uuid = entry.id;
+    let uuid = parse_entry_id(id)?;
 
-    if !matches!(entry.status, EntryStatus::Processing | EntryStatus::Pending) {
+    // Snapshot the live status to reject terminal states up front. The
+    // authoritative check-then-apply runs atomically inside `update_entry_if`
+    // below (issue #179); this snapshot only drives the error path so a
+    // `ready`/`playing`/`error` entry is rejected without touching the
+    // synthesis registries.
+    let live_status =
+        storage
+            .get_entry(&uuid)
+            .map(|e| e.status)
+            .ok_or_else(|| CommandError::NotFound {
+                message: format!("entry not found: {id}"),
+            })?;
+    if matches!(
+        live_status,
+        EntryStatus::Ready | EntryStatus::Error | EntryStatus::Playing
+    ) {
         return Err(CommandError::SynthesisError {
-            message: format!(
-                "entry {id} cannot be cancelled (status: {:?})",
-                entry.status
-            ),
+            message: format!("entry {id} cannot be cancelled (status: {live_status:?})"),
         });
     }
 
-    // An aborted task is destroyed at its next yield point and never runs
-    // its own registry cleanup, so both keys are removed here. Aborting an
-    // already-finished (but not yet cleaned-up) handle is a no-op.
+    // Atomic transition: flip to `pending` only if the entry is still
+    // `processing`/`pending` at apply time. A concurrent synthesis completion
+    // that already moved it out of these states wins, and the stale `pending`
+    // clone is NOT persisted.
+    let applied = storage.update_entry_if(
+        &uuid,
+        |e| matches!(e.status, EntryStatus::Processing | EntryStatus::Pending),
+        |e| e.status = EntryStatus::Pending,
+    );
+
+    if !applied {
+        // Lost the race to a simultaneous completion — the entry is now
+        // `ready`/`error`. Nothing to abort; report the live state.
+        let entry = storage
+            .get_entry(&uuid)
+            .ok_or_else(|| CommandError::NotFound {
+                message: format!("entry not found: {id}"),
+            })?;
+        return Ok((entry, false));
+    }
+
+    // Cancellation actually applied: abort the entry's synthesis task (a
+    // no-op if already finished) and clear the entered-TTS marker.
     if let Some(handle) = synthesis_tasks.lock().remove(&uuid) {
         handle.abort();
     }
     let entered_tts = synthesize_entered.lock().remove(&uuid);
 
-    entry.status = EntryStatus::Pending;
-    storage
-        .update_entry(entry.clone())
-        .map_err(CommandError::from)?;
+    let entry = storage
+        .get_entry(&uuid)
+        .ok_or_else(|| CommandError::NotFound {
+            message: format!("entry not found: {id}"),
+        })?;
     Ok((entry, entered_tts))
 }
 
