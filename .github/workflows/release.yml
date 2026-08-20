@@ -160,6 +160,7 @@ jobs:
           # an empty notes file.
           if [ ! -s release_notes.md ]; then
             echo "See CHANGELOG.md — no section for version $version yet." > release_notes.md
+            echo "::warning::No CHANGELOG.md section for $version — using stub release notes"
           fi
           echo "----- release notes -----"
           cat release_notes.md
