@@ -255,6 +255,39 @@ impl StorageService {
         self.save_history()
     }
 
+    /// Compare-and-set update of a single entry. Acquires the write lock,
+    /// evaluates `predicate` against the current entry, and — only when it
+    /// returns `true` — applies `mutate` and persists. The predicate check and
+    /// the mutation run under one lock hold, so a concurrent read-decide-write
+    /// (e.g. a synthesis completion vs. `cancel_entry`) cannot persist a stale
+    /// clone over a transition that already applied (issue #179).
+    ///
+    /// Returns `true` when the entry existed and the predicate matched — the
+    /// mutation was applied. Returns `false`, writing nothing, when the entry
+    /// is absent or the predicate rejected it. Persistence is best-effort: the
+    /// in-memory map is the source of truth, matching [`Self::update_entry`].
+    pub fn update_entry_if<F, M>(&self, id: &EntryId, predicate: F, mutate: M) -> bool
+    where
+        F: FnOnce(&TextEntry) -> bool,
+        M: FnOnce(&mut TextEntry),
+    {
+        let mut map = self.entries.write();
+        let Some(entry) = map.get_mut(id) else {
+            return false;
+        };
+        if !predicate(entry) {
+            return false;
+        }
+        mutate(entry);
+        // Drop the write guard before persisting: `save_history` re-acquires a
+        // read lock on the same (non-reentrant) RwLock, so holding the write
+        // guard here would deadlock. The in-memory mutation is already
+        // committed, so the snapshot saved reflects it.
+        drop(map);
+        let _ = self.save_history();
+        true
+    }
+
     /// Delete entry and its audio + timestamps files.
     pub fn delete_entry(&self, id: &EntryId) -> Result<()> {
         let entry = {
@@ -1019,5 +1052,67 @@ mod tests {
         let stats = svc.migrate_wav_audio_to_opus();
         assert_eq!(stats.considered, 0);
         assert_eq!(stats.migrated, 0);
+    }
+
+    /// `update_entry_if` applies the mutation and persists when the predicate
+    /// matches; the change survives a reload from disk (issue #179).
+    #[test]
+    fn update_entry_if_applies_when_predicate_matches() {
+        let (svc, dir) = make_service();
+        let entry = svc.add_entry("cas".to_string()).unwrap();
+        let id = entry.id;
+
+        let applied = svc.update_entry_if(
+            &id,
+            |e| e.status == EntryStatus::Pending,
+            |e| {
+                e.status = EntryStatus::Error;
+                e.error_message = Some("boom".to_string());
+            },
+        );
+
+        assert!(applied);
+        assert_eq!(svc.get_entry(&id).unwrap().status, EntryStatus::Error);
+        assert_eq!(
+            svc.get_entry(&id).unwrap().error_message.as_deref(),
+            Some("boom")
+        );
+
+        // Persisted: the change is visible after reconstructing the service.
+        let svc2 = StorageService::with_cache_dir(dir.path().to_path_buf()).unwrap();
+        let reloaded = svc2.get_entry(&id).unwrap();
+        assert_eq!(reloaded.status, EntryStatus::Error);
+        assert_eq!(reloaded.error_message.as_deref(), Some("boom"));
+    }
+
+    /// `update_entry_if` is a no-op and returns `false` when the predicate
+    /// rejects the current state — the stored entry is untouched.
+    #[test]
+    fn update_entry_if_is_noop_when_predicate_rejects() {
+        let (svc, _dir) = make_service();
+        let entry = svc.add_entry("cas reject".to_string()).unwrap();
+        let id = entry.id;
+        update_entry_with(&svc, &entry, |e| e.status = EntryStatus::Ready);
+
+        let applied = svc.update_entry_if(
+            &id,
+            |e| e.status == EntryStatus::Pending,
+            |e| e.status = EntryStatus::Error,
+        );
+
+        assert!(!applied);
+        let stored = svc.get_entry(&id).unwrap();
+        assert_eq!(stored.status, EntryStatus::Ready);
+        assert!(stored.error_message.is_none());
+    }
+
+    /// `update_entry_if` returns `false` and writes nothing for an unknown id.
+    #[test]
+    fn update_entry_if_absent_id_is_noop() {
+        let (svc, _dir) = make_service();
+        let missing = Uuid::new_v4();
+        let applied = svc.update_entry_if(&missing, |_| true, |e| e.status = EntryStatus::Error);
+        assert!(!applied);
+        assert!(svc.get_entry(&missing).is_none());
     }
 }
