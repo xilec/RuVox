@@ -1,10 +1,15 @@
 //! WAV → Ogg-Opus streaming encoder.
 //!
-//! Inputs are 48 kHz mono 32-bit float WAV files (the format ttsd writes via
-//! Silero). Output is a valid Ogg-Opus stream at 32 kbps VOIP, 20 ms frames.
-//! The implementation is streaming — samples are read from the WAV in 960-
-//! sample chunks and fed straight to the encoder, so memory use stays
-//! constant regardless of audio length.
+//! Inputs are mono 32-bit-float WAV files. Output is a valid Ogg-Opus stream
+//! at 32 kbps VOIP, 20 ms frames. The implementation is streaming — samples
+//! are read from the WAV in frame-sized chunks and fed straight to the
+//! encoder, so memory use stays constant regardless of audio length.
+//!
+//! libopus only accepts the five Opus-native rates (RFC 6716 §2: 8/12/16/24/48
+//! kHz) as an encoder input rate, so a WAV at any other rate (e.g. Piper's
+//! 22050 Hz, or 44100 Hz) is linear-resampled to the nearest native rate
+//! before encoding. The native path (Silero ttsd's 48 kHz) is passed through
+//! untouched, keeping that common case streaming.
 //!
 //! See `tmp/opus_compare/` for the prototype this was ported from and the
 //! benchmarks that motivated the choice of `opus = "0.3"` (FFI to C libopus)
@@ -27,7 +32,8 @@ const SERIAL: u32 = 0x5275_564f;
 // (`opus_encode` returns at most this for a single 20 ms frame at any bitrate).
 const MAX_PACKET_BYTES: usize = 4000;
 // Sample rates Opus accepts natively (RFC 6716 §2). The encoder is wired up
-// for whichever of these the input WAV uses.
+// for whichever of these the input WAV uses. Anything outside this set is
+// resampled to the nearest entry (see `nearest_supported_rate`) before encoding.
 const SUPPORTED_SAMPLE_RATES: [u32; 5] = [8_000, 12_000, 16_000, 24_000, 48_000];
 // Granule position (RFC 7845 §4.1) is always reported in 48 kHz output ticks
 // regardless of the input rate, so one 20 ms frame advances the granule by
@@ -56,19 +62,17 @@ pub enum AudioError {
 
 pub type Result<T> = std::result::Result<T, AudioError>;
 
-/// Encode a mono 32-bit-float WAV at `wav_path` (sample rate must be one of
-/// 8/12/16/24/48 kHz — the rates Opus supports natively) to an Ogg-Opus file
-/// at `opus_path`. Streaming — memory use is bounded regardless of audio length.
+/// Encode a mono 32-bit-float WAV at `wav_path` to an Ogg-Opus file at
+/// `opus_path`. Streaming — memory use is bounded regardless of audio length.
+///
+/// The WAV's sample rate must be one Opus accepts natively (8/12/16/24/48 kHz)
+/// or, if it is off-list (e.g. Piper's 22050 Hz), it is resampled to the
+/// nearest native rate first. The resampled (native) rate is what gets
+/// recorded in `OpusHead`, so a 22050 Hz clip ends up as a 24 kHz Opus stream.
 pub fn encode_wav_to_opus(wav_path: &Path, opus_path: &Path) -> Result<()> {
     let mut reader = hound::WavReader::open(wav_path)?;
     let spec = reader.spec();
 
-    if !SUPPORTED_SAMPLE_RATES.contains(&spec.sample_rate) {
-        return Err(AudioError::UnsupportedFormat(format!(
-            "expected sample rate in {:?} Hz, got {}",
-            SUPPORTED_SAMPLE_RATES, spec.sample_rate
-        )));
-    }
     if spec.channels != 1 {
         return Err(AudioError::UnsupportedFormat(format!(
             "expected mono (1 channel), got {} channels",
@@ -82,10 +86,16 @@ pub fn encode_wav_to_opus(wav_path: &Path, opus_path: &Path) -> Result<()> {
         )));
     }
 
-    let sample_rate = spec.sample_rate;
-    let frame_samples = frame_samples(sample_rate);
+    let in_rate = spec.sample_rate;
+    // libopus only takes native rates; anything else is resampled to the
+    // nearest one before encoding (see module docs).
+    let encode_rate = if SUPPORTED_SAMPLE_RATES.contains(&in_rate) {
+        in_rate
+    } else {
+        nearest_supported_rate(in_rate)
+    };
 
-    let mut encoder = Encoder::new(sample_rate, Channels::Mono, Application::Voip)?;
+    let mut encoder = Encoder::new(encode_rate, Channels::Mono, Application::Voip)?;
     encoder.set_bitrate(Bitrate::Bits(BITRATE_BPS))?;
 
     // Pre-skip is the leading-sample count decoders must discard, expressed in
@@ -96,63 +106,136 @@ pub fn encode_wav_to_opus(wav_path: &Path, opus_path: &Path) -> Result<()> {
     let pre_skip_48k: u32 = encoder
         .get_lookahead()
         .ok()
-        .map(|n| (n as u32).saturating_mul(48_000) / sample_rate)
+        .map(|n| (n as u32).saturating_mul(48_000) / encode_rate)
         .unwrap_or(DEFAULT_PRE_SKIP_48K);
     let pre_skip: u16 = pre_skip_48k.min(u16::MAX as u32) as u16;
-
-    let total_samples = reader.duration() as usize;
-    let total_frames = total_samples.div_ceil(frame_samples);
 
     let file = BufWriter::new(File::create(opus_path)?);
     let mut writer = PacketWriter::new(file);
 
     writer.write_packet(
-        build_opus_head(sample_rate, pre_skip),
+        build_opus_head(encode_rate, pre_skip),
         SERIAL,
         PacketWriteEndInfo::EndPage,
         0,
     )?;
     writer.write_packet(build_opus_tags(), SERIAL, PacketWriteEndInfo::EndPage, 0)?;
 
-    let mut encoded = vec![0u8; MAX_PACKET_BYTES];
-    let mut frame_buf = vec![0f32; frame_samples];
-    let mut absgp: u64 = 0;
-    let mut frame_idx: usize = 0;
-    let mut samples = reader.samples::<f32>();
-
-    loop {
-        let mut n_read = 0usize;
-        for slot in frame_buf.iter_mut() {
-            match samples.next() {
-                Some(Ok(s)) => {
-                    *slot = s;
-                    n_read += 1;
-                }
-                Some(Err(e)) => return Err(AudioError::Wav(e)),
-                None => break,
-            }
-        }
-        if n_read == 0 {
-            break;
-        }
-        for slot in &mut frame_buf[n_read..] {
-            *slot = 0.0;
-        }
-
-        let n = encoder.encode_float(&frame_buf, &mut encoded)?;
-        absgp += GRANULE_PER_FRAME;
-        frame_idx += 1;
-
-        let end = if frame_idx == total_frames {
-            PacketWriteEndInfo::EndStream
+    // Native rates stream straight from the WAV reader (constant memory).
+    // Off-list rates must be buffered once to resample, then streamed out.
+    let mut samples_iter: Box<dyn Iterator<Item = std::result::Result<f32, hound::Error>>> =
+        if encode_rate == in_rate {
+            Box::new(reader.samples::<f32>())
         } else {
-            PacketWriteEndInfo::NormalPacket
+            let samples: Vec<f32> = reader
+                .samples::<f32>()
+                .collect::<std::result::Result<Vec<f32>, hound::Error>>()?;
+            Box::new(
+                resample_linear(&samples, in_rate, encode_rate)
+                    .into_iter()
+                    .map(Ok),
+            )
         };
-        writer.write_packet(encoded[..n].to_vec(), SERIAL, end, absgp)?;
-    }
+
+    write_frames(&mut encoder, &mut writer, encode_rate, &mut samples_iter)?;
 
     let mut file = writer.into_inner();
     file.flush()?;
+    Ok(())
+}
+
+/// Pick the Opus-native rate (one of [`SUPPORTED_SAMPLE_RATES`]) closest to
+/// `rate`. Used to decide what an off-list WAV should be resampled to: 22050
+/// Hz → 24000 Hz, 44100 Hz → 48000 Hz, 32000 Hz → 24000 Hz, etc.
+fn nearest_supported_rate(rate: u32) -> u32 {
+    *SUPPORTED_SAMPLE_RATES
+        .iter()
+        .min_by_key(|&&r| (r as i64 - rate as i64).abs())
+        .expect("SUPPORTED_SAMPLE_RATES is non-empty")
+}
+
+/// Linear-interpolation resample of `input` (mono float, `in_rate` Hz) to
+/// `out_rate` Hz. Returns a fresh buffer. Used to bring off-list WAV rates
+/// (e.g. Piper's 22050 Hz) onto an Opus-native rate before encoding — the
+/// resampling grid changes but pitch and duration are preserved (output
+/// length scales with `out_rate/in_rate`). Endpoints past the last input
+/// sample are held constant so a trailing frame stays well-formed.
+fn resample_linear(input: &[f32], in_rate: u32, out_rate: u32) -> Vec<f32> {
+    if in_rate == out_rate || input.is_empty() {
+        return input.to_vec();
+    }
+    let ratio = out_rate as f64 / in_rate as f64;
+    let out_len = (input.len() as f64 * ratio).ceil() as usize;
+    let last = input[input.len() - 1];
+    let mut out = Vec::with_capacity(out_len);
+    for k in 0..out_len {
+        let p = k as f64 / ratio;
+        let i = p.floor() as usize;
+        let frac = p - i as f64;
+        let a = input[i] as f64;
+        let b = input.get(i + 1).copied().unwrap_or(last) as f64;
+        out.push((a * (1.0 - frac) + b * frac) as f32);
+    }
+    out
+}
+
+/// Encode an `f32` sample stream at `encode_rate` (one of the Opus-native
+/// rates) into 20 ms Opus frames wrapped in Ogg pages. The last frame is
+/// marked `EndStream`; because the stream length isn't known up front, the
+/// previously-completed frame is buffered and flushed as a `NormalPacket`
+/// when the next frame arrives (or as the terminal `EndStream` page at the
+/// end of input). `samples` yields one float per output sample.
+fn write_frames(
+    encoder: &mut Encoder,
+    writer: &mut PacketWriter<BufWriter<File>>,
+    encode_rate: u32,
+    samples: &mut dyn Iterator<Item = std::result::Result<f32, hound::Error>>,
+) -> Result<()> {
+    let frame_samples = frame_samples(encode_rate);
+    let mut encoded = vec![0u8; MAX_PACKET_BYTES];
+    let mut frame_buf = vec![0f32; frame_samples];
+    let mut absgp: u64 = 0;
+    let mut filled: usize = 0;
+    // The most recently completed frame, awaiting its `EndStream` decision.
+    let mut pending: Option<(Vec<u8>, u64)> = None;
+
+    loop {
+        let s = match samples.next() {
+            Some(Ok(s)) => s,
+            Some(Err(e)) => return Err(AudioError::Wav(e)),
+            None => break,
+        };
+        frame_buf[filled] = s;
+        filled += 1;
+        if filled == frame_samples {
+            let n = encoder.encode_float(&frame_buf, &mut encoded)?;
+            absgp += GRANULE_PER_FRAME;
+            let data = encoded[..n].to_vec();
+            if let Some((prev, prev_gp)) = pending.take() {
+                writer.write_packet(prev, SERIAL, PacketWriteEndInfo::NormalPacket, prev_gp)?;
+            }
+            pending = Some((data, absgp));
+            filled = 0;
+        }
+    }
+
+    // Flush a trailing partial frame (zero-padded to a full 20 ms).
+    if filled > 0 {
+        for slot in &mut frame_buf[filled..] {
+            *slot = 0.0;
+        }
+        let n = encoder.encode_float(&frame_buf, &mut encoded)?;
+        absgp += GRANULE_PER_FRAME;
+        let data = encoded[..n].to_vec();
+        if let Some((prev, prev_gp)) = pending.take() {
+            writer.write_packet(prev, SERIAL, PacketWriteEndInfo::NormalPacket, prev_gp)?;
+        }
+        pending = Some((data, absgp));
+    }
+
+    if let Some((data, gp)) = pending.take() {
+        writer.write_packet(data, SERIAL, PacketWriteEndInfo::EndStream, gp)?;
+    }
     Ok(())
 }
 
@@ -296,27 +379,82 @@ mod tests {
         );
     }
 
-    /// Rates outside the Opus-native set must be rejected up front.
+    /// An off-list rate (Piper's 22050 Hz) must NOT be rejected — it is
+    /// resampled to the nearest Opus-native rate (24000 Hz) and encoded, with
+    /// the resampled rate recorded in `OpusHead`. Regression guard for #206.
     #[test]
-    fn rejects_unsupported_sample_rate() {
+    fn resamples_off_list_rate_to_nearest_native() {
         let dir = tempfile::tempdir().expect("tempdir");
         let wav_path = dir.path().join("in.wav");
         let opus_path = dir.path().join("out.opus");
 
-        let spec = hound::WavSpec {
-            channels: 1,
-            sample_rate: 22_050,
-            bits_per_sample: 32,
-            sample_format: hound::SampleFormat::Float,
-        };
-        write_wav_with_spec(&wav_path, spec);
+        write_sine_wav(&wav_path, 22_050, 440.0, 0.25);
+        encode_wav_to_opus(&wav_path, &opus_path)
+            .unwrap_or_else(|e| panic!("22050 Hz wav should resample+encode, got: {e}"));
 
-        let err =
-            encode_wav_to_opus(&wav_path, &opus_path).expect_err("should reject 22.05 kHz wav");
-        match err {
-            AudioError::UnsupportedFormat(_) => {}
-            other => panic!("expected UnsupportedFormat, got {other:?}"),
-        }
+        let bytes = std::fs::read(&opus_path).expect("read opus");
+        assert!(bytes.len() > 1000, "opus too small: {}", bytes.len());
+        assert_eq!(
+            read_opus_head_rate(&opus_path),
+            24_000,
+            "22050 Hz must be resampled to 24000 Hz in OpusHead"
+        );
+    }
+
+    /// A 44100 Hz WAV must resample to 48000 Hz (the nearest native rate),
+    /// exercising the upsample branch of `nearest_supported_rate`.
+    #[test]
+    fn resamples_44100_to_48000() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let wav_path = dir.path().join("in.wav");
+        let opus_path = dir.path().join("out.opus");
+
+        write_sine_wav(&wav_path, 44_100, 440.0, 0.25);
+        encode_wav_to_opus(&wav_path, &opus_path)
+            .unwrap_or_else(|e| panic!("44100 Hz wav should resample+encode, got: {e}"));
+
+        assert_eq!(
+            read_opus_head_rate(&opus_path),
+            48_000,
+            "44100 Hz must be resampled to 48000 Hz in OpusHead"
+        );
+    }
+
+    /// `nearest_supported_rate` must pick the closest native rate, exercising
+    /// both upsample (22050→24000, 44100→48000, 11025→12000) and downsample
+    /// (32000→24000) candidates, and pass native rates through unchanged.
+    #[test]
+    fn nearest_supported_rate_picks_closest_native() {
+        assert_eq!(nearest_supported_rate(8_000), 8_000);
+        assert_eq!(nearest_supported_rate(22_050), 24_000);
+        assert_eq!(nearest_supported_rate(32_000), 24_000);
+        assert_eq!(nearest_supported_rate(44_100), 48_000);
+        assert_eq!(nearest_supported_rate(11_025), 12_000);
+    }
+
+    /// `resample_linear` must scale output length by `out_rate/in_rate`, keep
+    /// the first sample, pass equal rates through untouched, and return an
+    /// empty buffer for empty input.
+    #[test]
+    fn resample_linear_scales_length_and_handles_empty() {
+        let input: Vec<f32> = (0..22_050).map(|i| i as f32 / 100.0).collect();
+
+        let out = resample_linear(&input, 22_050, 24_000);
+        // Length scales by out/in rate; `ceil` can land one sample over due to
+        // float rounding (22050 * 24000/22050 ≈ 24000.000000x).
+        assert!(
+            out.len() == 24_000 || out.len() == 24_001,
+            "length must scale by out/in rate, got {}",
+            out.len()
+        );
+        assert!((out[0] - input[0]).abs() < 1e-3, "first sample preserved");
+
+        // Equal rates pass through unchanged (same length, same content).
+        let same = resample_linear(&input, 22_050, 22_050);
+        assert_eq!(same.len(), input.len());
+
+        // Empty input stays empty.
+        assert!(resample_linear(&[], 22_050, 24_000).is_empty());
     }
 
     /// Non-mono input must be rejected up front — `encode_wav_to_opus` checks
