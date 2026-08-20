@@ -9,7 +9,7 @@
       `NSIS_HOOK_PREUNINSTALL` killing mpv.exe path-filtered by
       `$INSTDIR`; wire `bundle.windows.nsis.installerHooks` in
       `tauri.conf.json`.
-- [ ] Verify on the Win10 VM with a release build: auto-update no longer
+- [x] Verify on the Win10 VM with a release build: auto-update no longer
       hits "Error opening file for writing" for mpv.exe (needs a
       release build — CI uploads no installer artifacts).
-- [ ] Archive the change.
+- [x] Archive the change.
