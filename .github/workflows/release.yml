@@ -134,12 +134,42 @@ jobs:
             > latest.json
           cat latest.json
 
+      # Extract the CHANGELOG.md section for this version so the draft release
+      # body is the human-curated notes, not GitHub's auto-generated diff
+      # summary (issue #94). The `## [Unreleased]` heading and deeper
+      # `###`/`####` headings never match the `## [<semver>]` pattern, so only
+      # the target version's block is captured (up to the next top-level
+      # `## [` heading).
+      - name: Extract changelog section for release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ inputs.tag || github.ref_name }}"
+          version="${tag#v}"
+          awk -v v="$version" '
+            /^## \[/ {
+              rest = substr($0, 5)
+              cb = index(rest, "]")
+              hdr = (cb > 0) ? substr(rest, 1, cb - 1) : rest
+              capture = (hdr == v)
+            }
+            capture { print }
+          ' CHANGELOG.md > release_notes.md
+          # Fallback when the tag has no CHANGELOG section yet (a tag pushed
+          # before the entry was added): keep a usable draft body instead of
+          # an empty notes file.
+          if [ ! -s release_notes.md ]; then
+            echo "See CHANGELOG.md — no section for version $version yet." > release_notes.md
+          fi
+          echo "----- release notes -----"
+          cat release_notes.md
+
       - name: Draft release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
           draft: true
-          generate_release_notes: true
+          body_path: release_notes.md
           files: |
             src-tauri/target/release/bundle/nsis/*_x64-setup.exe
             src-tauri/target/release/bundle/nsis/*_x64-setup.exe.sig
