@@ -21,7 +21,8 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let menu = Menu::with_items(app, &[&show, &sep1, &add, &sep2, &quit])?;
 
     let _tray = TrayIconBuilder::with_id("main")
-        .tooltip("RuVox")
+        // Include the version so bug reports can quote it from the tray.
+        .tooltip(format!("RuVox v{}", app.package_info().version))
         .icon(load_tray_icon(app)?)
         .menu(&menu)
         .show_menu_on_left_click(false)

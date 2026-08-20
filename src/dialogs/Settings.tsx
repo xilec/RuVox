@@ -20,6 +20,7 @@ import type { MantineColorScheme } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
+import { getVersion } from '@tauri-apps/api/app';
 import { commands, events } from '../lib/tauri';
 import type { CleanupMode, EngineKind, UIConfigPatch } from '../lib/tauri';
 import { formatError } from '../lib/errors';
@@ -223,6 +224,7 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
   const { setColorScheme } = useMantineColorScheme();
   const [cleanupOpen, setCleanupOpen] = useState(false);
   const [cacheDir, setCacheDir] = useState<string>('');
+  const [appVersion, setAppVersion] = useState<string>('');
   const [logDir, setLogDir] = useState<string>('');
   const [coercedAlert, setCoercedAlert] = useState(false);
   const [availability, setAvailability] = useState<AvailabilityMap>(PESSIMISTIC_AVAILABILITY);
@@ -285,6 +287,9 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
         });
       });
     commands.getCacheDir().then(setCacheDir).catch(() => setCacheDir(''));
+    // Always resolve the version (independent of the Windows-only updater) so
+    // bug reports can quote it on every platform.
+    getVersion().then(setAppVersion).catch(() => setAppVersion(''));
     commands.getLogDir().then(setLogDir).catch(() => setLogDir(''));
     // form is excluded intentionally: setValues is stable, re-running on form change would loop
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -690,6 +695,10 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
               </Group>
             </>
           )}
+
+          <Text size="xs" c="dimmed" ta="right" mt="md">
+            Версия: {appVersion || '—'}
+          </Text>
 
           <Group justify="flex-end" mt="md">
             <Button variant="subtle" onClick={() => form.reset()}>
