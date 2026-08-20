@@ -6,8 +6,9 @@
       path; startup failures go to the log while staying silent in the UI.
 - [x] Mock `@tauri-apps/plugin-log` in `updater.test.ts` and pin the log
       calls.
-- [ ] Verify on the Win10 VM: after a manual "Проверить обновления", the
+- [x] Verify on the Win10 VM: after a manual "Проверить обновления", the
       log file contains an `update check (manual)` entry with the webview
-      target. (Needs a release build — CI uploads no installer artifacts;
-      verify with the v0.3.1 installer.)
-- [ ] Archive the change.
+      target. (Verified on the v0.3.1 installer: after the 0.3.0 → 0.3.1
+      update and relaunch, the startup check logged
+      `update check (startup): up to date` with the `webview:` target.)
+- [x] Archive the change.
