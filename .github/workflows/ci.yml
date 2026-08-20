@@ -1,5 +1,9 @@
 name: CI
 
+# Every job must declare `timeout-minutes` sized at ~2-3x its worst observed
+# duration: after the 2026-08-19 apt-mirror throttling incident (#204) a hung
+# step must fail fast with logs instead of idling until the 6h GitHub default.
+
 on:
   push:
     branches: [main]
@@ -10,6 +14,7 @@ jobs:
   changes:
     name: Detect changed paths
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
       typescript: ${{ steps.filter.outputs.typescript }}
@@ -63,6 +68,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.windows == 'true'
     runs-on: windows-latest
+    # Warm cache ~6-9 min; cold MSVC rebuild of all deps ~15 min.
+    timeout-minutes: 20
     env:
       # cmake 4.x on the runner image errors out on the vendored opus'
       # ancient cmake_minimum_required — pin the compat floor (design D5
@@ -94,6 +101,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
+    # Warm run 3-10 min; cold apt/cargo caches can push it to ~20-25 min.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
       # cache-apt-pkgs after the 2026-08-19 incident: azure.archive.ubuntu.com
@@ -129,6 +138,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.typescript == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v6
@@ -201,6 +211,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.openspec == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v6

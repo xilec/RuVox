@@ -24,6 +24,9 @@ permissions:
 jobs:
   export:
     runs-on: ubuntu-latest
+    # Rare manual run; the heavy part is the uv sync of torch (~2 GB download),
+    # which is exactly what mirror throttling makes slow.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
