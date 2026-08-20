@@ -24,12 +24,16 @@ vi.mock('@tauri-apps/plugin-log', () => ({
   info: vi.fn(),
   error: vi.fn(),
 }));
+vi.mock('./tauri', () => ({
+  commands: { shutdownPlayerForUpdate: vi.fn().mockResolvedValue(undefined) },
+}));
 
 import { notifications } from '@mantine/notifications';
 import { modals } from '@mantine/modals';
 import { check } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { error as logError, info as logInfo } from '@tauri-apps/plugin-log';
+import { commands } from './tauri';
 import { checkForUpdatesManual, checkForUpdatesOnStartup, UPDATER_ENABLED } from './updater';
 
 const checkMock = vi.mocked(check);
@@ -109,6 +113,9 @@ describe('install flow (confirm → downloadAndInstall → relaunch)', () => {
     expect(showMock).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'app-update', loading: true }),
     );
+    // #211: mpv is destroyed before the installer starts so the orphaned
+    // process cannot lock the install dir.
+    expect(commands.shutdownPlayerForUpdate).toHaveBeenCalled();
     expect(update.downloadAndInstall).toHaveBeenCalled();
   });
 

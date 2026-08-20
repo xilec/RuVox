@@ -4,6 +4,7 @@ import { error as logError, info as logInfo } from '@tauri-apps/plugin-log';
 import { check, type Update } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { formatError } from './errors';
+import { commands } from './tauri';
 
 /**
  * Auto-update front end (tauri-plugin-updater).
@@ -30,6 +31,10 @@ async function installAndRelaunch(update: Update) {
     autoClose: false,
   });
   let downloaded = 0;
+  // #211: the updater-launched installer force-kills the app, so the
+  // exit-time mpv cleanup never runs and the orphaned mpv.exe would lock
+  // $INSTDIR — destroy it up front, before the download even starts.
+  await commands.shutdownPlayerForUpdate();
   await update.downloadAndInstall((event) => {
     if (event.event === 'Started' && event.data.contentLength) {
       notifications.update({

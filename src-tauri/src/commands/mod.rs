@@ -12,6 +12,7 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tauri::{AppHandle, Emitter, Runtime, State};
+use tauri_plugin_mpv::MpvExt;
 use tokio::task::AbortHandle;
 use tracing::{info, warn};
 
@@ -1097,6 +1098,27 @@ pub async fn stop_playback(state: State<'_, AppState>) -> CmdResult<()> {
         .map_err(|e| CommandError::PlaybackError {
             message: e.to_string(),
         })
+}
+
+/// Destroy the mpv subprocess before the updater launches the installer
+/// (#211). The updater-launched NSIS installer force-kills this process,
+/// so `RunEvent::Exit` (which normally destroys mpv) never fires and the
+/// orphaned mpv.exe keeps `$INSTDIR\mpv\mpv.exe` locked, failing the
+/// install. Called by the frontend right before `downloadAndInstall()`.
+/// Mirrors the `RunEvent::Exit` cleanup in `lib.rs`: mark first so
+/// in-flight player commands short-circuit, then destroy.
+#[tauri::command]
+pub async fn shutdown_player_for_update<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+) -> CmdResult<()> {
+    state.player.mark_destroyed();
+    // Best-effort: a missing mpv instance (already destroyed when the main
+    // window closed) must not abort the update.
+    if let Err(e) = app.mpv().destroy(crate::player::WINDOW_LABEL) {
+        warn!("mpv destroy before update failed (continuing): {e}");
+    }
+    Ok(())
 }
 
 /// Seek to an absolute position in the current audio.
