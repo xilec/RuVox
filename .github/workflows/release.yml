@@ -70,15 +70,21 @@ jobs:
 
       # espeak-ng-data is produced BY the build (espeak-rs-sys vendors and
       # compiles espeak-ng) — so build first, then copy the data out of the
-      # build tree, then bundle. Must go through `tauri build --no-bundle`
-      # (not plain `cargo build`): the Tauri CLI enables the
-      # `tauri/custom-protocol` feature for production builds, and a plain
-      # cargo build with a different feature set forces the second cargo
-      # invocation inside `tauri build` to recompile tauri + all plugins +
-      # the app crate (~3.5 min). With the same feature set that invocation
-      # is a real cache hit and only NSIS bundling runs.
-      - name: tauri build --no-bundle (produces espeak-ng-data)
-        run: pnpm tauri build --no-bundle
+      # build tree, then bundle. The warm-up builds ONLY the lib target as
+      # an rlib (`cargo rustc --crate-type=rlib`): no cdylib/staticlib/exe
+      # link happens here. Linking the app now would be thrown away — the
+      # resource copy below invalidates the app crate anyway (tauri-build
+      # emits `rerun-if-changed` for every bundle resource, so the real
+      # `tauri build` recompiles + LTO-relinks it regardless). The explicit
+      # `--features tauri/custom-protocol` matches what the Tauri CLI adds
+      # for production builds (CLI v2: `cargo build --bins --features
+      # tauri/custom-protocol`), keeping dependency fingerprints identical
+      # so the final build reuses everything compiled here.
+      - name: Build frontend (tauri-codegen needs dist/ during cargo build)
+        run: pnpm build
+
+      - name: cargo build lib --crate-type=rlib (produces espeak-ng-data)
+        run: cargo rustc --release --lib --crate-type=rlib --features tauri/custom-protocol --manifest-path src-tauri/Cargo.toml
 
       - name: Extract espeak-ng-data into bundle resources
         shell: bash
