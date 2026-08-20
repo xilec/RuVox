@@ -265,7 +265,7 @@ impl TtsEngine for PiperEngine {
         let samples_for_write = samples;
         let out_wav_for_write = out_wav.clone();
         tokio::task::spawn_blocking(move || {
-            write_wav_i16(&out_wav_for_write, sample_rate, &samples_for_write)
+            write_wav_f32(&out_wav_for_write, sample_rate, &samples_for_write)
         })
         .await
         .map_err(|e| {
@@ -323,19 +323,28 @@ fn load_voice_blocking(config_path: &Path) -> Result<(Piper, f32, f32, u32), Tts
     ))
 }
 
-/// Write `samples` (f32 in -1.0..1.0) as a mono i16 PCM WAV at `sample_rate`.
-fn write_wav_i16(path: &str, sample_rate: u32, samples: &[f32]) -> Result<(), TtsError> {
+/// Write `samples` (f32 in -1.0..1.0) as a mono 32-bit-float WAV at
+/// `sample_rate`.
+///
+/// The float format is what `crate::audio::encode_wav_to_opus` accepts, so a
+/// Piper clip transcodes straight to Opus (with any off-list sample rate
+/// resampled to the nearest Opus-native one). Writing i16 here would instead
+/// make the encoder reject the file (`unsupported wav format: expected 32-bit
+/// float PCM`) and keep the much larger `.wav` — the #206 regression. Since
+/// Piper synthesizes f32 internally, writing float also skips a lossy i16
+/// quantization step.
+fn write_wav_f32(path: &str, sample_rate: u32, samples: &[f32]) -> Result<(), TtsError> {
     let spec = hound::WavSpec {
         channels: 1,
         sample_rate,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
+        bits_per_sample: 32,
+        sample_format: hound::SampleFormat::Float,
     };
     let mut writer = hound::WavWriter::create(path, spec).map_err(map_hound_err)?;
     for s in samples {
-        let clipped = s.clamp(-1.0, 1.0);
-        let i = (clipped * 32767.0) as i16;
-        writer.write_sample(i).map_err(map_hound_err)?;
+        writer
+            .write_sample(s.clamp(-1.0, 1.0))
+            .map_err(map_hound_err)?;
     }
     writer.finalize().map_err(map_hound_err)
 }
@@ -344,5 +353,45 @@ fn map_hound_err(e: hound::Error) -> TtsError {
     match e {
         hound::Error::IoError(io) => TtsError::Ipc(io),
         other => TtsError::Ipc(std::io::Error::other(other.to_string())),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `write_wav_f32` must emit a mono 32-bit-float WAV — the exact format
+    /// `crate::audio::encode_wav_to_opus` accepts — so a Piper clip transcodes
+    /// to Opus instead of being rejected (`expected 32-bit float PCM`) and
+    /// kept as a large `.wav` (#206). The samples must round-trip without any
+    /// i16 quantization.
+    #[test]
+    fn write_wav_f32_produces_float_mono_wav() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let wav_path = dir.path().join("out.wav");
+        let samples: Vec<f32> = vec![-1.0, -0.5, 0.0, 0.25, 0.9, 1.5, -2.0];
+
+        write_wav_f32(wav_path.to_str().unwrap(), 22_050, &samples).expect("write wav");
+
+        let mut reader = hound::WavReader::open(&wav_path).expect("open wav");
+        let spec = reader.spec();
+        assert_eq!(spec.channels, 1, "must be mono");
+        assert_eq!(
+            spec.sample_format,
+            hound::SampleFormat::Float,
+            "must be float PCM (not int), or the Opus encoder rejects it"
+        );
+        assert_eq!(spec.bits_per_sample, 32, "must be 32-bit float");
+        assert_eq!(spec.sample_rate, 22_050);
+
+        let read: Vec<f32> = reader
+            .samples::<f32>()
+            .collect::<Result<Vec<f32>, hound::Error>>()
+            .expect("read samples");
+        let expected: Vec<f32> = vec![-1.0, -0.5, 0.0, 0.25, 0.9, 1.0, -1.0];
+        assert_eq!(
+            read, expected,
+            "in-range samples must round-trip without quantization; out-of-range must clamp to ±1.0"
+        );
     }
 }
