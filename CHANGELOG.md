@@ -6,6 +6,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-08-20
+
+### Added
+- **Update checks are logged** — both the background check and "Проверить обновления" in Settings now write their outcome (up to date / update available / failure reason) to the diagnostic log file (#207).
+
 ## [0.3.0] — 2026-08-19 — Windows support
 
 ### Added
