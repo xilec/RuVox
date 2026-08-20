@@ -1115,4 +1115,35 @@ mod tests {
         assert!(!applied);
         assert!(svc.get_entry(&missing).is_none());
     }
+
+    /// A legacy `.wav` at an off-list rate (Piper's 22050 Hz) must migrate to
+    /// `.opus` rather than being left as an oversized `.wav` — regression
+    /// guard for #206 (the migration previously logged "unsupported wav
+    /// format" and skipped this entry).
+    #[test]
+    fn migrate_22050_wav_audio_to_opus() {
+        let (svc, _dir) = make_service();
+        let entry = svc.add_entry("legacy piper wav".to_string()).unwrap();
+        let id = entry.id;
+
+        let wav_filename = format!("{id}.wav");
+        let wav_path = svc.cache_dir().join("audio").join(&wav_filename);
+        write_sine_wav(&wav_path, 22_050, 440.0, 0.2);
+
+        update_entry_with(&svc, &entry, |e| {
+            e.audio_path = Some(wav_filename.clone());
+            e.status = EntryStatus::Ready;
+        });
+
+        let stats = svc.migrate_wav_audio_to_opus();
+        assert_eq!(stats.considered, 1);
+        assert_eq!(stats.migrated, 1);
+        assert_eq!(stats.failed, 0);
+
+        let after = svc.get_entry(&id).unwrap();
+        let new_filename = after.audio_path.expect("audio_path must remain set");
+        assert!(new_filename.ends_with(".opus"), "got {new_filename}");
+        assert!(svc.cache_dir().join("audio").join(&new_filename).exists());
+        assert!(!wav_path.exists(), "source .wav should be removed");
+    }
 }
