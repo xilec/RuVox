@@ -8,7 +8,13 @@ import {
   Text,
   useComputedColorScheme,
 } from '@mantine/core';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from 'react';
 import { notifications } from '@mantine/notifications';
 import type { EntryFormat, TextEntry, WordTimestamp } from '../lib/tauri';
 import { commands, events } from '../lib/tauri';
@@ -30,6 +36,16 @@ import classes from './TextViewer.module.css';
 
 // Entries without a persisted format render in the viewer default mode.
 const DEFAULT_FORMAT: EntryFormat = "markdown";
+
+// Keep links inside the mermaid zoom modal inert, mirroring the delegated
+// handler that covers the viewer container. auxclick is included because
+// middle click fires auxclick, not click, and would bypass a click-only block.
+function blockZoomLinkClick(e: ReactMouseEvent) {
+  if ((e.target as HTMLElement).closest("a")) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+}
 
 interface Props {
   entry: TextEntry | null;
@@ -380,7 +396,13 @@ export function TextViewer({ entry }: Props) {
         styles={{ body: { overflowX: "auto" } }}
       >
         {zoomedSvg && (
+          // The modal is portaled outside containerRef, so the delegated
+          // read-only click handler does not reach it: block link navigation
+          // inside the zoomed SVG here (mermaid `click` directives emit real
+          // <a> elements under securityLevel 'loose').
           <Box
+            onClick={blockZoomLinkClick}
+            onAuxClick={blockZoomLinkClick}
             dangerouslySetInnerHTML={{ __html: zoomedSvg }}
             style={{ display: "flex", justifyContent: "center" }}
           />

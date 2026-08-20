@@ -74,6 +74,16 @@ function makeEntry(): TextEntry {
   };
 }
 
+function makeMermaidEntry(): TextEntry {
+  return {
+    ...makeEntry(),
+    format: 'markdown',
+    html_source: null,
+    original_text:
+      '```mermaid\nflowchart LR\n  A[Node]\n  click A "https://example.com"\n```',
+  };
+}
+
 describe('TextViewer read-only behavior', () => {
   let host: HTMLDivElement;
   let root: Root;
@@ -164,5 +174,57 @@ describe('TextViewer read-only behavior', () => {
       );
     });
     expect(copyLinkAddress).toHaveBeenCalledWith('/ru/users/maybe_elf/');
+  });
+
+  // Regression (#159): the zoom modal is portaled outside the viewer
+  // container, so the delegated link-blocking handler does not cover it —
+  // links inside the zoomed SVG (mermaid `click` directives emit real <a>
+  // elements under securityLevel 'loose') navigated the webview.
+  it('blocks link navigation inside the mermaid zoom modal', async () => {
+    root = createRoot(host);
+    renderWith(makeMermaidEntry());
+
+    // renderMermaidIn is mocked; inject the SVG it would have produced.
+    const mermaidDiv = host.querySelector('.mermaid');
+    expect(mermaidDiv).not.toBeNull();
+    mermaidDiv!.innerHTML =
+      '<svg><a href="https://example.com"><text>Node</text></a></svg>';
+
+    // Open the zoom modal by clicking the diagram itself (a non-link area).
+    const svg = mermaidDiv!.querySelector('svg')!;
+    act(() => {
+      svg.dispatchEvent(
+        new MouseEvent('click', { bubbles: true, cancelable: true }),
+      );
+    });
+    // Mantine Modal mounts its portal through a transition, so the dialog
+    // appears asynchronously rather than synchronously after the click.
+    let dialog: Element | null = null;
+    await act(async () => {
+      await vi.waitFor(() => {
+        dialog = document.body.querySelector('[role="dialog"]');
+        expect(dialog).not.toBeNull();
+      });
+    });
+
+    const link = dialog!.querySelector('a');
+    expect(link).not.toBeNull();
+
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true });
+    act(() => {
+      link!.dispatchEvent(click);
+    });
+    expect(click.defaultPrevented).toBe(true);
+
+    // Middle click fires auxclick, not click — it must be blocked too.
+    const auxclick = new MouseEvent('auxclick', {
+      bubbles: true,
+      cancelable: true,
+      button: 1,
+    });
+    act(() => {
+      link!.dispatchEvent(auxclick);
+    });
+    expect(auxclick.defaultPrevented).toBe(true);
   });
 });
