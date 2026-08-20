@@ -1,5 +1,6 @@
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
+import { error as logError, info as logInfo } from '@tauri-apps/plugin-log';
 import { check, type Update } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { formatError } from './errors';
@@ -87,9 +88,16 @@ export async function checkForUpdatesOnStartup() {
   if (!UPDATER_ENABLED) return;
   try {
     const update = await check();
-    if (update) promptInstall(update);
-  } catch {
-    // Offline / endpoint missing / draft-only releases — stay silent.
+    if (update) {
+      await logInfo(`update check (startup): update available: ${update.version}`);
+      promptInstall(update);
+    } else {
+      await logInfo('update check (startup): up to date');
+    }
+  } catch (err) {
+    // Offline / endpoint missing / draft-only releases — stay silent in the UI,
+    // but keep the reason in the log file for diagnostics.
+    await logError(`update check (startup) failed: ${formatError(err)}`);
   }
 }
 
@@ -98,8 +106,10 @@ export async function checkForUpdatesManual() {
   try {
     const update = await check();
     if (update) {
+      await logInfo(`update check (manual): update available: ${update.version}`);
       promptInstall(update);
     } else {
+      await logInfo('update check (manual): up to date');
       notifications.show({
         title: 'Обновлений нет',
         message: 'У вас последняя версия.',
@@ -107,6 +117,7 @@ export async function checkForUpdatesManual() {
       });
     }
   } catch (err) {
+    await logError(`update check (manual) failed: ${formatError(err)}`);
     notifications.show({
       title: 'Не удалось проверить обновления',
       message: formatError(err),

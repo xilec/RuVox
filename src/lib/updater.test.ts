@@ -20,11 +20,16 @@ vi.mock('@tauri-apps/plugin-updater', () => ({
 vi.mock('@tauri-apps/plugin-process', () => ({
   relaunch: vi.fn(),
 }));
+vi.mock('@tauri-apps/plugin-log', () => ({
+  info: vi.fn(),
+  error: vi.fn(),
+}));
 
 import { notifications } from '@mantine/notifications';
 import { modals } from '@mantine/modals';
 import { check } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
+import { error as logError, info as logInfo } from '@tauri-apps/plugin-log';
 import { checkForUpdatesManual, checkForUpdatesOnStartup, UPDATER_ENABLED } from './updater';
 
 const checkMock = vi.mocked(check);
@@ -32,6 +37,8 @@ const showMock = vi.mocked(notifications.show);
 const updateMock = vi.mocked(notifications.update);
 const modalMock = vi.mocked(modals.openConfirmModal);
 const relaunchMock = vi.mocked(relaunch);
+const logInfoMock = vi.mocked(logInfo);
+const logErrorMock = vi.mocked(logError);
 
 function fakeUpdate() {
   return {
@@ -62,6 +69,7 @@ describe('checkForUpdatesManual', () => {
       expect.objectContaining({ title: 'Обновлений нет', color: 'green' }),
     );
     expect(modalMock).not.toHaveBeenCalled();
+    expect(logInfoMock).toHaveBeenCalledWith('update check (manual): up to date');
   });
 
   it('opens the confirm modal when an update is available', async () => {
@@ -70,6 +78,7 @@ describe('checkForUpdatesManual', () => {
     expect(modalMock).toHaveBeenCalledWith(
       expect.objectContaining({ title: 'Доступна новая версия 9.9.9' }),
     );
+    expect(logInfoMock).toHaveBeenCalledWith('update check (manual): update available: 9.9.9');
   });
 
   it('shows a red toast when the check fails (manual = not silent)', async () => {
@@ -77,6 +86,9 @@ describe('checkForUpdatesManual', () => {
     await checkForUpdatesManual();
     expect(showMock).toHaveBeenCalledWith(
       expect.objectContaining({ title: 'Не удалось проверить обновления', color: 'red' }),
+    );
+    expect(logErrorMock).toHaveBeenCalledWith(
+      expect.stringContaining('update check (manual) failed'),
     );
   });
 });
