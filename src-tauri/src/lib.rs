@@ -424,6 +424,7 @@ pub(crate) fn invoke_handler<R: Runtime>()
         clear_cache,
         get_cache_stats,
         get_cache_dir,
+        get_log_dir,
     ]
 }
 

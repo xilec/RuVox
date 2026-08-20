@@ -11,7 +11,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tauri::{AppHandle, Emitter, Runtime, State};
+use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use tauri_plugin_mpv::MpvExt;
 use tokio::task::AbortHandle;
 use tracing::{info, warn};
@@ -1416,6 +1416,35 @@ pub struct CacheSizeInfo {
 #[tauri::command]
 pub async fn get_cache_dir(state: State<'_, AppState>) -> CmdResult<String> {
     Ok(state.storage.cache_dir().to_string_lossy().into_owned())
+}
+
+/// Absolute path of the per-user log directory (the same one `tauri-plugin-log`
+/// writes its rotated files into). The frontend reveals it in the OS file
+/// manager so the user can grab logs for a support request.
+#[tauri::command]
+pub async fn get_log_dir<R: Runtime>(app: AppHandle<R>) -> CmdResult<String> {
+    let dir = app
+        .path()
+        .app_log_dir()
+        .map_err(|e| CommandError::Internal {
+            message: format!("не удалось разрешить папку логов: {e}"),
+        })?;
+    // The logger creates the dir lazily on first write; create it now so the
+    // frontend can reveal a real path even before any log line is flushed.
+    // Run on a blocking thread so this async command does not park the
+    // executor's worker.
+    tauri::async_runtime::spawn_blocking({
+        let dir = dir.clone();
+        move || std::fs::create_dir_all(dir)
+    })
+    .await
+    .map_err(|e| CommandError::Internal {
+        message: format!("не удалось создать папку логов: {e}"),
+    })?
+    .map_err(|e| CommandError::Internal {
+        message: format!("не удалось создать папку логов: {e}"),
+    })?;
+    Ok(dir.to_string_lossy().into_owned())
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────

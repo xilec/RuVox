@@ -205,6 +205,9 @@ export const commands = {
   getCacheDir: (): Promise<string> =>
     tauriInvoke('get_cache_dir'),
 
+  getLogDir: (): Promise<string> =>
+    tauriInvoke('get_log_dir'),
+
   previewNormalize: (text: string): Promise<PreviewNormalizeResult> =>
     tauriInvoke('preview_normalize', { text }),
 };
