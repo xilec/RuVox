@@ -163,6 +163,12 @@ export const commands = {
   stopPlayback: (): Promise<void> =>
     tauriInvoke('stop_playback'),
 
+  /** Destroy the mpv subprocess before the updater runs the installer
+   * (#211): the installer force-kills the app, so the exit-time cleanup
+   * never runs and the orphaned mpv.exe would lock the install dir. */
+  shutdownPlayerForUpdate: (): Promise<void> =>
+    tauriInvoke('shutdown_player_for_update'),
+
   seekTo: (position_sec: number): Promise<void> =>
     tauriInvoke('seek_to', { positionSec: position_sec }),
 
