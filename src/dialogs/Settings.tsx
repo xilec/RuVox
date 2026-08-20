@@ -225,6 +225,7 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
   const [cleanupOpen, setCleanupOpen] = useState(false);
   const [cacheDir, setCacheDir] = useState<string>('');
   const [appVersion, setAppVersion] = useState<string>('');
+  const [logDir, setLogDir] = useState<string>('');
   const [coercedAlert, setCoercedAlert] = useState(false);
   const [availability, setAvailability] = useState<AvailabilityMap>(PESSIMISTIC_AVAILABILITY);
   // Live bundle-download state: null when idle, otherwise the current file
@@ -289,6 +290,7 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
     // Always resolve the version (independent of the Windows-only updater) so
     // bug reports can quote it on every platform.
     getVersion().then(setAppVersion).catch(() => setAppVersion(''));
+    commands.getLogDir().then(setLogDir).catch(() => setLogDir(''));
     // form is excluded intentionally: setValues is stable, re-running on form change would loop
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opened]);
@@ -391,9 +393,23 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
   const handleOpenCacheDir = async () => {
     if (!cacheDir) return;
     try {
-      // revealItemInDir always needs an item path, not a bare directory.
-      // history.json is always present, so use it as the marker.
+      // revealItemInDir accepts a file or a directory. For the cache we pass
+      // history.json as a stable marker; the log handler below passes the
+      // directory path directly (the freshly created log dir may be empty).
       await revealItemInDir(`${cacheDir}/history.json`);
+    } catch (err) {
+      notifications.show({
+        title: 'Не удалось открыть папку',
+        message: formatError(err),
+        color: 'red',
+      });
+    }
+  };
+
+  const handleOpenLogDir = async () => {
+    if (!logDir) return;
+    try {
+      await revealItemInDir(logDir);
     } catch (err) {
       notifications.show({
         title: 'Не удалось открыть папку',
@@ -625,6 +641,29 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
             </Button>
             <Button variant="default" onClick={() => setCleanupOpen(true)}>
               Очистить кэш…
+            </Button>
+          </Group>
+
+          <Divider />
+
+          <Text size="sm" fw={500} c="dimmed">
+            Логи
+          </Text>
+
+          {logDir && (
+            <Stack gap={4}>
+              <Text size="xs" c="dimmed">
+                Папка с логами
+              </Text>
+              <Text size="sm" style={{ wordBreak: 'break-all', fontFamily: 'var(--mantine-font-family-monospace)' }}>
+                {logDir}
+              </Text>
+            </Stack>
+          )}
+
+          <Group justify="flex-start">
+            <Button variant="default" onClick={handleOpenLogDir} disabled={!logDir}>
+              Открыть папку
             </Button>
           </Group>
 
