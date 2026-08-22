@@ -5,7 +5,8 @@ Guide to contributing to RuVox.
 ## Language
 
 Development happens in English: write issues, PRs, and commit messages in English
-(this also feeds the auto-generated `CHANGELOG.md`). The user-facing `README.md`
+(this also feeds the generated release-notes draft, see
+[Release notes & CHANGELOG](#release-notes--changelog)). The user-facing `README.md`
 is Russian with an English mirror (`README.en.md`); the repository short
 description is Russian. Full policy: [Repository language policy](../AGENTS.md#repository-language-policy).
 
@@ -132,6 +133,9 @@ chore(deps): bump tauri to 2.10
 - [ ] If the pipeline was touched — a golden fixture has been added/updated.
 - [ ] If ttsd was touched — `cd ttsd && uv run python -m pytest` is green.
 - [ ] Documentation (`docs/`) is updated if behavior changed.
+- [ ] If the change is user-visible **and meaningful** — a note has been added
+  to `## [Unreleased]` in `CHANGELOG.md`; trivial tweaks need no entry
+  (see [Release notes & CHANGELOG](#release-notes--changelog)).
 - [ ] Commit messages follow the `<type>(<module>): <desc>` format.
 
 ### PR description
@@ -153,6 +157,56 @@ It shows up often in technical docs and was previously transliterated as
 - Smoke in `pnpm tauri dev`: paste a string with Kubernetes into the clipboard,
   synthesis is correct.
 ```
+
+## Release notes & CHANGELOG
+
+Release notes exist for end users reading the update prompt and the release
+page. The single source of truth is `CHANGELOG.md` (Keep a Changelog);
+`release.yml` extracts the matching `## [X.Y.Z]` section as the draft release
+body on tag push.
+
+### Write the note when the feature lands
+
+As soon as a change that is both user-visible and meaningful is merged, add one
+or two lines under `## [Unreleased]`. Do not wait for the release: the important
+context — what the change means for the user, implicit consequences that no
+issue or PR title captures — is freshest right after implementation. Minor or
+trivial fixes may leave no trace at all.
+
+### Format
+
+Model your entries on the 0.3.x sections: Keep-a-Changelog headings, each entry
+a bold essence followed by a short explanation:
+
+```markdown
+## [Unreleased]
+
+### Added
+- **"Silero (native)" engine** — Silero v5 runs in-process on ONNX Runtime,
+  no Python sidecar. The model bundle downloads on first use.
+```
+
+- Sections in order: `Added`, `Changed`, `Fixed`, `Removed`.
+- Highlight only what a user should notice; internals stay out (they remain
+  visible on the GitHub release page via its auto-generated PR list).
+- Prose is optional: a minor release consisting of small fixes needs no manual
+  description — the generated commit skeleton is enough.
+
+### Generating the skeleton
+
+`nix develop -c just release-notes` writes a grouped per-PR draft of everything
+since the last version tag to `tmp/release-notes-draft.md` (git-cliff,
+configured by `cliff.toml`). It never writes to `CHANGELOG.md`: merge it by
+hand, or run the `release-notes` agent skill, which reads issues/PRs behind the
+entries and proposes highlight prose for approval.
+
+### Release flow
+
+1. Notes accumulate in `## [Unreleased]` during development (see above).
+2. Before tagging: polish `[Unreleased]`, move it under `## [X.Y.Z] — YYYY-MM-DD`,
+   bump `src-tauri/tauri.conf.json` `.version` (the tag guard fails on mismatch).
+3. Push the `vX.Y.Z` tag → `release.yml` builds the installer and opens a draft
+   release with the extracted section; publish manually after the VM checklist.
 
 ## Questions
 

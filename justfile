@@ -56,3 +56,13 @@ build:
 # Production build, full (adds the Python Silero sidecar)
 build-full:
     nix build .#ruvox-with-silero
+
+# Draft release notes for the next release into tmp/release-notes-draft.md
+# (workflow and ownership rules: docs/contributing.md, "Release notes & CHANGELOG").
+release-notes:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p tmp
+    git cliff --config cliff.toml --unreleased --output tmp/release-notes-draft.md
+    echo "Draft written to tmp/release-notes-draft.md:"
+    cat tmp/release-notes-draft.md

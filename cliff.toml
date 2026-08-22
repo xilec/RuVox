@@ -1,0 +1,77 @@
+# git-cliff configuration for RuVox release notes.
+#
+# Role in the release workflow: raw-material generator ONLY. The output is
+# written to tmp/release-notes-draft.md (`just release-notes`) and consumed by
+# the `.agents/skills/release-notes` skill; it never lands in CHANGELOG.md
+# directly. CHANGELOG.md is human-owned — see docs/contributing.md.
+#
+# History shape this relies on (merge-commit flow): every PR reaches main as a
+# single merge commit whose subject is the PR title in
+# `<type>(<module>): <desc> (#PR)` form. Noise (branch-tip twins, chores,
+# intra-branch merges) is excluded by the merge-only preprocessor below plus
+# the parsers' catch-all skip.
+
+[changelog]
+# No document header/footer: the draft is a bare section skeleton that the
+# agent merges into CHANGELOG.md's ## [Unreleased].
+header = ""
+footer = ""
+trim = true
+
+body = """
+{% for group, commits in commits | group_by(attribute="group") %}\
+### {{ group }}
+
+{% for commit in commits %}\
+- {{ commit.message | upper_first }}
+{% endfor %}
+{% endfor %}\
+"""
+
+[git]
+conventional_commits = true
+# Kept OFF deliberately: subjects like "feat(ui,tray),build(release): ..." are
+# valid repo convention but not strict conventional syntax (nested parens in
+# the scope), and a hard filter would silently drop them. Noise is excluded
+# by the merge-only preprocessor above plus the catch-all skip below.
+filter_unconventional = false
+split_commits = false
+
+commit_preprocessors = [
+  # Drop everything that is not a PR merge commit (see the script's header
+  # for the topology rationale). Runs before parsing: emptied entries fall
+  # through to the catch-all skip at the end of commit_parsers.
+  { pattern = "(?s).*", replace_command = "scripts/cliff-keep-pr-merges.sh" },
+]
+
+commit_parsers = [
+  # Only PR merge commits reach the notes. In this repo every PR lands on
+  # main twice: the branch tip carries a plain subject and the merge commit
+  # carries the PR title ending in "(#N)". Matching the marker keeps exactly
+  # one entry per PR; direct-to-main pushes (docs-only, per repo policy) stay
+  # out of user notes by design.
+  #
+  # Parsers run against the full commit message, whose body (the PR
+  # description) is multi-line: [^\n] confines the match to the subject line,
+  # and "$" must NOT be used — it never matches with a body attached.
+  { message = "^feat[^\\n]*\\(#[0-9]+\\)", group = "Added" },
+  { message = "^fix[^\\n]*\\(#[0-9]+\\)", group = "Fixed" },
+
+  # Internal-quality work lands under Changed only when worth mentioning.
+  { message = "^(refactor|perf|build)[^\\n]*\\(#[0-9]+\\)", group = "Changed" },
+
+  # Everything else is skipped: branch-tip twins (emptied by the
+  # preprocessor), OpenSpec archive trail ("chore(openspec)/chore(specs)"),
+  # version bumps ("chore(release)"), docs/ci/test chores, non-conventional
+  # subjects (intra-branch merges). All of it remains visible on the GitHub
+  # release page via its auto-generated list.
+  { message = ".*", skip = true },
+]
+
+# A commit marked breaking must never be silently filtered by the rules above.
+protect_breaking_commits = true
+
+# Only version tags define release boundaries (skips silero-models-v5_ru etc.).
+tag_pattern = "v*"
+
+sort_commits = "oldest"
