@@ -478,6 +478,31 @@ fn logging_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
         .build()
 }
 
+/// Handle an unrecoverable storage-open failure at startup (#223): log the
+/// cause, show a native dialog (the webview does not exist yet, and the
+/// release profile's `panic = "abort"` would turn any `.expect()` into a
+/// silent process death), then exit cleanly with a non-zero code.
+fn show_startup_storage_error(
+    err: storage::service::StorageError,
+    log_dir: Option<std::path::PathBuf>,
+) -> ! {
+    tracing::error!("failed to open storage: {err}");
+    let log_hint = log_dir
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "журнал недоступен".to_string());
+    rfd::MessageDialog::new()
+        .set_level(rfd::MessageLevel::Error)
+        .set_title("RuVox")
+        .set_description(format!(
+            "Не удалось открыть хранилище данных.\n\
+             Данные не пострадали; проверьте права доступа к домашней папке \
+             и свободное место на диске.\n\n\
+             Подробности — в журнале: {log_hint}"
+        ))
+        .show();
+    std::process::exit(1);
+}
+
 pub fn run() {
     #[cfg(unix)]
     reap_orphan_mpv();
@@ -497,7 +522,13 @@ pub fn run() {
             let player: Arc<dyn PlayerBackend> = Arc::new(Player::new(app.handle().clone())?);
             player::spawn_position_emitter(Arc::clone(&player), app.handle().clone());
 
-            let storage = Arc::new(StorageService::new().expect("failed to open storage"));
+            // A storage-open failure is unrecoverable: no webview exists yet
+            // to show anything, so surface the cause via log + native dialog
+            // and exit instead of panicking (issue #223).
+            let storage = Arc::new(match StorageService::new() {
+                Ok(service) => service,
+                Err(e) => show_startup_storage_error(e, app.path().app_log_dir().ok()),
+            });
             spawn_audio_migration_and_cleanup(Arc::clone(&storage));
 
             let (engine_switcher, ttsd_dir, piper_voices_dir, silero_native_bundle_dir, emitter) =
