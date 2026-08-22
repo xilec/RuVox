@@ -6,6 +6,7 @@
 #   - Python 3.12 + uv
 #   - Tauri 2 Linux system deps (webkitgtk_4_1, libsoup_3, ...)
 #   - MPV/libmpv for tauri-plugin-mpv
+#   - git-cliff (release-notes draft generator, see cliff.toml)
 #
 # Usage (canonical, via flake):
 #   nix develop          — enter dev shell
@@ -39,6 +40,13 @@ pkgs.mkShell {
     # ── Task runner + pre-commit hooks ─────────────────────────────────────
     just
     lefthook
+
+    # ── Release tooling ───────────────────────────────────────────────────
+    # Drafts release notes from the conventional-commit history into
+    # tmp/release-notes-draft.md (`just release-notes`); configured by
+    # cliff.toml. The draft is raw material for the release-notes skill —
+    # it never writes to CHANGELOG.md directly.
+    git-cliff
 
     # ── Dependency auditing (advisories, licenses, duplicates) ─────────────
     cargo-deny
