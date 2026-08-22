@@ -92,4 +92,6 @@ cd ttsd && uv run python -m pytest                              # Python subproc
 
 ## License
 
-GPL-3.0 — see [LICENSE.md](LICENSE.md).
+Application code is GPL-3.0 — see [LICENSE.md](LICENSE.md).
+
+> **Important:** the voice model of the default engine (Silero Native) is distributed under the CC BY-NC-SA 4.0 license and may be used for non-commercial purposes only. See [silero-native/NOTICE](silero-native/NOTICE) for details. For use without license restrictions, choose the Piper engine — both Piper itself and its voice models are MIT-licensed.

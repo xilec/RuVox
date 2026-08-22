@@ -92,4 +92,6 @@ cd ttsd && uv run python -m pytest                              # Python subproc
 
 ## Лицензия
 
-GPL-3.0 — см. [LICENSE.md](LICENSE.md).
+Код приложения — GPL-3.0, см. [LICENSE.md](LICENSE.md).
+
+> **Важно:** голосовая модель движка по умолчанию (Silero Native) распространяется по лицензии CC BY-NC-SA 4.0 — использовать её можно только в некоммерческих целях. Подробности: [silero-native/NOTICE](silero-native/NOTICE). Для использования без лицензионных ограничений выбирайте движок Piper — он сам и его голосовые модели распространяются по MIT.
