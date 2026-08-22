@@ -7,8 +7,9 @@
 #
 # History shape this relies on (merge-commit flow): every PR reaches main as a
 # single merge commit whose subject is the PR title in
-# `<type>(<module>): <desc> (#PR)` form. Non-conventional commits (intra-branch
-# conflict-resolution merges) are dropped by filter_unconventional.
+# `<type>(<module>): <desc> (#PR)` form. Noise (branch-tip twins, chores,
+# intra-branch merges) is excluded by the merge-only preprocessor below plus
+# the parsers' catch-all skip.
 
 [changelog]
 # No document header/footer: the draft is a bare section skeleton that the
@@ -38,8 +39,8 @@ split_commits = false
 
 commit_preprocessors = [
   # Drop everything that is not a PR merge commit (see the script's header
-  # for the topology rationale). Runs before parsing; twins of kept entries
-  # become empty messages and are discarded by filter_unconventional.
+  # for the topology rationale). Runs before parsing: emptied entries fall
+  # through to the catch-all skip at the end of commit_parsers.
   { pattern = "(?s).*", replace_command = "scripts/cliff-keep-pr-merges.sh" },
 ]
 

@@ -57,9 +57,8 @@ build:
 build-full:
     nix build .#ruvox-with-silero
 
-# Draft release notes for the next release into tmp/release-notes-draft.md.
-# Raw material only: never writes to CHANGELOG.md — merge it by hand or via
-# the .agents/skills/release-notes skill (see docs/contributing.md).
+# Draft release notes for the next release into tmp/release-notes-draft.md
+# (workflow and ownership rules: docs/contributing.md, "Release notes & CHANGELOG").
 release-notes:
     #!/usr/bin/env bash
     set -euo pipefail

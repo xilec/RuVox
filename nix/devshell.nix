@@ -42,10 +42,8 @@ pkgs.mkShell {
     lefthook
 
     # ── Release tooling ───────────────────────────────────────────────────
-    # Drafts release notes from the conventional-commit history into
-    # tmp/release-notes-draft.md (`just release-notes`); configured by
-    # cliff.toml. The draft is raw material for the release-notes skill —
-    # it never writes to CHANGELOG.md directly.
+    # Drafts release notes (`just release-notes`); see docs/contributing.md
+    # ("Release notes & CHANGELOG") for the workflow and ownership rules.
     git-cliff
 
     # ── Dependency auditing (advisories, licenses, duplicates) ─────────────
