@@ -151,13 +151,16 @@ In debug builds Tauri's webview enables DevTools. For prod builds you have to ei
 
 ### Reading the data directory
 
-The storage cache lives in `~/.cache/ruvox/` on Linux (on Windows:
+Storage lives in two per-user roots on Linux (on Windows both coincide with
 `%LOCALAPPDATA%\com.ruvox.app\` — the bundle identifier dir, so the NSIS
 uninstaller's "Delete the application data" checkbox can remove it):
-- `history.json` — list of `TextEntry`. You can open it manually.
-- `audio/{uuid}.opus` — Ogg-Opus audio (32 kbps VOIP, mono). Plays in any modern player (mpv, VLC, browsers, ...).
-- `audio/{uuid}.timestamps.json` — word timings.
-- `config.json` — `UIConfig`.
+- `~/.local/share/ruvox/history.json` — list of `TextEntry`. You can open it manually.
+- `~/.local/share/ruvox/audio/{uuid}.opus` — Ogg-Opus audio (32 kbps VOIP, mono). Plays in any modern player (mpv, VLC, browsers, ...).
+- `~/.local/share/ruvox/audio/{uuid}.timestamps.json` — word timings.
+- `~/.config/ruvox/config.json` — `UIConfig`.
+
+Installs from before 2026-08 keep their files in `~/.cache/ruvox/`; the first
+launch of a current build migrates them automatically (issue #222).
 
 See [Storage schema](storage-schema.md) for details.
 

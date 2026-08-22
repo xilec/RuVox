@@ -279,7 +279,7 @@ async fn synthesize_audio(
 ) -> Result<(SynthesizeOutput, PathBuf, String), SynthesisError> {
     // ttsd writes WAV; finalize_audio_files transcodes it to Opus right after.
     let wav_filename = format!("{entry_id}.wav");
-    let out_wav_path = storage.cache_dir().join("audio").join(&wav_filename);
+    let out_wav_path = storage.data_dir().join("audio").join(&wav_filename);
     let out_wav = out_wav_path.to_string_lossy().into_owned();
 
     let config = storage.load_config().unwrap_or_default();
@@ -411,7 +411,7 @@ fn completion_is_current(status: EntryStatus) -> bool {
 /// wrote into the audio dir. Missing files are fine (e.g. the Opus transcode
 /// never ran on the failure path).
 fn discard_late_files<I: IntoIterator<Item = String>>(storage: &StorageService, names: I) {
-    let audio_dir = storage.cache_dir().join("audio");
+    let audio_dir = storage.data_dir().join("audio");
     for name in names {
         let path = audio_dir.join(name);
         match std::fs::remove_file(&path) {
@@ -562,7 +562,7 @@ pub fn spawn_synthesis<R: Runtime + 'static>(
                     &audio_filename,
                 );
                 if applied && play_when_ready {
-                    let path = storage.cache_dir().join("audio").join(&audio_filename);
+                    let path = storage.data_dir().join("audio").join(&audio_filename);
                     autoplay(player.as_ref(), path, &entry_id);
                 }
                 Ok(())
@@ -1409,13 +1409,13 @@ pub struct CacheSizeInfo {
     pub audio_file_count: u32,
 }
 
-/// Absolute path to the on-disk data directory (`~/.cache/ruvox/` on Linux,
-/// `%LOCALAPPDATA%\com.ruvox.app` on Windows — see `crate::paths`).
+/// Absolute path to the on-disk data directory (`~/.local/share/ruvox/` on
+/// Linux, `%LOCALAPPDATA%\com.ruvox.app` on Windows — see `crate::paths`).
 /// The frontend uses this to display the path in Settings and to pass it to
 /// `revealItemInDir` for opening the folder in the OS file manager.
 #[tauri::command]
 pub async fn get_cache_dir(state: State<'_, AppState>) -> CmdResult<String> {
-    Ok(state.storage.cache_dir().to_string_lossy().into_owned())
+    Ok(state.storage.data_dir().to_string_lossy().into_owned())
 }
 
 /// Absolute path of the per-user log directory (the same one `tauri-plugin-log`
@@ -1535,7 +1535,7 @@ mod synthesis_tests {
         // The encoder requires a valid RIFF header; bogus bytes force the
         // best-effort path that keeps the .wav file as audio_filename.
         let wav_filename = format!("{id}.wav");
-        let wav_path = storage.cache_dir().join("audio").join(&wav_filename);
+        let wav_path = storage.data_dir().join("audio").join(&wav_filename);
         std::fs::write(&wav_path, b"not a wav file").unwrap();
 
         let output = SynthesizeOutput {
@@ -1604,7 +1604,7 @@ mod synthesis_tests {
         let (storage, _dir) = make_service();
         let entry = storage.add_entry("текст".to_string()).unwrap(); // pending
         let id = entry.id;
-        let audio_dir = storage.cache_dir().join("audio");
+        let audio_dir = storage.data_dir().join("audio");
         let audio_name = format!("{id}.opus");
         let ts_name = format!("{id}.timestamps.json");
         std::fs::write(audio_dir.join(&audio_name), b"opus").unwrap();
@@ -1662,7 +1662,7 @@ mod synthesis_tests {
         let (storage, _dir) = make_service();
         let entry = storage.add_entry("текст".to_string()).unwrap(); // pending
         let id = entry.id;
-        let wav = storage.cache_dir().join("audio").join(format!("{id}.wav"));
+        let wav = storage.data_dir().join("audio").join(format!("{id}.wav"));
         std::fs::write(&wav, b"partial").unwrap();
 
         let applied = apply_error_if_current(&storage, &id, "ttsd died", true);
@@ -2199,7 +2199,7 @@ mod tests {
         "not_found_carries_id"
     )]
     #[test_case(
-        StorageError::NoCacheDir,
+        StorageError::NoDataDir,
         "storage_error",
         "per-user data dir unavailable (dirs resolution returned None)";
         "other_variant"
