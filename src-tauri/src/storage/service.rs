@@ -605,6 +605,53 @@ mod tests {
         assert!(cache.join("audio").exists());
     }
 
+    /// Fresh split roots must both be created on init (spec: "First launch
+    /// creates both directory trees"), and each root must hold exactly its
+    /// own kind of file: history + audio under the data root, config.json
+    /// under the config root.
+    #[test]
+    fn split_roots_create_both_trees_with_disjoint_contents() {
+        let dir = TempDir::new().unwrap();
+        let data = dir.path().join("data");
+        let config = dir.path().join("config");
+
+        let svc = StorageService::with_data_and_config_dirs(data.clone(), config.clone()).unwrap();
+        assert!(data.join("audio").exists(), "data root with audio/ created");
+        assert!(config.exists(), "config root created");
+
+        let entry = svc.add_entry("разделение".to_string()).unwrap();
+        svc.save_audio(&entry.id, b"OggS").unwrap();
+        let cfg = UIConfig {
+            speaker: "xenia".to_string(),
+            ..UIConfig::default()
+        };
+        svc.save_config(&cfg).unwrap();
+
+        assert!(data.join("history.json").exists());
+        assert!(
+            data.join("audio")
+                .join(format!("{}.opus", entry.id))
+                .exists()
+        );
+        assert!(config.join("config.json").exists());
+        assert!(
+            !data.join("config.json").exists(),
+            "config must not leak into the data root"
+        );
+        assert!(
+            !config.join("history.json").exists(),
+            "history must not leak into the config root"
+        );
+
+        // Reload through the same split roots keeps both sides readable.
+        let svc2 = StorageService::with_data_and_config_dirs(data.clone(), config.clone()).unwrap();
+        assert_eq!(
+            svc2.get_entry(&entry.id).unwrap().original_text,
+            "разделение"
+        );
+        assert_eq!(svc2.load_config().unwrap().speaker, "xenia");
+    }
+
     #[test]
     fn add_and_get_entry_roundtrip() {
         let (svc, _dir) = make_service();

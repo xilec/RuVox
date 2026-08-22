@@ -41,8 +41,9 @@ platform on the legacy layout.
   `legacy_cache_root()`); unit tests updated for the new Linux locations.
 - `src-tauri/src/storage/service.rs` — constructor resolves two roots, runs the legacy
   migration, adds config `.bak` recovery; test constructor keeps the single-dir form
-  so existing tests stay meaningful.
-- `src-tauri/src/storage/test_util.rs` — helper gains an explicit split-root variant.
+  so existing tests stay meaningful; a public `with_data_and_config_dirs(data, config)`
+  constructor serves split-layout/migration tests directly (no change needed in
+  `storage/test_util.rs`).
 - `src/dialogs/Settings.tsx` — label text only.
 - Specs: `openspec/specs/storage/spec.md`, `openspec/specs/ipc-commands/spec.md`.
 - No dependency changes; no schema/format changes to any persisted file.

@@ -16,7 +16,7 @@ const TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Absolute path of the storage audio directory for this test app.
 fn audio_dir(t: &TestApp) -> PathBuf {
-    t.state().storage.cache_dir().join("audio")
+    t.state().storage.data_dir().join("audio")
 }
 
 /// Parse the id string returned by the commands into the storage UUID.

@@ -202,6 +202,38 @@ mod tests {
         );
     }
 
+    /// A destination that cannot be created (here: a regular file sits where
+    /// the config root's parent should be) must be logged and skipped without
+    /// aborting the sweep or the remaining items (spec: "Migration failure
+    /// does not prevent startup").
+    #[test]
+    fn failed_move_does_not_abort_remaining_items() {
+        let tmp = TempDir::new().unwrap();
+        let legacy = tmp.path().join("ruvox");
+        let data = tmp.path().join("data");
+        let blocker = tmp.path().join("blocker");
+        fs::write(&blocker, b"a file, not a directory").unwrap();
+        let config = blocker.join("ruvox");
+
+        fs::create_dir_all(legacy.join("audio")).unwrap();
+        fs::write(legacy.join("history.json"), r#"{"version":1,"entries":[]}"#).unwrap();
+        fs::write(legacy.join("config.json"), "{}").unwrap();
+
+        run(Some(legacy.clone()), &data, &config);
+
+        // The config move failed; the source stays put for the next launch...
+        assert!(legacy.join("config.json").exists());
+        assert!(!config.exists());
+        // ...while audio and history still migrated.
+        assert!(data.join("audio").is_dir());
+        assert_eq!(
+            fs::read_to_string(data.join("history.json")).unwrap(),
+            r#"{"version":1,"entries":[]}"#
+        );
+        // The unmoved item keeps the legacy dir alive for inspection.
+        assert!(legacy.exists());
+    }
+
     #[test]
     fn leaves_unexpected_content_in_legacy_dir() {
         let tmp = TempDir::new().unwrap();
