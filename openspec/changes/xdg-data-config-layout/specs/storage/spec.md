@@ -25,12 +25,12 @@ The roots are platform-dependent:
 
 The storage service SHALL create each root and the `audio/` subdirectory on initialization if they do not exist.
 
-#### Scenario: First launch creates both directory trees
+#### Scenario: First launch creates the directory tree
 - GIVEN neither the data root nor the config root exists
 - WHEN the storage service is initialized
 - THEN the data root with its `audio/` subdirectory and the config root exist on disk
 
-#### Scenario: Default roots location
+#### Scenario: Default cache root location
 - GIVEN no custom directories are configured
 - WHEN the storage service is constructed with defaults
 - THEN the data root is `%LOCALAPPDATA%\com.ruvox.app` on Windows and `~/.local/share/ruvox/` on Linux, and the config root is the same directory as the data root on Windows and `~/.config/ruvox/` on Linux
