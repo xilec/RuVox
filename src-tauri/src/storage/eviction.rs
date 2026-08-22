@@ -291,7 +291,7 @@ mod tests {
         let (svc, _dir) = make_service();
         let id = make_ready_entry(&svc, 32, 1);
         let entry = svc.get_entry(&id).unwrap();
-        let audio_dir = svc.cache_dir().join("audio");
+        let audio_dir = svc.data_dir().join("audio");
 
         // Stranger file — should be removed.
         let orphan = audio_dir.join("stranger.opus");
@@ -310,7 +310,7 @@ mod tests {
     #[test]
     fn sweep_orphans_preserves_recent_files() {
         let (svc, _dir) = make_service();
-        let audio_dir = svc.cache_dir().join("audio");
+        let audio_dir = svc.data_dir().join("audio");
         // Fresh orphan — sweep must keep it (race with active synthesis).
         let recent = audio_dir.join("in-flight.opus");
         fs::write(&recent, b"in flight").unwrap();
@@ -426,7 +426,7 @@ mod tests {
         let id2 = make_ready_entry(&svc, 5_000, 0);
 
         // Plant an aged orphan.
-        let orphan = svc.cache_dir().join("audio").join("ghost.opus");
+        let orphan = svc.data_dir().join("audio").join("ghost.opus");
         fs::write(&orphan, b"ghost").unwrap();
         age_file(&orphan);
 

@@ -9,9 +9,7 @@ Tauri events the backend emits to the frontend via `listen("event_name", handler
 This covers command signatures, typed error format, shared data types, and event
 payloads as currently implemented. The backend-to-Python protocol is specified
 separately in `ttsd-protocol`.
-
 ## Requirements
-
 ### Requirement: Command Error Format
 
 All fallible Tauri commands SHALL return errors as a typed JSON object
@@ -561,7 +559,8 @@ status `processing` SHALL be skipped. The command returns
 `{ deleted_files, deleted_entries, freed_bytes }`.
 
 `get_cache_stats` SHALL return `{ total_bytes, audio_file_count }`.
-`get_cache_dir` SHALL return the absolute cache directory path resolved at startup.
+`get_cache_dir` SHALL return the absolute path of the per-user **data directory**
+resolved at startup — the root holding `history.json` and `audio/`.
 
 #### Scenario: size-limit eviction keeps texts
 - GIVEN a cache exceeding `target_mb` and `delete_texts: false`
@@ -772,3 +771,4 @@ a "Открыть папку" button in Settings.
 - WHEN `get_log_dir` is invoked
 - THEN it returns the absolute per-app log directory path and that directory
   exists on disk
+

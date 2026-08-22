@@ -65,7 +65,7 @@ pub struct TextEntry {
 }
 
 /// Top-level structure of `<data root>/history.json`
-/// (root resolved per-OS by `crate::paths::storage_root`).
+/// (root resolved per-OS by `crate::paths::data_root`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoryFile {
     /// Schema version. Starts at 1.
@@ -91,8 +91,8 @@ pub struct Timestamps {
     pub words: Vec<WordTimestamp>,
 }
 
-/// Application configuration persisted to `<data root>/config.json`
-/// (root resolved per-OS by `crate::paths::storage_root`).
+/// Application configuration persisted to `<config root>/config.json`
+/// (root resolved per-OS by `crate::paths::config_root`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UIConfig {
     #[serde(default = "UIConfig::default_speaker")]

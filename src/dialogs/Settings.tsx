@@ -627,7 +627,7 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
           {cacheDir && (
             <Stack gap={4}>
               <Text size="xs" c="dimmed">
-                Папка кэша
+                Папка данных
               </Text>
               <Text size="sm" style={{ wordBreak: 'break-all', fontFamily: 'var(--mantine-font-family-monospace)' }}>
                 {cacheDir}

@@ -25,7 +25,9 @@ pub enum StorageError {
     #[error("entry not found: {0}")]
     NotFound(EntryId),
     #[error("per-user data dir unavailable (dirs resolution returned None)")]
-    NoCacheDir,
+    NoDataDir,
+    #[error("per-user config dir unavailable (dirs resolution returned None)")]
+    NoConfigDir,
 }
 
 pub type Result<T> = std::result::Result<T, StorageError>;
@@ -44,7 +46,8 @@ pub struct AudioMigrationStats {
 }
 
 pub struct StorageService {
-    cache_dir: PathBuf,
+    /// Data root: holds `history.json` and `audio/`.
+    data_dir: PathBuf,
     pub(super) audio_dir: PathBuf,
     history_path: PathBuf,
     config_path: PathBuf,
@@ -52,25 +55,38 @@ pub struct StorageService {
 }
 
 impl StorageService {
-    /// Construct using the default per-user data root (resolved per-OS by
-    /// [`crate::paths::storage_root`], e.g. `~/.cache/ruvox/` on Linux).
+    /// Construct using the default per-user roots (resolved per-OS by
+    /// [`crate::paths::data_root`] / [`crate::paths::config_root`], e.g.
+    /// `~/.local/share/ruvox/` + `~/.config/ruvox/` on Linux), migrating the
+    /// legacy single-root layout first (see [`crate::storage::legacy_layout`]).
     pub fn new() -> Result<Self> {
-        let cache_dir = crate::paths::storage_root().ok_or(StorageError::NoCacheDir)?;
-        Self::with_cache_dir(cache_dir)
+        let data_dir = crate::paths::data_root().ok_or(StorageError::NoDataDir)?;
+        let config_dir = crate::paths::config_root().ok_or(StorageError::NoConfigDir)?;
+        super::legacy_layout::migrate_legacy_layout(&data_dir, &config_dir);
+        Self::with_data_and_config_dirs(data_dir, config_dir)
     }
 
-    /// Construct with a custom cache dir (used in tests).
+    /// Construct with history, audio, and config colocated under one root —
+    /// the pre-XDG layout shape, kept for tests so existing fixtures stay
+    /// meaningful. Production uses split roots via [`Self::new`].
     pub fn with_cache_dir(cache_dir: PathBuf) -> Result<Self> {
-        let audio_dir = cache_dir.join("audio");
-        let history_path = cache_dir.join("history.json");
-        let config_path = cache_dir.join("config.json");
+        Self::with_data_and_config_dirs(cache_dir.clone(), cache_dir)
+    }
+
+    /// Construct with explicit split roots: `data_dir` holds `history.json`
+    /// and `audio/`, `config_dir` holds `config.json`.
+    pub fn with_data_and_config_dirs(data_dir: PathBuf, config_dir: PathBuf) -> Result<Self> {
+        let audio_dir = data_dir.join("audio");
+        let history_path = data_dir.join("history.json");
+        let config_path = config_dir.join("config.json");
 
         fs::create_dir_all(&audio_dir)?;
+        fs::create_dir_all(&config_dir)?;
 
         let entries = Arc::new(RwLock::new(HashMap::new()));
 
         let service = Self {
-            cache_dir,
+            data_dir,
             audio_dir,
             history_path,
             config_path,
@@ -81,8 +97,10 @@ impl StorageService {
         Ok(service)
     }
 
-    pub fn cache_dir(&self) -> &Path {
-        &self.cache_dir
+    /// The per-user data root (`history.json` + `audio/`). Exposed to the UI
+    /// via the `get_cache_dir` IPC command.
+    pub fn data_dir(&self) -> &Path {
+        &self.data_dir
     }
 
     // ── History persistence ────────────────────────────────────────────────
@@ -523,9 +541,24 @@ impl StorageService {
         if !self.config_path.exists() {
             return Ok(UIConfig::default());
         }
-        let raw = fs::read_to_string(&self.config_path)?;
-        let config: UIConfig = serde_json::from_str(&raw)?;
-        Ok(config)
+        let raw = match fs::read_to_string(&self.config_path) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!("failed to read config.json: {e}");
+                return Ok(UIConfig::default());
+            }
+        };
+        match serde_json::from_str(&raw) {
+            Ok(config) => Ok(config),
+            Err(e) => {
+                tracing::warn!("config.json is corrupted ({e}), backing up and using defaults");
+                let bak = self.config_path.with_extension("json.bak");
+                if let Err(re) = fs::rename(&self.config_path, &bak) {
+                    tracing::error!("failed to back up corrupted config.json: {re}");
+                }
+                Ok(UIConfig::default())
+            }
+        }
     }
 
     pub fn save_config(&self, config: &UIConfig) -> Result<()> {
@@ -572,6 +605,53 @@ mod tests {
         assert!(cache.join("audio").exists());
     }
 
+    /// Fresh split roots must both be created on init (spec: "First launch
+    /// creates both directory trees"), and each root must hold exactly its
+    /// own kind of file: history + audio under the data root, config.json
+    /// under the config root.
+    #[test]
+    fn split_roots_create_both_trees_with_disjoint_contents() {
+        let dir = TempDir::new().unwrap();
+        let data = dir.path().join("data");
+        let config = dir.path().join("config");
+
+        let svc = StorageService::with_data_and_config_dirs(data.clone(), config.clone()).unwrap();
+        assert!(data.join("audio").exists(), "data root with audio/ created");
+        assert!(config.exists(), "config root created");
+
+        let entry = svc.add_entry("разделение".to_string()).unwrap();
+        svc.save_audio(&entry.id, b"OggS").unwrap();
+        let cfg = UIConfig {
+            speaker: "xenia".to_string(),
+            ..UIConfig::default()
+        };
+        svc.save_config(&cfg).unwrap();
+
+        assert!(data.join("history.json").exists());
+        assert!(
+            data.join("audio")
+                .join(format!("{}.opus", entry.id))
+                .exists()
+        );
+        assert!(config.join("config.json").exists());
+        assert!(
+            !data.join("config.json").exists(),
+            "config must not leak into the data root"
+        );
+        assert!(
+            !config.join("history.json").exists(),
+            "history must not leak into the config root"
+        );
+
+        // Reload through the same split roots keeps both sides readable.
+        let svc2 = StorageService::with_data_and_config_dirs(data.clone(), config.clone()).unwrap();
+        assert_eq!(
+            svc2.get_entry(&entry.id).unwrap().original_text,
+            "разделение"
+        );
+        assert_eq!(svc2.load_config().unwrap().speaker, "xenia");
+    }
+
     #[test]
     fn add_and_get_entry_roundtrip() {
         let (svc, _dir) = make_service();
@@ -611,7 +691,7 @@ mod tests {
 
         // Save a fake audio file.
         let audio_filename = svc.save_audio(&id, b"RIFF fake wav").unwrap();
-        let audio_path = svc.cache_dir().join("audio").join(&audio_filename);
+        let audio_path = svc.data_dir().join("audio").join(&audio_filename);
         assert!(audio_path.exists());
 
         // Update entry with audio path.
@@ -797,6 +877,40 @@ mod tests {
         assert_eq!(cfg.sample_rate, 24000);
     }
 
+    /// A corrupted `config.json` must behave like a corrupted history: the
+    /// original file is preserved as `config.json.bak` and defaults are used
+    /// instead of erroring or silently resetting without a trace (#222).
+    #[test]
+    fn corrupted_config_json_backs_up_and_falls_back_to_defaults() {
+        let dir = TempDir::new().unwrap();
+        let cache = dir.path().to_path_buf();
+        fs::create_dir_all(cache.join("audio")).unwrap();
+        fs::write(cache.join("config.json"), b"this is not json!!!").unwrap();
+
+        let svc = StorageService::with_cache_dir(cache.clone()).unwrap();
+        let cfg = svc.load_config().unwrap();
+        assert_eq!(cfg.speaker, "aidar");
+        assert_eq!(cfg.sample_rate, 24000);
+
+        let bak = fs::read_to_string(cache.join("config.json.bak")).expect("backup must exist");
+        assert_eq!(bak, "this is not json!!!");
+    }
+
+    /// An `config.json` that exists but cannot be read at the IO level (here:
+    /// the path is a directory) must yield defaults with a warning, not an
+    /// error propagated to callers.
+    #[test]
+    fn unreadable_config_json_returns_defaults() {
+        let dir = TempDir::new().unwrap();
+        let cache = dir.path().to_path_buf();
+        fs::create_dir_all(cache.join("audio")).unwrap();
+        fs::create_dir_all(cache.join("config.json")).unwrap();
+
+        let svc = StorageService::with_cache_dir(cache).unwrap();
+        let cfg = svc.load_config().unwrap();
+        assert_eq!(cfg.speaker, "aidar");
+    }
+
     #[test]
     fn delete_audio_keeps_entry_as_pending() {
         let (svc, _dir) = make_service();
@@ -830,8 +944,8 @@ mod tests {
         assert!(remaining.timestamps_path.is_none());
 
         // Files must be gone.
-        let audio_path = svc.cache_dir().join("audio").join(&audio_filename);
-        let ts_path = svc.cache_dir().join("audio").join(&ts_filename);
+        let audio_path = svc.data_dir().join("audio").join(&audio_filename);
+        let ts_path = svc.data_dir().join("audio").join(&ts_filename);
         assert!(!audio_path.exists());
         assert!(!ts_path.exists());
     }
@@ -865,7 +979,7 @@ mod tests {
         // Write a valid 1-second WAV directly to the audio dir under the
         // legacy `.wav` filename so the migration finds something to encode.
         let wav_filename = format!("{id}.wav");
-        let wav_path = svc.cache_dir().join("audio").join(&wav_filename);
+        let wav_path = svc.data_dir().join("audio").join(&wav_filename);
         write_sine_wav(&wav_path, 48_000, 440.0, 0.2);
 
         update_entry_with(&svc, &entry, |e| {
@@ -881,7 +995,7 @@ mod tests {
         let after = svc.get_entry(&id).unwrap();
         let new_filename = after.audio_path.expect("audio_path must remain set");
         assert!(new_filename.ends_with(".opus"), "got {new_filename}");
-        assert!(svc.cache_dir().join("audio").join(&new_filename).exists());
+        assert!(svc.data_dir().join("audio").join(&new_filename).exists());
         assert!(!wav_path.exists(), "source .wav should be removed");
     }
 
@@ -991,7 +1105,7 @@ mod tests {
         // Entry B has a real `.wav` to transcode.
         let real = svc.add_entry("real wav".to_string()).unwrap();
         let wav_filename = format!("{}.wav", real.id);
-        let wav_path = svc.cache_dir().join("audio").join(&wav_filename);
+        let wav_path = svc.data_dir().join("audio").join(&wav_filename);
         write_sine_wav(&wav_path, 48_000, 440.0, 0.2);
         update_entry_with(&svc, &real, |e| {
             e.audio_path = Some(wav_filename);
@@ -1127,7 +1241,7 @@ mod tests {
         let id = entry.id;
 
         let wav_filename = format!("{id}.wav");
-        let wav_path = svc.cache_dir().join("audio").join(&wav_filename);
+        let wav_path = svc.data_dir().join("audio").join(&wav_filename);
         write_sine_wav(&wav_path, 22_050, 440.0, 0.2);
 
         update_entry_with(&svc, &entry, |e| {
@@ -1143,7 +1257,7 @@ mod tests {
         let after = svc.get_entry(&id).unwrap();
         let new_filename = after.audio_path.expect("audio_path must remain set");
         assert!(new_filename.ends_with(".opus"), "got {new_filename}");
-        assert!(svc.cache_dir().join("audio").join(&new_filename).exists());
+        assert!(svc.data_dir().join("audio").join(&new_filename).exists());
         assert!(!wav_path.exists(), "source .wav should be removed");
     }
 }

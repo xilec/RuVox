@@ -79,7 +79,7 @@ Multi-character operators (`===`, `=>`, `>=`) are handled in `pipeline/mod.rs::T
 
 1. **Input text** — what was being processed (a minimal example).
 2. **Expected result** — how it should sound.
-3. **Actual result** — what came out (`normalized_text` from `~/.cache/ruvox/history.json`).
+3. **Actual result** — what came out (`normalized_text` from `~/.local/share/ruvox/history.json`).
 4. **Version** — `git log -1 --oneline`.
 5. **Environment** — OS, Nix (`nix develop`) or manual install.
 
