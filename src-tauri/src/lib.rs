@@ -501,13 +501,21 @@ fn find_bundled_espeak_data(exe_dir: &std::path::Path) -> Option<std::path::Path
         parent.join("espeak-ng-data"),
     ];
     let lib = parent.join("lib");
+    // Our own product dir first — a wildcard over sibling products must be
+    // last so another app's files can never shadow ours.
     if let Ok(entries) = std::fs::read_dir(&lib) {
-        // Multiple products could be installed; sort for determinism.
         let mut bundled: Vec<_> = entries
             .flatten()
             .map(|e| e.path().join("espeak-ng-data"))
             .collect();
         bundled.sort();
+        if let Some(pos) = bundled
+            .iter()
+            .position(|p| p.ends_with("RuVox/espeak-ng-data"))
+        {
+            let ours = bundled.remove(pos);
+            candidates.push(ours);
+        }
         candidates.append(&mut bundled);
     }
     candidates.into_iter().find(|c| c.is_dir())
@@ -525,12 +533,22 @@ fn find_bundled_onnxruntime(exe_dir: &std::path::Path) -> Option<std::path::Path
         parent.join("libonnxruntime.so"),
     ];
     let lib = parent.join("lib");
+    // Our own product dir first — a wildcard over sibling products must be
+    // last so another app's ABI-incompatible libonnxruntime can never shadow
+    // ours (the pinned ort-sys bindings target ONNX Runtime 1.24).
     if let Ok(entries) = std::fs::read_dir(&lib) {
         let mut bundled: Vec<_> = entries
             .flatten()
             .map(|e| e.path().join("libonnxruntime.so"))
             .collect();
         bundled.sort();
+        if let Some(pos) = bundled
+            .iter()
+            .position(|p| p.ends_with("RuVox/libonnxruntime.so"))
+        {
+            let ours = bundled.remove(pos);
+            candidates.push(ours);
+        }
         candidates.append(&mut bundled);
     }
     candidates
@@ -596,6 +614,30 @@ mod espeak_lookup_tests {
 
         assert_eq!(find_bundled_espeak_data(&bin), None);
     }
+
+    #[test]
+    fn prefers_own_product_dir_over_siblings() {
+        // Another product's espeak-ng-data must never shadow ours.
+        let tmp = TempDir::new().unwrap();
+        let bin = tmp.path().join("usr").join("bin");
+        let other = tmp
+            .path()
+            .join("usr")
+            .join("lib")
+            .join("ZProduct")
+            .join("espeak-ng-data");
+        let ours = tmp
+            .path()
+            .join("usr")
+            .join("lib")
+            .join("RuVox")
+            .join("espeak-ng-data");
+        fs::create_dir_all(&bin).unwrap();
+        touch_data(&other);
+        touch_data(&ours);
+
+        assert_eq!(find_bundled_espeak_data(&bin), Some(ours));
+    }
 }
 
 #[cfg(all(test, not(windows)))]
@@ -655,6 +697,24 @@ mod onnxruntime_lookup_tests {
         fs::write(bin.join("libonnxruntime.so"), b"").unwrap();
 
         assert_eq!(find_bundled_onnxruntime(&bin), None);
+    }
+
+    #[test]
+    fn prefers_own_product_dir_over_siblings() {
+        // Another product's libonnxruntime must never shadow ours: the
+        // pinned ort-sys bindings target a specific ONNX Runtime ABI.
+        let tmp = TempDir::new().unwrap();
+        let bin = tmp.path().join("usr").join("bin");
+        let other = tmp.path().join("usr").join("lib").join("ZProduct");
+        let ours = tmp.path().join("usr").join("lib").join("RuVox");
+        fs::create_dir_all(&bin).unwrap();
+        write_dylib(&other);
+        write_dylib(&ours);
+
+        assert_eq!(
+            find_bundled_onnxruntime(&bin),
+            Some(ours.join("libonnxruntime.so"))
+        );
     }
 }
 
