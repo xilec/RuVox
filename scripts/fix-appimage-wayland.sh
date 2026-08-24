@@ -55,6 +55,11 @@ EXTRACT() {
 }
 
 # --- locate appimagetool (avoid FUSE: extract its AppImage) ---
+# Pinned continuous-build asset + sha256 (same discipline as
+# fetch-*-resources scripts). The asset is replaced on upstream updates —
+# bump both values together when that happens.
+AIT_URL="https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
+AIT_SHA256="b90f4a8b18967545fda78a445b27680a1642f1ef9488ced28b65398f2be7add2"
 AIT=""
 if command -v appimagetool >/dev/null 2>&1; then
   AIT="appimagetool"
@@ -62,7 +67,11 @@ else
   AITBIN="$TMP/appimagetool.AppImage"
   if [ ! -s "$AITBIN" ]; then
     command -v wget >/dev/null 2>&1 || { echo "error: need wget to fetch appimagetool" >&2; exit 1; }
-    wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" -O "$AITBIN"
+    wget -q "$AIT_URL" -O "$AITBIN"
+    echo "$AIT_SHA256  $AITBIN" | sha256sum -c - || {
+      echo "error: appimagetool sha256 mismatch — the pinned upstream asset was likely replaced; update AIT_URL/AIT_SHA256" >&2
+      exit 1
+    }
   fi
   AITDIR="$TMP/ait"; mkdir -p "$AITDIR"
   # The appimagetool squashfs is plain gzip — the same offset-based extract

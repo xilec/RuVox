@@ -172,7 +172,7 @@ jobs:
       - name: Install Tauri system dependencies
         uses: awalsh128/cache-apt-pkgs-action@v1
         with:
-          packages: libwebkit2gtk-4.1-dev libsoup-3.0-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libmpv-dev pkg-config build-essential patchelf file
+          packages: libwebkit2gtk-4.1-dev libsoup-3.0-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libmpv-dev pkg-config build-essential patchelf file squashfs-tools
           version: 1
 
       - uses: dtolnay/rust-toolchain@stable
@@ -215,6 +215,14 @@ jobs:
 
       - name: Build .deb and .AppImage packages
         run: pnpm tauri build
+
+      # Repack the AppImage with GDK_BACKEND autodetection — without this the
+      # CI-built AppImage fails to start on pure-Wayland sessions (the local
+      # builder applies the same fix; keep the two in sync).
+      - name: Apply wayland fix to the AppImage
+        run: |
+          appimage=$(ls src-tauri/target/release/bundle/appimage/*.AppImage | head -1)
+          bash scripts/fix-appimage-wayland.sh "$appimage" "$appimage"
 
       - name: Extract changelog section for release notes
         run: bash scripts/release-notes.sh "${{ inputs.tag || github.ref_name }}"
