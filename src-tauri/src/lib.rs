@@ -657,7 +657,7 @@ mod onnxruntime_lookup_tests {
         let bin = tmp.path().join("app").join("bin");
         let dylib = tmp.path().join("app").join("libonnxruntime.so");
         fs::create_dir_all(&bin).unwrap();
-        write_dylib(&dylib.parent().unwrap());
+        write_dylib(dylib.parent().unwrap());
 
         assert_eq!(find_bundled_onnxruntime(&bin), Some(dylib));
     }
@@ -673,7 +673,7 @@ mod onnxruntime_lookup_tests {
             .join("RuVox")
             .join("libonnxruntime.so");
         fs::create_dir_all(&bin).unwrap();
-        write_dylib(&dylib.parent().unwrap());
+        write_dylib(dylib.parent().unwrap());
 
         assert_eq!(find_bundled_onnxruntime(&bin), Some(dylib));
     }
