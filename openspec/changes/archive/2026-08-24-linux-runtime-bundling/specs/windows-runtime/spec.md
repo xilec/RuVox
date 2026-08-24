@@ -1,12 +1,6 @@
-# windows-runtime Specification
+# windows-runtime Delta
 
-## Purpose
-
-Defines how the backend adapts to Windows at runtime: startup environment,
-per-OS subprocess cleanup semantics, and which engines and helper
-subprocesses exist on Windows.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Windows startup environment
 
@@ -38,30 +32,3 @@ with the package; nix builds keep relying on the wrapper-provided values.
   `espeak-ng-data` resources
 - WHEN the application starts
 - THEN the startup code does not set `PIPER_ESPEAKNG_DATA_DIRECTORY`
-
-### Requirement: Per-OS subprocess cleanup
-
-Orphan mpv reaping based on `/tmp` socket names and `/proc` inspection
-SHALL run on Unix platforms only. On Windows the application MUST NOT
-attempt `/proc`-based reaping (tauri-plugin-mpv uses named pipes there),
-and startup MUST NOT fail due to the absence of that cleanup.
-
-#### Scenario: Windows startup without reaping
-
-- GIVEN the app runs on Windows
-- WHEN the application starts
-- THEN no orphan-mpv reaping is attempted and startup proceeds normally
-
-### Requirement: Engines and helper subprocesses on Windows
-
-The Windows build SHALL ship Piper and Silero Native as the available TTS
-engines. The ttsd (Python/`uv`) subprocess SHALL NOT be required or
-bundled on Windows, and no Windows code path SHALL assume `uv` is
-installed.
-
-#### Scenario: Engine set on Windows
-
-- GIVEN the app runs on a fresh Windows installation without `uv`
-- WHEN the application starts and TTS is used
-- THEN Piper and Silero Native work, and no attempt to spawn `uv` blocks
-  or breaks startup

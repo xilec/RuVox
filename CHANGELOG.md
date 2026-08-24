@@ -6,6 +6,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 
 ## [Unreleased]
 
+### Added
+- **Linux packages (`.deb`, `.AppImage`)** — release artifacts for Ubuntu 24.04-class systems, built by a GitHub Actions job. The `.deb` installs via `dpkg -i`; the AppImage runs directly on systems with FUSE and via `--appimage-extract-and-run` anywhere else.
+- **TTS works out of the box on Linux** — packages bundle `espeak-ng-data` and a pinned `libonnxruntime.so` (sha256-verified at build time), so Silero (native) and Piper synthesize on a clean system without system-wide ONNX Runtime; previously Silero hung silently at startup.
+
 ## [0.3.1] — 2026-08-20
 
 ### Added

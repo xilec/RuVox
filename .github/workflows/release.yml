@@ -1,9 +1,10 @@
 name: release
 
 # Tag push `v*` (or a manual dispatch with an explicit tag) builds the
-# Windows NSIS installer and publishes a DRAFT GitHub release with the
-# installer + updater artifacts. The draft is published manually after the
-# VM checklist passes (OpenSpec change windows-installer-and-release, D1).
+# Windows NSIS installer and the Linux .deb/.AppImage packages and publishes
+# a DRAFT GitHub release with all artifacts attached to it. The draft is
+# published manually after the VM checklist passes (OpenSpec change
+# windows-installer-and-release, D1; Linux half = issue #218).
 
 on:
   push:
@@ -52,17 +53,7 @@ jobs:
 
       - name: Guard tag matches app version
         shell: bash
-        # A tag pushed without bumping tauri.conf.json would make the freshly
-        # installed app older than latest.json — an update prompt loop on
-        # every start. Fail fast, before the expensive build.
-        run: |
-          set -euo pipefail
-          tag="${{ inputs.tag || github.ref_name }}"
-          conf_version=$(jq -r .version src-tauri/tauri.conf.json)
-          if [ "$conf_version" != "${tag#v}" ]; then
-            echo "::error::tag $tag does not match tauri.conf.json version $conf_version — bump the version first"
-            exit 1
-          fi
+        run: bash scripts/guard-tag-version.sh "${{ inputs.tag || github.ref_name }}"
 
       # mpv + onnxruntime.dll, pinned + sha256-verified. Must happen before
       # `tauri build` because bundle.resources references them.
@@ -136,34 +127,10 @@ jobs:
 
       # Extract the CHANGELOG.md section for this version so the draft release
       # body is the human-curated notes, not GitHub's auto-generated diff
-      # summary (issue #94). The `## [Unreleased]` heading and deeper
-      # `###`/`####` headings never match the `## [<semver>]` pattern, so only
-      # the target version's block is captured (up to the next top-level
-      # `## [` heading).
+      # summary (see scripts/release-notes.sh for the matching rules).
       - name: Extract changelog section for release notes
         shell: bash
-        run: |
-          set -euo pipefail
-          tag="${{ inputs.tag || github.ref_name }}"
-          version="${tag#v}"
-          awk -v v="$version" '
-            /^## \[/ {
-              rest = substr($0, 5)
-              cb = index(rest, "]")
-              hdr = (cb > 0) ? substr(rest, 1, cb - 1) : rest
-              capture = (hdr == v)
-            }
-            capture { print }
-          ' CHANGELOG.md > release_notes.md
-          # Fallback when the tag has no CHANGELOG section yet (a tag pushed
-          # before the entry was added): keep a usable draft body instead of
-          # an empty notes file.
-          if [ ! -s release_notes.md ]; then
-            echo "See CHANGELOG.md — no section for version $version yet." > release_notes.md
-            echo "::warning::No CHANGELOG.md section for $version — using stub release notes"
-          fi
-          echo "----- release notes -----"
-          cat release_notes.md
+        run: bash scripts/release-notes.sh "${{ inputs.tag || github.ref_name }}"
 
       - name: Draft release
         uses: softprops/action-gh-release@v2
@@ -175,3 +142,97 @@ jobs:
             src-tauri/target/release/bundle/nsis/*_x64-setup.exe
             src-tauri/target/release/bundle/nsis/*_x64-setup.exe.sig
             latest.json
+
+  # Linux half of #94, split out by issue #218: build .deb + .AppImage on a
+  # Linux runner and attach them to the SAME draft release the Windows job
+  # created (same tag_name; softprops/action-gh-release updates an existing
+  # draft and merges assets — whichever job finishes first creates it, both
+  # write identical release notes via scripts/release-notes.sh). The in-app
+  # updater manifest (latest.json) stays Windows-only for now.
+  linux-packages:
+    runs-on: ubuntu-latest
+    # Warm cargo cache ~12-15 min (two-stage build + bundling); cold apt+cargo
+    # caches can push past 30 min (apt throttling note in ci.yml applies).
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+
+      # Same package set as the ci.yml rust job plus patchelf (AppImage
+      # bundling); cache-apt-pkgs for the same incident-#204 reason. `version`
+      # differs from ci.yml because the package list here is different.
+      - name: Install Tauri system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@v1
+        with:
+          packages: libwebkit2gtk-4.1-dev libsoup-3.0-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libmpv-dev pkg-config build-essential patchelf file squashfs-tools
+          version: 1
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri\nsilero-native"
+          shared-key: linux-gnu-release
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Guard tag matches app version
+        run: bash scripts/guard-tag-version.sh "${{ inputs.tag || github.ref_name }}"
+
+      # Two-stage build, same shape as the Windows job: produce the vendored
+      # espeak-ng-data first (espeak-rs-sys emits it into its build tree),
+      # copy it into bundle resources (referenced by tauri.linux.conf.json),
+      # then let `tauri build` bundle .deb + .AppImage.
+      - name: Build frontend (tauri-codegen needs dist/ during cargo build)
+        run: pnpm build
+
+      - name: cargo build lib --crate-type=rlib (produces espeak-ng-data)
+        run: cargo rustc --release --lib --crate-type=rlib --features tauri/custom-protocol --manifest-path src-tauri/Cargo.toml
+
+      - name: Extract espeak-ng-data into bundle resources
+        run: |
+          set -euo pipefail
+          src=$(ls -d src-tauri/target/release/build/espeak-rs-sys-*/out/share/espeak-ng-data | head -1)
+          # Sanity: the Russian pipeline needs these three at minimum.
+          test -f "$src/ru_dict" && test -f "$src/phondata" && test -f "$src/intonations"
+          cp -r "$src/." src-tauri/resources/espeak-ng-data/
+          test -f src-tauri/resources/espeak-ng-data/ru_dict
+
+      # Pinned + sha256-verified libonnxruntime for the silero-native engine
+      # (ort load-dynamic dlopens it from ORT_DYLIB_PATH, set by the app to
+      # the bundled copy). Must replace the committed placeholder before
+      # `tauri build` — same rule as the Windows onnxruntime.dll fetch.
+      - name: Fetch libonnxruntime into bundle resources
+        run: bash scripts/fetch-linux-onnxruntime.sh
+
+      - name: Build .deb and .AppImage packages
+        run: pnpm tauri build
+
+      # Repack the AppImage with GDK_BACKEND autodetection — without this the
+      # CI-built AppImage fails to start on pure-Wayland sessions (the local
+      # builder applies the same fix; keep the two in sync).
+      - name: Apply wayland fix to the AppImage
+        run: |
+          appimage=$(ls src-tauri/target/release/bundle/appimage/*.AppImage | head -1)
+          bash scripts/fix-appimage-wayland.sh "$appimage" "$appimage"
+
+      - name: Extract changelog section for release notes
+        run: bash scripts/release-notes.sh "${{ inputs.tag || github.ref_name }}"
+
+      - name: Attach Linux artifacts to the draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          draft: true
+          body_path: release_notes.md
+          files: |
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/appimage/*.AppImage

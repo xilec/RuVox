@@ -1,0 +1,14 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "targets": [
+      "deb",
+      "appimage"
+    ],
+    "resources": {
+      "resources/espeak-ng-data": "espeak-ng-data",
+      "resources/libonnxruntime.so": "libonnxruntime.so"
+    },
+    "createUpdaterArtifacts": false
+  }
+}

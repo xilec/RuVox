@@ -1,0 +1,22 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "targets": [
+      "nsis"
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      },
+      "nsis": {
+        "installerHooks": "./windows/hooks.nsh"
+      }
+    },
+    "resources": {
+      "resources/mpv": "mpv",
+      "resources/espeak-ng-data": "espeak-ng-data",
+      "resources/onnxruntime.dll": "onnxruntime.dll",
+      "resources/crt/*.dll": "./"
+    }
+  }
+}
