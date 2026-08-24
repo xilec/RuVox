@@ -205,8 +205,16 @@ entries and proposes highlight prose for approval.
 1. Notes accumulate in `## [Unreleased]` during development (see above).
 2. Before tagging: polish `[Unreleased]`, move it under `## [X.Y.Z] — YYYY-MM-DD`,
    bump `src-tauri/tauri.conf.json` `.version` (the tag guard fails on mismatch).
-3. Push the `vX.Y.Z` tag → `release.yml` builds the installer and opens a draft
+3. Push the `vX.Y.Z` tag → `release.yml` builds the artifacts and opens a draft
    release with the extracted section; publish manually after the VM checklist.
+4. Before publishing, complete the draft body to the established shape (see
+   v0.3.0): after the curated section add `---`, then the generated PR list as
+   a `## What's Changed` block (one `* <title> (<PR>) by @<author> in <url>`
+   line per PR merged since the previous tag), then
+   `**Full Changelog**: <compare-prev-tag>...<new-tag>`. The draft written by
+   `release-notes.sh` contains only the curated section — the extraction
+   replaces GitHub's auto-generated body, so without this step the PR list is
+   lost.
 
 ## Questions
 
