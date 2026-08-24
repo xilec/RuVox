@@ -4,11 +4,20 @@ Notable changes in RuVox, in chronological order.
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [0.4.0] — 2026-08-25 — Linux packages
 
 ### Added
 - **Linux packages (`.deb`, `.AppImage`)** — release artifacts for Ubuntu 24.04-class systems, built by a GitHub Actions job. The `.deb` installs via `dpkg -i`; the AppImage runs directly on systems with FUSE and via `--appimage-extract-and-run` anywhere else.
 - **TTS works out of the box on Linux** — packages bundle `espeak-ng-data` and a pinned `libonnxruntime.so` (sha256-verified at build time), so Silero (native) and Piper synthesize on a clean system without system-wide ONNX Runtime; previously Silero hung silently at startup.
+- **"Open logs folder" button in Settings** — opens the per-user diagnostic log directory in the system file manager (#215).
+- **Visible app version** — Settings footer shows «Версия: X.Y.Z» and the tray tooltip carries the build number, so bug reports can quote a specific version; recent release notes from CHANGELOG are also surfaced in the app (#216).
+
+### Fixed
+- **Windows installer no longer hangs waiting for mpv** — mpv is killed before and during install so it cannot lock the install directory during an update or reinstall (#211).
+- **All Piper voices now transcode to `.opus`** — off-list sample rates are resampled to Opus-native rates and synthesized audio is written as 32-bit float WAV; previously some voices (e.g. `ruslan`) silently kept large `.wav` files (#213, #219).
+- **Mermaid zoom modal no longer navigates away on link click** — clicks on links inside a zoomed diagram stay in the app (#217).
+- **Linux user data moved out of XDG cache** — history and audio live in XDG data/config dirs now, so cache cleaners cannot wipe them; corrupted `config.json` writes recover from `.bak` (#222).
+- **Graceful startup error instead of panic when storage cannot be opened** — a native dialog in Russian names the problem and points to the log directory, then exits cleanly (#223).
 
 ## [0.3.1] — 2026-08-20
 
