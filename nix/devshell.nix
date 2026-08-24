@@ -251,9 +251,11 @@ pkgs.mkShell {
     # bogus directory and AppImage bundling aborts with "Failed to copy
     # custom files". Shim pkg-config to answer that exact query with the one
     # appindicator libdir; every other invocation passes through untouched.
-    if [ ! -e /tmp/ruvox-pkgconfig-shim/pkg-config ]; then
-      mkdir -p /tmp/ruvox-pkgconfig-shim
-      cat > /tmp/ruvox-pkgconfig-shim/pkg-config <<'EOF'
+    # Per-shell directory: no cross-user collisions in a world-writable /tmp
+    # and no sed -i race between concurrent shell entries.
+    _pc_shim="''${XDG_RUNTIME_DIR:-/tmp}/ruvox-pkgconfig-shim.$$"
+    mkdir -p "$_pc_shim"
+    cat > "$_pc_shim/pkg-config" <<'EOF'
 #!/usr/bin/env bash
 if [ "$1" = "--libs-only-L" ] && [ "$2" = "ayatana-appindicator3-0.1" ]; then
   echo "-L$(REAL_PKG_CONFIG --variable=libdir ayatana-appindicator3-0.1)"
@@ -261,11 +263,10 @@ if [ "$1" = "--libs-only-L" ] && [ "$2" = "ayatana-appindicator3-0.1" ]; then
 fi
 exec REAL_PKG_CONFIG "$@"
 EOF
-    fi
     _real_pc=$(command -v pkg-config)
-    sed -i "s|REAL_PKG_CONFIG|$_real_pc|g" /tmp/ruvox-pkgconfig-shim/pkg-config
-    chmod +x /tmp/ruvox-pkgconfig-shim/pkg-config
-    export PATH="/tmp/ruvox-pkgconfig-shim:$PATH"
+    sed -i "s|REAL_PKG_CONFIG|$_real_pc|g" "$_pc_shim/pkg-config"
+    chmod +x "$_pc_shim/pkg-config"
+    export PATH="$_pc_shim:$PATH"
 
     # Install pre-commit hooks (idempotent; silently skipped outside a git
     # checkout or when lefthook.yml is absent)
