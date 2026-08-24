@@ -450,10 +450,213 @@ pub fn init_platform_env() {
     }
 }
 
-/// No-op on platforms whose environment is provided by the packaging
-/// (nix wrapper sets `PIPER_ESPEAKNG_DATA_DIRECTORY` on Linux).
+/// Linux and other non-Windows platforms: packaged artifacts (.deb,
+/// .AppImage) install the vendored espeak-ng-data under Tauri's Linux
+/// resource layout (`<exe_dir>/../lib/<product>/espeak-ng-data`); point
+/// Piper at it. The nix wrapper sets `PIPER_ESPEAKNG_DATA_DIRECTORY`
+/// itself (system espeak) — an existing variable always wins, so dev runs
+/// and Nix builds are unaffected.
 #[cfg(not(windows))]
-pub fn init_platform_env() {}
+pub fn init_platform_env() {
+    if std::env::var_os("PIPER_ESPEAKNG_DATA_DIRECTORY").is_none() {
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(exe_dir) = exe.parent() {
+                if let Some(data) = find_bundled_espeak_data(exe_dir) {
+                    // SAFETY: called from main before any threads exist.
+                    unsafe { std::env::set_var("PIPER_ESPEAKNG_DATA_DIRECTORY", data) };
+                }
+            }
+        }
+    }
+    // `ort` with `load-dynamic` dlopens libonnxruntime; without an explicit
+    // path it relies on the OS loader search, which does NOT include the
+    // install dir on Linux (unlike Windows, where the exe dir is searched).
+    // Point it at the bundled copy — an existing variable always wins, so
+    // the nix wrapper (system onnxruntime) is unaffected. The size guard
+    // skips the committed placeholder so a placeholder build degrades to
+    // Piper instead of failing the dlopen.
+    if std::env::var_os("ORT_DYLIB_PATH").is_none() {
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(exe_dir) = exe.parent() {
+                if let Some(dylib) = find_bundled_onnxruntime(exe_dir) {
+                    // SAFETY: called from main before any threads exist.
+                    unsafe { std::env::set_var("ORT_DYLIB_PATH", dylib) };
+                }
+            }
+        }
+    }
+}
+
+/// Search the install layouts a bundled Linux build can have for
+/// `espeak-ng-data`: flat/portable (`<exe_dir>/espeak-ng-data`) and the
+/// shared `/usr/bin` + `/usr/lib/<product>` layout of both `.deb` and
+/// `.AppImage`. Returns `None` when nothing is bundled — piper-rs then uses
+/// its built-in search (degraded Russian stress, still functional), matching
+/// pre-packaging behavior.
+#[cfg(not(windows))]
+fn find_bundled_espeak_data(exe_dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    let parent = exe_dir.parent()?;
+    let mut candidates = vec![
+        exe_dir.join("espeak-ng-data"),
+        parent.join("espeak-ng-data"),
+    ];
+    let lib = parent.join("lib");
+    if let Ok(entries) = std::fs::read_dir(&lib) {
+        // Multiple products could be installed; sort for determinism.
+        let mut bundled: Vec<_> = entries
+            .flatten()
+            .map(|e| e.path().join("espeak-ng-data"))
+            .collect();
+        bundled.sort();
+        candidates.append(&mut bundled);
+    }
+    candidates.into_iter().find(|c| c.is_dir())
+}
+
+/// Same install-layout search as [`find_bundled_espeak_data`], but for the
+/// bundled `libonnxruntime.so` file. Returns `None` (→ keep the default
+/// loader search / Piper fallback) when only the committed placeholder is
+/// present, so a placeholder build never points `ort` at a broken dylib.
+#[cfg(not(windows))]
+fn find_bundled_onnxruntime(exe_dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    let parent = exe_dir.parent()?;
+    let mut candidates = vec![
+        exe_dir.join("libonnxruntime.so"),
+        parent.join("libonnxruntime.so"),
+    ];
+    let lib = parent.join("lib");
+    if let Ok(entries) = std::fs::read_dir(&lib) {
+        let mut bundled: Vec<_> = entries
+            .flatten()
+            .map(|e| e.path().join("libonnxruntime.so"))
+            .collect();
+        bundled.sort();
+        candidates.append(&mut bundled);
+    }
+    candidates
+        .into_iter()
+        .find(|c| c.is_file() && std::fs::metadata(c).map(|m| m.len() > 0).unwrap_or(false))
+}
+
+#[cfg(all(test, not(windows)))]
+mod espeak_lookup_tests {
+    use super::find_bundled_espeak_data;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn touch_data(dir: &std::path::Path) {
+        fs::create_dir_all(dir).unwrap();
+        fs::write(dir.join("ru_dict"), b"").unwrap();
+    }
+
+    #[test]
+    fn finds_flat_portable_layout() {
+        let tmp = TempDir::new().unwrap();
+        let bin = tmp.path().join("app").join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        let data = tmp.path().join("app").join("espeak-ng-data");
+        touch_data(&data);
+
+        assert_eq!(find_bundled_espeak_data(&bin), Some(data));
+    }
+
+    #[test]
+    fn finds_deb_and_appimage_layout() {
+        let tmp = TempDir::new().unwrap();
+        let bin = tmp.path().join("usr").join("bin");
+        let data = tmp
+            .path()
+            .join("usr")
+            .join("lib")
+            .join("RuVox")
+            .join("espeak-ng-data");
+        fs::create_dir_all(&bin).unwrap();
+        touch_data(&data);
+
+        assert_eq!(find_bundled_espeak_data(&bin), Some(data));
+    }
+
+    #[test]
+    fn none_when_not_bundled() {
+        let tmp = TempDir::new().unwrap();
+        let bin = tmp.path().join("usr").join("bin");
+        fs::create_dir_all(&bin).unwrap();
+
+        assert_eq!(find_bundled_espeak_data(&bin), None);
+    }
+
+    #[test]
+    fn ignores_incomplete_bundles() {
+        // A lib/ product dir without the data dir must not shadow a later
+        // candidate; with no other candidates the result is None.
+        let tmp = TempDir::new().unwrap();
+        let bin = tmp.path().join("usr").join("bin");
+        fs::create_dir_all(tmp.path().join("usr").join("lib").join("Other")).unwrap();
+        fs::create_dir_all(&bin).unwrap();
+
+        assert_eq!(find_bundled_espeak_data(&bin), None);
+    }
+}
+
+#[cfg(all(test, not(windows)))]
+mod onnxruntime_lookup_tests {
+    use super::find_bundled_onnxruntime;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn write_dylib(dir: &std::path::Path) {
+        fs::create_dir_all(dir).unwrap();
+        fs::write(dir.join("libonnxruntime.so"), b"ELF payload").unwrap();
+    }
+
+    #[test]
+    fn finds_flat_portable_layout() {
+        let tmp = TempDir::new().unwrap();
+        let bin = tmp.path().join("app").join("bin");
+        let dylib = tmp.path().join("app").join("libonnxruntime.so");
+        fs::create_dir_all(&bin).unwrap();
+        write_dylib(&dylib.parent().unwrap());
+
+        assert_eq!(find_bundled_onnxruntime(&bin), Some(dylib));
+    }
+
+    #[test]
+    fn finds_deb_and_appimage_layout() {
+        let tmp = TempDir::new().unwrap();
+        let bin = tmp.path().join("usr").join("bin");
+        let dylib = tmp
+            .path()
+            .join("usr")
+            .join("lib")
+            .join("RuVox")
+            .join("libonnxruntime.so");
+        fs::create_dir_all(&bin).unwrap();
+        write_dylib(&dylib.parent().unwrap());
+
+        assert_eq!(find_bundled_onnxruntime(&bin), Some(dylib));
+    }
+
+    #[test]
+    fn none_when_not_bundled() {
+        let tmp = TempDir::new().unwrap();
+        let bin = tmp.path().join("usr").join("bin");
+        fs::create_dir_all(&bin).unwrap();
+
+        assert_eq!(find_bundled_onnxruntime(&bin), None);
+    }
+
+    #[test]
+    fn ignores_placeholder_file() {
+        // The committed 0-byte placeholder must not be picked up: ort would
+        // fail the dlopen instead of falling back to Piper.
+        let tmp = TempDir::new().unwrap();
+        let bin = tmp.path().join("usr").join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        fs::write(bin.join("libonnxruntime.so"), b"").unwrap();
+
+        assert_eq!(find_bundled_onnxruntime(&bin), None);
+    }
+}
 
 /// Diagnostic logging: LogDir always, Stdout in debug builds (#202).
 /// `RUST_LOG` overrides the level (level names only, default `info`).

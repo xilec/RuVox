@@ -11,6 +11,10 @@ At release time they are replaced with real content:
   `scripts/fetch-windows-resources.sh`
 - `onnxruntime.dll` — from the pinned microsoft/onnxruntime release
   (same script)
+- `libonnxruntime.so` — Linux twin of the above, from the pinned
+  microsoft/onnxruntime release (`scripts/fetch-linux-onnxruntime.sh`,
+  release.yml linux-packages job); bundled into the .deb/.AppImage for the
+  silero-native engine
 - `espeak-ng-data/` — copied out of the espeak-rs-sys build tree by the
   release workflow (`.github/workflows/release.yml`)
 

@@ -243,6 +243,30 @@ pkgs.mkShell {
     # for the production bundle; in dev we set them manually.
     export XDG_DATA_DIRS="${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:${pkgs.hicolor-icon-theme}/share:$XDG_DATA_DIRS"
 
+    # tauri-cli's AppImage bundler locates libayatana-appindicator3 by running
+    # `pkg-config --libs-only-L ayatana-appindicator3-0.1` and stripping ONLY
+    # the leading "-L" off the output (tauri-cli rust.rs `get_library_path`,
+    # tauri <= 2.11.4). Under Nix that query returns one -L flag per
+    # transitive dependency, so the whole flag list is misparsed into a single
+    # bogus directory and AppImage bundling aborts with "Failed to copy
+    # custom files". Shim pkg-config to answer that exact query with the one
+    # appindicator libdir; every other invocation passes through untouched.
+    if [ ! -e /tmp/ruvox-pkgconfig-shim/pkg-config ]; then
+      mkdir -p /tmp/ruvox-pkgconfig-shim
+      cat > /tmp/ruvox-pkgconfig-shim/pkg-config <<'EOF'
+#!/usr/bin/env bash
+if [ "$1" = "--libs-only-L" ] && [ "$2" = "ayatana-appindicator3-0.1" ]; then
+  echo "-L$(REAL_PKG_CONFIG --variable=libdir ayatana-appindicator3-0.1)"
+  exit 0
+fi
+exec REAL_PKG_CONFIG "$@"
+EOF
+    fi
+    _real_pc=$(command -v pkg-config)
+    sed -i "s|REAL_PKG_CONFIG|$_real_pc|g" /tmp/ruvox-pkgconfig-shim/pkg-config
+    chmod +x /tmp/ruvox-pkgconfig-shim/pkg-config
+    export PATH="/tmp/ruvox-pkgconfig-shim:$PATH"
+
     # Install pre-commit hooks (idempotent; silently skipped outside a git
     # checkout or when lefthook.yml is absent)
     lefthook install > /dev/null 2>&1 || true
