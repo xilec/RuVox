@@ -1,8 +1,9 @@
 //! Tauri command handlers (IPC Layer 1: Frontend → Backend).
 //!
 //! All commands use `Result<T, CommandError>` so that errors are serialized as
-//! typed JSON objects (`{ "type": "...", "message": "..." }`) which the frontend
-//! can pattern-match on.
+//! typed JSON objects (`{ "type": "...", "code": "...", "params": [...],
+//! "message": "..." }`) which the frontend localizes by `code` and falls back
+//! to `message` for unknown codes.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -32,51 +33,167 @@ use crate::tts::{
 // ── Error type ─────────────────────────────────────────────────────────────────
 
 /// Typed error returned by all Tauri commands.
-/// `#[serde(tag = "type")]` produces `{ "type": "not_found", "message": "..." }`.
+///
+/// The wire format carries no user-facing prose: `code` is a stable
+/// machine-readable site id the frontend translates via its localization
+/// catalogs, `params` holds positional interpolation values in the order the
+/// localized sentence needs them, and `message` (optional) is raw diagnostic
+/// detail used as a fallback for codes unknown to the frontend.
 #[derive(Debug, thiserror::Error, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum CommandError {
-    #[error("not found: {message}")]
-    NotFound { message: String },
+    #[error("not found: {code}")]
+    NotFound {
+        code: &'static str,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        params: Vec<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
+    },
 
-    #[error("storage error: {message}")]
-    StorageError { message: String },
+    #[error("storage error: {code}")]
+    StorageError {
+        code: &'static str,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        params: Vec<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
+    },
 
-    #[error("synthesis error: {message}")]
-    SynthesisError { message: String },
+    #[error("synthesis error: {code}")]
+    SynthesisError {
+        code: &'static str,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        params: Vec<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
+    },
 
-    #[error("playback error: {message}")]
-    PlaybackError { message: String },
+    #[error("playback error: {code}")]
+    PlaybackError {
+        code: &'static str,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        params: Vec<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
+    },
 
-    #[error("config error: {message}")]
-    ConfigError { message: String },
+    #[error("config error: {code}")]
+    ConfigError {
+        code: &'static str,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        params: Vec<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
+    },
 
-    #[error("internal error: {message}")]
-    Internal { message: String },
+    #[error("internal error: {code}")]
+    Internal {
+        code: &'static str,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        params: Vec<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
+    },
+}
+
+impl CommandError {
+    fn not_found(code: &'static str, params: Vec<String>) -> Self {
+        Self::NotFound {
+            code,
+            params,
+            message: None,
+        }
+    }
+
+    fn storage(code: &'static str, params: Vec<String>) -> Self {
+        Self::StorageError {
+            code,
+            params,
+            message: None,
+        }
+    }
+
+    fn synthesis(code: &'static str, params: Vec<String>) -> Self {
+        Self::SynthesisError {
+            code,
+            params,
+            message: None,
+        }
+    }
+
+    fn playback(code: &'static str, params: Vec<String>) -> Self {
+        Self::PlaybackError {
+            code,
+            params,
+            message: None,
+        }
+    }
+
+    fn config(code: &'static str, params: Vec<String>) -> Self {
+        Self::ConfigError {
+            code,
+            params,
+            message: None,
+        }
+    }
+
+    fn internal(code: &'static str, params: Vec<String>) -> Self {
+        Self::Internal {
+            code,
+            params,
+            message: None,
+        }
+    }
+
+    /// Attach raw diagnostic detail (engine/HTTP/storage strings). Used as a
+    /// display fallback when the frontend does not know the `code`.
+    fn with_message(mut self, message: impl Into<String>) -> Self {
+        let slot = match &mut self {
+            Self::NotFound { message, .. }
+            | Self::StorageError { message, .. }
+            | Self::SynthesisError { message, .. }
+            | Self::PlaybackError { message, .. }
+            | Self::ConfigError { message, .. }
+            | Self::Internal { message, .. } => message,
+        };
+        *slot = Some(message.into());
+        self
+    }
 }
 
 impl From<StorageError> for CommandError {
     fn from(e: StorageError) -> Self {
         match e {
-            StorageError::NotFound(id) => CommandError::NotFound {
-                message: format!("entry not found: {id}"),
-            },
-            other => CommandError::StorageError {
-                message: other.to_string(),
-            },
+            StorageError::NotFound(id) => {
+                CommandError::not_found("entry.not_found", vec![id.to_string()])
+            }
+            other => {
+                CommandError::storage("storage.failure", vec![]).with_message(other.to_string())
+            }
         }
     }
 }
 
 impl From<TtsError> for CommandError {
     fn from(e: TtsError) -> Self {
-        CommandError::SynthesisError {
-            message: e.to_string(),
-        }
+        CommandError::synthesis("synthesis.failed", vec![]).with_message(e.to_string())
     }
 }
 
 type CmdResult<T> = Result<T, CommandError>;
+
+/// Wire string of an [`EntryStatus`] (matches its lowercase serde names) so
+/// status values can travel in `CommandError::params`.
+fn entry_status_str(status: EntryStatus) -> &'static str {
+    match status {
+        EntryStatus::Pending => "pending",
+        EntryStatus::Processing => "processing",
+        EntryStatus::Ready => "ready",
+        EntryStatus::Playing => "playing",
+        EntryStatus::Error => "error",
+    }
+}
 
 /// Maximum accepted input length in Unicode codepoints when the active engine
 /// is Piper. Piper still synthesizes the whole text in one unchunked ONNX run,
@@ -103,10 +220,14 @@ fn oversized_input_message(text: &str, engine: EngineKind) -> Option<String> {
 /// Reject input longer than `MAX_INPUT_CHARS` codepoints when the active
 /// engine is Piper; Silero chunks the text and accepts any length.
 fn validate_input_length(text: &str, engine: EngineKind) -> CmdResult<()> {
-    match oversized_input_message(text, engine) {
-        Some(message) => Err(CommandError::Internal { message }),
-        None => Ok(()),
+    if oversized_input_message(text, engine).is_some() {
+        // Params order matches the localized sentence: engine first, limit second.
+        return Err(CommandError::internal(
+            "input.too_long",
+            vec![engine.as_str().to_string(), MAX_INPUT_CHARS.to_string()],
+        ));
     }
+    Ok(())
 }
 
 // ── Helper: emit entry_updated ─────────────────────────────────────────────────
@@ -709,9 +830,7 @@ fn ingest_text<R: Runtime>(
     html_source: Option<String>,
 ) -> CmdResult<String> {
     if text.trim().is_empty() {
-        return Err(CommandError::Internal {
-            message: "в буфере обмена нет текста".to_string(),
-        });
+        return Err(CommandError::internal("input.empty", vec![]));
     }
     validate_input_length(&text, state.tts.kind())?;
 
@@ -764,16 +883,16 @@ pub async fn add_clipboard_entry<R: Runtime>(
 ) -> CmdResult<String> {
     // Read clipboard on a blocking thread (required on Linux to avoid deadlock).
     let text = tokio::task::spawn_blocking(|| {
-        let mut board = arboard::Clipboard::new().map_err(|e| CommandError::Internal {
-            message: format!("clipboard init: {e}"),
+        let mut board = arboard::Clipboard::new().map_err(|e| {
+            CommandError::internal("clipboard.unavailable", vec![]).with_message(e.to_string())
         })?;
-        board.get_text().map_err(|_| CommandError::Internal {
-            message: "в буфере обмена нет текста".to_string(),
-        })
+        board
+            .get_text()
+            .map_err(|_| CommandError::internal("clipboard.empty", vec![]))
     })
     .await
-    .map_err(|e| CommandError::Internal {
-        message: format!("clipboard task panicked: {e}"),
+    .map_err(|e| {
+        CommandError::internal("clipboard.task_panicked", vec![]).with_message(e.to_string())
     })??;
 
     ingest_text(app, &state, text, play_when_ready, None, None)
@@ -792,8 +911,8 @@ async fn preview_normalization(
 ) -> CmdResult<(String, CharMapping)> {
     run_pipeline_normalization(pipeline, text)
         .await
-        .map_err(|e| CommandError::Internal {
-            message: format!("pipeline task panicked: {e}"),
+        .map_err(|e| {
+            CommandError::internal("pipeline.panicked", vec![]).with_message(e.to_string())
         })
 }
 
@@ -838,9 +957,7 @@ fn require_entry(storage: &StorageService, id: &str) -> CmdResult<TextEntry> {
     let uuid = parse_entry_id(id)?;
     storage
         .get_entry(&uuid)
-        .ok_or_else(|| CommandError::NotFound {
-            message: format!("entry not found: {id}"),
-        })
+        .ok_or_else(|| CommandError::not_found("entry.not_found", vec![id.to_string()]))
 }
 
 /// Return a single entry by ID, or null if not found.
@@ -926,9 +1043,10 @@ pub async fn regenerate_entry<R: Runtime>(
     let uuid = entry.id;
 
     if entry.status == EntryStatus::Processing {
-        return Err(CommandError::SynthesisError {
-            message: "запись уже синтезируется".to_string(),
-        });
+        return Err(CommandError::synthesis(
+            "synthesis.in_progress",
+            vec![id.to_string()],
+        ));
     }
 
     // If this entry is currently playing, stop playback so the about-to-be-
@@ -942,12 +1060,10 @@ pub async fn regenerate_entry<R: Runtime>(
         .delete_audio(&uuid)
         .map_err(CommandError::from)?;
 
-    let mut entry = state
-        .storage
-        .get_entry(&uuid)
-        .ok_or_else(|| CommandError::NotFound {
-            message: format!("entry vanished after delete_audio: {id}"),
-        })?;
+    let mut entry = state.storage.get_entry(&uuid).ok_or_else(|| {
+        CommandError::not_found("entry.not_found", vec![id.to_string()])
+            .with_message("entry vanished after delete_audio")
+    })?;
     entry.was_regenerated = true;
     entry.error_message = None;
     state
@@ -987,20 +1103,18 @@ fn cancel_entry(
     // below (issue #179); this snapshot only drives the error path so a
     // `ready`/`playing`/`error` entry is rejected without touching the
     // synthesis registries.
-    let live_status =
-        storage
-            .get_entry(&uuid)
-            .map(|e| e.status)
-            .ok_or_else(|| CommandError::NotFound {
-                message: format!("entry not found: {id}"),
-            })?;
+    let live_status = storage
+        .get_entry(&uuid)
+        .map(|e| e.status)
+        .ok_or_else(|| CommandError::not_found("entry.not_found", vec![id.to_string()]))?;
     if matches!(
         live_status,
         EntryStatus::Ready | EntryStatus::Error | EntryStatus::Playing
     ) {
-        return Err(CommandError::SynthesisError {
-            message: format!("entry {id} cannot be cancelled (status: {live_status:?})"),
-        });
+        return Err(CommandError::synthesis(
+            "entry.cannot_cancel",
+            vec![id.to_string(), entry_status_str(live_status).to_string()],
+        ));
     }
 
     // Atomic transition: flip to `pending` only if the entry is still
@@ -1018,9 +1132,7 @@ fn cancel_entry(
         // `ready`/`error`. Nothing to abort; report the live state.
         let entry = storage
             .get_entry(&uuid)
-            .ok_or_else(|| CommandError::NotFound {
-                message: format!("entry not found: {id}"),
-            })?;
+            .ok_or_else(|| CommandError::not_found("entry.not_found", vec![id.to_string()]))?;
         return Ok((entry, false));
     }
 
@@ -1033,9 +1145,7 @@ fn cancel_entry(
 
     let entry = storage
         .get_entry(&uuid)
-        .ok_or_else(|| CommandError::NotFound {
-            message: format!("entry not found: {id}"),
-        })?;
+        .ok_or_else(|| CommandError::not_found("entry.not_found", vec![id.to_string()]))?;
     Ok((entry, entered_tts))
 }
 
@@ -1074,31 +1184,24 @@ pub async fn play_entry(state: State<'_, AppState>, id: String) -> CmdResult<()>
     let uuid = entry.id;
 
     if entry.status != EntryStatus::Ready {
-        return Err(CommandError::PlaybackError {
-            message: format!("entry {id} is not ready (status: {:?})", entry.status),
-        });
+        return Err(CommandError::playback(
+            "entry.not_ready",
+            vec![id.to_string(), entry_status_str(entry.status).to_string()],
+        ));
     }
 
     let path = state
         .storage
         .get_audio_path(&uuid)
-        .ok_or_else(|| CommandError::PlaybackError {
-            message: format!("audio file missing for entry {id}"),
-        })?;
+        .ok_or_else(|| CommandError::playback("audio.missing", vec![id.to_string()]))?;
 
-    state
-        .player
-        .load(&path, id.clone())
-        .map_err(|e| CommandError::PlaybackError {
-            message: e.to_string(),
-        })?;
+    state.player.load(&path, id.clone()).map_err(|e| {
+        CommandError::playback("playback.load_failed", vec![]).with_message(e.to_string())
+    })?;
 
-    state
-        .player
-        .play()
-        .map_err(|e| CommandError::PlaybackError {
-            message: e.to_string(),
-        })?;
+    state.player.play().map_err(|e| {
+        CommandError::playback("playback.play_failed", vec![]).with_message(e.to_string())
+    })?;
 
     Ok(())
 }
@@ -1106,34 +1209,25 @@ pub async fn play_entry(state: State<'_, AppState>, id: String) -> CmdResult<()>
 /// Pause the currently playing entry.
 #[tauri::command]
 pub async fn pause_playback(state: State<'_, AppState>) -> CmdResult<()> {
-    state
-        .player
-        .pause()
-        .map_err(|e| CommandError::PlaybackError {
-            message: e.to_string(),
-        })
+    state.player.pause().map_err(|e| {
+        CommandError::playback("playback.pause_failed", vec![]).with_message(e.to_string())
+    })
 }
 
 /// Resume playback from the paused position.
 #[tauri::command]
 pub async fn resume_playback(state: State<'_, AppState>) -> CmdResult<()> {
-    state
-        .player
-        .resume()
-        .map_err(|e| CommandError::PlaybackError {
-            message: e.to_string(),
-        })
+    state.player.resume().map_err(|e| {
+        CommandError::playback("playback.resume_failed", vec![]).with_message(e.to_string())
+    })
 }
 
 /// Stop playback entirely.
 #[tauri::command]
 pub async fn stop_playback(state: State<'_, AppState>) -> CmdResult<()> {
-    state
-        .player
-        .stop()
-        .map_err(|e| CommandError::PlaybackError {
-            message: e.to_string(),
-        })
+    state.player.stop().map_err(|e| {
+        CommandError::playback("playback.stop_failed", vec![]).with_message(e.to_string())
+    })
 }
 
 /// Destroy the mpv subprocess before the updater launches the installer
@@ -1160,29 +1254,24 @@ pub async fn shutdown_player_for_update<R: Runtime>(
 /// Seek to an absolute position in the current audio.
 #[tauri::command]
 pub async fn seek_to(state: State<'_, AppState>, position_sec: f64) -> CmdResult<()> {
-    state
-        .player
-        .seek(position_sec)
-        .map_err(|e| CommandError::PlaybackError {
-            message: e.to_string(),
-        })
+    state.player.seek(position_sec).map_err(|e| {
+        CommandError::playback("playback.seek_failed", vec![]).with_message(e.to_string())
+    })
 }
 
 /// Set playback speed (0.5–3.0). Persisted to UIConfig.speech_rate.
 #[tauri::command]
 pub async fn set_speed(state: State<'_, AppState>, speed: f32) -> CmdResult<()> {
     if !(0.5..=3.0).contains(&speed) {
-        return Err(CommandError::ConfigError {
-            message: format!("speed {speed} is out of range [0.5, 3.0]"),
-        });
+        return Err(CommandError::config(
+            "speed.out_of_range",
+            vec![speed.to_string()],
+        ));
     }
 
-    state
-        .player
-        .set_speed(speed)
-        .map_err(|e| CommandError::PlaybackError {
-            message: e.to_string(),
-        })?;
+    state.player.set_speed(speed).map_err(|e| {
+        CommandError::playback("playback.set_speed_failed", vec![]).with_message(e.to_string())
+    })?;
 
     // Persist to config.
     let mut config = state.storage.load_config().unwrap_or_default();
@@ -1198,17 +1287,15 @@ pub async fn set_speed(state: State<'_, AppState>, speed: f32) -> CmdResult<()> 
 #[tauri::command]
 pub async fn set_volume(state: State<'_, AppState>, volume: f32) -> CmdResult<()> {
     if !(0.0..=1.0).contains(&volume) {
-        return Err(CommandError::ConfigError {
-            message: format!("volume {volume} is out of range [0.0, 1.0]"),
-        });
+        return Err(CommandError::config(
+            "volume.out_of_range",
+            vec![volume.to_string()],
+        ));
     }
 
-    state
-        .player
-        .set_volume(volume)
-        .map_err(|e| CommandError::PlaybackError {
-            message: e.to_string(),
-        })
+    state.player.set_volume(volume).map_err(|e| {
+        CommandError::playback("playback.set_volume_failed", vec![]).with_message(e.to_string())
+    })
 }
 
 /// Return the current application configuration.
@@ -1244,8 +1331,8 @@ pub async fn get_available_engines(state: State<'_, AppState>) -> CmdResult<Avai
     let bundle_dir = state.silero_native_bundle_dir.clone();
     tokio::task::spawn_blocking(move || availability::probe(&ttsd_dir, &bundle_dir))
         .await
-        .map_err(|e| CommandError::Internal {
-            message: format!("availability probe panicked: {e}"),
+        .map_err(|e| {
+            CommandError::internal("engines.probe_panicked", vec![]).with_message(e.to_string())
         })
 }
 
@@ -1276,8 +1363,8 @@ pub async fn update_config(state: State<'_, AppState>, patch: UIConfigPatch) -> 
         .engine_switcher
         .apply_config(&config.engine, &config.piper_voice)
         .await
-        .map_err(|e| CommandError::ConfigError {
-            message: format!("не удалось переключить движок: {e}"),
+        .map_err(|e| {
+            CommandError::config("config.engine_switch_failed", vec![]).with_message(e.to_string())
         })?;
 
     state
@@ -1361,8 +1448,8 @@ pub async fn clear_cache<R: Runtime>(
         Ok((sweep, evict))
     })
     .await
-    .map_err(|e| CommandError::Internal {
-        message: format!("clear_cache task panicked: {e}"),
+    .map_err(|e| {
+        CommandError::internal("cache.task_panicked", vec![]).with_message(e.to_string())
     })??;
 
     for id in &evict.updated_ids {
@@ -1423,12 +1510,9 @@ pub async fn get_cache_dir(state: State<'_, AppState>) -> CmdResult<String> {
 /// manager so the user can grab logs for a support request.
 #[tauri::command]
 pub async fn get_log_dir<R: Runtime>(app: AppHandle<R>) -> CmdResult<String> {
-    let dir = app
-        .path()
-        .app_log_dir()
-        .map_err(|e| CommandError::Internal {
-            message: format!("не удалось разрешить папку логов: {e}"),
-        })?;
+    let dir = app.path().app_log_dir().map_err(|e| {
+        CommandError::internal("logs.dir_resolve_failed", vec![]).with_message(e.to_string())
+    })?;
     // The logger creates the dir lazily on first write; create it now so the
     // frontend can reveal a real path even before any log line is flushed.
     // Run on a blocking thread so this async command does not park the
@@ -1438,11 +1522,11 @@ pub async fn get_log_dir<R: Runtime>(app: AppHandle<R>) -> CmdResult<String> {
         move || std::fs::create_dir_all(dir)
     })
     .await
-    .map_err(|e| CommandError::Internal {
-        message: format!("не удалось создать папку логов: {e}"),
+    .map_err(|e| {
+        CommandError::internal("logs.dir_create_failed", vec![]).with_message(e.to_string())
     })?
-    .map_err(|e| CommandError::Internal {
-        message: format!("не удалось создать папку логов: {e}"),
+    .map_err(|e| {
+        CommandError::internal("logs.dir_create_failed", vec![]).with_message(e.to_string())
     })?;
     Ok(dir.to_string_lossy().into_owned())
 }
@@ -1463,17 +1547,14 @@ const MAX_IMAGE_BYTES: usize = 20 * 1024 * 1024;
 pub async fn fetch_image_bytes(url: String) -> CmdResult<Vec<u8>> {
     let parsed = validate_image_url(&url)?;
 
-    let response = image_client()
-        .get(parsed)
-        .send()
-        .await
-        .map_err(|e| CommandError::Internal {
-            message: format!("не удалось скачать изображение: {e}"),
-        })?;
+    let response = image_client().get(parsed).send().await.map_err(|e| {
+        CommandError::internal("image.fetch_failed", vec![]).with_message(e.to_string())
+    })?;
     if !response.status().is_success() {
-        return Err(CommandError::Internal {
-            message: format!("не удалось скачать изображение: HTTP {}", response.status()),
-        });
+        return Err(CommandError::internal(
+            "image.fetch_failed",
+            vec![response.status().as_u16().to_string()],
+        ));
     }
     // Reject early when Content-Length is known; still re-check after the
     // body is read — chunked responses have no reliable length up front.
@@ -1481,8 +1562,8 @@ pub async fn fetch_image_bytes(url: String) -> CmdResult<Vec<u8>> {
         ensure_image_size(len)?;
     }
     let declared_type = media_type(response.headers().get(reqwest::header::CONTENT_TYPE));
-    let bytes = response.bytes().await.map_err(|e| CommandError::Internal {
-        message: format!("не удалось прочитать изображение: {e}"),
+    let bytes = response.bytes().await.map_err(|e| {
+        CommandError::internal("image.read_failed", vec![]).with_message(e.to_string())
     })?;
     ensure_image_size(bytes.len() as u64)?;
     // Content-type gate: trust a declared image/* type; otherwise fall back
@@ -1492,11 +1573,9 @@ pub async fn fetch_image_bytes(url: String) -> CmdResult<Vec<u8>> {
         Some(ct) if ct.starts_with("image/") => {}
         other => {
             if image::guess_format(&bytes).is_err() {
-                return Err(CommandError::Internal {
-                    message: match other {
-                        Some(ct) => format!("сервер вернул не изображение ({ct})"),
-                        None => "сервер не указал тип содержимого".to_string(),
-                    },
+                return Err(match other {
+                    Some(ct) => CommandError::internal("image.not_image", vec![ct.to_string()]),
+                    None => CommandError::internal("image.no_content_type", vec![]),
                 });
             }
         }
@@ -1527,14 +1606,16 @@ fn image_client() -> &'static reqwest::Client {
 /// https, but the copy path produces inert clipboard bytes, so legacy
 /// plain-http images remain copyable.
 fn validate_image_url(url: &str) -> Result<reqwest::Url, CommandError> {
-    let parsed = reqwest::Url::parse(url).map_err(|e| CommandError::Internal {
-        message: format!("некорректный URL изображения «{url}»: {e}"),
+    let parsed = reqwest::Url::parse(url).map_err(|e| {
+        CommandError::internal("image.url_invalid", vec![url.to_string()])
+            .with_message(e.to_string())
     })?;
     match parsed.scheme() {
         "https" | "http" => Ok(parsed),
-        scheme => Err(CommandError::Internal {
-            message: format!("схема «{scheme}:» не поддерживается для изображений"),
-        }),
+        scheme => Err(CommandError::internal(
+            "image.url_scheme_unsupported",
+            vec![format!("{scheme}:")],
+        )),
     }
 }
 
@@ -1550,16 +1631,17 @@ fn media_type(content_type: Option<&reqwest::header::HeaderValue>) -> Option<Str
 /// post-read re-check of [`fetch_image_bytes`].
 fn ensure_image_size(len: u64) -> Result<(), CommandError> {
     if len > MAX_IMAGE_BYTES as u64 {
-        return Err(CommandError::Internal {
-            message: format!("изображение слишком большое ({len} байт, лимит {MAX_IMAGE_BYTES})"),
-        });
+        return Err(CommandError::internal(
+            "image.too_large",
+            vec![len.to_string(), MAX_IMAGE_BYTES.to_string()],
+        ));
     }
     Ok(())
 }
 
 fn parse_entry_id(s: &str) -> CmdResult<EntryId> {
-    s.parse::<uuid::Uuid>().map_err(|e| CommandError::NotFound {
-        message: format!("invalid entry id '{s}': {e}"),
+    s.parse::<uuid::Uuid>().map_err(|e| {
+        CommandError::not_found("entry.id_invalid", vec![s.to_string()]).with_message(e.to_string())
     })
 }
 
@@ -1609,10 +1691,14 @@ fn apply_config_patch(config: &mut UIConfig, patch: UIConfigPatch) {
     if let Some(v) = patch.piper_voice {
         config.piper_voice = v;
     }
+    if let Some(v) = patch.language {
+        config.language = v;
+    }
 }
 
 #[cfg(test)]
 mod image_url_tests {
+    use super::CommandError;
     use super::{MAX_IMAGE_BYTES, ensure_image_size, media_type, validate_image_url};
 
     #[test]
@@ -1630,8 +1716,13 @@ mod image_url_tests {
             "data:image/png;base64,AAAA",
             "ftp://example.com/a.png",
         ] {
-            let err = validate_image_url(url).unwrap_err().to_string();
-            assert!(err.contains("не поддерживается"), "{url}: {err}");
+            let err = validate_image_url(url).unwrap_err();
+            match err {
+                CommandError::Internal { code, .. } => {
+                    assert_eq!(code, "image.url_scheme_unsupported")
+                }
+                other => panic!("{url}: expected Internal, got {other:?}"),
+            }
         }
     }
 
@@ -1871,16 +1962,14 @@ mod synthesis_tests {
         let (storage, _dir) = make_service();
         let tasks = Mutex::new(HashMap::new());
         let entered = Mutex::new(HashSet::new());
+        let id = uuid::Uuid::new_v4().to_string();
 
-        let err = cancel_entry(
-            &storage,
-            &tasks,
-            &entered,
-            &uuid::Uuid::new_v4().to_string(),
-        )
-        .unwrap_err();
+        let err = cancel_entry(&storage, &tasks, &entered, &id).unwrap_err();
         match err {
-            CommandError::NotFound { message } => assert!(message.contains("entry not found")),
+            CommandError::NotFound { code, params, .. } => {
+                assert_eq!(code, "entry.not_found");
+                assert_eq!(params, vec![id]);
+            }
             other => panic!("expected NotFound, got {other:?}"),
         }
     }
@@ -1908,11 +1997,9 @@ mod synthesis_tests {
 
             let err = cancel_entry(&storage, &tasks, &entered, &id.to_string()).unwrap_err();
             match err {
-                CommandError::SynthesisError { message } => {
-                    assert!(
-                        message.contains("cannot be cancelled"),
-                        "{status:?}: {message}"
-                    );
+                CommandError::SynthesisError { code, params, .. } => {
+                    assert_eq!(code, "entry.cannot_cancel", "{status:?}");
+                    assert_eq!(params[0], id.to_string(), "{status:?}: {params:?}");
                 }
                 other => panic!("{status:?}: expected SynthesisError, got {other:?}"),
             }
@@ -2065,6 +2152,7 @@ mod tests {
             preview_dialog_enabled: _,
             engine: _,
             piper_voice: _,
+            language: _,
         } = UIConfigPatch::default();
 
         let mut custom_hotkeys = HashMap::new();
@@ -2265,6 +2353,7 @@ mod tests {
             preview_dialog_enabled: false,
             engine: "silero".to_string(),
             piper_voice: "irina".to_string(),
+            language: "ru".to_string(),
         };
         let before = serde_json::to_value(&config).unwrap();
 
@@ -2276,11 +2365,10 @@ mod tests {
 
     // ── parse_entry_id ───────────────────────────────────────────────────────
 
-    /// Assert that `err` is a `CommandError::NotFound` whose message contains
-    /// `needle`.
-    fn assert_not_found(err: CommandError, needle: &str) {
+    /// Assert that `err` is a `CommandError::NotFound` with the expected code.
+    fn assert_not_found(err: CommandError, expected_code: &str) {
         match err {
-            CommandError::NotFound { message } => assert!(message.contains(needle)),
+            CommandError::NotFound { code, .. } => assert_eq!(code, expected_code),
             other => panic!("expected NotFound, got {other:?}"),
         }
     }
@@ -2294,14 +2382,15 @@ mod tests {
         assert_eq!(parsed, uuid::Uuid::parse_str(input).unwrap());
     }
 
-    /// Malformed ids are rejected as `CommandError::NotFound` whose message
-    /// (`invalid entry id '{s}': …`, per `parse_entry_id`) names the input.
-    /// Trailing whitespace is significant: the parser does not trim.
+    /// Malformed ids are rejected as `CommandError::NotFound` with code
+    /// `entry.id_invalid` (the input travels in `params`, the parse error
+    /// detail in `message`). Trailing whitespace is significant: the parser
+    /// does not trim.
     #[test_case(""; "empty")]
     #[test_case("not-a-uuid"; "garbage")]
     #[test_case("00000000-0000-0000-0000-000000000000 "; "trailing_whitespace")]
     fn parse_entry_id_rejects(input: &str) {
-        assert_not_found(parse_entry_id(input).unwrap_err(), "invalid entry id");
+        assert_not_found(parse_entry_id(input).unwrap_err(), "entry.id_invalid");
     }
 
     // ── char_mapping_to_entries ──────────────────────────────────────────────
@@ -2348,40 +2437,36 @@ mod tests {
 
     // ── CommandError::from conversions ────────────────────────────────────────
 
-    /// `From<StorageError>`: `NotFound` maps to the `not_found` type (with the
-    /// entry id carried into the message), every other variant to
-    /// `storage_error` with the source error's `Display` as the message.
+    /// `From<StorageError>`: `NotFound` maps to the `not_found` type with the
+    /// entry id in `params`, every other variant to `storage_error` with the
+    /// source error's `Display` as the raw fallback `message`. Empty params
+    /// and absent detail are omitted from the wire format.
     #[test_case(
         StorageError::NotFound(uuid::Uuid::nil()),
-        "not_found",
-        "entry not found: 00000000-0000-0000-0000-000000000000";
+        json!({
+            "type": "not_found",
+            "code": "entry.not_found",
+            "params": ["00000000-0000-0000-0000-000000000000"],
+        });
         "not_found_carries_id"
     )]
     #[test_case(
         StorageError::NoDataDir,
-        "storage_error",
-        "per-user data dir unavailable (dirs resolution returned None)";
+        json!({
+            "type": "storage_error",
+            "code": "storage.failure",
+            "message": "per-user data dir unavailable (dirs resolution returned None)",
+        });
         "other_variant"
     )]
-    fn command_error_from_storage(
-        source: StorageError,
-        expected_type: &str,
-        expected_message: &str,
-    ) {
+    fn command_error_from_storage(source: StorageError, expected: serde_json::Value) {
         let err: CommandError = source.into();
-        let value = serde_json::to_value(&err).unwrap();
-        assert_eq!(
-            value,
-            json!({
-                "type": expected_type,
-                "message": expected_message,
-            })
-        );
+        assert_eq!(serde_json::to_value(&err).unwrap(), expected);
     }
 
-    /// `From<TtsError>`: every variant maps to `synthesis_error` carrying the
-    /// source error's `Display`. The literal `Ttsd` expectation pins that both
-    /// `code` and `message` survive into the wire message.
+    /// `From<TtsError>`: every variant maps to `synthesis_error` with code
+    /// `synthesis.failed` and the source error's `Display` as the raw
+    /// fallback `message`.
     #[test_case(TtsError::Died, "ttsd subprocess has exited"; "died")]
     #[test_case(
         TtsError::Ttsd {
@@ -2398,6 +2483,7 @@ mod tests {
             value,
             json!({
                 "type": "synthesis_error",
+                "code": "synthesis.failed",
                 "message": expected_message,
             })
         );
@@ -2529,7 +2615,7 @@ mod tests {
         let id = uuid::Uuid::new_v4().to_string();
 
         let err = load_timestamps_for_entry(&storage, &id).unwrap_err();
-        assert_not_found(err, "entry not found");
+        assert_not_found(err, "entry.not_found");
     }
 
     // ── synthesize_audio: voice selection and retry gate follow the active engine ──

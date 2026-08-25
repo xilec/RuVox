@@ -133,6 +133,9 @@ pub struct UIConfig {
     /// Active Piper voice id (`"ruslan"` by default — see `tts::piper::catalog`).
     #[serde(default = "UIConfig::default_piper_voice")]
     pub piper_voice: String,
+    /// UI language: `"ru"` (default) | `"en"`.
+    #[serde(default = "UIConfig::default_language")]
+    pub language: String,
 }
 
 impl UIConfig {
@@ -165,6 +168,9 @@ impl UIConfig {
     }
     fn default_theme() -> String {
         "auto".to_string()
+    }
+    fn default_language() -> String {
+        "ru".to_string()
     }
 
     fn default_player_hotkeys() -> std::collections::HashMap<String, String> {
@@ -201,6 +207,7 @@ impl Default for UIConfig {
             preview_dialog_enabled: true,
             engine: Self::default_engine(),
             piper_voice: Self::default_piper_voice(),
+            language: Self::default_language(),
         }
     }
 }
@@ -224,6 +231,7 @@ pub struct UIConfigPatch {
     pub preview_dialog_enabled: Option<bool>,
     pub engine: Option<String>,
     pub piper_voice: Option<String>,
+    pub language: Option<String>,
 }
 
 #[cfg(test)]
