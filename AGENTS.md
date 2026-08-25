@@ -121,11 +121,11 @@ This repo uses [OpenSpec](https://github.com/Fission-AI/OpenSpec). `openspec/spe
 General branch/workspace rules live in the global `~/.agents/AGENTS.md` (work in the current workspace by default; one branch per task off fresh `origin/main`; never commit directly to `main`; worktree — `tmp/wt/<task>/` — only when isolation is needed, e.g. parallel agents). The project layer on top:
 
 1. **Full OpenSpec cycle on the branch.** Propose → implement → **archive** the change (archiving syncs the delta specs into `openspec/specs/`). **Archiving is autonomous:** once implementation is done and the manual pass (if any) has confirmed the behavior, sync the delta specs, move the change to `archive/`, and commit the archive without asking for step-by-step confirmation — the draft-approval rules do NOT apply to the archive commit message (they still apply to every other GitHub-bound text).
-2. **PR only after archive.** Once the change is archived and specs are synced, open a pull request to `main` (it carries implementation + archive + synced specs together). Before opening it, run the **pre-PR gate**:
-   1. **Commit clean.** The branch is fully committed — every commit message drafted and approved per the GitHub-text rules.
+2. **Implementation → autonomous commit → reviewer → then the user.** When the implementation is ready, the agent works autonomously through the review pass and only reports back once the branch is review-clean:
+   1. **Commit autonomously.** The agent commits the implementation (including any OpenSpec change artifacts) without drafting the commit message for approval — messages still follow the `<type>(<module>): <desc>` conventions and carry no AI attribution. `git push` remains separately confirmation-gated.
    2. **Run `ruvox-reviewer`** (read-only, non-blocking) over the branch's diff vs. the merge base on `origin/main` — skip it for docs-only diffs or diffs under ~50 changed lines (the gate stays where the risk is); **and** — *only if `tasks.md` carries a manual-test task* — start the app and hand the user a checklist for the manual pass.
-   3. **Fix loop.** Fold accepted findings into the same branch as commits; note deferrals as issues.
-   4. **Final approval → PR.** On the user's go-ahead, draft the PR description and open the PR.
+   3. **Fix loop.** Fold accepted findings into the same branch as further autonomous commits (same rules as 2.1), rerun the test/lint gates; note deferrals as issues.
+   4. **Report to the user.** Only after steps 2–3 present a summary of what was built and what the review found. Drafting the PR description and opening the PR remain draft-approved (step 4 below).
 3. **Merge method: merge commit** (not squash, not rebase).
 4. **Who merges.** The agent opens the PR (title/body via draft approval) and merges it once CI is green, unless the user said they'll merge themselves. `git push` always requires separate confirmation.
 5. **Lightweight paths:**
@@ -141,7 +141,7 @@ Hard rules and the craft standard live in `ai/rules/` and are **pulled on demand
 - [ai/rules/conventions.md](ai/rules/conventions.md) — language, toolchain, architecture boundaries, the TTS constraint, Rust/TS/Mantine/Python hard rules, testing gates.
 - [ai/rules/code-quality.md](ai/rules/code-quality.md) — craft standard: file layout, tests, duplication, idiom, security, correctness.
 
-The load-bearing summary: code and comments in English, user-facing UI strings in Russian; no emoji; commits `<type>(<module>): <desc>` in English with no AI attribution; every GitHub-bound text (commit, PR, issue, comment) is drafted and approved first; `git push` confirmed separately; all tooling via `nix develop -c`.
+The load-bearing summary: code and comments in English, user-facing UI strings in Russian; no emoji; commits `<type>(<module>): <desc>` in English with no AI attribution; task-branch implementation commits are made autonomously (review-first workflow, point 2 above), while every other GitHub-bound text (PR, issue, comment) and the PR title itself is drafted and approved first; `git push` confirmed separately; all tooling via `nix develop -c`.
 
 When a CI step, script flag, or workaround exists because of a specific incident, leave a comment explaining why it is load-bearing (see the slim/full gate in `.github/workflows/ci.yml`, the `shellHook` comments in `nix/devshell.nix`).
 

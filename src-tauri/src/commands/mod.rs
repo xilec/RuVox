@@ -1447,7 +1447,115 @@ pub async fn get_log_dir<R: Runtime>(app: AppHandle<R>) -> CmdResult<String> {
     Ok(dir.to_string_lossy().into_owned())
 }
 
+/// Upper bound for images fetched by [`fetch_image_bytes`]. The bytes travel
+/// through IPC into the webview and end up on the clipboard; an uncapped
+/// download would let a hostile page pin unbounded memory.
+const MAX_IMAGE_BYTES: usize = 20 * 1024 * 1024;
+
+/// Fetch a remote image over http(s) and return its raw bytes for the
+/// viewer's "Copy image" action (#231).
+///
+/// Lives in Rust instead of the frontend `tauri-plugin-http` capability so
+/// the webview holds no blanket arbitrary-host network permission: each
+/// request is validated here (scheme, content-type or magic bytes, size cap)
+/// and the result only ever surfaces as clipboard-bound image bytes.
+#[tauri::command]
+pub async fn fetch_image_bytes(url: String) -> CmdResult<Vec<u8>> {
+    let parsed = validate_image_url(&url)?;
+
+    let response = image_client()
+        .get(parsed)
+        .send()
+        .await
+        .map_err(|e| CommandError::Internal {
+            message: format!("не удалось скачать изображение: {e}"),
+        })?;
+    if !response.status().is_success() {
+        return Err(CommandError::Internal {
+            message: format!("не удалось скачать изображение: HTTP {}", response.status()),
+        });
+    }
+    // Reject early when Content-Length is known; still re-check after the
+    // body is read — chunked responses have no reliable length up front.
+    if let Some(len) = response.content_length() {
+        ensure_image_size(len)?;
+    }
+    let declared_type = media_type(response.headers().get(reqwest::header::CONTENT_TYPE));
+    let bytes = response.bytes().await.map_err(|e| CommandError::Internal {
+        message: format!("не удалось прочитать изображение: {e}"),
+    })?;
+    ensure_image_size(bytes.len() as u64)?;
+    // Content-type gate: trust a declared image/* type; otherwise fall back
+    // to magic-byte sniffing — attachment endpoints commonly serve real
+    // images as application/octet-stream.
+    match declared_type.as_deref() {
+        Some(ct) if ct.starts_with("image/") => {}
+        other => {
+            if image::guess_format(&bytes).is_err() {
+                return Err(CommandError::Internal {
+                    message: match other {
+                        Some(ct) => format!("сервер вернул не изображение ({ct})"),
+                        None => "сервер не указал тип содержимого".to_string(),
+                    },
+                });
+            }
+        }
+    }
+    Ok(bytes.into())
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
+
+/// Shared HTTP client for [`fetch_image_bytes`]. Built once (a fresh client
+/// per call would rebuild the TLS config every time) and bounded: without a
+/// total timeout a stalled server would hang "Copy image" forever with no
+/// defined failure path.
+fn image_client() -> &'static reqwest::Client {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(5))
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .expect("static reqwest client options are valid")
+    })
+}
+
+/// Parse and validate an image URL for [`fetch_image_bytes`]: only absolute
+/// http(s) URLs are accepted (no `file:`, `data:`, custom schemes). Plain
+/// http stays allowed deliberately — CSP `img-src` limits *display* to
+/// https, but the copy path produces inert clipboard bytes, so legacy
+/// plain-http images remain copyable.
+fn validate_image_url(url: &str) -> Result<reqwest::Url, CommandError> {
+    let parsed = reqwest::Url::parse(url).map_err(|e| CommandError::Internal {
+        message: format!("некорректный URL изображения «{url}»: {e}"),
+    })?;
+    match parsed.scheme() {
+        "https" | "http" => Ok(parsed),
+        scheme => Err(CommandError::Internal {
+            message: format!("схема «{scheme}:» не поддерживается для изображений"),
+        }),
+    }
+}
+
+/// Lowercase media type of a Content-Type header (parameters stripped),
+/// `None` when the header is absent, not valid UTF-8, or empty.
+fn media_type(content_type: Option<&reqwest::header::HeaderValue>) -> Option<String> {
+    let value = content_type?.to_str().ok()?;
+    let mt = value.split(';').next()?.trim().to_ascii_lowercase();
+    if mt.is_empty() { None } else { Some(mt) }
+}
+
+/// Enforce [`MAX_IMAGE_BYTES`] for both the header pre-check and the
+/// post-read re-check of [`fetch_image_bytes`].
+fn ensure_image_size(len: u64) -> Result<(), CommandError> {
+    if len > MAX_IMAGE_BYTES as u64 {
+        return Err(CommandError::Internal {
+            message: format!("изображение слишком большое ({len} байт, лимит {MAX_IMAGE_BYTES})"),
+        });
+    }
+    Ok(())
+}
 
 fn parse_entry_id(s: &str) -> CmdResult<EntryId> {
     s.parse::<uuid::Uuid>().map_err(|e| CommandError::NotFound {
@@ -1500,6 +1608,57 @@ fn apply_config_patch(config: &mut UIConfig, patch: UIConfigPatch) {
     }
     if let Some(v) = patch.piper_voice {
         config.piper_voice = v;
+    }
+}
+
+#[cfg(test)]
+mod image_url_tests {
+    use super::{MAX_IMAGE_BYTES, ensure_image_size, media_type, validate_image_url};
+
+    #[test]
+    fn accepts_absolute_http_and_https_urls() {
+        for url in ["https://example.com/a.png", "http://example.com/a.png"] {
+            let parsed = validate_image_url(url).unwrap();
+            assert_eq!(parsed.as_str(), url);
+        }
+    }
+
+    #[test]
+    fn rejects_non_http_schemes() {
+        for url in [
+            "file:///etc/passwd",
+            "data:image/png;base64,AAAA",
+            "ftp://example.com/a.png",
+        ] {
+            let err = validate_image_url(url).unwrap_err().to_string();
+            assert!(err.contains("не поддерживается"), "{url}: {err}");
+        }
+    }
+
+    #[test]
+    fn rejects_unparseable_urls() {
+        assert!(validate_image_url("not a url").is_err());
+    }
+
+    #[test]
+    fn size_cap_admits_the_boundary_and_rejects_one_byte_over() {
+        assert!(ensure_image_size(MAX_IMAGE_BYTES as u64).is_ok());
+        assert!(ensure_image_size(MAX_IMAGE_BYTES as u64 + 1).is_err());
+    }
+
+    #[test]
+    fn media_type_strips_parameters_and_lowercases() {
+        let value = reqwest::header::HeaderValue::from_static("Image/PNG; charset=utf-8");
+        assert_eq!(media_type(Some(&value)).as_deref(), Some("image/png"),);
+    }
+
+    #[test]
+    fn media_type_is_none_for_missing_empty_or_invalid_headers() {
+        assert_eq!(media_type(None), None);
+        let empty = reqwest::header::HeaderValue::from_static("");
+        assert_eq!(media_type(Some(&empty)), None);
+        let invalid = reqwest::header::HeaderValue::from_bytes(&[0xff, 0xfe]).unwrap();
+        assert_eq!(media_type(Some(&invalid)), None);
     }
 }
 

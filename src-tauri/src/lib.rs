@@ -425,6 +425,7 @@ pub(crate) fn invoke_handler<R: Runtime>()
         get_cache_stats,
         get_cache_dir,
         get_log_dir,
+        fetch_image_bytes,
     ]
 }
 
@@ -774,7 +775,6 @@ pub fn run() {
         .plugin(logging_plugin())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_mpv::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())

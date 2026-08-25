@@ -220,6 +220,12 @@ export const commands = {
 
   previewNormalize: (text: string): Promise<PreviewNormalizeResult> =>
     tauriInvoke('preview_normalize', { text }),
+
+  /** Raw bytes of a remote image for the viewer's "Copy image" action.
+   * Fetched by a Rust command (scheme/content-type/size validated there) —
+   * the webview holds no arbitrary-host http capability (#231). */
+  fetchImageBytes: (url: string): Promise<number[]> =>
+    tauriInvoke('fetch_image_bytes', { url }),
 };
 
 // --- Events (backend → frontend) ---
