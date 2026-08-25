@@ -16,12 +16,12 @@ export const ru = {
 
   // ── App shell ───────────────────────────────────────────────────────────
   'app.queue.title': 'Очередь',
-  'app.add': 'Add',
+  'app.add': 'Добавить',
   'app.search.placeholder': 'Поиск по записям',
   'app.search.clear': 'Очистить поиск',
   'app.nav.resize': 'Изменить ширину списка',
   'app.clipboard.empty.title': 'Буфер обмена пуст',
-  'app.clipboard.empty.message': 'Скопируйте текст и нажмите Add ещё раз',
+  'app.clipboard.empty.message': 'Скопируйте текст и нажмите «Добавить» ещё раз',
   'app.added.title': 'Добавлено в очередь',
   'app.added.now': 'Текст будет воспроизведён сразу',
   'app.added.later': 'Текст добавлен для прослушивания позже',
@@ -35,7 +35,7 @@ export const ru = {
   'queue.status.error': 'Ошибка',
   'queue.play': 'Воспроизвести',
   'queue.jump_to_playing': 'К читаемому',
-  'queue.empty': 'Скопируйте текст и нажмите Add',
+  'queue.empty': 'Скопируйте текст и нажмите «Добавить»',
   'queue.no_results': 'Ничего не найдено',
   'queue.menu.regenerate': 'Перегенерировать аудио',
   'queue.menu.cancel_synthesis': 'Отменить синтез',
