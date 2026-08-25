@@ -26,7 +26,7 @@ import type { CleanupMode, EngineKind, UIConfigPatch } from '../lib/tauri';
 import type { MessageKey } from '../i18n/ru';
 import { formatError } from '../lib/errors';
 import { t, useT } from '../lib/i18n';
-import { setLocale, toLocale, type Locale } from '../stores/locale';
+import { setLocale, toLocale } from '../stores/locale';
 import { bundleDownloadPercent } from '../lib/bundleDownload';
 import { PIPER_VOICES } from '../lib/piperVoices';
 import { checkForUpdatesManual, UPDATER_ENABLED } from '../lib/updater';
@@ -267,11 +267,6 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
   // picking «Silero (нативный)» follows it only while the user made no
   // explicit choice.
   const sampleRateTouchedRef = useRef(false);
-  /// Language from the last loaded config — the reset baseline for the
-  /// immediate-relabel locale store (form.reset() only reverts the field).
-  const savedLanguageRef = useRef<Locale>('ru');
-  /// Full form snapshot of the last loaded config — the Reset baseline.
-  const loadedValuesRef = useRef<SettingsFormValues | null>(null);
   const form = useForm<SettingsFormValues>({
     initialValues: {
       engine: 'silero_native',
@@ -312,12 +307,10 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
           theme: config.theme,
           language: config.language,
         };
-        // Reset must restore the loaded config, not the static useForm
-        // initialValues (which pre-date the load and hardcode 'ru').
-        loadedValuesRef.current = loaded;
         form.setValues(loaded);
+        // Dirty tracking compares against the saved config, not the static
+        // initialValues.
         form.resetDirty(loaded);
-        savedLanguageRef.current = toLocale(config.language);
         setCoercedAlert(initial.coercedAwayFromUnavailable);
       })
       .catch((err) => {
@@ -772,17 +765,12 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
             <Button
               variant="subtle"
               onClick={() => {
-                // Restore the last loaded config (both the fields and the
-                // dirty baseline), then re-sync the live locale store — the
-                // selector relabels the whole UI on change, so Reset must
-                // roll it back too.
-                if (loadedValuesRef.current) {
-                  form.setValues(loadedValuesRef.current);
-                  form.resetDirty(loadedValuesRef.current);
-                } else {
-                  form.reset();
-                }
-                setLocale(savedLanguageRef.current);
+                // Reset restores factory defaults (the useForm
+                // initialValues). The language selector relabels the whole
+                // UI on change, so the live locale store must follow the
+                // post-reset field value instead of the saved config.
+                form.reset();
+                setLocale(toLocale(form.getValues().language));
               }}
             >
               {tt('settings.reset')}
