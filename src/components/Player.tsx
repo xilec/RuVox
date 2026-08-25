@@ -140,7 +140,7 @@ export function Player({ onOpenSettings }: PlayerProps = {}) {
       .getConfig()
       .then((config) => {
         if (cancelled) return;
-        const clamped = Math.min(2.0, Math.max(0.5, config.speech_rate));
+        const clamped = Math.min(3.0, Math.max(0.5, config.speech_rate));
         setState((prev) => ({ ...prev, speed: clamped }));
       })
       .catch((err) => console.warn('failed to load config for speed restore:', err));
@@ -177,7 +177,7 @@ export function Player({ onOpenSettings }: PlayerProps = {}) {
   const handleSpeedChange = useCallback(async (value: number | string) => {
     const speed = typeof value === 'string' ? parseFloat(value) : value;
     if (isNaN(speed)) return;
-    const clamped = Math.min(2.0, Math.max(0.5, speed));
+    const clamped = Math.min(3.0, Math.max(0.5, speed));
     const prevSpeed = speedRef.current;
     setState((prev) => ({ ...prev, speed: clamped }));
     try {
@@ -273,14 +273,14 @@ export function Player({ onOpenSettings }: PlayerProps = {}) {
         {formatTime(state.position)} / {formatTime(state.duration)}
       </Text>
 
-      <Tooltip label="Скорость (0.5x–2.0x)">
+      <Tooltip label="Скорость (0.5x–3.0x)">
         <div ref={speedWrapperRef} className={classes.speedInputWrapper}>
         <NumberInput
           className={classes.speedInput}
           value={state.speed}
           onChange={(v) => { void handleSpeedChange(v); }}
           min={0.5}
-          max={2.0}
+          max={3.0}
           step={0.1}
           decimalScale={1}
           fixedDecimalScale

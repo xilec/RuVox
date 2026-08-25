@@ -766,13 +766,13 @@ async fn synthesis_under_piper_fails_oversized_entry_accepted_under_silero() {
 // ── set_speed / set_volume range guards ──────────────────────────────
 
 /// The real `set_speed` command accepts the documented inclusive range
-/// [0.5, 2.0], forwards each value to the player, and persists the last
+/// [0.5, 3.0], forwards each value to the player, and persists the last
 /// one to `speech_rate`.
 #[tokio::test(flavor = "multi_thread")]
 async fn set_speed_accepts_inclusive_bounds_and_persists() {
     let t = build_test_app();
 
-    for speed in [0.5_f32, 1.0, 2.0] {
+    for speed in [0.5_f32, 1.0, 2.0, 3.0] {
         set_speed(t.state(), speed).await.unwrap();
     }
 
@@ -785,17 +785,17 @@ async fn set_speed_accepts_inclusive_bounds_and_persists() {
             _ => None,
         })
         .collect();
-    assert_eq!(speeds, vec![0.5, 1.0, 2.0]);
-    assert_eq!(t.state().storage.load_config().unwrap().speech_rate, 2.0);
+    assert_eq!(speeds, vec![0.5, 1.0, 2.0, 3.0]);
+    assert_eq!(t.state().storage.load_config().unwrap().speech_rate, 3.0);
 }
 
-/// Speeds outside [0.5, 2.0] are rejected with `config_error` (not
+/// Speeds outside [0.5, 3.0] are rejected with `config_error` (not
 /// clamped) and never reach the player.
 #[tokio::test(flavor = "multi_thread")]
 async fn set_speed_rejects_out_of_range() {
     let t = build_test_app();
 
-    for speed in [0.499_999_f32, 2.000_001, -1.0] {
+    for speed in [0.499_999_f32, 3.000_001, -1.0] {
         let err = set_speed(t.state(), speed).await.unwrap_err();
         assert!(
             matches!(err, CommandError::ConfigError { .. }),
