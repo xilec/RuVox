@@ -4,6 +4,7 @@ import { error as logError, info as logInfo } from '@tauri-apps/plugin-log';
 import { check, type Update } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { formatError } from './errors';
+import { t } from './i18n';
 import { commands } from './tauri';
 
 /**
@@ -25,8 +26,8 @@ async function installAndRelaunch(update: Update) {
   // never shown — the FIRST call must be `show`, updates follow.
   notifications.show({
     id: UPDATE_TOAST_ID,
-    title: 'Скачиваю обновление',
-    message: 'Подготовка…',
+    title: t('notify.update.downloading.title'),
+    message: t('notify.update.preparing'),
     loading: true,
     autoClose: false,
   });
@@ -39,8 +40,10 @@ async function installAndRelaunch(update: Update) {
     if (event.event === 'Started' && event.data.contentLength) {
       notifications.update({
         id: UPDATE_TOAST_ID,
-        title: 'Скачиваю обновление',
-        message: `из ${(event.data.contentLength / (1024 * 1024)).toFixed(0)} МБ`,
+        title: t('notify.update.downloading.title'),
+        message: t('notify.update.of_total', [
+          (event.data.contentLength / (1024 * 1024)).toFixed(0),
+        ]),
         loading: true,
         autoClose: false,
       });
@@ -48,16 +51,16 @@ async function installAndRelaunch(update: Update) {
       downloaded += event.data.chunkLength;
       notifications.update({
         id: UPDATE_TOAST_ID,
-        title: 'Скачиваю обновление',
-        message: `${(downloaded / (1024 * 1024)).toFixed(0)} МБ`,
+        title: t('notify.update.downloading.title'),
+        message: t('notify.update.mb', [(downloaded / (1024 * 1024)).toFixed(0)]),
         loading: true,
         autoClose: false,
       });
     } else if (event.event === 'Finished') {
       notifications.update({
         id: UPDATE_TOAST_ID,
-        title: 'Устанавливаю обновление',
-        message: 'Приложение перезапустится автоматически.',
+        title: t('notify.update.installing.title'),
+        message: t('notify.update.installing.message'),
         loading: true,
         autoClose: false,
       });
@@ -69,15 +72,15 @@ async function installAndRelaunch(update: Update) {
 /** Shared prompt once an update is known to be available. */
 function promptInstall(update: Update) {
   modals.openConfirmModal({
-    title: `Доступна новая версия ${update.version}`,
-    children: 'Обновить сейчас? Приложение скачает обновление и перезапустится.',
-    labels: { confirm: 'Обновить и перезапустить', cancel: 'Позже' },
+    title: t('notify.update.available.title', [update.version]),
+    children: t('notify.update.prompt'),
+    labels: { confirm: t('notify.update.confirm'), cancel: t('notify.update.later') },
     confirmProps: { color: 'blue' },
     onConfirm: () => {
       installAndRelaunch(update).catch((err) => {
         notifications.update({
           id: UPDATE_TOAST_ID,
-          title: 'Не удалось установить обновление',
+          title: t('notify.update.install_failed.title'),
           message: formatError(err),
           color: 'red',
           loading: false,
@@ -116,15 +119,15 @@ export async function checkForUpdatesManual() {
     } else {
       await logInfo('update check (manual): up to date');
       notifications.show({
-        title: 'Обновлений нет',
-        message: 'У вас последняя версия.',
+        title: t('notify.update.up_to_date.title'),
+        message: t('notify.update.up_to_date.message'),
         color: 'green',
       });
     }
   } catch (err) {
     await logError(`update check (manual) failed: ${formatError(err)}`);
     notifications.show({
-      title: 'Не удалось проверить обновления',
+      title: t('notify.update.check_failed.title'),
       message: formatError(err),
       color: 'red',
     });

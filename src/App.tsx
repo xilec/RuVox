@@ -5,6 +5,7 @@ import { MantineProvider } from '@mantine/core';
 import { ModalsProvider } from '@mantine/modals';
 import { Notifications } from '@mantine/notifications';
 import { AppShell } from './components/AppShell';
+import { CodeTheme } from './components/CodeTheme';
 import { setupNotificationBridge } from './lib/notificationBridge';
 import { checkForUpdatesOnStartup } from './lib/updater';
 import { theme } from './theme';
@@ -40,6 +41,7 @@ export function App() {
     <MantineProvider theme={theme} defaultColorScheme="auto">
       <ModalsProvider>
         <Notifications />
+        <CodeTheme />
         <AppShell />
       </ModalsProvider>
     </MantineProvider>

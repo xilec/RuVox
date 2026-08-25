@@ -393,7 +393,7 @@ async fn update_config_silero_native_without_bundle_preserves_previous_config() 
 }
 
 /// `get_available_engines` reports `silero_native` as unavailable with a
-/// Russian reason when no bundle is installed (the test app's bundle dir is
+/// coded reason when no bundle is installed (the test app's bundle dir is
 /// an empty TempDir).
 #[tokio::test(flavor = "multi_thread")]
 async fn get_available_engines_reports_silero_native_unavailable_without_bundle() {
@@ -402,10 +402,7 @@ async fn get_available_engines_reports_silero_native_unavailable_without_bundle(
     assert!(engines.piper.available);
     assert!(!engines.silero_native.available);
     let reason = engines.silero_native.reason.expect("reason set");
-    assert!(
-        reason.chars().any(|c| matches!(c, 'А'..='я' | 'ё' | 'Ё')),
-        "reason should be Russian: {reason}"
-    );
+    assert_eq!(reason.code, "native.bundle_missing");
 }
 
 // ── events ───────────────────────────────────────────────────────────

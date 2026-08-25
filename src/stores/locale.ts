@@ -23,6 +23,11 @@ export function currentLocale(): Locale {
   return useLocaleStore.getState().locale;
 }
 
+/** Switch the UI language immediately (Settings selector, startup seeding). */
+export function setLocale(locale: Locale): void {
+  useLocaleStore.setState({ locale });
+}
+
 const LOCALES: readonly Locale[] = ['ru', 'en'];
 
 /** Narrow a config value to a known locale, falling back to RU. */

@@ -50,14 +50,22 @@ type Theme = 'light' | 'dark' | 'auto';
 
 export type EngineKind = 'piper' | 'silero' | 'silero_native';
 
+/** Machine-readable localizable text (same shape subset as CommandError:
+ * translated by the frontend via catalogs, `message` as raw fallback). */
+export interface LocalizedText {
+  code: string;
+  params?: string[];
+  message?: string;
+}
+
 interface EngineAvailability {
   /** Whether the engine can be selected from the UI. Phase 3 of #42 wires
    *  this to a runtime probe of the ttsd / Python stack; in Phase 2 Silero
    *  is unconditionally `false` and Piper is unconditionally `true`. */
   available: boolean;
-  /** Russian-language explanation shown in a tooltip / Alert when
+  /** Coded explanation rendered through the localization layer when
    *  `available` is `false`. Null when the engine is available. */
-  reason: string | null;
+  reason: LocalizedText | null;
 }
 
 export interface AvailableEngines {
@@ -80,6 +88,9 @@ export interface UIConfig {
   code_block_mode: string;
   read_operators: boolean;
   theme: Theme;
+  /** UI language: "ru" (default) | "en". Mirrors UIConfig.language on the
+   *  backend; narrowed to a Locale via toLocale() before use. */
+  language: string;
   player_hotkeys: Record<string, string>;
   window_geometry: [number, number, number, number] | null;
   preview_dialog_enabled: boolean;

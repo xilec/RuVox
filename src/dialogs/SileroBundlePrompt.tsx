@@ -3,6 +3,7 @@ import { Alert, Button, Group, Modal, Progress, Stack, Text } from '@mantine/cor
 import { notifications } from '@mantine/notifications';
 import { commands, events } from '../lib/tauri';
 import { formatError } from '../lib/errors';
+import { useT } from '../lib/i18n';
 import { bundleDownloadPercent } from '../lib/bundleDownload';
 
 interface SileroBundlePromptProps {
@@ -23,6 +24,7 @@ interface BundleProgress {
  * reappears on the next launch while the bundle is still missing.
  */
 export function SileroBundlePrompt({ opened, onClose }: SileroBundlePromptProps) {
+  const tt = useT();
   const [download, setDownload] = useState<BundleProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   // True between bundle_download_started and bundle_download_finished so a
@@ -53,8 +55,8 @@ export function SileroBundlePrompt({ opened, onClose }: SileroBundlePromptProps)
             .updateConfig({ engine: 'silero_native' })
             .then(() => {
               notifications.show({
-                title: 'Движок Silero готов',
-                message: 'Бандл моделей скачан, движок «Silero (нативный)» активирован.',
+                title: tt('bundle.ready.title'),
+                message: tt('bundle.ready.message'),
                 color: 'green',
               });
             })
@@ -62,14 +64,14 @@ export function SileroBundlePrompt({ opened, onClose }: SileroBundlePromptProps)
               // The bundle is on disk but the engine failed to start — do
               // not claim activation; the next launch picks it up.
               notifications.show({
-                title: 'Бандл скачан, но движок не запустился',
+                title: tt('bundle.downloaded_not_started.title'),
                 message: formatError(err),
                 color: 'red',
               });
             });
           onClose();
         } else {
-          setError(p.message ?? 'неизвестная ошибка');
+          setError(p.message ?? tt('bundle.unknown_error'));
         }
       }),
     ];
@@ -79,9 +81,10 @@ export function SileroBundlePrompt({ opened, onClose }: SileroBundlePromptProps)
       });
     };
     // onClose is a per-render inline closure; resubscribing on it would churn
-    // listeners every render — subscribing on `opened` is sufficient.
+    // listeners every render — subscribing on `opened` is sufficient (`tt`
+    // re-subscribes on locale switch so toasts use the active catalog).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opened]);
+  }, [opened, tt]);
 
   const handleDownload = () => {
     setError(null);
@@ -101,35 +104,33 @@ export function SileroBundlePrompt({ opened, onClose }: SileroBundlePromptProps)
   };
 
   return (
-    <Modal opened={opened} onClose={onClose} title="Скачать движок Silero?" centered>
+    <Modal opened={opened} onClose={onClose} title={tt('bundle.prompt.title')} centered>
       <Stack gap="md">
         {download ? (
           <>
-            <Text size="sm">Скачивается: {download.file}</Text>
+            <Text size="sm">{tt('bundle.prompt.downloading', [download.file])}</Text>
             <Progress value={download.percent} />
           </>
         ) : (
           <Text size="sm">
-            Движок по умолчанию — «Silero (нативный)» — звучит заметно лучше, но требует
-            одноразового скачивания моделей (~230 МБ). Пока модели не скачаны, приложение
-            работает на встроенном движке Piper.
+            {tt('bundle.prompt.body')}
           </Text>
         )}
         {error && (
-          <Alert color="red" title="Не удалось скачать бандл">
+          <Alert color="red" title={tt('bundle.prompt.error_title')}>
             {error}
           </Alert>
         )}
         <Group justify="flex-end">
           <Button variant="default" onClick={onClose}>
-            Остаться на Piper
+            {tt('bundle.prompt.stay_on_piper')}
           </Button>
           <Button
             onClick={handleDownload}
             loading={download !== null}
             disabled={download !== null}
           >
-            Скачать (~230 МБ)
+            {tt('bundle.prompt.download')}
           </Button>
         </Group>
       </Stack>

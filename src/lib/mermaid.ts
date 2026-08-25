@@ -1,4 +1,5 @@
 import mermaid from 'mermaid';
+import { t } from './i18n';
 
 let renderCounter = 0;
 
@@ -90,8 +91,7 @@ function renderError(node: HTMLElement, source: string, error: unknown): void {
   wrapper.className = 'mermaid-error';
   const hint = document.createElement('div');
   hint.style.cssText = 'color: var(--mantine-color-orange-6, #e67700); font-size: 0.85em; margin-bottom: 0.5em;';
-  hint.textContent =
-    'Не удалось отрендерить mermaid-диаграмму. Возможно, забыт закрывающий ``` после блока.';
+  hint.textContent = t('viewer.mermaid_render_error');
   const pre = document.createElement('pre');
   pre.style.cssText = 'white-space: pre-wrap; margin: 0;';
   pre.textContent = source;

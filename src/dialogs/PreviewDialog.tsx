@@ -5,6 +5,7 @@ import classes from './PreviewDialog.module.css';
 import { commands, toEntryFormat } from '../lib/tauri';
 import type { EntryFormat } from '../lib/tauri';
 import { formatError } from '../lib/errors';
+import { useT } from '../lib/i18n';
 import { previewTextFor } from '../lib/html';
 
 export interface PreviewDialogProps {
@@ -70,6 +71,7 @@ export function PreviewDialog({
   onSynthesize,
   onCancel,
 }: PreviewDialogProps) {
+  const tt = useT();
   const [editedText, setEditedText] = useState<string>(text);
   const [sourceFormat, setSourceFormat] = useState<EntryFormat>(defaultFormat);
   const [skipShortTexts, setSkipShortTexts] = useState(false);
@@ -131,7 +133,7 @@ export function PreviewDialog({
         })
         .catch((err) => {
           if (!stale)
-            setNormalized(`(ошибка нормализации: ${formatError(err)})`);
+            setNormalized(tt('preview.normalize_error', [formatError(err)]));
         })
         .finally(() => {
           if (!stale) setLoading(false);
@@ -141,7 +143,7 @@ export function PreviewDialog({
       stale = true;
       window.clearTimeout(timer);
     };
-  }, [opened, editedText, sourceFormat]);
+  }, [opened, editedText, sourceFormat, tt]);
 
   // ESC closes the floating window (mantine Modal used to handle this; non-modal
   // react-rnd has no built-in handler, so we bind one manually while opened).
@@ -214,12 +216,12 @@ export function PreviewDialog({
         >
         <div className={classes.panel}>
           <header className={`${classes.header} ${classes.dragHandle}`}>
-            <Text className={classes.title}>Предпросмотр нормализации</Text>
+            <Text className={classes.title}>{tt('preview.title')}</Text>
             <ActionIcon
               variant="subtle"
               size="sm"
               onClick={onCancel}
-              aria-label="Закрыть"
+              aria-label={tt('preview.close')}
             >
               <IconClose />
             </ActionIcon>
@@ -228,7 +230,7 @@ export function PreviewDialog({
           <div className={classes.body}>
             <div className={classes.panes}>
               <div className={classes.paneCol}>
-                <Text className={classes.paneLabel}>Оригинал</Text>
+                <Text className={classes.paneLabel}>{tt('preview.original')}</Text>
                 {editMode ? (
                   <Textarea
                     classNames={{
@@ -251,7 +253,7 @@ export function PreviewDialog({
               </div>
 
               <div className={classes.paneCol}>
-                <Text className={classes.paneLabel}>После нормализации</Text>
+                <Text className={classes.paneLabel}>{tt('preview.normalized')}</Text>
                 {loading ? (
                   <div className={classes.loaderPane}>
                     <Loader size="sm" />
@@ -277,7 +279,7 @@ export function PreviewDialog({
               <Group gap="md" wrap="wrap">
                 <Select
                   size="xs"
-                  aria-label="Формат источника"
+                  aria-label={tt('preview.source_format.aria')}
                   data={[
                     { value: 'plain', label: 'Plain' },
                     { value: 'markdown', label: 'Markdown' },
@@ -288,14 +290,14 @@ export function PreviewDialog({
                   allowDeselect={false}
                 />
                 <Checkbox
-                  label="Больше не показывать этот диалог"
+                  label={tt('preview.dont_show_again')}
                   checked={skipShortTexts}
                   onChange={(e) =>
                     setSkipShortTexts(e.currentTarget.checked)
                   }
                 />
                 <Checkbox
-                  label="Синхронный скроллинг"
+                  label={tt('preview.sync_scroll')}
                   checked={syncScroll}
                   onChange={(e) => setSyncScroll(e.currentTarget.checked)}
                 />
@@ -303,20 +305,20 @@ export function PreviewDialog({
 
               <Group gap="sm" align="center">
                 <Switch
-                  label="Read Now"
+                  label={tt('preview.read_now')}
                   checked={playWhenReady}
                   onChange={(e) => setPlayWhenReady(e.currentTarget.checked)}
                 />
                 <Button variant="default" onClick={onCancel}>
-                  Отмена
+                  {tt('common.cancel')}
                 </Button>
                 {!editMode && (
                   <Button variant="outline" onClick={handleEdit}>
-                    Редактировать
+                    {tt('preview.edit')}
                   </Button>
                 )}
                 <Button onClick={handleSynthesize} disabled={loading}>
-                  Синтезировать
+                  {tt('preview.synthesize')}
                 </Button>
               </Group>
             </Group>

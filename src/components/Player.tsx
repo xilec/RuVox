@@ -5,14 +5,15 @@ import { notifications } from '@mantine/notifications';
 import { commands, events, clampSpeed, MAX_SPEED, MIN_SPEED } from '../lib/tauri';
 import type { EntryId } from '../lib/tauri';
 import { formatError } from '../lib/errors';
+import { t, useT } from '../lib/i18n';
 import { useTauriEvents } from '../lib/useTauriEvents';
 import { IconPlay, IconPause, IconSettings, IconAppLogo } from './icons';
 import classes from './Player.module.css';
 
-function showPlayerError(action: string, err: unknown): void {
+function showPlayerError(actionKey: Parameters<typeof t>[0], err: unknown): void {
   notifications.show({
-    title: 'Ошибка',
-    message: `Не удалось ${action}: ${formatError(err)}`,
+    title: t('errors.title'),
+    message: t('player.error.prefix', [t(actionKey), formatError(err)]),
     color: 'red',
   });
 }
@@ -52,6 +53,7 @@ interface PlayerProps {
 }
 
 export function Player({ onOpenSettings }: PlayerProps = {}) {
+  const tt = useT();
   const [state, setState] = useState<PlayerState>(INITIAL_STATE);
   // Ref (not state) because the playback_position listener closes over it
   // once on mount; a ref avoids resubscribing on every drag.
@@ -165,7 +167,7 @@ export function Player({ onOpenSettings }: PlayerProps = {}) {
         await commands.playEntry(state.currentEntryId);
       }
     } catch (err) {
-      showPlayerError('управлять воспроизведением', err);
+      showPlayerError('player.error.manage_playback', err);
     }
   }, [state.isPlaying, state.isPaused, state.currentEntryId]);
 
@@ -175,7 +177,7 @@ export function Player({ onOpenSettings }: PlayerProps = {}) {
         try {
           await commands.seekTo(positionSec);
         } catch (err) {
-          showPlayerError('перемотать', err);
+          showPlayerError('player.error.seek', err);
         }
       }
     },
@@ -192,7 +194,7 @@ export function Player({ onOpenSettings }: PlayerProps = {}) {
       await commands.setSpeed(clamped);
     } catch (err) {
       setState((prev) => ({ ...prev, speed: prevSpeed }));
-      showPlayerError('изменить скорость', err);
+      showPlayerError('player.error.change_speed', err);
     }
   }, []);
 
@@ -226,7 +228,7 @@ export function Player({ onOpenSettings }: PlayerProps = {}) {
       volumeRef.current = volume;
     } catch (err) {
       setState((prev) => ({ ...prev, volume: prevVolume }));
-      showPlayerError('изменить громкость', err);
+      showPlayerError('player.error.change_volume', err);
     }
   }, []);
 
@@ -247,7 +249,7 @@ export function Player({ onOpenSettings }: PlayerProps = {}) {
         className={classes.playButton}
         variant="filled"
         onClick={() => { void handlePlayPause(); }}
-        aria-label={state.isPlaying ? 'Пауза' : 'Воспроизвести'}
+        aria-label={state.isPlaying ? tt('player.pause') : tt('player.play')}
         size="md"
         disabled={!state.currentEntryId}
       >
@@ -277,7 +279,7 @@ export function Player({ onOpenSettings }: PlayerProps = {}) {
         }}
         label={formatTime}
         step={0.1}
-        aria-label="Позиция воспроизведения"
+        aria-label={tt('player.position')}
         size="sm"
         disabled={state.duration === 0}
       />
@@ -286,7 +288,7 @@ export function Player({ onOpenSettings }: PlayerProps = {}) {
         {formatTime(state.position)} / {formatTime(state.duration)}
       </Text>
 
-      <Tooltip label={`Скорость (${MIN_SPEED}x–${MAX_SPEED}x)`}>
+      <Tooltip label={tt('player.speed.tooltip', [MIN_SPEED, MAX_SPEED])}>
         <div ref={speedWrapperRef} className={classes.speedInputWrapper}>
         <NumberInput
           className={classes.speedInput}
@@ -298,14 +300,14 @@ export function Player({ onOpenSettings }: PlayerProps = {}) {
           decimalScale={1}
           fixedDecimalScale
           size="xs"
-          aria-label="Скорость воспроизведения"
+          aria-label={tt('player.speed.aria')}
           suffix="x"
           hideControls={false}
         />
         </div>
       </Tooltip>
 
-      <Tooltip label="Громкость">
+      <Tooltip label={tt('player.volume')}>
         <Slider
           className={classes.volumeSlider}
           min={0}
@@ -317,16 +319,16 @@ export function Player({ onOpenSettings }: PlayerProps = {}) {
           }}
           onChangeEnd={(v) => { void handleVolumeChange(v); }}
           label={(v) => `${Math.round(v * 100)}%`}
-          aria-label="Громкость"
+          aria-label={tt('player.volume')}
           size="sm"
         />
       </Tooltip>
 
       {onOpenSettings && (
-        <Tooltip label="Настройки">
+        <Tooltip label={tt('player.settings')}>
           <ActionIcon
             variant="subtle"
-            aria-label="Открыть настройки"
+            aria-label={tt('player.settings.aria')}
             onClick={onOpenSettings}
           >
             <IconSettings size={18} />

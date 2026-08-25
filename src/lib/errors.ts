@@ -21,7 +21,9 @@ function errorKeyCandidates(code: string, params: string[]): string[] {
   if (code === 'image.fetch_failed' && params.length > 0) {
     return ['errors.image.fetch_failed.http', 'errors.image.fetch_failed'];
   }
-  return [`errors.${code}`];
+  // Backend site ids live under the `errors.` prefix; frontend-only codes
+  // (e.g. availability placeholders) use their bare catalog key.
+  return [`errors.${code}`, code];
 }
 
 export function formatError(err: unknown): string {

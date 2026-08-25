@@ -6,6 +6,7 @@ import {
   copyLinkAddress,
   copySelection,
 } from '../lib/viewerCopy';
+import { useT } from '../lib/i18n';
 
 interface MenuTarget {
   x: number;
@@ -26,6 +27,7 @@ interface Props {
  * image bitmap and image address.
  */
 export function ViewerContextMenu({ containerRef }: Props) {
+  const tt = useT();
   const [target, setTarget] = useState<MenuTarget | null>(null);
 
   useEffect(() => {
@@ -84,21 +86,21 @@ export function ViewerContextMenu({ containerRef }: Props) {
       <Menu.Dropdown>
         {target?.linkHref && (
           <Menu.Item onClick={() => void copyLinkAddress(target.linkHref ?? '')}>
-            Скопировать адрес ссылки
+            {tt('viewer.menu.copy_link_address')}
           </Menu.Item>
         )}
         {target?.selection && (
           <Menu.Item onClick={() => void copySelection(target.selection)}>
-            Копировать
+            {tt('viewer.menu.copy_selection')}
           </Menu.Item>
         )}
         {target?.imageSrc && (
           <>
             <Menu.Item onClick={() => void copyImageBitmap(target.imageSrc ?? '')}>
-              Скопировать изображение
+              {tt('viewer.menu.copy_image')}
             </Menu.Item>
             <Menu.Item onClick={() => void copyImageAddress(target.imageSrc ?? '')}>
-              Скопировать адрес изображения
+              {tt('viewer.menu.copy_image_address')}
             </Menu.Item>
           </>
         )}
