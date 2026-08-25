@@ -92,6 +92,16 @@ export interface UIConfig {
 
 export type UIConfigPatch = Partial<UIConfig>;
 
+/// Inclusive playback-speed range enforced by the `set_speed` command
+/// (openspec/specs/ipc-commands). Single TS home for the limit — the Rust
+/// side validates against the same range independently.
+export const MIN_SPEED = 0.5;
+export const MAX_SPEED = 3.0;
+
+export function clampSpeed(v: number): number {
+  return Math.min(MAX_SPEED, Math.max(MIN_SPEED, v));
+}
+
 export interface PreviewNormalizeResult {
   normalized: string;
 }

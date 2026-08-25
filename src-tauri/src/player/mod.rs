@@ -324,7 +324,7 @@ impl<R: Runtime> Player<R> {
         Ok(())
     }
 
-    /// Set playback speed (0.5–2.0). scaletempo2 keeps pitch correct.
+    /// Set playback speed (0.5–3.0). scaletempo2 keeps pitch correct.
     pub fn set_speed(&self, speed: f32) -> Result<()> {
         self.mpv_command(json!(["set_property", "speed", speed]))?;
         Ok(())

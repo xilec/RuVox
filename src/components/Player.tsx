@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { ActionIcon, Group, Slider, Text, NumberInput, Tooltip } from '@mantine/core';
 import { useHotkeys } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
-import { commands, events } from '../lib/tauri';
+import { commands, events, clampSpeed, MAX_SPEED, MIN_SPEED } from '../lib/tauri';
 import type { EntryId } from '../lib/tauri';
 import { formatError } from '../lib/errors';
 import { useTauriEvents } from '../lib/useTauriEvents';
@@ -58,6 +58,7 @@ export function Player({ onOpenSettings }: PlayerProps = {}) {
   const draggingRef = useRef(false);
   const speedWrapperRef = useRef<HTMLDivElement>(null);
   const speedRef = useRef(state.speed);
+  const volumeRef = useRef(state.volume);
   useEffect(() => { speedRef.current = state.speed; }, [state.speed]);
 
   useTauriEvents([
@@ -133,15 +134,22 @@ export function Player({ onOpenSettings }: PlayerProps = {}) {
 
   // Restore the persisted playback speed (#227): set_speed persists to
   // UIConfig.speech_rate, but nothing applied it on start, so every launch
-  // began at 1.0x.  A config read failure is non-fatal — keep 1.0x.
+  // began at 1.0x.  The restored value must also reach the backend — a fresh
+  // mpv process starts at 1.0x, so updating only the UI would desync the
+  // slider from actual playback.  A config read failure is non-fatal — keep
+  // 1.0x; a user who already touched the speed during startup wins over the
+  // late-arriving config.
   useEffect(() => {
     let cancelled = false;
     commands
       .getConfig()
       .then((config) => {
-        if (cancelled) return;
-        const clamped = Math.min(3.0, Math.max(0.5, config.speech_rate));
+        if (cancelled || speedRef.current !== INITIAL_STATE.speed) return;
+        const clamped = clampSpeed(config.speech_rate);
         setState((prev) => ({ ...prev, speed: clamped }));
+        void commands.setSpeed(clamped).catch((err) =>
+          console.warn('failed to apply restored speed:', err),
+        );
       })
       .catch((err) => console.warn('failed to load config for speed restore:', err));
     return () => { cancelled = true; };
@@ -177,7 +185,7 @@ export function Player({ onOpenSettings }: PlayerProps = {}) {
   const handleSpeedChange = useCallback(async (value: number | string) => {
     const speed = typeof value === 'string' ? parseFloat(value) : value;
     if (isNaN(speed)) return;
-    const clamped = Math.min(3.0, Math.max(0.5, speed));
+    const clamped = clampSpeed(speed);
     const prevSpeed = speedRef.current;
     setState((prev) => ({ ...prev, speed: clamped }));
     try {
@@ -207,15 +215,20 @@ export function Player({ onOpenSettings }: PlayerProps = {}) {
   }, [handleSpeedChange]);
 
   const handleVolumeChange = useCallback(async (volume: number) => {
-    const prevVolume = state.volume;
+    // Rollback baseline is the last successfully committed volume (ref),
+    // not the current state: during a drag the slider already wrote the
+    // new value into state before onChangeEnd fires, so state cannot serve
+    // as the "previous" value if the IPC call fails.
+    const prevVolume = volumeRef.current;
     setState((prev) => ({ ...prev, volume }));
     try {
       await commands.setVolume(volume);
+      volumeRef.current = volume;
     } catch (err) {
       setState((prev) => ({ ...prev, volume: prevVolume }));
       showPlayerError('изменить громкость', err);
     }
-  }, [state.volume]);
+  }, []);
 
   // Keyboard shortcuts
   useHotkeys([
@@ -273,14 +286,14 @@ export function Player({ onOpenSettings }: PlayerProps = {}) {
         {formatTime(state.position)} / {formatTime(state.duration)}
       </Text>
 
-      <Tooltip label="Скорость (0.5x–3.0x)">
+      <Tooltip label={`Скорость (${MIN_SPEED}x–${MAX_SPEED}x)`}>
         <div ref={speedWrapperRef} className={classes.speedInputWrapper}>
         <NumberInput
           className={classes.speedInput}
           value={state.speed}
           onChange={(v) => { void handleSpeedChange(v); }}
-          min={0.5}
-          max={3.0}
+          min={MIN_SPEED}
+          max={MAX_SPEED}
           step={0.1}
           decimalScale={1}
           fixedDecimalScale
