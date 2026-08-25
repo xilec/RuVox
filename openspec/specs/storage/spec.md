@@ -263,7 +263,7 @@ The system SHALL persist application configuration to `config.json` as a `UIConf
 |-------|------|---------|---------|
 | `speaker` | string | `"aidar"` | Silero speaker name |
 | `sample_rate` | number | `24000` | TTS output rate for the native engines; the native Opus rates 8000 / 12000 / 16000 / 24000 / 48000 round-trip without resampling, and any other rate is resampled to the nearest native one before encoding |
-| `speech_rate` | number | `1.0` | Playback speed multiplier (0.5–2.0) |
+| `speech_rate` | number | `1.0` | Playback speed multiplier (0.5–3.0) |
 | `notify_on_ready` | boolean | `true` | Show notification when synthesis completes |
 | `notify_on_error` | boolean | `true` | Show notification on synthesis error |
 | `text_format` | string | `"plain"` | Default viewer format: `"plain"` / `"markdown"` / `"html"` |

@@ -1168,12 +1168,12 @@ pub async fn seek_to(state: State<'_, AppState>, position_sec: f64) -> CmdResult
         })
 }
 
-/// Set playback speed (0.5–2.0). Persisted to UIConfig.speech_rate.
+/// Set playback speed (0.5–3.0). Persisted to UIConfig.speech_rate.
 #[tauri::command]
 pub async fn set_speed(state: State<'_, AppState>, speed: f32) -> CmdResult<()> {
-    if !(0.5..=2.0).contains(&speed) {
+    if !(0.5..=3.0).contains(&speed) {
         return Err(CommandError::ConfigError {
-            message: format!("speed {speed} is out of range [0.5, 2.0]"),
+            message: format!("speed {speed} is out of range [0.5, 3.0]"),
         });
     }
 
