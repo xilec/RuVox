@@ -14,6 +14,7 @@ import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import { commands, events } from '../lib/tauri';
 import type { TextEntry, EntryStatus, EntryId } from '../lib/tauri';
+import { formatError } from '../lib/errors';
 import { useTauriEvents } from '../lib/useTauriEvents';
 import { useSelectedEntry } from '../stores/selectedEntry';
 import { useSearchQuery } from '../stores/searchQuery';
@@ -252,7 +253,15 @@ export function QueueList() {
   }, [playingId, selectedId, entries, setSelectedEntry]);
 
   const handlePlay = useCallback(async (id: string) => {
-    await commands.playEntry(id);
+    try {
+      await commands.playEntry(id);
+    } catch (err) {
+      notifications.show({
+        title: 'Ошибка',
+        message: `Не удалось запустить воспроизведение: ${formatError(err)}`,
+        color: 'red',
+      });
+    }
   }, []);
 
   const handleRegenerate = useCallback(async (id: string) => {

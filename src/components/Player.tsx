@@ -1,11 +1,21 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { ActionIcon, Group, Slider, Text, NumberInput, Tooltip } from '@mantine/core';
 import { useHotkeys } from '@mantine/hooks';
+import { notifications } from '@mantine/notifications';
 import { commands, events } from '../lib/tauri';
 import type { EntryId } from '../lib/tauri';
+import { formatError } from '../lib/errors';
 import { useTauriEvents } from '../lib/useTauriEvents';
 import { IconPlay, IconPause, IconSettings, IconAppLogo } from './icons';
 import classes from './Player.module.css';
+
+function showPlayerError(action: string, err: unknown): void {
+  notifications.show({
+    title: 'Ошибка',
+    message: `Не удалось ${action}: ${formatError(err)}`,
+    color: 'red',
+  });
+}
 
 interface PlayerState {
   isPlaying: boolean;
@@ -121,20 +131,44 @@ export function Player({ onOpenSettings }: PlayerProps = {}) {
       }),
   ]);
 
+  // Restore the persisted playback speed (#227): set_speed persists to
+  // UIConfig.speech_rate, but nothing applied it on start, so every launch
+  // began at 1.0x.  A config read failure is non-fatal — keep 1.0x.
+  useEffect(() => {
+    let cancelled = false;
+    commands
+      .getConfig()
+      .then((config) => {
+        if (cancelled) return;
+        const clamped = Math.min(2.0, Math.max(0.5, config.speech_rate));
+        setState((prev) => ({ ...prev, speed: clamped }));
+      })
+      .catch((err) => console.warn('failed to load config for speed restore:', err));
+    return () => { cancelled = true; };
+  }, []);
+
   const handlePlayPause = useCallback(async () => {
-    if (state.isPlaying) {
-      await commands.pausePlayback();
-    } else if (state.isPaused) {
-      await commands.resumePlayback();
-    } else if (state.currentEntryId) {
-      await commands.playEntry(state.currentEntryId);
+    try {
+      if (state.isPlaying) {
+        await commands.pausePlayback();
+      } else if (state.isPaused) {
+        await commands.resumePlayback();
+      } else if (state.currentEntryId) {
+        await commands.playEntry(state.currentEntryId);
+      }
+    } catch (err) {
+      showPlayerError('управлять воспроизведением', err);
     }
   }, [state.isPlaying, state.isPaused, state.currentEntryId]);
 
   const handleSeek = useCallback(
     async (positionSec: number) => {
       if (state.isPlaying || state.isPaused) {
-        await commands.seekTo(positionSec);
+        try {
+          await commands.seekTo(positionSec);
+        } catch (err) {
+          showPlayerError('перемотать', err);
+        }
       }
     },
     [state.isPlaying, state.isPaused],
@@ -144,8 +178,14 @@ export function Player({ onOpenSettings }: PlayerProps = {}) {
     const speed = typeof value === 'string' ? parseFloat(value) : value;
     if (isNaN(speed)) return;
     const clamped = Math.min(2.0, Math.max(0.5, speed));
+    const prevSpeed = speedRef.current;
     setState((prev) => ({ ...prev, speed: clamped }));
-    await commands.setSpeed(clamped);
+    try {
+      await commands.setSpeed(clamped);
+    } catch (err) {
+      setState((prev) => ({ ...prev, speed: prevSpeed }));
+      showPlayerError('изменить скорость', err);
+    }
   }, []);
 
   // Native (non-passive) wheel listener: React's synthetic onWheel binds at
@@ -167,9 +207,15 @@ export function Player({ onOpenSettings }: PlayerProps = {}) {
   }, [handleSpeedChange]);
 
   const handleVolumeChange = useCallback(async (volume: number) => {
+    const prevVolume = state.volume;
     setState((prev) => ({ ...prev, volume }));
-    await commands.setVolume(volume);
-  }, []);
+    try {
+      await commands.setVolume(volume);
+    } catch (err) {
+      setState((prev) => ({ ...prev, volume: prevVolume }));
+      showPlayerError('изменить громкость', err);
+    }
+  }, [state.volume]);
 
   // Keyboard shortcuts
   useHotkeys([
