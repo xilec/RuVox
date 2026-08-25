@@ -1,8 +1,8 @@
 import { writeText, writeImage } from '@tauri-apps/plugin-clipboard-manager';
-import { fetch } from '@tauri-apps/plugin-http';
 import { Image } from '@tauri-apps/api/image';
 import { notifications } from '@mantine/notifications';
 import { formatError } from './errors';
+import { commands } from './tauri';
 import { resolveUrl } from './urls';
 
 /**
@@ -45,17 +45,15 @@ export async function copyImageAddress(src: string): Promise<void> {
 }
 
 /**
- * Fetch an image (remote images included, via tauri-plugin-http to bypass
- * webview CORS) and write its bitmap to the clipboard.
+ * Fetch an image (remote images included) and write its bitmap to the
+ * clipboard. The download runs in a Rust command (#231): it validates
+ * scheme/content-type/size and keeps the webview free of any blanket
+ * arbitrary-host network capability.
  */
 export async function copyImageBitmap(src: string): Promise<void> {
   try {
-    const response = await fetch(resolveUrl(src));
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-    const bytes = await response.arrayBuffer();
-    const image = await Image.fromBytes(bytes);
+    const bytes = await commands.fetchImageBytes(resolveUrl(src));
+    const image = await Image.fromBytes(new Uint8Array(bytes));
     await writeImage(image);
   } catch (err) {
     notifyError(err);

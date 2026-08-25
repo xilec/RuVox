@@ -11,10 +11,6 @@
     "clipboard-manager:allow-write-image",
     "updater:default",
     "process:allow-restart",
-    "log:default",
-    {
-      "identifier": "http:default",
-      "allow": [{ "url": "https://*" }, { "url": "http://*" }]
-    }
+    "log:default"
   ]
 }

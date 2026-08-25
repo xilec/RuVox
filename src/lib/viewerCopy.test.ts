@@ -1,21 +1,22 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { writeText, writeImage, httpFetch, fromBytes, notify } = vi.hoisted(
-  () => ({
+const { writeText, writeImage, fetchImageBytes, fromBytes, notify } =
+  vi.hoisted(() => ({
     writeText: vi.fn(),
     writeImage: vi.fn(),
-    httpFetch: vi.fn(),
+    fetchImageBytes: vi.fn(),
     fromBytes: vi.fn(),
     notify: vi.fn(),
-  }),
-);
+  }));
 
 vi.mock('@tauri-apps/plugin-clipboard-manager', () => ({
   writeText,
   writeImage,
 }));
-vi.mock('@tauri-apps/plugin-http', () => ({ fetch: httpFetch }));
+vi.mock('./tauri', () => ({
+  commands: { fetchImageBytes },
+}));
 vi.mock('@tauri-apps/api/image', () => ({
   Image: { fromBytes },
 }));
@@ -64,38 +65,34 @@ describe('copyImageAddress', () => {
 });
 
 describe('copyImageBitmap', () => {
-  it('fetches the image and writes the bitmap to the clipboard', async () => {
-    const bytes = new Uint8Array([1, 2, 3]).buffer;
-    httpFetch.mockResolvedValueOnce({
-      ok: true,
-      arrayBuffer: () => Promise.resolve(bytes),
-    });
+  it('fetches the image via the Rust command and writes the bitmap to the clipboard', async () => {
+    const bytes = [1, 2, 3];
+    fetchImageBytes.mockResolvedValueOnce(bytes);
     const image = { rid: 42 };
     fromBytes.mockResolvedValueOnce(image);
 
     await copyImageBitmap('https://habrastorage.org/x.png');
 
-    expect(httpFetch).toHaveBeenCalledWith('https://habrastorage.org/x.png');
-    expect(fromBytes).toHaveBeenCalledWith(bytes);
+    expect(fetchImageBytes).toHaveBeenCalledWith(
+      'https://habrastorage.org/x.png',
+    );
+    expect(fromBytes).toHaveBeenCalledWith(new Uint8Array(bytes));
     expect(writeImage).toHaveBeenCalledWith(image);
     expect(notify).not.toHaveBeenCalled();
   });
 
-  it('shows an error notification and skips the write on HTTP failure', async () => {
-    httpFetch.mockResolvedValueOnce({ ok: false, status: 404 });
-
-    await copyImageBitmap('https://habrastorage.org/missing.png');
-
-    expect(writeImage).not.toHaveBeenCalled();
-    expect(notify).toHaveBeenCalledWith(
-      expect.objectContaining({ color: 'red' }),
+  it('resolves relative srcs against the document base before fetching', async () => {
+    fetchImageBytes.mockResolvedValueOnce([]);
+    await copyImageBitmap('/img/logo.png');
+    expect(fetchImageBytes).toHaveBeenCalledWith(
+      new URL('/img/logo.png', document.baseURI).href,
     );
   });
 
-  it('shows an error notification and skips the write on network failure', async () => {
-    httpFetch.mockRejectedValueOnce(new Error('offline'));
+  it('shows an error notification and skips the write on fetch failure', async () => {
+    fetchImageBytes.mockRejectedValueOnce({ type: 'internal', message: 'HTTP 404' });
 
-    await copyImageBitmap('https://habrastorage.org/x.png');
+    await copyImageBitmap('https://habrastorage.org/missing.png');
 
     expect(writeImage).not.toHaveBeenCalled();
     expect(notify).toHaveBeenCalledWith(
