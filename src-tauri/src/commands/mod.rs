@@ -44,7 +44,7 @@ use crate::tts::{
 pub enum CommandError {
     #[error("not found: {code}")]
     NotFound {
-        code: &'static str,
+        code: String,
         #[serde(skip_serializing_if = "Vec::is_empty")]
         params: Vec<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -53,7 +53,7 @@ pub enum CommandError {
 
     #[error("storage error: {code}")]
     StorageError {
-        code: &'static str,
+        code: String,
         #[serde(skip_serializing_if = "Vec::is_empty")]
         params: Vec<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -62,7 +62,7 @@ pub enum CommandError {
 
     #[error("synthesis error: {code}")]
     SynthesisError {
-        code: &'static str,
+        code: String,
         #[serde(skip_serializing_if = "Vec::is_empty")]
         params: Vec<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -71,7 +71,7 @@ pub enum CommandError {
 
     #[error("playback error: {code}")]
     PlaybackError {
-        code: &'static str,
+        code: String,
         #[serde(skip_serializing_if = "Vec::is_empty")]
         params: Vec<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -80,7 +80,7 @@ pub enum CommandError {
 
     #[error("config error: {code}")]
     ConfigError {
-        code: &'static str,
+        code: String,
         #[serde(skip_serializing_if = "Vec::is_empty")]
         params: Vec<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -89,7 +89,7 @@ pub enum CommandError {
 
     #[error("internal error: {code}")]
     Internal {
-        code: &'static str,
+        code: String,
         #[serde(skip_serializing_if = "Vec::is_empty")]
         params: Vec<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -98,49 +98,49 @@ pub enum CommandError {
 }
 
 impl CommandError {
-    fn not_found(code: &'static str, params: Vec<String>) -> Self {
+    fn not_found(code: impl Into<String>, params: Vec<String>) -> Self {
         Self::NotFound {
-            code,
+            code: code.into(),
             params,
             message: None,
         }
     }
 
-    fn storage(code: &'static str, params: Vec<String>) -> Self {
+    fn storage(code: impl Into<String>, params: Vec<String>) -> Self {
         Self::StorageError {
-            code,
+            code: code.into(),
             params,
             message: None,
         }
     }
 
-    fn synthesis(code: &'static str, params: Vec<String>) -> Self {
+    fn synthesis(code: impl Into<String>, params: Vec<String>) -> Self {
         Self::SynthesisError {
-            code,
+            code: code.into(),
             params,
             message: None,
         }
     }
 
-    fn playback(code: &'static str, params: Vec<String>) -> Self {
+    fn playback(code: impl Into<String>, params: Vec<String>) -> Self {
         Self::PlaybackError {
-            code,
+            code: code.into(),
             params,
             message: None,
         }
     }
 
-    fn config(code: &'static str, params: Vec<String>) -> Self {
+    fn config(code: impl Into<String>, params: Vec<String>) -> Self {
         Self::ConfigError {
-            code,
+            code: code.into(),
             params,
             message: None,
         }
     }
 
-    fn internal(code: &'static str, params: Vec<String>) -> Self {
+    fn internal(code: impl Into<String>, params: Vec<String>) -> Self {
         Self::Internal {
-            code,
+            code: code.into(),
             params,
             message: None,
         }
@@ -1363,8 +1363,16 @@ pub async fn update_config(state: State<'_, AppState>, patch: UIConfigPatch) -> 
         .engine_switcher
         .apply_config(&config.engine, &config.piper_voice)
         .await
-        .map_err(|e| {
-            CommandError::config("config.engine_switch_failed", vec![]).with_message(e.to_string())
+        .map_err(|e| match e {
+            // ttsd-side failures carry a dotted site id already (e.g.
+            // "native.bundle_missing") — pass it through so the frontend can
+            // show *why* the switch failed instead of the generic sentence;
+            // unknown codes fall back to the message on the frontend.
+            TtsError::Ttsd { code, message } => {
+                CommandError::config(&code, vec![]).with_message(message)
+            }
+            other => CommandError::config("config.engine_switch_failed", vec![])
+                .with_message(other.to_string()),
         })?;
 
     state

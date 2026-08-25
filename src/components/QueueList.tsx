@@ -270,10 +270,9 @@ export function QueueList() {
         color: 'blue',
       });
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
       notifications.show({
         title: tt('errors.title'),
-        message: tt('queue.notify.regenerate_failed', [message]),
+        message: tt('queue.notify.regenerate_failed', [formatError(e)]),
         color: 'red',
       });
     }
@@ -283,10 +282,9 @@ export function QueueList() {
     try {
       await commands.cancelSynthesis(id);
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
       notifications.show({
         title: tt('errors.title'),
-        message: tt('queue.notify.cancel_failed', [message]),
+        message: tt('queue.notify.cancel_failed', [formatError(e)]),
         color: 'red',
       });
     }

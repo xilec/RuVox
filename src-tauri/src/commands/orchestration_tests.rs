@@ -345,7 +345,9 @@ async fn update_config_failed_engine_switch_preserves_previous_config() {
     let err = update_config(t.state(), patch).await.unwrap_err();
     match err {
         CommandError::ConfigError { code, message, .. } => {
-            assert_eq!(code, "config.engine_switch_failed");
+            // The inner ttsd/switcher site id passes through so the frontend
+            // can explain the failure; the raw detail stays as fallback.
+            assert_eq!(code, "engine_unknown");
             assert!(
                 message.is_some(),
                 "raw engine-switch detail must be preserved as the fallback"
@@ -379,7 +381,7 @@ async fn update_config_silero_native_without_bundle_preserves_previous_config() 
     };
     let err = update_config(t.state(), patch).await.unwrap_err();
     match err {
-        CommandError::ConfigError { code, .. } => assert_eq!(code, "config.engine_switch_failed"),
+        CommandError::ConfigError { code, .. } => assert_eq!(code, "native.bundle_missing"),
         other => panic!("expected ConfigError, got {other:?}"),
     }
 

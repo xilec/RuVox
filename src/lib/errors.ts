@@ -26,6 +26,13 @@ function errorKeyCandidates(code: string, params: string[]): string[] {
   return [`errors.${code}`, code];
 }
 
+/** A localized result is only usable when every `{n}` placeholder found a
+ *  param — otherwise the backend param arity drifted from the catalog text
+ *  and the raw detail / generic fallback reads better than "{1}" on screen. */
+function hasUnresolvedPlaceholder(s: string): boolean {
+  return /\{\d+\}/.test(s);
+}
+
 export function formatError(err: unknown): string {
   if (err instanceof Error) return err.message;
   if (typeof err === 'string') return err;
@@ -35,9 +42,10 @@ export function formatError(err: unknown): string {
     if (typeof e.code === 'string' && e.code) {
       for (const key of errorKeyCandidates(e.code, params)) {
         const localized = translate(currentLocale(), key, params);
-        if (localized !== key) return localized;
+        if (localized !== key && !hasUnresolvedPlaceholder(localized)) return localized;
       }
-      // Unknown code: fall back to the raw backend detail when present.
+      // Unknown code (or param-arity drift): fall back to the raw backend
+      // detail when present.
       if (typeof e.message === 'string' && e.message) return e.message;
     }
     if (typeof e.message === 'string' && e.message) return e.message;

@@ -132,6 +132,10 @@ export const en: Record<MessageKey, string> = {
   'settings.piper_voice.recommended_badge': 'Rec.',
   'settings.piper_voice.download_now': 'Download now',
   'settings.piper_voice.download_failed.title': 'Failed to start the download',
+  'settings.piper_voice.denis': 'Denis (male)',
+  'settings.piper_voice.dmitri': 'Dmitri (male)',
+  'settings.piper_voice.irina': 'Irina (female)',
+  'settings.piper_voice.ruslan': 'Ruslan (male)',
   'settings.speaker.label': 'Silero voice',
   'settings.speaker.random': 'Random',
   'settings.sample_rate.label': 'Sample rate',
@@ -273,6 +277,7 @@ export const en: Record<MessageKey, string> = {
   'errors.image.read_failed': 'Failed to read the image',
   'errors.image.not_image': 'The server returned something other than an image ({0})',
   'errors.image.no_content_type': 'The server did not send a content type',
+  'errors.image.too_large': 'The image is too large ({0} bytes, limit {1})',
 
   // ── Engine availability reasons (get_available_engines) ─────────────────
   'errors.silero.ttsd_missing':

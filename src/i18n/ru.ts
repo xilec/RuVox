@@ -133,6 +133,10 @@ export const ru = {
   'settings.piper_voice.recommended_badge': 'Рек.',
   'settings.piper_voice.download_now': 'Скачать сейчас',
   'settings.piper_voice.download_failed.title': 'Не удалось запустить загрузку',
+  'settings.piper_voice.denis': 'Денис (мужской)',
+  'settings.piper_voice.dmitri': 'Дмитрий (мужской)',
+  'settings.piper_voice.irina': 'Ирина (женский)',
+  'settings.piper_voice.ruslan': 'Руслан (мужской)',
   'settings.speaker.label': 'Голос Silero',
   'settings.speaker.random': 'Случайный',
   'settings.sample_rate.label': 'Частота дискретизации',
@@ -256,8 +260,8 @@ export const ru = {
   'errors.playback.seek_failed': 'Ошибка перемотки',
   'errors.playback.set_speed_failed': 'Не удалось изменить скорость воспроизведения',
   'errors.playback.set_volume_failed': 'Не удалось изменить громкость',
-  'errors.speed.out_of_range': 'Скорость {0} вне допустимого диапазона [0,5–3,0]',
-  'errors.volume.out_of_range': 'Громкость {0} вне допустимого диапазона [0,0–1,0]',
+  'errors.speed.out_of_range': 'Скорость {0} вне допустимого диапазона [0.5–3.0]',
+  'errors.volume.out_of_range': 'Громкость {0} вне допустимого диапазона [0.0–1.0]',
   'errors.config.engine_switch_failed': 'Не удалось переключить движок синтеза',
   'errors.synthesis.failed': 'Ошибка синтеза речи',
   'errors.synthesis.in_progress': 'Запись {0} уже синтезируется',
@@ -276,6 +280,7 @@ export const ru = {
   'errors.image.read_failed': 'Не удалось прочитать изображение',
   'errors.image.not_image': 'Сервер вернул не изображение ({0})',
   'errors.image.no_content_type': 'Сервер не указал тип содержимого',
+  'errors.image.too_large': 'Изображение слишком большое ({0} байт, лимит {1})',
 
   // ── Engine availability reasons (get_available_engines) ─────────────────
   'errors.silero.ttsd_missing':

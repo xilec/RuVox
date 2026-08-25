@@ -25,8 +25,8 @@ import { commands, events } from '../lib/tauri';
 import type { CleanupMode, EngineKind, UIConfigPatch } from '../lib/tauri';
 import type { MessageKey } from '../i18n/ru';
 import { formatError } from '../lib/errors';
-import { useT } from '../lib/i18n';
-import { setLocale, toLocale } from '../stores/locale';
+import { t, useT } from '../lib/i18n';
+import { setLocale, toLocale, type Locale } from '../stores/locale';
 import { bundleDownloadPercent } from '../lib/bundleDownload';
 import { PIPER_VOICES } from '../lib/piperVoices';
 import { checkForUpdatesManual, UPDATER_ENABLED } from '../lib/updater';
@@ -267,6 +267,9 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
   // picking «Silero (нативный)» follows it only while the user made no
   // explicit choice.
   const sampleRateTouchedRef = useRef(false);
+  /// Language from the last loaded config — the reset baseline for the
+  /// immediate-relabel locale store (form.reset() only reverts the field).
+  const savedLanguageRef = useRef<Locale>('ru');
   const form = useForm<SettingsFormValues>({
     initialValues: {
       engine: 'silero_native',
@@ -282,7 +285,9 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
     },
     validate: {
       max_cache_size_mb: (v) =>
-        v < 100 ? tt('settings.max_cache_size.min_error') : null,
+        // Non-reactive t(): Mantine captures the validator once, so a
+        // mid-session locale switch must be picked up at call time.
+        v < 100 ? t('settings.max_cache_size.min_error') : null,
     },
   });
 
@@ -305,6 +310,7 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
           theme: config.theme,
           language: config.language,
         });
+        savedLanguageRef.current = toLocale(config.language);
         setCoercedAlert(initial.coercedAwayFromUnavailable);
       })
       .catch((err) => {
@@ -324,7 +330,7 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
   }, [opened]);
 
   const piperVoiceOptions = useMemo(
-    () => PIPER_VOICES.map((v) => ({ value: v.id, label: v.label })),
+    () => PIPER_VOICES.map((v) => ({ value: v.id, label: tt(v.key) })),
     [],
   );
 
@@ -756,7 +762,15 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
           </Text>
 
           <Group justify="flex-end" mt="md">
-            <Button variant="subtle" onClick={() => form.reset()}>
+            <Button
+              variant="subtle"
+              onClick={() => {
+                form.reset();
+                // The selector relabels the whole UI on change; Reset must
+                // roll the live locale back too, not just the form field.
+                setLocale(savedLanguageRef.current);
+              }}
+            >
               {tt('settings.reset')}
             </Button>
             <Button type="submit">{tt('common.save')}</Button>
