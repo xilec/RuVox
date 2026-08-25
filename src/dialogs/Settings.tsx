@@ -270,6 +270,8 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
   /// Language from the last loaded config — the reset baseline for the
   /// immediate-relabel locale store (form.reset() only reverts the field).
   const savedLanguageRef = useRef<Locale>('ru');
+  /// Full form snapshot of the last loaded config — the Reset baseline.
+  const loadedValuesRef = useRef<SettingsFormValues | null>(null);
   const form = useForm<SettingsFormValues>({
     initialValues: {
       engine: 'silero_native',
@@ -298,7 +300,7 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
       .then(([config, probed]) => {
         setAvailability(probed);
         const initial = computeEngineFormState(config, probed);
-        form.setValues({
+        const loaded = {
           engine: initial.engine,
           piper_voice: initial.piperVoice,
           speaker: initial.sileroSpeaker,
@@ -309,7 +311,12 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
           max_cache_size_mb: config.max_cache_size_mb,
           theme: config.theme,
           language: config.language,
-        });
+        };
+        // Reset must restore the loaded config, not the static useForm
+        // initialValues (which pre-date the load and hardcode 'ru').
+        loadedValuesRef.current = loaded;
+        form.setValues(loaded);
+        form.resetDirty(loaded);
         savedLanguageRef.current = toLocale(config.language);
         setCoercedAlert(initial.coercedAwayFromUnavailable);
       })
@@ -765,9 +772,16 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
             <Button
               variant="subtle"
               onClick={() => {
-                form.reset();
-                // The selector relabels the whole UI on change; Reset must
-                // roll the live locale back too, not just the form field.
+                // Restore the last loaded config (both the fields and the
+                // dirty baseline), then re-sync the live locale store — the
+                // selector relabels the whole UI on change, so Reset must
+                // roll it back too.
+                if (loadedValuesRef.current) {
+                  form.setValues(loadedValuesRef.current);
+                  form.resetDirty(loadedValuesRef.current);
+                } else {
+                  form.reset();
+                }
                 setLocale(savedLanguageRef.current);
               }}
             >
