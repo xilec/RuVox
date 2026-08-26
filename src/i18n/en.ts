@@ -26,6 +26,22 @@ export const en: Record<MessageKey, string> = {
   'app.added.later': 'The text was added for later listening',
   'app.html.extract_failed': 'Failed to extract text from HTML',
 
+  // ── Import (file / URL, #224) ───────────────────────────────────────────
+  'app.import.drop_overlay': 'Drop to add',
+  'app.import.menu.file': 'File…',
+  'app.import.menu.file_encoding': 'File with encoding…',
+  'app.import.menu.url': 'From a link…',
+  'app.import.url.title': 'Add from a link',
+  'app.import.url.label': 'Page address (URL)',
+  'app.import.url.placeholder': 'https://example.com/article',
+  'app.import.url.confirm': 'Fetch',
+  'app.import.encoding.title': 'File encoding',
+  'app.import.encoding.description':
+    'Check that the text reads correctly. If you see mojibake, pick the encoding manually.',
+  'app.import.encoding.label': 'Encoding',
+  'app.import.encoding.preview_aria': 'Preview of the file contents',
+  'app.import.encoding.confirm': 'Continue',
+
   // ── Queue list ──────────────────────────────────────────────────────────
   'queue.status.pending': 'Pending',
   'queue.status.processing': 'Processing',
@@ -278,6 +294,25 @@ export const en: Record<MessageKey, string> = {
   'errors.image.not_image': 'The server returned something other than an image ({0})',
   'errors.image.no_content_type': 'The server did not send a content type',
   'errors.image.too_large': 'The image is too large ({0} bytes, limit {1})',
+
+  // Import (file / URL) error codes — see src-tauri/src/import.rs
+  'errors.import.unsupported_extension':
+    'Unsupported file type: {0}. Supported: .txt, .md, .html and .htm',
+  'errors.import.too_large': 'The file is too large ({0} bytes); the limit is {1} bytes',
+  'errors.import.decode_failed':
+    'Could not read the file: the encoding was not recognized or the data is not text',
+  // Network variant has no params; the HTTP-status variant appends " (HTTP …)"
+  // via the `errors.import.fetch_failed.http` form (see formatError).
+  'errors.import.fetch_failed': 'Failed to fetch the page',
+  'errors.import.fetch_failed.http': 'Failed to fetch the page (HTTP {0})',
+  'errors.import.spa_unsupported':
+    'This page is rendered by JavaScript — not supported',
+  'errors.import.empty_page': 'The page loaded, but no text was found on it',
+  'errors.import.url_invalid': 'Invalid URL: {0}',
+  'errors.import.url_scheme_unsupported': 'URL scheme {0} is not supported — use http or https',
+  'errors.import.unknown_encoding': 'Unknown encoding: {0}',
+  'errors.import.io_failed': 'Failed to read the file {0}',
+  'errors.import.task_panicked': 'Internal error during import',
 
   // ── Engine availability reasons (get_available_engines) ─────────────────
   'errors.silero.ttsd_missing':

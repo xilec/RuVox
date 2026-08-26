@@ -1,5 +1,6 @@
 pub mod audio;
 pub mod commands;
+pub mod import;
 pub mod paths;
 pub mod pipeline;
 pub mod player;
@@ -426,6 +427,9 @@ pub(crate) fn invoke_handler<R: Runtime>()
         get_cache_dir,
         get_log_dir,
         fetch_image_bytes,
+        pick_import_file,
+        read_text_file,
+        fetch_url_text,
     ]
 }
 

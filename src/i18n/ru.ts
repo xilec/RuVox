@@ -27,6 +27,22 @@ export const ru = {
   'app.added.later': 'Текст добавлен для прослушивания позже',
   'app.html.extract_failed': 'Не удалось извлечь текст из HTML',
 
+  // ── Import (file / URL, #224) ───────────────────────────────────────────
+  'app.import.drop_overlay': 'Отпустите, чтобы добавить',
+  'app.import.menu.file': 'Файл…',
+  'app.import.menu.file_encoding': 'Файл с кодировкой…',
+  'app.import.menu.url': 'По ссылке…',
+  'app.import.url.title': 'Добавить по ссылке',
+  'app.import.url.label': 'Адрес страницы (URL)',
+  'app.import.url.placeholder': 'https://example.com/article',
+  'app.import.url.confirm': 'Загрузить',
+  'app.import.encoding.title': 'Кодировка файла',
+  'app.import.encoding.description':
+    'Проверьте, что текст читается. Если видны кракозябры, выберите кодировку вручную.',
+  'app.import.encoding.label': 'Кодировка',
+  'app.import.encoding.preview_aria': 'Предпросмотр содержимого файла',
+  'app.import.encoding.confirm': 'Продолжить',
+
   // ── Queue list ──────────────────────────────────────────────────────────
   'queue.status.pending': 'Ожидание',
   'queue.status.processing': 'Обработка',
@@ -281,6 +297,25 @@ export const ru = {
   'errors.image.not_image': 'Сервер вернул не изображение ({0})',
   'errors.image.no_content_type': 'Сервер не указал тип содержимого',
   'errors.image.too_large': 'Изображение слишком большое ({0} байт, лимит {1})',
+
+  // Import (file / URL) error codes — see src-tauri/src/import.rs
+  'errors.import.unsupported_extension':
+    'Неподдерживаемый тип файла: {0}. Поддерживаются .txt, .md, .html и .htm',
+  'errors.import.too_large': 'Файл слишком большой ({0} байт); лимит — {1} байт',
+  'errors.import.decode_failed':
+    'Не удалось прочитать файл: кодировка не определена или данные не являются текстом',
+  // Network variant has no params; the HTTP-status variant appends " (HTTP …)"
+  // via the `errors.import.fetch_failed.http` form (see formatError).
+  'errors.import.fetch_failed': 'Не удалось загрузить страницу',
+  'errors.import.fetch_failed.http': 'Не удалось загрузить страницу (HTTP {0})',
+  'errors.import.spa_unsupported':
+    'Содержимое страницы формируется JavaScript\'ом — режим не поддерживается',
+  'errors.import.empty_page': 'Страница загружена, но текст на ней не найден',
+  'errors.import.url_invalid': 'Некорректный адрес ссылки: {0}',
+  'errors.import.url_scheme_unsupported': 'Схема {0} не поддерживается — используйте http или https',
+  'errors.import.unknown_encoding': 'Неизвестная кодировка: {0}',
+  'errors.import.io_failed': 'Не удалось прочитать файл {0}',
+  'errors.import.task_panicked': 'Внутренняя ошибка при импорте',
 
   // ── Engine availability reasons (get_available_engines) ─────────────────
   'errors.silero.ttsd_missing':

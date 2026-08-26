@@ -4,12 +4,17 @@ import type { EntryFormat } from './tauri';
  * Outcome of the Add-button flow decision (preview-dialog spec,
  * "Add flow gating"). Kept pure so the whole matrix is unit-testable
  * without mounting AppShell.
+ *
+ * `direct-plain.format` is set only by the import flow (importFlow.ts),
+ * where the entry format comes from the source's extension rather than the
+ * clipboard defaults; the clipboard paths leave it undefined so the entry
+ * keeps its historical unset-format behavior.
  */
 export type AddAction =
   | { kind: 'empty' }
   | { kind: 'preview'; text: string; format: EntryFormat; plainFallback: string | null }
   | { kind: 'direct-html'; html: string; plainFallback: string | null }
-  | { kind: 'direct-plain'; text: string };
+  | { kind: 'direct-plain'; text: string; format?: EntryFormat };
 
 /**
  * Maps the clipboard probe results to the next step of the Add flow.

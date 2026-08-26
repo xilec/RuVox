@@ -1,0 +1,33 @@
+/* AppShell-only visual pieces (import drop overlay, #224). Tokens only —
+ * see the ui spec's styling rules. */
+
+.dropOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* pointer-events none: the native webview layer delivers the drag/drop
+     events; the overlay must never swallow clicks or the final drop. */
+  pointer-events: none;
+  background: light-dark(
+    var(--mantine-color-blue-0),
+    var(--mantine-color-dark-8)
+  );
+  opacity: 0.93;
+}
+
+.dropCard {
+  padding: var(--mantine-spacing-lg) var(--mantine-spacing-xl);
+  border-radius: var(--mantine-radius-md);
+  border: 2px dashed var(--mantine-color-blue-6);
+  background: light-dark(
+    var(--mantine-color-white),
+    var(--mantine-color-dark-6)
+  );
+  color: var(--mantine-color-blue-7);
+  font-size: var(--mantine-font-size-lg);
+  font-weight: 500;
+  box-shadow: var(--mantine-shadow-md);
+}
