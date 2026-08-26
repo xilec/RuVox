@@ -52,7 +52,7 @@ export type EngineKind = 'piper' | 'silero' | 'silero_native';
 
 /** Machine-readable localizable text (same shape subset as CommandError:
  * translated by the frontend via catalogs, `message` as raw fallback). */
-export interface LocalizedText {
+interface LocalizedText {
   code: string;
   params?: string[];
   message?: string;
