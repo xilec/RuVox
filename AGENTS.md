@@ -127,12 +127,13 @@ General branch/workspace rules live in the global `~/.agents/AGENTS.md` (work in
    3. **Fix loop.** Fold accepted findings into the same branch as further autonomous commits (same rules as 2.1), rerun the test/lint gates; note deferrals as issues.
    4. **Report to the user.** Only after steps 2–3 present a summary of what was built and what the review found. Drafting the PR description and opening the PR remain draft-approved (step 4 below).
 3. **Merge method: merge commit** (not squash, not rebase).
-4. **Who merges.** The agent opens the PR (title/body via draft approval) and merges it once CI is green, unless the user said they'll merge themselves. `git push` always requires separate confirmation.
-5. **Lightweight paths:**
+4. **Who merges.** The agent opens the PR (title/body via draft approval). Once the user has verified and accepted the task's result (manual pass completed, "ok" on the outcome), the rest is autonomous: the agent pushes, opens the PR, and merges it once CI is green without asking further questions. Before that acceptance, `git push` remains separately confirmation-gated.
+5. **Autonomy default.** Outside the gates explicitly reserved for the user above (PR/issue/comment drafts, pre-acceptance push), do not ask the user intermediate questions — proceed through the established pipeline and report at its milestones. Ask a question only when a critical blocker appears (failing gate that cannot be resolved from context, destructive operation, ambiguous requirement with real consequences) or when the user has temporarily changed the workflow themselves.
+6. **Lightweight paths:**
    - **CI/tooling changes** go through a PR but may skip the OpenSpec change. The pre-PR gate still applies.
    - **Trivial docs / typo fixes** may skip both the OpenSpec change and the PR: push the task branch straight to remote `main` via `git push origin HEAD:main` (fast-forward only). If rejected because `origin/main` moved, rebase the task branch onto fresh `origin/main` and push again.
 
-The only sanctioned ways anything reaches `main` are a PR (points 2–4) or the fast-forward branch push for trivial fixes (point 5). After the merge, clean up: worktree tasks → remove the worktree + local branch and delete the remote branch; workspace tasks → delete the merged branch (local + remote).
+The only sanctioned ways anything reaches `main` are a PR (points 2–4) or the fast-forward branch push for trivial fixes (point 6). After the merge, clean up: worktree tasks → remove the worktree + local branch and delete the remote branch; workspace tasks → delete the merged branch (local + remote).
 
 ## Development rules
 
@@ -141,7 +142,7 @@ Hard rules and the craft standard live in `ai/rules/` and are **pulled on demand
 - [ai/rules/conventions.md](ai/rules/conventions.md) — language, toolchain, architecture boundaries, the TTS constraint, Rust/TS/Mantine/Python hard rules, testing gates.
 - [ai/rules/code-quality.md](ai/rules/code-quality.md) — craft standard: file layout, tests, duplication, idiom, security, correctness.
 
-The load-bearing summary: code and comments in English, user-facing UI strings in Russian; no emoji; commits `<type>(<module>): <desc>` in English with no AI attribution; task-branch implementation commits are made autonomously (review-first workflow, point 2 above), while every other GitHub-bound text (PR, issue, comment) and the PR title itself is drafted and approved first; `git push` confirmed separately; all tooling via `nix develop -c`.
+The load-bearing summary: code and comments in English, user-facing UI strings in Russian; no emoji; commits `<type>(<module>): <desc>` in English with no AI attribution; task-branch implementation commits are made autonomously (review-first workflow, point 2 above), while every other GitHub-bound text (PR, issue, comment) and the PR title itself is drafted and approved first; after the user accepts a task's result, push/PR/merge proceed autonomously (points 4–5); all tooling via `nix develop -c`.
 
 When a CI step, script flag, or workaround exists because of a specific incident, leave a comment explaining why it is load-bearing (see the slim/full gate in `.github/workflows/ci.yml`, the `shellHook` comments in `nix/devshell.nix`).
 
