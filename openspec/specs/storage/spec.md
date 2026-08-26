@@ -259,14 +259,14 @@ interface WordTimestamp {
 
 ### Requirement: Config File Schema
 
-The `UIConfig` field table gains:
+The `UIConfig` field table SHALL gain:
 
 | Field | Type | Default | Meaning |
 |-------|------|---------|---------|
 | `language` | string | `"ru"` | UI language: `"ru"` / `"en"` |
 
-Every existing defaulting/unknown-key/partial-update rule applies to the new
-field unchanged.
+Every existing defaulting/unknown-key/partial-update rule SHALL apply to the
+new field unchanged.
 
 #### Scenario: Older config without language key
 - **GIVEN** a `config.json` written by a pre-localization build (no `language` key)
