@@ -115,6 +115,43 @@ pub fn decode_with_label(bytes: &[u8], label: &str) -> Result<DecodedText, Impor
     decode_with_encoding(enc, bytes)
 }
 
+/// Decode fetched page bytes for URL imports. Precedence follows WHATWG
+/// conventions: a byte-level BOM beats any declaration (it is explicit
+/// evidence), then a resolvable `charset=` parameter beats statistics —
+/// without this, short pages with a small Cyrillic fraction sniff toward
+/// the wrong single-byte table while still decoding "validly". Absent or
+/// unresolvable declarations fall through to full detection.
+pub fn decode_for_content_type(
+    bytes: &[u8],
+    content_type_header: Option<&str>,
+) -> Result<DecodedText, ImportError> {
+    if let Some((enc, bom_len)) = Encoding::for_bom(bytes) {
+        return decode_with_encoding(enc, &bytes[bom_len..]);
+    }
+    if let Some(header) = content_type_header {
+        if let Some(label) = charset_param(header) {
+            if let Some(enc) = Encoding::for_label(label.as_bytes()) {
+                return decode_with_encoding(enc, bytes);
+            }
+        }
+    }
+    detect_and_decode(bytes)
+}
+
+/// Value of the case-insensitive `charset` parameter of a Content-Type
+/// header (quotes stripped); None when absent.
+fn charset_param(content_type: &str) -> Option<&str> {
+    content_type.split(';').skip(1).find_map(|param| {
+        let mut pair = param.splitn(2, '=');
+        let name = pair.next()?.trim();
+        if !name.eq_ignore_ascii_case("charset") {
+            return None;
+        }
+        let value = pair.next()?.trim();
+        Some(value.trim_matches('"'))
+    })
+}
+
 fn decode_with_encoding(enc: &'static Encoding, bytes: &[u8]) -> Result<DecodedText, ImportError> {
     // `decode` never fails: malformed sequences become U+FFFD. The non-text
     // ratio is what actually distinguishes a mojibake-but-textual document
@@ -316,5 +353,55 @@ mod tests {
         let decoded = detect_and_decode(b"").unwrap();
         assert_eq!(decoded.encoding, "UTF-8");
         assert!(decoded.text.is_empty());
+    }
+
+    // ── fetch-time Content-Type hints (decode_for_content_type) ───────────
+
+    /// The silent-mojibake class the reviewer flagged: a short page whose
+    /// statistics point at the wrong single-byte table decodes correctly
+    /// when the server declares the charset.
+    #[test]
+    fn declared_charset_beats_statistics_on_ambiguous_short_pages() {
+        let phrase = "Файл в CP1251 без BOM"; // historically sniffs wrong tables
+        let bytes = encoded("KOI8-R", phrase);
+        let decoded = decode_for_content_type(&bytes, Some("text/html; charset=KOI8-R")).unwrap();
+        assert_eq!(decoded.encoding, "KOI8-R");
+        assert_eq!(decoded.text, phrase);
+    }
+
+    #[test]
+    fn quoted_lowercase_charset_params_are_accepted() {
+        let phrase = "Объявленная кодировка в нижнем регистре";
+        let bytes = encoded("IBM866", phrase);
+        let decoded =
+            decode_for_content_type(&bytes, Some("Text/HTML;charset=\"ibm866\" ")).unwrap();
+        assert_eq!(decoded.encoding, "IBM866");
+        assert_eq!(decoded.text, phrase);
+    }
+
+    #[test]
+    fn bom_wins_over_the_declared_charset() {
+        let mut bytes = vec![0xFF, 0xFE];
+        bytes.extend_from_slice(&utf16_le("Бом сильнее объявления"));
+        let decoded =
+            decode_for_content_type(&bytes, Some("text/html; charset=windows-1251")).unwrap();
+        assert_eq!(decoded.encoding, "UTF-16LE");
+        assert_eq!(decoded.text, "Бом сильнее объявления");
+    }
+
+    #[test]
+    fn missing_or_unknown_declared_charset_falls_back_to_detection() {
+        // No charset parameter at all: statistics decide (long enough here).
+        let doc = "Абзац документа для статистического детектора кодировок.\n".repeat(6);
+        let detected =
+            decode_for_content_type(&encoded("windows-1251", &doc), Some("text/html")).unwrap();
+        assert_eq!(detected.encoding, "windows-1251");
+        assert_eq!(detected.text, doc);
+
+        // An invented label must not fail the whole import: UTF-8 input is
+        // served by the validity fast path regardless.
+        let utf8 =
+            decode_for_content_type("просто текст".as_bytes(), Some("x/y; charset=nonsense"));
+        assert!(utf8.is_ok());
     }
 }

@@ -164,6 +164,23 @@ describe('js-rendered page detection (spec requirement)', () => {
     }
   });
 
+  it('flags a page at the threshold boundary (extracted text = limit - 1)', () => {
+    // Pins the strict-inequality side of the heuristic: everything below
+    // SPA_MIN_TEXT_CHARS is eligible for flagging when scripts + mount
+    // point agree; the hydration test above covers the accepted side. The
+    // filler is one exact-length letter run so the extracted char count is
+    // deterministic.
+    const chars = SPA_MIN_TEXT_CHARS - 1;
+    const hydratedShell = spaShell('root').replace(
+      '<div id="root"></div>',
+      `<div id="root"><p>${'А'.repeat(chars)}</p></div>`,
+    );
+    const err = expectCoded(() =>
+      resolveImport({ kind: 'url', body: hydratedShell, contentType: 'text/html' }, GATE_ON),
+    );
+    expect(err.code).toBe('import.spa_unsupported');
+  });
+
   it('reports empty_page for script-free markup that extracts nothing', () => {
     const err = expectCoded(() =>
       resolveImport(

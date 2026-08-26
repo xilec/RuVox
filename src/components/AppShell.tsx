@@ -36,7 +36,7 @@ import { SettingsModal } from '../dialogs/Settings';
 import { SileroBundlePrompt } from '../dialogs/SileroBundlePrompt';
 import { EncodingDialog } from '../dialogs/EncodingDialog';
 import { UrlImportDialog } from '../dialogs/UrlImportDialog';
-import { IconSearch } from './icons';
+import { IconSearch, IconChevronDown } from './icons';
 import classes from './AppShell.module.css';
 
 /** File whose lowercased extension is importable — the silent pre-filter for
@@ -49,14 +49,6 @@ function hasImportableExtension(fileName: string): boolean {
 interface EncodingDialogState {
   path: string;
   detected: ReadTextFileResult;
-}
-
-function IconChevronDown() {
-  return (
-    <svg width={14} height={14} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-      <path d="M6.4 9 5 10.4l7 7 7-7L17.6 9 12 14.6z" />
-    </svg>
-  );
 }
 
 export function AppShell() {
@@ -342,22 +334,24 @@ export function AppShell() {
   }
 
   // Drag & drop: subscribe once via the webview-level API (HTML5 DnD events
-  // are suppressed by Tauri's native handler); the latest-render handlers
+  // are suppressed by Tauri's native handler); the latest committed handlers
   // are reached through a ref so locale/pending state never goes stale.
   const dropHandlerRef = useRef<(paths: string[]) => void>(() => {});
-  dropHandlerRef.current = (paths) => {
-    if (pending || paths.length !== 1) return; // zero/several items ignored silently
-    const dropped = paths[0].trim();
-    if (/^https?:\/\//i.test(dropped)) {
-      void importFromUrl(dropped);
-      return;
-    }
-    // Unsupported extensions are ignored without an error (spec scenario
-    // "Unsupported drop is ignored"); paths that are neither URLs nor
-    // importable files stay silent too.
-    if (!hasImportableExtension(dropped)) return;
-    void startFileImport(dropped);
-  };
+  useEffect(() => {
+    dropHandlerRef.current = (paths) => {
+      if (pending || paths.length !== 1) return; // zero/several items ignored silently
+      const dropped = paths[0].trim();
+      if (/^https?:\/\//i.test(dropped)) {
+        void importFromUrl(dropped);
+        return;
+      }
+      // Unsupported extensions are ignored without an error (spec scenario
+      // "Unsupported drop is ignored"); paths that are neither URLs nor
+      // importable files stay silent too.
+      if (!hasImportableExtension(dropped)) return;
+      void startFileImport(dropped);
+    };
+  });
 
   useEffect(() => {
     let disposed = false;
