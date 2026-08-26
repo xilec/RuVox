@@ -165,7 +165,12 @@ describe('QueueList context menu', () => {
   );
 
   it('shows an error notification when cancelSynthesis rejects', async () => {
-    cancelSynthesis.mockRejectedValueOnce(new Error('boom'));
+    // Backend errors arrive as coded CommandError objects; formatError must
+    // resolve the code, not stringify the object.
+    cancelSynthesis.mockRejectedValueOnce({
+      type: 'synthesis_error',
+      code: 'synthesis.failed',
+    });
     await renderWith(makeEntry('processing'));
     await openMenu();
 
@@ -178,7 +183,7 @@ describe('QueueList context menu', () => {
     expect(showNotification).toHaveBeenCalledWith(
       expect.objectContaining({
         color: 'red',
-        message: 'Не удалось отменить синтез: boom',
+        message: 'Не удалось отменить синтез: Ошибка синтеза речи',
       }),
     );
   });

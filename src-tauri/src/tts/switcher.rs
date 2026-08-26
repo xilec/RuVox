@@ -177,15 +177,13 @@ impl EngineSwitcher {
     /// engine's warmup.
     fn build_silero_native(&self) -> Result<Arc<SileroNativeEngine>, TtsError> {
         let probe = super::availability::probe_silero_native(&self.silero_native_bundle_dir);
-        if !probe.available {
+        if let Some(reason) = probe.reason {
+            // Flatten the coded probe reason into the TtsError code/message
+            // pair: the command layer wraps engine-switch failures into a
+            // coded config_error whose message keeps the raw detail.
             return Err(TtsError::Ttsd {
-                code: "engine_unavailable".to_string(),
-                // probe_silero_native always sets a reason when unavailable —
-                // and it is the single source of the user-facing bundle
-                // texts (no fallback copy here).
-                message: probe
-                    .reason
-                    .expect("unavailable probe always carries a reason"),
+                code: reason.code,
+                message: reason.message.unwrap_or_else(|| reason.params.join("; ")),
             });
         }
         Ok(Arc::new(SileroNativeEngine::new(
@@ -376,14 +374,8 @@ mod tests {
             .await
             .unwrap_err();
         match err {
-            TtsError::Ttsd { code, message } => {
-                assert_eq!(code, "engine_unavailable");
-                assert!(
-                    message.chars().any(|c| matches!(c, 'А'..='я' | 'ё' | 'Ё')),
-                    "message should be Russian: {message}"
-                );
-            }
-            other => panic!("expected engine_unavailable, got {other:?}"),
+            TtsError::Ttsd { code, .. } => assert_eq!(code, "native.bundle_missing"),
+            other => panic!("expected native.bundle_missing, got {other:?}"),
         }
         // The failed switch must leave the previous engine active.
         assert_eq!(sw.kind(), EngineKind::Piper);
@@ -417,13 +409,10 @@ mod tests {
             .unwrap_err();
         match err {
             TtsError::Ttsd { code, message } => {
-                assert_eq!(code, "engine_unavailable");
-                assert!(
-                    message.chars().any(|c| matches!(c, 'А'..='я' | 'ё' | 'Ё')),
-                    "message should be Russian: {message}"
-                );
+                assert_eq!(code, "native.bundle_incomplete");
+                assert_eq!(message, "b.onnx");
             }
-            other => panic!("expected engine_unavailable, got {other:?}"),
+            other => panic!("expected native.bundle_incomplete, got {other:?}"),
         }
         assert_eq!(sw.kind(), EngineKind::Piper);
     }
@@ -437,8 +426,8 @@ mod tests {
             .await
             .unwrap_err();
         match err {
-            TtsError::Ttsd { code, .. } => assert_eq!(code, "engine_unavailable"),
-            other => panic!("expected engine_unavailable, got {other:?}"),
+            TtsError::Ttsd { code, .. } => assert_eq!(code, "native.bundle_manifest_corrupt"),
+            other => panic!("expected native.bundle_manifest_corrupt, got {other:?}"),
         }
         assert_eq!(sw.kind(), EngineKind::Piper);
     }

@@ -14,6 +14,8 @@ import { readText as readClipboardText } from '@tauri-apps/plugin-clipboard-mana
 import { commands, toEntryFormat } from '../lib/tauri';
 import type { EntryFormat, UIConfig } from '../lib/tauri';
 import { formatError } from '../lib/errors';
+import { useT } from '../lib/i18n';
+import { setLocale, toLocale } from '../stores/locale';
 import { resolveIngest } from '../lib/ingest';
 import { resolveAddAction } from '../lib/addFlow';
 import { shouldOfferBundleDownload } from '../lib/bundlePrompt';
@@ -28,6 +30,7 @@ import { SileroBundlePrompt } from '../dialogs/SileroBundlePrompt';
 import { IconSearch } from './icons';
 
 export function AppShell() {
+  const tt = useT();
   const { selectedEntry } = useSelectedEntry();
   const { setColorScheme } = useMantineColorScheme();
   const [pending, setPending] = useState(false);
@@ -101,6 +104,10 @@ export function AppShell() {
       // sync it to the persisted backend theme on first load so the saved
       // choice survives across launches.
       setColorScheme(cfg.theme);
+      // Same pattern for the UI language: seed the localization store from
+      // the persisted config so every catalog-driven string starts in the
+      // saved locale.
+      setLocale(toLocale(cfg.language));
       // First-run bundle prompt (ui spec): when the persisted engine is
       // silero_native but the bundle probe reports it missing, offer the
       // one-time download. A failed probe is non-fatal — no prompt.
@@ -151,7 +158,7 @@ export function AppShell() {
           return;
         case 'direct-html':
           void runDirectHtml(action.html, action.plainFallback, false).catch((err) => {
-            notifications.show({ title: 'Ошибка', message: formatError(err), color: 'red' });
+            notifications.show({ title: tt('errors.title'), message: formatError(err), color: 'red' });
             setPending(false);
           });
           return;
@@ -167,17 +174,18 @@ export function AppShell() {
     window.addEventListener('paste', handlePaste);
     return () => window.removeEventListener('paste', handlePaste);
     // Re-subscribing on `pending` is enough: addHtmlEntry/doAddEntry are
-    // state-independent (they only touch commands, notifications, stores).
+    // state-independent (they only touch commands, notifications, stores);
+    // `tt` re-subscribes on locale switch so toasts use the active catalog.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pending]);
+  }, [pending, tt]);
 
   // Neutral hint for an explicit Add click that found nothing ingestible
   // (#194: an empty clipboard must not look like an app failure). Shared by
   // the `empty` and the no-plain-fallback `direct-html` arms.
   function showEmptyClipboardHint() {
     notifications.show({
-      title: 'Буфер обмена пуст',
-      message: 'Скопируйте текст и нажмите Add ещё раз',
+      title: tt('app.clipboard.empty.title'),
+      message: tt('app.clipboard.empty.message'),
       color: 'blue',
     });
   }
@@ -285,7 +293,7 @@ export function AppShell() {
       }
     } catch (err) {
       const message = formatError(err);
-      notifications.show({ title: 'Ошибка', message, color: 'red' });
+      notifications.show({ title: tt('errors.title'), message, color: 'red' });
       setPending(false);
     }
   }
@@ -318,15 +326,15 @@ export function AppShell() {
       // events from the backend will populate the full TextEntry shortly.
       useSelectedEntry.getState().setSelectedId(entryId);
       notifications.show({
-        title: 'Добавлено в очередь',
+        title: tt('app.added.title'),
         message: playWhenReady
-          ? 'Текст будет воспроизведён сразу'
-          : 'Текст добавлен для прослушивания позже',
+          ? tt('app.added.now')
+          : tt('app.added.later'),
         color: 'green',
       });
     } catch (err) {
       const message = formatError(err);
-      notifications.show({ title: 'Ошибка', message, color: 'red' });
+      notifications.show({ title: tt('errors.title'), message, color: 'red' });
     } finally {
       setPending(false);
     }
@@ -364,8 +372,8 @@ export function AppShell() {
           return;
         }
         notifications.show({
-          title: 'Ошибка',
-          message: 'Не удалось извлечь текст из HTML',
+          title: tt('errors.title'),
+          message: tt('app.html.extract_failed'),
           color: 'red',
         });
         setPending(false);
@@ -426,7 +434,7 @@ export function AppShell() {
           }}
         >
           <Group justify="space-between" align="center" mb="xs" wrap="nowrap">
-            <Title order={6} c="dimmed">Очередь</Title>
+            <Title order={6} c="dimmed">{tt('app.queue.title')}</Title>
             <Button
               size="xs"
               color="blue"
@@ -434,12 +442,12 @@ export function AppShell() {
               disabled={pending}
               onClick={() => addEntry()}
             >
-              Add
+              {tt('app.add')}
             </Button>
           </Group>
           <TextInput
             ref={searchInputRef}
-            placeholder="Поиск по записям"
+            placeholder={tt('app.search.placeholder')}
             value={query}
             onChange={(e) => setQuery(e.currentTarget.value)}
             leftSection={<IconSearch />}
@@ -449,7 +457,7 @@ export function AppShell() {
                   size="sm"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => setQuery('')}
-                  aria-label="Очистить поиск"
+                  aria-label={tt('app.search.clear')}
                 />
               ) : null
             }
@@ -479,7 +487,7 @@ export function AppShell() {
               zIndex: 10,
               touchAction: 'none',
             }}
-            aria-label="Изменить ширину списка"
+            aria-label={tt('app.nav.resize')}
           />
         </div>
       </MantineAppShell.Navbar>

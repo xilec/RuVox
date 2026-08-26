@@ -2,6 +2,7 @@ import { writeText, writeImage } from '@tauri-apps/plugin-clipboard-manager';
 import { Image } from '@tauri-apps/api/image';
 import { notifications } from '@mantine/notifications';
 import { formatError } from './errors';
+import { t } from './i18n';
 import { commands } from './tauri';
 import { resolveUrl } from './urls';
 
@@ -14,7 +15,7 @@ import { resolveUrl } from './urls';
 
 function notifyError(err: unknown): void {
   notifications.show({
-    title: 'Ошибка',
+    title: t('errors.title'),
     message: formatError(err),
     color: 'red',
   });

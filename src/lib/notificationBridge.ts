@@ -1,5 +1,6 @@
 import { notifications } from '@mantine/notifications';
 import type { UnlistenFn } from '@tauri-apps/api/event';
+import { t } from './i18n';
 import { events } from './tauri';
 
 /**
@@ -24,8 +25,8 @@ export async function setupNotificationBridge(): Promise<() => void> {
       restartActive = true;
       notifications.show({
         id: RESTART_TOAST_ID,
-        title: 'TTS перезапускается',
-        message: 'Подождите несколько секунд — процесс будет запущен заново.',
+        title: t('notify.ttsd.restarting.title'),
+        message: t('notify.ttsd.restarting.message'),
         color: 'yellow',
         loading: true,
         autoClose: false,
@@ -38,8 +39,8 @@ export async function setupNotificationBridge(): Promise<() => void> {
       restartActive = false;
       notifications.hide(RESTART_TOAST_ID);
       notifications.show({
-        title: 'TTS не запускается',
-        message: p.message || 'Не удалось перезапустить процесс синтеза.',
+        title: t('notify.ttsd.fatal.title'),
+        message: p.message || t('notify.ttsd.fatal.fallback'),
         color: 'red',
         autoClose: false,
       });
@@ -51,8 +52,8 @@ export async function setupNotificationBridge(): Promise<() => void> {
       if (restartActive) {
         notifications.update({
           id: RESTART_TOAST_ID,
-          title: 'Загружаю модель TTS',
-          message: 'Перезапуск завершён, повторная загрузка модели...',
+          title: t('notify.model.loading_restart.title'),
+          message: t('notify.model.loading_restart.message'),
           color: 'yellow',
           loading: true,
           autoClose: false,
@@ -61,8 +62,8 @@ export async function setupNotificationBridge(): Promise<() => void> {
       }
       notifications.show({
         id: 'model-loading',
-        title: 'Загрузка модели TTS',
-        message: 'Первый запуск может занять несколько минут...',
+        title: t('notify.model.loading.title'),
+        message: t('notify.model.loading.message'),
         loading: true,
         autoClose: false,
       });
@@ -75,8 +76,8 @@ export async function setupNotificationBridge(): Promise<() => void> {
         restartActive = false;
         notifications.update({
           id: RESTART_TOAST_ID,
-          title: 'TTS восстановлен',
-          message: 'Синтез речи снова доступен.',
+          title: t('notify.model.loaded_restart.title'),
+          message: t('notify.model.loaded_restart.message'),
           color: 'green',
           loading: false,
           autoClose: 3000,
@@ -85,8 +86,8 @@ export async function setupNotificationBridge(): Promise<() => void> {
       }
       notifications.update({
         id: 'model-loading',
-        title: 'Модель TTS загружена',
-        message: 'Готово к синтезу речи',
+        title: t('notify.model.loaded.title'),
+        message: t('notify.model.loaded.message'),
         color: 'green',
         loading: false,
         autoClose: 3000,
@@ -100,7 +101,7 @@ export async function setupNotificationBridge(): Promise<() => void> {
         restartActive = false;
         notifications.update({
           id: RESTART_TOAST_ID,
-          title: 'Ошибка загрузки модели TTS',
+          title: t('notify.model.error.title'),
           message: p.message,
           color: 'red',
           loading: false,
@@ -110,7 +111,7 @@ export async function setupNotificationBridge(): Promise<() => void> {
       }
       notifications.update({
         id: 'model-loading',
-        title: 'Ошибка загрузки модели TTS',
+        title: t('notify.model.error.title'),
         message: p.message,
         color: 'red',
         loading: false,
@@ -123,7 +124,7 @@ export async function setupNotificationBridge(): Promise<() => void> {
     await events.ttsError((p) => {
       notifications.show({
         id: `tts-error-${p.entry_id}`,
-        title: 'Ошибка синтеза',
+        title: t('notify.synthesis.error.title'),
         message: p.message,
         color: 'red',
         autoClose: 5000,
@@ -148,7 +149,7 @@ export async function setupNotificationBridge(): Promise<() => void> {
         synthesisShown.add(id);
         notifications.show({
           id: toastId,
-          title: 'Синтез речи',
+          title: t('notify.synthesis.title'),
           message: truncate(original_text),
           loading: true,
           autoClose: false,
@@ -157,7 +158,7 @@ export async function setupNotificationBridge(): Promise<() => void> {
         synthesisShown.delete(id);
         notifications.update({
           id: toastId,
-          title: 'Готово',
+          title: t('notify.synthesis.done.title'),
           message: truncate(original_text),
           color: 'green',
           loading: false,
@@ -175,14 +176,15 @@ export async function setupNotificationBridge(): Promise<() => void> {
   // other. Progress events update the body with a kilobyte/megabyte tally;
   // started/finished flip the toast colour and loading state.
   const voiceToastId = (voice: string) => `voice-download-${voice}`;
-  const fmtMb = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+  const fmtMb = (bytes: number) =>
+    `${(bytes / (1024 * 1024)).toFixed(1)} ${t('common.mb')}`;
 
   unlisteners.push(
     await events.voiceDownloadStarted((p) => {
       notifications.show({
         id: voiceToastId(p.voice),
-        title: `Загрузка голоса ${p.voice}`,
-        message: 'Запрашиваю файлы…',
+        title: t('notify.voice.downloading.title', [p.voice]),
+        message: t('notify.voice.requesting'),
         loading: true,
         autoClose: false,
       });
@@ -196,13 +198,19 @@ export async function setupNotificationBridge(): Promise<() => void> {
       // 0/0 readouts.
       if (p.skipped) return;
       const total = p.total_bytes ?? 0;
-      const file = p.file_kind === 'onnx' ? 'модель' : 'конфиг';
+      const file = t(p.file_kind === 'onnx' ? 'notify.voice.file.model' : 'notify.voice.file.config');
       const message = total > 0
-        ? `${file} (${p.file_idx + 1}/${p.total_files}): ${fmtMb(p.downloaded_bytes)} / ${fmtMb(total)}`
-        : `${file}: ${fmtMb(p.downloaded_bytes)}`;
+        ? t('notify.voice.progress.tallied', [
+            file,
+            p.file_idx + 1,
+            p.total_files,
+            fmtMb(p.downloaded_bytes),
+            fmtMb(total),
+          ])
+        : t('notify.voice.progress.plain', [file, fmtMb(p.downloaded_bytes)]);
       notifications.update({
         id: voiceToastId(p.voice),
-        title: `Загрузка голоса ${p.voice}`,
+        title: t('notify.voice.downloading.title', [p.voice]),
         message,
         loading: true,
         autoClose: false,
@@ -215,8 +223,8 @@ export async function setupNotificationBridge(): Promise<() => void> {
       if (p.ok) {
         notifications.update({
           id: voiceToastId(p.voice),
-          title: 'Голос загружен',
-          message: `Голос «${p.voice}» готов к использованию.`,
+          title: t('notify.voice.done.title'),
+          message: t('notify.voice.done.message', [p.voice]),
           color: 'green',
           loading: false,
           autoClose: 3000,
@@ -224,8 +232,8 @@ export async function setupNotificationBridge(): Promise<() => void> {
       } else {
         notifications.update({
           id: voiceToastId(p.voice),
-          title: 'Не удалось загрузить голос',
-          message: p.message ?? `Голос «${p.voice}» не загружен.`,
+          title: t('notify.voice.failed.title'),
+          message: p.message ?? t('notify.voice.failed.fallback', [p.voice]),
           color: 'red',
           loading: false,
           autoClose: 8000,

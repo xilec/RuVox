@@ -19,6 +19,7 @@ import { notifications } from '@mantine/notifications';
 import type { EntryFormat, TextEntry, WordTimestamp } from '../lib/tauri';
 import { commands, events } from '../lib/tauri';
 import { formatError } from '../lib/errors';
+import { useT } from '../lib/i18n';
 import { renderMarkdown } from '../lib/markdown';
 import { renderHtml } from '../lib/html';
 import { renderMermaidIn } from '../lib/mermaid';
@@ -52,6 +53,7 @@ interface Props {
 }
 
 export function TextViewer({ entry }: Props) {
+  const tt = useT();
   const [format, setFormat] = useState<EntryFormat>(DEFAULT_FORMAT);
   const [zoomedSvg, setZoomedSvg] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -351,14 +353,14 @@ export function TextViewer({ entry }: Props) {
     setFormat(next);
     commands.setEntryFormat(entry.id, next).catch((err) => {
       setFormat(prev);
-      notifications.show({ title: 'Ошибка', message: formatError(err), color: 'red' });
+      notifications.show({ title: tt('errors.title'), message: formatError(err), color: 'red' });
     });
   }
 
   if (!entry) {
     return (
       <Stack h="100%">
-        <Text className={classes.placeholder}>Нет выбранной записи</Text>
+        <Text className={classes.placeholder}>{tt('viewer.no_entry')}</Text>
       </Stack>
     );
   }
@@ -392,7 +394,7 @@ export function TextViewer({ entry }: Props) {
         opened={zoomedSvg !== null}
         onClose={() => setZoomedSvg(null)}
         size="xl"
-        title="Mermaid diagram"
+        title={tt('viewer.mermaid_zoom_title')}
         styles={{ body: { overflowX: "auto" } }}
       >
         {zoomedSvg && (

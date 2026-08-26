@@ -23,7 +23,10 @@ import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { getVersion } from '@tauri-apps/api/app';
 import { commands, events } from '../lib/tauri';
 import type { CleanupMode, EngineKind, UIConfigPatch } from '../lib/tauri';
+import type { MessageKey } from '../i18n/ru';
 import { formatError } from '../lib/errors';
+import { t, useT } from '../lib/i18n';
+import { setLocale, toLocale } from '../stores/locale';
 import { bundleDownloadPercent } from '../lib/bundleDownload';
 import { PIPER_VOICES } from '../lib/piperVoices';
 import { checkForUpdatesManual, UPDATER_ENABLED } from '../lib/updater';
@@ -45,22 +48,30 @@ interface SettingsFormValues {
   preview_dialog_enabled: boolean;
   max_cache_size_mb: number;
   theme: string;
+  language: string;
 }
 
-const ENGINE_OPTIONS: ReadonlyArray<{ value: EngineKind; label: string }> = [
-  { value: 'silero_native', label: 'Silero (нативный, рекомендуемый)' },
-  { value: 'piper', label: 'Piper' },
-  { value: 'silero', label: 'Silero (Python)' },
+const ENGINE_OPTIONS: ReadonlyArray<{ value: EngineKind; key: MessageKey }> = [
+  { value: 'silero_native', key: 'settings.engine.silero_native' },
+  { value: 'piper', key: 'settings.engine.piper' },
+  { value: 'silero', key: 'settings.engine.silero' },
 ];
 
 /// Pessimistic default used until `getAvailableEngines()` resolves: Piper
 /// is always on; the Silero engines are treated as unavailable so users
 /// don't briefly see them as enabled and click before the probe lands.
-const PESSIMISTIC_AVAILABILITY: AvailabilityMap = {
-  piper: { available: true, reason: null },
-  silero: { available: false, reason: 'Проверяю наличие Python-стека…' },
-  silero_native: { available: false, reason: 'Проверяю наличие бандла моделей…' },
-};
+/// Reasons are catalog codes resolved through formatError at render time
+/// (locale-aware, same path as the live probe results).
+function pessimisticAvailability(): AvailabilityMap {
+  return {
+    piper: { available: true, reason: null },
+    silero: { available: false, reason: { code: 'settings.availability.probing_python' } },
+    silero_native: {
+      available: false,
+      reason: { code: 'settings.availability.probing_bundle' },
+    },
+  };
+}
 
 interface SettingsModalProps {
   opened: boolean;
@@ -70,13 +81,20 @@ interface SettingsModalProps {
   onSaved?: () => void;
 }
 
-const SPEAKER_OPTIONS = [
-  { value: 'aidar', label: 'Aidar' },
-  { value: 'baya', label: 'Baya' },
-  { value: 'kseniya', label: 'Kseniya' },
-  { value: 'xenia', label: 'Xenia' },
-  { value: 'eugene', label: 'Eugene' },
-  { value: 'random', label: 'Случайный' },
+type Translator = ReturnType<typeof useT>;
+
+const SPEAKER_OPTIONS: ReadonlyArray<{
+  value: string;
+  label: string;
+  key: MessageKey | null;
+}> = [
+  { value: 'aidar', label: 'Aidar', key: null },
+  { value: 'baya', label: 'Baya', key: null },
+  { value: 'kseniya', label: 'Kseniya', key: null },
+  { value: 'xenia', label: 'Xenia', key: null },
+  { value: 'eugene', label: 'Eugene', key: null },
+  // `random` is the only label that is prose rather than a voice name.
+  { value: 'random', label: '', key: 'settings.speaker.random' },
 ];
 
 /** `random` is a ttsd-only feature (the Python wrapper picks a speaker per
@@ -87,20 +105,21 @@ function speakerOptionsForEngine(engine: EngineKind) {
     : SPEAKER_OPTIONS;
 }
 
-const SAMPLE_RATE_OPTIONS = [
-  { value: '8000', label: '8000 Гц' },
-  { value: '24000', label: '24000 Гц' },
-  { value: '48000', label: '48000 Гц' },
+const SAMPLE_RATES = [8000, 24000, 48000];
+
+const THEME_OPTIONS: ReadonlyArray<{ value: string; key: MessageKey }> = [
+  { value: 'light', key: 'settings.theme.light' },
+  { value: 'dark', key: 'settings.theme.dark' },
+  { value: 'auto', key: 'settings.theme.auto' },
 ];
 
-const THEME_OPTIONS = [
-  { value: 'light', label: 'Светлая' },
-  { value: 'dark', label: 'Тёмная' },
-  { value: 'auto', label: 'Авто' },
+const LANGUAGE_OPTIONS = [
+  { value: 'ru', label: 'Русский' },
+  { value: 'en', label: 'English' },
 ];
 
-function formatMb(bytes: number): string {
-  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+function formatMb(bytes: number, t: Translator): string {
+  return `${(bytes / (1024 * 1024)).toFixed(1)} ${t('common.mb')}`;
 }
 
 interface CleanupCacheModalProps {
@@ -117,6 +136,7 @@ function CleanupCacheModal({
   onClose,
   onCleared,
 }: CleanupCacheModalProps) {
+  const tt = useT();
   const [targetMb, setTargetMb] = useState<number>(defaultTargetMb);
   const [deleteTexts, setDeleteTexts] = useState(false);
   const [cleanFully, setCleanFully] = useState(false);
@@ -144,12 +164,12 @@ function CleanupCacheModal({
       const result = await commands.clearCache({ mode, delete_texts: deleteTexts });
       const parts: string[] = [];
       if (result.deleted_entries > 0) {
-        parts.push(`удалено записей: ${result.deleted_entries}`);
+        parts.push(tt('settings.cleanup.deleted_entries', [result.deleted_entries]));
       }
-      parts.push(`файлов: ${result.deleted_files}`);
-      parts.push(`освобождено ${formatMb(result.freed_bytes)}`);
+      parts.push(tt('settings.cleanup.files', [result.deleted_files]));
+      parts.push(tt('settings.cleanup.freed', [formatMb(result.freed_bytes, tt)]));
       notifications.show({
-        title: 'Кэш очищен',
+        title: tt('settings.cleanup.done.title'),
         message: parts.join(', '),
         color: 'green',
       });
@@ -157,7 +177,7 @@ function CleanupCacheModal({
       onClose();
     } catch (err) {
       notifications.show({
-        title: 'Ошибка очистки кэша',
+        title: tt('settings.cleanup.failed.title'),
         message: formatError(err),
         color: 'red',
       });
@@ -167,18 +187,20 @@ function CleanupCacheModal({
   };
 
   return (
-    <Modal opened={opened} onClose={onClose} title="Очистить кэш" size="md" centered>
+    <Modal opened={opened} onClose={onClose} title={tt('settings.cleanup.title')} size="md" centered>
       <Stack gap="sm">
         {stats && (
           <Text size="sm" c="dimmed">
-            Сейчас в кэше: {formatMb(stats.total_bytes)} ({stats.audio_file_count}{' '}
-            файлов)
+            {tt('settings.cleanup.stats', [
+              formatMb(stats.total_bytes, tt),
+              stats.audio_file_count,
+            ])}
           </Text>
         )}
 
         <NumberInput
-          label="Очистить до размера, МБ"
-          description="Удаляются самые старые записи, пока кэш не уложится в указанный лимит."
+          label={tt('settings.cleanup.target.label')}
+          description={tt('settings.cleanup.target.description')}
           min={0}
           value={targetMb}
           onChange={(v) =>
@@ -188,31 +210,31 @@ function CleanupCacheModal({
         />
 
         <Checkbox
-          label="Удалять тексты"
-          description="Помимо аудио, удалять и сами записи из истории."
+          label={tt('settings.cleanup.delete_texts')}
+          description={tt('settings.cleanup.delete_texts.description')}
           checked={deleteTexts}
           onChange={(e) => setDeleteTexts(e.currentTarget.checked)}
         />
 
         <Checkbox
-          label="Очистить полностью"
-          description="Удалить всё аудио (и тексты, если включён флаг выше)."
+          label={tt('settings.cleanup.full')}
+          description={tt('settings.cleanup.full.description')}
           checked={cleanFully}
           onChange={(e) => setCleanFully(e.currentTarget.checked)}
         />
 
         {dangerous && (
           <Alert color="red" variant="light">
-            Будут удалены все записи и всё аудио. Действие необратимо.
+            {tt('settings.cleanup.dangerous_warning')}
           </Alert>
         )}
 
         <Group justify="flex-end" mt="sm">
           <Button variant="subtle" onClick={onClose} disabled={submitting}>
-            Отмена
+            {tt('common.cancel')}
           </Button>
           <Button color={dangerous ? 'red' : 'blue'} loading={submitting} onClick={handleConfirm}>
-            {cleanFully ? 'Очистить' : 'Очистить кэш'}
+            {cleanFully ? tt('settings.cleanup.confirm_full') : tt('settings.cleanup.confirm_partial')}
           </Button>
         </Group>
       </Stack>
@@ -221,13 +243,16 @@ function CleanupCacheModal({
 }
 
 export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) {
+  const tt = useT();
   const { setColorScheme } = useMantineColorScheme();
   const [cleanupOpen, setCleanupOpen] = useState(false);
   const [cacheDir, setCacheDir] = useState<string>('');
   const [appVersion, setAppVersion] = useState<string>('');
   const [logDir, setLogDir] = useState<string>('');
   const [coercedAlert, setCoercedAlert] = useState(false);
-  const [availability, setAvailability] = useState<AvailabilityMap>(PESSIMISTIC_AVAILABILITY);
+  const [availability, setAvailability] = useState<AvailabilityMap>(() =>
+    pessimisticAvailability(),
+  );
   // Live bundle-download state: null when idle, otherwise the current file
   // and the overall percentage derived from the progress events.
   const [bundleDownload, setBundleDownload] = useState<{ file: string; percent: number } | null>(
@@ -242,20 +267,28 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
   // picking «Silero (нативный)» follows it only while the user made no
   // explicit choice.
   const sampleRateTouchedRef = useRef(false);
+  // Factory defaults for Reset. A module-level constant (not read back from
+  // the form): form state updates are async, so form.getValues() inside the
+  // click handler still returns the pre-reset values.
+  const SETTINGS_DEFAULTS: SettingsFormValues = {
+    engine: 'silero_native',
+    piper_voice: 'ruslan',
+    speaker: 'aidar',
+    sample_rate: 24000,
+    notify_on_ready: true,
+    notify_on_error: true,
+    preview_dialog_enabled: true,
+    max_cache_size_mb: 500,
+    theme: 'auto',
+    language: 'ru',
+  };
   const form = useForm<SettingsFormValues>({
-    initialValues: {
-      engine: 'silero_native',
-      piper_voice: 'ruslan',
-      speaker: 'aidar',
-      sample_rate: 24000,
-      notify_on_ready: true,
-      notify_on_error: true,
-      preview_dialog_enabled: true,
-      max_cache_size_mb: 500,
-      theme: 'auto',
-    },
+    initialValues: SETTINGS_DEFAULTS,
     validate: {
-      max_cache_size_mb: (v) => (v < 100 ? 'Минимум 100 МБ' : null),
+      max_cache_size_mb: (v) =>
+        // Non-reactive t(): Mantine captures the validator once, so a
+        // mid-session locale switch must be picked up at call time.
+        v < 100 ? t('settings.max_cache_size.min_error') : null,
     },
   });
 
@@ -266,7 +299,7 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
       .then(([config, probed]) => {
         setAvailability(probed);
         const initial = computeEngineFormState(config, probed);
-        form.setValues({
+        const loaded = {
           engine: initial.engine,
           piper_voice: initial.piperVoice,
           speaker: initial.sileroSpeaker,
@@ -276,12 +309,17 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
           preview_dialog_enabled: config.preview_dialog_enabled,
           max_cache_size_mb: config.max_cache_size_mb,
           theme: config.theme,
-        });
+          language: config.language,
+        };
+        form.setValues(loaded);
+        // Dirty tracking compares against the saved config, not the static
+        // initialValues.
+        form.resetDirty(loaded);
         setCoercedAlert(initial.coercedAwayFromUnavailable);
       })
       .catch((err) => {
         notifications.show({
-          title: 'Не удалось загрузить настройки',
+          title: tt('settings.load_failed.title'),
           message: formatError(err),
           color: 'red',
         });
@@ -296,13 +334,22 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
   }, [opened]);
 
   const piperVoiceOptions = useMemo(
-    () => PIPER_VOICES.map((v) => ({ value: v.id, label: v.label })),
+    () => PIPER_VOICES.map((v) => ({ value: v.id, label: tt(v.key) })),
     [],
   );
 
   const speakerOptions = useMemo(
-    () => speakerOptionsForEngine(form.values.engine),
-    [form.values.engine],
+    () =>
+      speakerOptionsForEngine(form.values.engine).map((o) => ({
+        value: o.value,
+        label: o.key ? tt(o.key) : o.label,
+      })),
+    [form.values.engine, tt],
+  );
+
+  const sampleRateOptions = useMemo(
+    () => SAMPLE_RATES.map((hz) => ({ value: String(hz), label: tt('settings.sample_rate.hz', [hz]) })),
+    [tt],
   );
 
   const handleEngineChange = (next: EngineKind) => {
@@ -342,16 +389,16 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
         setBundleDownload(null);
         if (p.ok) {
           notifications.show({
-            title: 'Бандл моделей скачан',
-            message: 'Движок «Silero (нативный)» теперь доступен.',
+            title: tt('settings.bundle.finished.title'),
+            message: tt('settings.bundle.finished.message'),
             color: 'green',
           });
           // Re-probe so the engine option becomes selectable immediately.
           commands.getAvailableEngines().then(setAvailability).catch(() => {});
         } else {
           notifications.show({
-            title: 'Ошибка скачивания бандла',
-            message: p.message ?? 'неизвестная ошибка',
+            title: tt('settings.bundle.failed.title'),
+            message: p.message ?? tt('bundle.unknown_error'),
             color: 'red',
           });
         }
@@ -362,7 +409,8 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
         u.then((fn) => fn()).catch(() => {});
       });
     };
-  }, [opened]);
+    // `tt` re-subscribes on locale switch so toasts use the active catalog.
+  }, [opened, tt]);
 
   const handleBundleDownload = () => {
     // Switch to the progress view immediately — the started event lands one
@@ -376,7 +424,7 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
       if (!downloadActiveRef.current) {
         setBundleDownload(null);
         notifications.show({
-          title: 'Не удалось скачать бандл',
+          title: tt('settings.bundle.failed.title'),
           message: formatError(err),
           color: 'red',
         });
@@ -399,7 +447,7 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
       await revealItemInDir(`${cacheDir}/history.json`);
     } catch (err) {
       notifications.show({
-        title: 'Не удалось открыть папку',
+        title: tt('settings.open_folder_failed.title'),
         message: formatError(err),
         color: 'red',
       });
@@ -412,7 +460,7 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
       await revealItemInDir(logDir);
     } catch (err) {
       notifications.show({
-        title: 'Не удалось открыть папку',
+        title: tt('settings.open_folder_failed.title'),
         message: formatError(err),
         color: 'red',
       });
@@ -431,6 +479,7 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
         preview_dialog_enabled: values.preview_dialog_enabled,
         max_cache_size_mb: values.max_cache_size_mb,
         theme: values.theme as UIConfigPatch['theme'],
+        language: values.language,
       },
       coercedAlert,
     );
@@ -442,15 +491,15 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
       // waiting for a reload.
       setColorScheme(values.theme as MantineColorScheme);
       notifications.show({
-        title: 'Настройки сохранены',
-        message: 'Изменения применены.',
+        title: tt('settings.saved.title'),
+        message: tt('settings.saved.message'),
         color: 'green',
       });
       onSaved?.();
       onClose();
     } catch (err) {
       notifications.show({
-        title: 'Ошибка сохранения',
+        title: tt('settings.save_failed.title'),
         message: formatError(err),
         color: 'red',
       });
@@ -461,7 +510,7 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
     <Modal
       opened={opened}
       onClose={onClose}
-      title="Настройки"
+      title={tt('settings.title')}
       size="md"
       // While the nested cleanup modal is up, let it own Escape and outside-
       // click handling — otherwise Mantine fires both modals' onClose at once.
@@ -471,21 +520,21 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
       <form onSubmit={form.onSubmit(handleSubmit)}>
         <Stack gap="sm">
           <Text size="sm" fw={500} c="dimmed">
-            Синтез речи
+            {tt('settings.section.speech')}
           </Text>
 
           {coercedAlert && (
             <Alert color="yellow" variant="light">
-              Сохранённый движок недоступен — выбран Piper.
+              {tt('settings.coerced_alert')}
             </Alert>
           )}
 
           <Select
-            label="Движок"
-            description="Piper и Silero (нативный) — встроенные, не требуют Python."
+            label={tt('settings.engine.label')}
+            description={tt('settings.engine.description')}
             data={ENGINE_OPTIONS.map((opt) => ({
               value: opt.value,
-              label: opt.label,
+              label: tt(opt.key),
               disabled: !availability[opt.value].available,
             }))}
             value={form.values.engine}
@@ -494,13 +543,13 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
 
           {!availability.silero.available && availability.silero.reason && (
             <Text size="xs" c="dimmed" mt={-8}>
-              Silero: {availability.silero.reason}
+              {tt('settings.engine.reason_silero', [formatError(availability.silero.reason)])}
             </Text>
           )}
 
           {!availability.silero_native.available && availability.silero_native.reason && (
             <Text size="xs" c="dimmed" mt={-8}>
-              Silero (нативный): {availability.silero_native.reason}
+              {tt('settings.engine.reason_silero_native', [formatError(availability.silero_native.reason)])}
             </Text>
           )}
 
@@ -508,15 +557,17 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
             (bundleDownload ? (
               <Stack gap={4}>
                 <Text size="xs" c="dimmed">
-                  Скачивание моделей: {bundleDownload.file} (
-                  {Math.round(bundleDownload.percent)}%)
+                  {tt('settings.bundle.downloading', [
+                    bundleDownload.file,
+                    Math.round(bundleDownload.percent),
+                  ])}
                 </Text>
                 <Progress value={bundleDownload.percent} animated />
               </Stack>
             ) : (
               <Group justify="flex-start">
                 <Button variant="default" size="xs" onClick={handleBundleDownload}>
-                  Скачать модели Silero (~230 МБ)
+                  {tt('settings.bundle.download_button')}
                 </Button>
               </Group>
             ))}
@@ -524,16 +575,16 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
           {form.values.engine === 'piper' ? (
             <Stack gap={6}>
               <Select
-                label="Голос Piper"
-                description="При первом синтезе ~60 МБ загрузятся автоматически."
+                label={tt('settings.piper_voice.label')}
+                description={tt('settings.piper_voice.description')}
                 data={piperVoiceOptions}
                 key={form.key('piper_voice')}
                 {...form.getInputProps('piper_voice')}
                 rightSection={
                   PIPER_VOICES.find((v) => v.id === form.values.piper_voice)?.recommended ? (
-                    <Tooltip label="Рекомендуется для технических текстов">
+                    <Tooltip label={tt('settings.piper_voice.recommended_tooltip')}>
                       <Badge size="xs" color="blue" variant="light">
-                        Рек.
+                        {tt('settings.piper_voice.recommended_badge')}
                       </Badge>
                     </Tooltip>
                   ) : null
@@ -547,20 +598,20 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
                   onClick={() =>
                     commands.downloadPiperVoice(form.values.piper_voice).catch((err) => {
                       notifications.show({
-                        title: 'Не удалось запустить загрузку',
+                        title: tt('settings.piper_voice.download_failed.title'),
                         message: formatError(err),
                         color: 'red',
                       });
                     })
                   }
                 >
-                  Скачать сейчас
+                  {tt('settings.piper_voice.download_now')}
                 </Button>
               </Group>
             </Stack>
           ) : (
             <Select
-              label="Голос Silero"
+              label={tt('settings.speaker.label')}
               data={speakerOptions}
               key={form.key('speaker')}
               {...form.getInputProps('speaker')}
@@ -568,8 +619,8 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
           )}
 
           <Select
-            label="Частота дискретизации"
-            data={SAMPLE_RATE_OPTIONS}
+            label={tt('settings.sample_rate.label')}
+            data={sampleRateOptions}
             value={String(form.values.sample_rate)}
             onChange={(v) => {
               sampleRateTouchedRef.current = true;
@@ -581,17 +632,17 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
           <Divider />
 
           <Text size="sm" fw={500} c="dimmed">
-            Уведомления
+            {tt('settings.section.notifications')}
           </Text>
 
           <Switch
-            label="Уведомлять о готовности аудио"
+            label={tt('settings.notify_on_ready')}
             key={form.key('notify_on_ready')}
             {...form.getInputProps('notify_on_ready', { type: 'checkbox' })}
           />
 
           <Switch
-            label="Уведомлять об ошибках синтеза"
+            label={tt('settings.notify_on_error')}
             key={form.key('notify_on_error')}
             {...form.getInputProps('notify_on_error', { type: 'checkbox' })}
           />
@@ -599,11 +650,11 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
           <Divider />
 
           <Text size="sm" fw={500} c="dimmed">
-            Предпросмотр
+            {tt('settings.section.preview')}
           </Text>
 
           <Switch
-            label="Показывать диалог предпросмотра перед синтезом"
+            label={tt('settings.preview_dialog_enabled')}
             key={form.key('preview_dialog_enabled')}
             {...form.getInputProps('preview_dialog_enabled', {
               type: 'checkbox',
@@ -613,12 +664,12 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
           <Divider />
 
           <Text size="sm" fw={500} c="dimmed">
-            Кэш
+            {tt('settings.section.cache')}
           </Text>
 
           <NumberInput
-            label="Максимальный размер кэша (МБ)"
-            description="При запуске и при ручной очистке самые старые записи удаляются, пока кэш не уложится в этот лимит."
+            label={tt('settings.max_cache_size.label')}
+            description={tt('settings.max_cache_size.description')}
             min={100}
             key={form.key('max_cache_size_mb')}
             {...form.getInputProps('max_cache_size_mb')}
@@ -627,7 +678,7 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
           {cacheDir && (
             <Stack gap={4}>
               <Text size="xs" c="dimmed">
-                Папка данных
+                {tt('settings.data_folder')}
               </Text>
               <Text size="sm" style={{ wordBreak: 'break-all', fontFamily: 'var(--mantine-font-family-monospace)' }}>
                 {cacheDir}
@@ -637,23 +688,23 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
 
           <Group justify="flex-start">
             <Button variant="default" onClick={handleOpenCacheDir} disabled={!cacheDir}>
-              Открыть папку
+              {tt('settings.open_folder')}
             </Button>
             <Button variant="default" onClick={() => setCleanupOpen(true)}>
-              Очистить кэш…
+              {tt('settings.cleanup.button')}
             </Button>
           </Group>
 
           <Divider />
 
           <Text size="sm" fw={500} c="dimmed">
-            Логи
+            {tt('settings.section.logs')}
           </Text>
 
           {logDir && (
             <Stack gap={4}>
               <Text size="xs" c="dimmed">
-                Папка с логами
+                {tt('settings.logs_folder')}
               </Text>
               <Text size="sm" style={{ wordBreak: 'break-all', fontFamily: 'var(--mantine-font-family-monospace)' }}>
                 {logDir}
@@ -663,21 +714,35 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
 
           <Group justify="flex-start">
             <Button variant="default" onClick={handleOpenLogDir} disabled={!logDir}>
-              Открыть папку
+              {tt('settings.open_folder')}
             </Button>
           </Group>
 
           <Divider />
 
           <Text size="sm" fw={500} c="dimmed">
-            Интерфейс
+            {tt('settings.section.interface')}
           </Text>
 
           <Select
-            label="Тема оформления"
-            data={THEME_OPTIONS}
+            label={tt('settings.theme.label')}
+            data={THEME_OPTIONS.map((opt) => ({ value: opt.value, label: tt(opt.key) }))}
             key={form.key('theme')}
             {...form.getInputProps('theme')}
+          />
+
+          <Select
+            label={tt('settings.language.label')}
+            data={LANGUAGE_OPTIONS}
+            key={form.key('language')}
+            value={form.values.language}
+            onChange={(v) => {
+              if (!v) return;
+              // Spec: the locale store updates IMMEDIATELY so the whole UI
+              // relabels before the dialog is saved.
+              form.setFieldValue('language', v);
+              setLocale(toLocale(v));
+            }}
           />
 
           {UPDATER_ENABLED && (
@@ -685,26 +750,40 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
               <Divider />
 
               <Text size="sm" fw={500} c="dimmed">
-                Обновления
+                {tt('settings.section.updates')}
               </Text>
 
               <Group justify="flex-start">
                 <Button variant="default" onClick={() => void checkForUpdatesManual()}>
-                  Проверить обновления
+                  {tt('settings.check_updates')}
                 </Button>
               </Group>
             </>
           )}
 
           <Text size="xs" c="dimmed" ta="right" mt="md">
-            Версия: {appVersion || '—'}
+            {tt('settings.version', [appVersion || '—'])}
           </Text>
 
           <Group justify="flex-end" mt="md">
-            <Button variant="subtle" onClick={() => form.reset()}>
-              Сбросить
+            <Button
+              variant="subtle"
+              onClick={() => {
+                // Reset restores factory defaults. Mantine's reset() restores
+                // the last values snapshot — which the dialog-open effect
+                // overwrites with the loaded config via resetDirty(loaded) —
+                // so set the defaults explicitly afterwards. The language
+                // selector relabels the whole UI on change; form state
+                // updates are async, so sync the locale store from the
+                // defaults constant, not from getValues().
+                form.reset();
+                form.setValues(SETTINGS_DEFAULTS);
+                setLocale(toLocale(SETTINGS_DEFAULTS.language));
+              }}
+            >
+              {tt('settings.reset')}
             </Button>
-            <Button type="submit">Сохранить</Button>
+            <Button type="submit">{tt('common.save')}</Button>
           </Group>
         </Stack>
       </form>

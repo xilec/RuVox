@@ -15,6 +15,8 @@ import { notifications } from '@mantine/notifications';
 import { commands, events } from '../lib/tauri';
 import type { TextEntry, EntryStatus, EntryId } from '../lib/tauri';
 import { formatError } from '../lib/errors';
+import { useT } from '../lib/i18n';
+import type { MessageKey } from '../i18n/ru';
 import { useTauriEvents } from '../lib/useTauriEvents';
 import { useSelectedEntry } from '../stores/selectedEntry';
 import { useSearchQuery } from '../stores/searchQuery';
@@ -42,20 +44,13 @@ function statusBadgeColor(status: EntryStatus): string {
   }
 }
 
-function statusLabel(status: EntryStatus): string {
-  switch (status) {
-    case 'pending':
-      return 'Ожидание';
-    case 'processing':
-      return 'Обработка';
-    case 'ready':
-      return 'Готово';
-    case 'playing':
-      return 'Играет';
-    case 'error':
-      return 'Ошибка';
-  }
-}
+const STATUS_KEY: Record<EntryStatus, MessageKey> = {
+  pending: 'queue.status.pending',
+  processing: 'queue.status.processing',
+  ready: 'queue.status.ready',
+  playing: 'queue.status.playing',
+  error: 'queue.status.error',
+};
 
 interface QueueItemProps {
   entry: TextEntry;
@@ -67,6 +62,7 @@ interface QueueItemProps {
 }
 
 function QueueItem({ entry, isSelected, isPlaying, onSelect, onPlay, onContextMenu }: QueueItemProps) {
+  const tt = useT();
   const preview = entry.original_text.slice(0, 60);
   const isProcessing = entry.status === 'processing';
   const canPlay = entry.status === 'ready' || entry.status === 'playing';
@@ -110,7 +106,7 @@ function QueueItem({ entry, isSelected, isPlaying, onSelect, onPlay, onContextMe
               color={statusBadgeColor(entry.status)}
               leftSection={isProcessing ? <Loader size={8} color="blue" /> : null}
             >
-              {statusLabel(entry.status)}
+              {tt(STATUS_KEY[entry.status])}
             </Badge>
             {entry.duration_sec != null && (
               <Text className={classes.meta}>{formatDuration(entry.duration_sec)}</Text>
@@ -124,12 +120,12 @@ function QueueItem({ entry, isSelected, isPlaying, onSelect, onPlay, onContextMe
             variant="subtle"
             color="green"
             disabled={!canPlay}
-            title="Воспроизвести"
+            title={tt('queue.play')}
             onClick={(e) => {
               e.stopPropagation();
               onPlay(entry.id);
             }}
-            aria-label="Воспроизвести"
+            aria-label={tt('queue.play')}
           >
             <IconPlay />
           </ActionIcon>
@@ -140,6 +136,7 @@ function QueueItem({ entry, isSelected, isPlaying, onSelect, onPlay, onContextMe
 }
 
 export function QueueList() {
+  const tt = useT();
   const [entries, setEntries] = useState<TextEntry[]>([]);
   const [playingId, setPlayingId] = useState<EntryId | null>(null);
   const [playingVisible, setPlayingVisible] = useState(true);
@@ -257,54 +254,52 @@ export function QueueList() {
       await commands.playEntry(id);
     } catch (err) {
       notifications.show({
-        title: 'Ошибка',
-        message: `Не удалось запустить воспроизведение: ${formatError(err)}`,
+        title: tt('errors.title'),
+        message: tt('queue.notify.play_failed', [formatError(err)]),
         color: 'red',
       });
     }
-  }, []);
+  }, [tt]);
 
   const handleRegenerate = useCallback(async (id: string) => {
     try {
       await commands.regenerateEntry(id);
       notifications.show({
-        title: 'Перегенерация',
-        message: 'Запущена перегенерация аудио',
+        title: tt('queue.notify.regenerating.title'),
+        message: tt('queue.notify.regenerating.message'),
         color: 'blue',
       });
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
       notifications.show({
-        title: 'Ошибка',
-        message: `Не удалось запустить перегенерацию: ${message}`,
+        title: tt('errors.title'),
+        message: tt('queue.notify.regenerate_failed', [formatError(e)]),
         color: 'red',
       });
     }
-  }, []);
+  }, [tt]);
 
   const handleCancelSynthesis = useCallback(async (id: string) => {
     try {
       await commands.cancelSynthesis(id);
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
       notifications.show({
-        title: 'Ошибка',
-        message: `Не удалось отменить синтез: ${message}`,
+        title: tt('errors.title'),
+        message: tt('queue.notify.cancel_failed', [formatError(e)]),
         color: 'red',
       });
     }
-  }, []);
+  }, [tt]);
 
   const handleDelete = useCallback(
     (id: string) => {
       modals.openConfirmModal({
-        title: 'Удалить запись?',
+        title: tt('queue.delete.title'),
         children: (
           <Text size="sm">
-            Запись и аудиофайл будут удалены без возможности восстановления.
+            {tt('queue.delete.body')}
           </Text>
         ),
-        labels: { confirm: 'Удалить', cancel: 'Отмена' },
+        labels: { confirm: tt('common.delete'), cancel: tt('common.cancel') },
         confirmProps: { color: 'red' },
         onConfirm: async () => {
           await commands.deleteEntry(id);
@@ -315,18 +310,18 @@ export function QueueList() {
         },
       });
     },
-    [selectedId, setSelectedEntry],
+    [selectedId, setSelectedEntry, tt],
   );
 
   return (
     <div className={classes.container}>
       {entries.length === 0 ? (
         <Text c="dimmed" size="sm" ta="center" mt="md">
-          Скопируйте текст и нажмите Add
+          {tt('queue.empty')}
         </Text>
       ) : filteredEntries.length === 0 ? (
         <Text c="dimmed" size="sm" ta="center" mt="md">
-          Ничего не найдено
+          {tt('queue.no_results')}
         </Text>
       ) : (
         <ScrollArea className={classes.scrollArea} viewportRef={viewportRef}>
@@ -355,10 +350,10 @@ export function QueueList() {
           color="teal"
           leftSection={<IconLocate />}
           onClick={handleJumpToPlaying}
-          title="К читаемому"
-          aria-label="К читаемому"
+          title={tt('queue.jump_to_playing')}
+          aria-label={tt('queue.jump_to_playing')}
         >
-          К читаемому
+          {tt('queue.jump_to_playing')}
         </Button>
       )}
 
@@ -394,26 +389,26 @@ export function QueueList() {
             }
             onClick={() => menuEntry && handlePlay(menuEntry.id)}
           >
-            Воспроизвести
+            {tt('queue.play')}
           </Menu.Item>
           <Menu.Item
             disabled={menuEntry === null || menuEntry.status === 'processing'}
             onClick={() => menuEntry && handleRegenerate(menuEntry.id)}
           >
-            Перегенерировать аудио
+            {tt('queue.menu.regenerate')}
           </Menu.Item>
           <Menu.Item
             disabled={menuEntry === null || menuEntry.status !== 'processing'}
             onClick={() => menuEntry && handleCancelSynthesis(menuEntry.id)}
           >
-            Отменить синтез
+            {tt('queue.menu.cancel_synthesis')}
           </Menu.Item>
           <Menu.Divider />
           <Menu.Item
             color="red"
             onClick={() => menuEntry && handleDelete(menuEntry.id)}
           >
-            Удалить
+            {tt('common.delete')}
           </Menu.Item>
         </Menu.Dropdown>
       </Menu>

@@ -196,8 +196,9 @@ async fn regenerate_entry_rejects_processing_entry_and_synthesis_continues() {
         .await
         .unwrap_err();
     match err {
-        CommandError::SynthesisError { message } => {
-            assert!(message.contains("уже синтезируется"))
+        CommandError::SynthesisError { code, params, .. } => {
+            assert_eq!(code, "synthesis.in_progress");
+            assert_eq!(params, vec![id]);
         }
         other => panic!("expected SynthesisError, got {other:?}"),
     }
@@ -297,7 +298,7 @@ async fn play_entry_rejects_non_ready_entry() {
         .await
         .unwrap_err();
     match err {
-        CommandError::PlaybackError { message } => assert!(message.contains("not ready")),
+        CommandError::PlaybackError { code, .. } => assert_eq!(code, "entry.not_ready"),
         other => panic!("expected PlaybackError, got {other:?}"),
     }
     assert!(t.player.calls().is_empty());
@@ -343,8 +344,14 @@ async fn update_config_failed_engine_switch_preserves_previous_config() {
     };
     let err = update_config(t.state(), patch).await.unwrap_err();
     match err {
-        CommandError::ConfigError { message } => {
-            assert!(message.contains("не удалось переключить движок"))
+        CommandError::ConfigError { code, message, .. } => {
+            // The inner ttsd/switcher site id passes through so the frontend
+            // can explain the failure; the raw detail stays as fallback.
+            assert_eq!(code, "engine_unknown");
+            assert!(
+                message.is_some(),
+                "raw engine-switch detail must be preserved as the fallback"
+            );
         }
         other => panic!("expected ConfigError, got {other:?}"),
     }
@@ -374,9 +381,7 @@ async fn update_config_silero_native_without_bundle_preserves_previous_config() 
     };
     let err = update_config(t.state(), patch).await.unwrap_err();
     match err {
-        CommandError::ConfigError { message } => {
-            assert!(message.contains("не удалось переключить движок"))
-        }
+        CommandError::ConfigError { code, .. } => assert_eq!(code, "native.bundle_missing"),
         other => panic!("expected ConfigError, got {other:?}"),
     }
 
@@ -390,7 +395,7 @@ async fn update_config_silero_native_without_bundle_preserves_previous_config() 
 }
 
 /// `get_available_engines` reports `silero_native` as unavailable with a
-/// Russian reason when no bundle is installed (the test app's bundle dir is
+/// coded reason when no bundle is installed (the test app's bundle dir is
 /// an empty TempDir).
 #[tokio::test(flavor = "multi_thread")]
 async fn get_available_engines_reports_silero_native_unavailable_without_bundle() {
@@ -399,10 +404,7 @@ async fn get_available_engines_reports_silero_native_unavailable_without_bundle(
     assert!(engines.piper.available);
     assert!(!engines.silero_native.available);
     let reason = engines.silero_native.reason.expect("reason set");
-    assert!(
-        reason.chars().any(|c| matches!(c, 'А'..='я' | 'ё' | 'Ё')),
-        "reason should be Russian: {reason}"
-    );
+    assert_eq!(reason.code, "native.bundle_missing");
 }
 
 // ── events ───────────────────────────────────────────────────────────
@@ -641,15 +643,9 @@ async fn add_text_entry_rejects_oversized_input_before_persistence() {
     .await
     .expect_err("oversized input must be rejected");
     match err {
-        CommandError::Internal { message } => {
-            assert!(
-                message.contains("100 000"),
-                "message names the limit: {message}"
-            );
-            assert!(
-                message.contains("Piper"),
-                "message names the engine: {message}"
-            );
+        CommandError::Internal { code, params, .. } => {
+            assert_eq!(code, "input.too_long");
+            assert_eq!(params, vec!["piper".to_string(), "100000".to_string()]);
         }
         other => panic!("expected internal error, got {other:?}"),
     }
@@ -668,15 +664,9 @@ async fn preview_normalize_rejects_oversized_input() {
         .await
         .expect_err("oversized input must be rejected");
     match err {
-        CommandError::Internal { message } => {
-            assert!(
-                message.contains("100 000"),
-                "message names the limit: {message}"
-            );
-            assert!(
-                message.contains("Piper"),
-                "message names the engine: {message}"
-            );
+        CommandError::Internal { code, params, .. } => {
+            assert_eq!(code, "input.too_long");
+            assert_eq!(params, vec!["piper".to_string(), "100000".to_string()]);
         }
         other => panic!("expected internal error, got {other:?}"),
     }

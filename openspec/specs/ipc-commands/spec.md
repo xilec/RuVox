@@ -464,7 +464,15 @@ The system SHALL provide `get_available_engines()` returning per-engine
 availability (`AvailableEngines`):
 
 ```typescript
-interface EngineAvailability { available: boolean; reason: string | null }
+interface LocalizedText {
+  code: string;        // machine-readable reason id, e.g. "silero.uv_missing"
+  params?: string[];   // positional interpolation values
+  message?: string;    // optional raw diagnostic detail
+}
+interface EngineAvailability {
+  available: boolean;
+  reason: LocalizedText | null; // Some only when available == false
+}
 interface AvailableEngines {
   piper: EngineAvailability;
   silero: EngineAvailability;
@@ -479,25 +487,26 @@ spawned at all (not installed — the normal case on Windows, where ttsd is
 not shipped) SHALL be treated as an unsuccessful probe, not an error.
 Silero Native SHALL report availability based on presence and manifest
 validity of the downloaded model bundle in the app data dir. When
-unavailable, `reason` SHALL be a Russian-language user-facing string.
+unavailable, `reason` SHALL carry a machine-readable code (translated by the
+frontend like command errors), not user-facing prose.
 
 #### Scenario: probe on a system without ttsd
-- GIVEN no `pyproject.toml` in the resolved ttsd directory
-- WHEN `get_available_engines` is invoked
-- THEN `silero.available` is `false` with a Russian `reason`, and `piper.available` is `true`
+- **GIVEN** no `pyproject.toml` in the resolved ttsd directory
+- **WHEN** `get_available_engines` is invoked
+- **THEN** `silero.available` is `false` with `reason.code` `"silero.ttsd_missing"`, and `piper.available` is `true`
 
 #### Scenario: probe when uv cannot be spawned
-- GIVEN a `pyproject.toml` exists in the resolved ttsd directory but the
+- **GIVEN** a `pyproject.toml` exists in the resolved ttsd directory but the
   `uv` binary is not installed (spawn fails)
-- WHEN `get_available_engines` is invoked
-- THEN `silero.available` is `false` with a Russian `reason`, the command
+- **WHEN** `get_available_engines` is invoked
+- **THEN** `silero.available` is `false` with `reason.code` `"silero.uv_missing"`, the command
   succeeds, and `piper.available` is `true`
 
 #### Scenario: native engine unavailable before bundle download
-- GIVEN no model bundle in the app data dir
-- WHEN `get_available_engines` is invoked
-- THEN `silero_native.available` is `false` with a Russian `reason` explaining
-  that the model bundle must be downloaded
+- **GIVEN** no model bundle in the app data dir
+- **WHEN** `get_available_engines` is invoked
+- **THEN** `silero_native.available` is `false` with `reason.code`
+  `"native.bundle_missing"` indicating that the model bundle must be downloaded
 
 ### Requirement: Piper Voice Download Command
 

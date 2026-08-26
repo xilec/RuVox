@@ -10,7 +10,7 @@ import {
 const BOTH_AVAILABLE: AvailabilityMap = {
   piper: { available: true, reason: null },
   silero: { available: true, reason: null },
-  silero_native: { available: false, reason: 'Бандл моделей не скачан' },
+  silero_native: { available: false, reason: { code: 'native.bundle_missing' } },
 };
 
 const ALL_AVAILABLE: AvailabilityMap = {
@@ -21,20 +21,20 @@ const ALL_AVAILABLE: AvailabilityMap = {
 
 const ONLY_PIPER: AvailabilityMap = {
   piper: { available: true, reason: null },
-  silero: { available: false, reason: 'Python-стек не установлен' },
-  silero_native: { available: false, reason: 'Бандл моделей не скачан' },
+  silero: { available: false, reason: { code: 'silero.uv_missing' } },
+  silero_native: { available: false, reason: { code: 'native.bundle_missing' } },
 };
 
 const ONLY_SILERO: AvailabilityMap = {
-  piper: { available: false, reason: 'Голос не загружен' },
+  piper: { available: false, reason: { code: 'test.voice_missing' } },
   silero: { available: true, reason: null },
-  silero_native: { available: false, reason: 'Бандл моделей не скачан' },
+  silero_native: { available: false, reason: { code: 'native.bundle_missing' } },
 };
 
 const NEITHER: AvailabilityMap = {
-  piper: { available: false, reason: 'oops' },
-  silero: { available: false, reason: 'oops' },
-  silero_native: { available: false, reason: 'oops' },
+  piper: { available: false, reason: { code: 'test.oops' } },
+  silero: { available: false, reason: { code: 'test.oops' } },
+  silero_native: { available: false, reason: { code: 'test.oops' } },
 };
 
 describe('computeEngineFormState', () => {
