@@ -267,19 +267,23 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
   // picking «Silero (нативный)» follows it only while the user made no
   // explicit choice.
   const sampleRateTouchedRef = useRef(false);
+  // Factory defaults for Reset. A module-level constant (not read back from
+  // the form): form state updates are async, so form.getValues() inside the
+  // click handler still returns the pre-reset values.
+  const SETTINGS_DEFAULTS: SettingsFormValues = {
+    engine: 'silero_native',
+    piper_voice: 'ruslan',
+    speaker: 'aidar',
+    sample_rate: 24000,
+    notify_on_ready: true,
+    notify_on_error: true,
+    preview_dialog_enabled: true,
+    max_cache_size_mb: 500,
+    theme: 'auto',
+    language: 'ru',
+  };
   const form = useForm<SettingsFormValues>({
-    initialValues: {
-      engine: 'silero_native',
-      piper_voice: 'ruslan',
-      speaker: 'aidar',
-      sample_rate: 24000,
-      notify_on_ready: true,
-      notify_on_error: true,
-      preview_dialog_enabled: true,
-      max_cache_size_mb: 500,
-      theme: 'auto',
-      language: 'ru',
-    },
+    initialValues: SETTINGS_DEFAULTS,
     validate: {
       max_cache_size_mb: (v) =>
         // Non-reactive t(): Mantine captures the validator once, so a
@@ -765,12 +769,12 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
             <Button
               variant="subtle"
               onClick={() => {
-                // Reset restores factory defaults (the useForm
-                // initialValues). The language selector relabels the whole
-                // UI on change, so the live locale store must follow the
-                // post-reset field value instead of the saved config.
+                // Reset restores factory defaults. The language selector
+                // relabels the whole UI on change; sync the locale store
+                // from the defaults constant (form state updates are async,
+                // getValues() here would still return the pre-reset values).
                 form.reset();
-                setLocale(toLocale(form.getValues().language));
+                setLocale(toLocale(SETTINGS_DEFAULTS.language));
               }}
             >
               {tt('settings.reset')}
