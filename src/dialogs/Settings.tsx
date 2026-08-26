@@ -769,11 +769,15 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
             <Button
               variant="subtle"
               onClick={() => {
-                // Reset restores factory defaults. The language selector
-                // relabels the whole UI on change; sync the locale store
-                // from the defaults constant (form state updates are async,
-                // getValues() here would still return the pre-reset values).
+                // Reset restores factory defaults. Mantine's reset() restores
+                // the last values snapshot — which the dialog-open effect
+                // overwrites with the loaded config via resetDirty(loaded) —
+                // so set the defaults explicitly afterwards. The language
+                // selector relabels the whole UI on change; form state
+                // updates are async, so sync the locale store from the
+                // defaults constant, not from getValues().
                 form.reset();
+                form.setValues(SETTINGS_DEFAULTS);
                 setLocale(toLocale(SETTINGS_DEFAULTS.language));
               }}
             >
