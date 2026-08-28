@@ -92,8 +92,9 @@ for **either** flavor — HTML content SHALL NOT bypass the dialog:
   source format is the detected one (`html` for clipboard markup).
 - Only plain text present → the dialog opens pre-filled with the plain text
   and the selector initialized to the auto mode; the effective source format
-  is the detected one. `UIConfig.text_format` no longer drives the dialog's
-  initial selector state (it remains the viewer's display default).
+  is the detected one. `UIConfig.text_format` is no longer consumed by the
+  dialog — and, after this change, by any frontend code at all; the field
+  stays in the schema untouched.
 - Neither → no dialog; a neutral blue «Буфер обмена пуст» hint is shown.
 
 When `preview_dialog_enabled` is `false`, no dialog opens and the flow is

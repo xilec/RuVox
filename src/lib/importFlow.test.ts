@@ -113,6 +113,15 @@ describe('url imports: content-type routing', () => {
     expect(action).toEqual({ kind: 'direct-plain', text: body, format: 'markdown' });
   });
 
+  it('preselects the detected markdown format in the preview when the gate is on', () => {
+    const body = '# Инструкция\n\nШаг первый.\n\n```bash\njust test\n```';
+    const action = expectAction(() =>
+      resolveImport({ kind: 'url', body, contentType: 'text/plain' }, GATE_ON),
+    );
+    expect(action.kind).toBe('preview');
+    if (action.kind === 'preview') expect(action.format).toBe('markdown');
+  });
+
   it('extracts a server-rendered html article through the html path', () => {
     const action = expectAction(() =>
       resolveImport({ kind: 'url', body: ssrArticle(), contentType: 'text/html; charset=utf-8' }, GATE_ON),

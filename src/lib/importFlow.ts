@@ -9,9 +9,10 @@
  * `formatError`/notification chain localizes by code.
  *
  * Format routing: for files the extension is authoritative (.md → markdown,
- * .html/.htm → html, .txt → plain). For URLs — until #241 ships a full
- * content detector — the Content-Type plus a lightweight markup sniff pick
- * between the HTML extraction path and plain text.
+ * .html/.htm → html, .txt → plain). For URLs the Content-Type picks the HTML
+ * extraction path, and everything else — including missing content types and
+ * text/plain bodies — is classified by the shared content detector
+ * (text-import spec, "URL falls back to detection").
  */
 import type { AddAction } from './addFlow';
 import { detectFormat } from './detectFormat';

@@ -64,7 +64,9 @@ extension and URL formats by Content-Type plus a local markup sniff.
   effective format converges with the old defaults). Import openings pass the
   routed format so the extension stays authoritative for files (text-import
   spec) — the user still sees it, can override it, or switch to auto.
-  `UIConfig.text_format` keeps its viewer role untouched.
+  `UIConfig.text_format` loses its last frontend reader (the viewer pins its
+  own default); the schema field stays untouched — retiring it is a separate
+  storage-schema change if ever needed.
 - **The URL text/* branch reuses the detector.** The interim routing
   ingested non-markup Content-Types as plain unconditionally; the archived
   text-import spec ("URL falls back to detection") already promises
@@ -83,6 +85,14 @@ extension and URL formats by Content-Type plus a local markup sniff.
   markdown ingestion is lossless (the text is stored unchanged), only the
   viewer's rendering mode differs, and the user sees the detection in the
   label before pressing the button.
+- **HTML false positives from dense generic syntax.** A single code
+  signature like `fn first<T>(v: Vec<T>) -> Option<T>` carries exactly three
+  tag-looking fragments and classifies as `html`; ingestion then extracts
+  the "text" and the angle brackets disappear. Excluding single-letter
+  fragments would also exclude the real `<b>`/`<i>`/`<p>` tags, and a tag
+  allowlist was consciously rejected (see Decisions), so the threshold is
+  the accepted trade-off: the «Авто (HTML)» label and the extracted-text
+  preview make the misclassification visible before synthesis.
 - **HTML false negatives** (a fragment with 1–2 tags narrates raw). Accepted:
   the label shows «Авто (Plain)», so the mistake is visible before synthesis,
   and the explicit `html` override remains one click away.

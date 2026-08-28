@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionIcon, Button, Checkbox, Group, Loader, Portal, Select, Switch, Text, Textarea } from '@mantine/core';
 import { Rnd } from 'react-rnd';
 import classes from './PreviewDialog.module.css';
@@ -119,10 +119,17 @@ export function PreviewDialog({
     setPosition(centeredPosition(INITIAL_W, INITIAL_H));
   }, [opened, text, initialFormat]);
 
-  // The effective format drives both the preview and the ingest decision:
-  // in the auto mode it is re-detected on every text change (including edits).
-  const effectiveFormat: EntryFormat =
-    sourceFormat === 'auto' ? detectFormat(editedText) : sourceFormat;
+  // The text synthesis will actually use: the edited version, falling back
+  // to the original when the edit is empty (preview-dialog spec, "Synthesis
+  // confirmation"). Detection runs on that same text so the auto label and
+  // the ingest decision always match what will be sent.
+  const synthesisText = (editMode ? editedText.trim() : text) || text;
+  // Memoized: react-rnd emits position/size updates on every drag/resize
+  // frame, and detection runs several regex passes over the full text.
+  const effectiveFormat: EntryFormat = useMemo(
+    () => (sourceFormat === 'auto' ? detectFormat(synthesisText) : sourceFormat),
+    [sourceFormat, synthesisText],
+  );
   const formatLabels: Record<EntryFormat, string> = {
     plain: tt('preview.source_format.plain'),
     markdown: tt('preview.source_format.markdown'),
@@ -178,8 +185,7 @@ export function PreviewDialog({
   }, [opened, onCancel]);
 
   function handleSynthesize() {
-    const finalText = editMode ? editedText.trim() : text;
-    onSynthesize(finalText || text, skipShortTexts, playWhenReady, effectiveFormat);
+    onSynthesize(synthesisText, skipShortTexts, playWhenReady, effectiveFormat);
   }
 
   function handleEdit() {

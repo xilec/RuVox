@@ -18,6 +18,11 @@ describe('detectFormat: html', () => {
     expect(detectFormat('<p>Первый</p><p>Второй</p><b>третий</b>')).toBe('html');
   });
 
+  it('detects html at exactly the fragment threshold', () => {
+    // <p>, </p>, <b> — exactly three fragments.
+    expect(detectFormat('<p>Первый</p> и <b>второй')).toBe('html');
+  });
+
   it(`keeps fewer than ${HTML_MIN_TAG_FRAGMENTS} tag fragments plain`, () => {
     // A single paired tag: `<b>` + `</b>` = two fragments, below the threshold.
     expect(detectFormat('выделите <b>жирным</b> при необходимости')).toBe('plain');
@@ -52,7 +57,7 @@ describe('detectFormat: markdown', () => {
   });
 
   it(`keeps fewer than ${MARKDOWN_MIN_LIST_LINES} list lines plain`, () => {
-    expect(detectFormat('- первый пункт\n- второй пункт\nи обычный текст')).not.toBe('markdown');
+    expect(detectFormat('- первый пункт\n- второй пункт\nи обычный текст')).toBe('plain');
   });
 
   it(`detects link density at ${MARKDOWN_MIN_INLINE_LINKS} links`, () => {
@@ -62,7 +67,7 @@ describe('detectFormat: markdown', () => {
   });
 
   it(`keeps fewer than ${MARKDOWN_MIN_INLINE_LINKS} links plain`, () => {
-    expect(detectFormat('см. [доку](https://example.com) подробнее')).not.toBe('markdown');
+    expect(detectFormat('см. [доку](https://example.com) подробнее')).toBe('plain');
   });
 });
 
