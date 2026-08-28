@@ -25,12 +25,30 @@ All synthesis runs locally on your machine — no cloud TTS, nothing is sent any
 
 ## Features
 
-- **Normalization** — English (camelCase / snake_case), abbreviations, numbers, dates, URLs, email, code.
+- **[Normalization](#normalization)** — English (camelCase / snake_case), abbreviations, numbers, dates, URLs, email, code.
 - **Markdown + HTML** — rendered and narrated while preserving meaning.
-- **Mermaid diagrams** — visualized in the UI; replaced with a «тут мермэйд диаграмма» marker for TTS.
+- **Mermaid diagrams** — visualized in the UI; replaced with a «Тут мермэйд диаграмма» marker for TTS.
 - **Word highlight** — synchronous highlighting of the currently narrated word during playback.
 - **Preview dialog** — preview the normalized text before synthesis.
 - **System tray** — close-to-tray, background mode.
+
+## Normalization
+
+TTS engines can only read plain Russian text: English words, code and special symbols cannot be pronounced as-is. Before narration, RuVox rewrites the text so that it sounds natural:
+
+- code identifiers: `getUserData` → «гет юзер дата», `user_id` → «юзер ай ди»;
+- abbreviations: `HTTP` → «эйч ти ти пи», `API` → «эй пи ай»;
+- numbers, versions and dates: `v1.2.3` → «один точка два точка три», `2024-05-12` → «двенадцатое мая две тысячи двадцать четвёртого года»;
+- URLs and email: `user@example.com` → «юзер собака экзампл точка ком»;
+- operators and symbols: `!=` → «не равно», `===` → «строго равно», `->` → «стрелка», `α` → «альфа»;
+- code blocks: contents are narrated with identifiers and operators spelled out; a mermaid diagram is replaced with the phrase «Тут мермэйд диаграмма».
+
+The preview dialog (opens when you add text) shows the result before synthesis: the source on the left, what will actually be spoken on the right.
+
+### Steering it
+
+- **Source format** in the preview dialog: «Auto», «Plain», «Markdown», or «HTML». «Auto» is the default — RuVox detects the format itself: readable text is extracted from HTML, and Markdown markup (headings, lists, code blocks) is processed by meaning instead of being read symbol by symbol. If detection gets it wrong, pick the format manually.
+- **The `<!-- ruvox-code: brief -->` directive** in the text switches code-block narration to a short description («here is a code example in Python»); `<!-- ruvox-code: full -->` switches back to full reading. By default, code is read in full.
 
 ## Requirements
 

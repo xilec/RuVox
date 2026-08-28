@@ -1,11 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActionIcon, Button, Checkbox, Group, Loader, Portal, Select, Switch, Text, Textarea } from '@mantine/core';
+import {
+  ActionIcon,
+  Anchor,
+  Button,
+  Checkbox,
+  Group,
+  Loader,
+  Popover,
+  Portal,
+  Select,
+  Switch,
+  Text,
+  Textarea,
+} from '@mantine/core';
+import { notifications } from '@mantine/notifications';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { Rnd } from 'react-rnd';
 import classes from './PreviewDialog.module.css';
 import { commands } from '../lib/tauri';
 import type { EntryFormat } from '../lib/tauri';
 import { formatError } from '../lib/errors';
 import { useT } from '../lib/i18n';
+import { useLocaleStore } from '../stores/locale';
 import { previewTextFor } from '../lib/html';
 import { detectFormat } from '../lib/detectFormat';
 
@@ -43,6 +59,14 @@ const MIN_W = 560;
 const MIN_H = 380;
 const DEBOUNCE_MS = 1000;
 
+/** Deep link targets for the help affordance — the README normalization
+ *  section in the language matching the UI (see the README language policy:
+ *  README.md is Russian, README.en.md is its English mirror). */
+const README_HELP_URLS = {
+  ru: 'https://github.com/xilec/RuVox#Нормализация',
+  en: 'https://github.com/xilec/RuVox#normalization',
+} as const;
+
 function centeredPosition(w: number, h: number) {
   if (typeof window === 'undefined') return { x: 40, y: 40 };
   return {
@@ -55,6 +79,16 @@ function IconClose() {
   return (
     <svg width={16} height={16} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
       <path d="M6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12 19 6.4 17.6 5 12 10.6z" />
+    </svg>
+  );
+}
+
+function IconHelp() {
+  return (
+    <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.3 9.5a2.7 2.7 0 1 1 3.9 2.4c-.8.4-1.2 1-1.2 1.9v.4" strokeLinecap="round" />
+      <circle cx="12" cy="17.2" r="0.6" fill="currentColor" stroke="none" />
     </svg>
   );
 }
@@ -91,6 +125,8 @@ export function PreviewDialog({
   const [loading, setLoading] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [syncScroll, setSyncScroll] = useState(false);
+  const [helpOpened, setHelpOpened] = useState(false);
+  const locale = useLocaleStore((s) => s.locale);
   const [position, setPosition] = useState<{ x: number; y: number }>(() =>
     centeredPosition(INITIAL_W, INITIAL_H),
   );
@@ -115,6 +151,7 @@ export function PreviewDialog({
     setPlayWhenReady(true);
     setEditedText(text);
     setSourceFormat(initialFormat ?? 'auto');
+    setHelpOpened(false);
     setSize({ width: INITIAL_W, height: INITIAL_H });
     setPosition(centeredPosition(INITIAL_W, INITIAL_H));
   }, [opened, text, initialFormat]);
@@ -192,6 +229,19 @@ export function PreviewDialog({
     setEditMode(true);
   }
 
+  const openHelpReadme = useCallback(async () => {
+    setHelpOpened(false);
+    try {
+      await openUrl(README_HELP_URLS[locale]);
+    } catch (err) {
+      notifications.show({
+        title: tt('errors.title'),
+        message: formatError(err),
+        color: 'red',
+      });
+    }
+  }, [locale, tt]);
+
   const handlePaneScroll = useCallback(
     (side: 'left' | 'right') => {
       if (!syncScroll || syncingRef.current) return;
@@ -244,17 +294,59 @@ export function PreviewDialog({
         <div className={classes.panel}>
           <header className={`${classes.header} ${classes.dragHandle}`}>
             <Text className={classes.title}>{tt('preview.title')}</Text>
-            <ActionIcon
-              variant="subtle"
-              size="sm"
-              onClick={onCancel}
-              aria-label={tt('preview.close')}
-            >
-              <IconClose />
-            </ActionIcon>
+            <Group gap="xs" wrap="nowrap">
+              <Popover
+                opened={helpOpened}
+                onChange={setHelpOpened}
+                position="bottom-end"
+                width={420}
+                withArrow
+                shadow="md"
+                transitionProps={{ duration: 0 }}
+              >
+                <Popover.Target>
+                  <ActionIcon
+                    variant="subtle"
+                    size="sm"
+                    onClick={() => setHelpOpened((o) => !o)}
+                    aria-label={tt('preview.explain.help_aria')}
+                  >
+                    <IconHelp />
+                  </ActionIcon>
+                </Popover.Target>
+                <Popover.Dropdown>
+                  <Text size="sm" className={classes.helpText}>
+                    {tt('preview.explain.details')}
+                  </Text>
+                  <Anchor
+                    size="sm"
+                    href={README_HELP_URLS[locale]}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      void openHelpReadme();
+                    }}
+                  >
+                    {tt('preview.explain.readme_link')}
+                  </Anchor>
+                </Popover.Dropdown>
+              </Popover>
+              <ActionIcon
+                variant="subtle"
+                size="sm"
+                onClick={onCancel}
+                aria-label={tt('preview.close')}
+              >
+                <IconClose />
+              </ActionIcon>
+            </Group>
           </header>
 
           <div className={classes.body}>
+            <Text size="sm" className={classes.explainer}>
+              {tt('preview.explain.line')}
+            </Text>
             <div className={classes.panes}>
               <div className={classes.paneCol}>
                 <Text className={classes.paneLabel}>{tt('preview.original')}</Text>

@@ -104,6 +104,12 @@ export const en: Record<MessageKey, string> = {
   'preview.edit': 'Edit',
   'preview.synthesize': 'Synthesize',
   'preview.normalize_error': '(normalization error: {0})',
+  'preview.explain.line':
+    'Normalization prepares technical text for narration: English identifiers, abbreviations, numbers, URLs and symbols are rewritten so the speech engine can read them aloud in Russian. The left pane is the source text; the right pane is what will be spoken.',
+  'preview.explain.help_aria': 'About normalization',
+  'preview.explain.details':
+    'Everything the speech engine cannot read directly is rewritten: identifiers (getUserData → "get user data"), abbreviations (API → "ay pee eye"), numbers and dates, URLs and emails, operators and special symbols, and the contents of code blocks.\nThe source format (Auto / Plain / Markdown / HTML) controls how the text is prepared: readable text is extracted from HTML, Markdown code blocks are spoken out, and mermaid diagrams are replaced with a "here is a mermaid diagram" marker. The <!-- ruvox-code: brief|full --> directive switches code narration to a short description.',
+  'preview.explain.readme_link': 'Read more in the README normalization section',
 
   // ── Silero bundle prompt (first run) ────────────────────────────────────
   'bundle.prompt.title': 'Download the Silero engine?',
