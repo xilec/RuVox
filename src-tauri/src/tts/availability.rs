@@ -3,7 +3,7 @@
 //!
 //! Piper is in-process and always available — its model files may be
 //! missing, but engine itself loads, and a missing voice surfaces from
-//! synthesis as `voice_not_installed` (Phase 4 will offer to download it).
+//! synthesis as `voice_not_installed` (the app then offers to download it).
 //! Silero requires the `ttsd/` Python package, the `uv` toolchain to drive
 //! its venv, and (transitively) the torch + Silero model. The probe is
 //! cheap on purpose: it only checks the directory + `uv --version` so app

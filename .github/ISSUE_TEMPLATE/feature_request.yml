@@ -1,0 +1,26 @@
+name: Feature request
+description: Idea or enhancement proposal
+labels: ["enhancement", "type:idea"]
+body:
+  - type: markdown
+    attributes:
+      value: >
+        Ideas start as issues; accepted ones go through an OpenSpec change
+        before implementation (see docs/contributing.md).
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What can't you do today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
