@@ -26,13 +26,17 @@
       to steer — source-format selector, `ruvox-code` directives, Mermaid
       marker); link the «Возможности» bullet to it; regenerate the
       `README.en.md` mirror from it.
-- [ ] 3.2 Propose the additive `CHANGELOG.md` `[Unreleased]` entry as a diff
+- [x] 3.2 Propose the additive `CHANGELOG.md` `[Unreleased]` entry as a diff
       for user approval (human-owned file; do not commit without approval).
+      Outcome: the human owner declined the entry — the change is useful but
+      below the curated-highlights bar; it stays visible in the generated
+      per-PR release list instead.
 
 ## 4. Validation
 
 - [x] 4.1 `nix develop -c just lint` and `nix develop -c just test` green.
-- [ ] 4.2 Manual pass (checklist to the user): open the Add flow with real
+- [x] 4.2 Manual pass (checklist to the user): open the Add flow with real
       clipboard text — explainer visible, popover opens, README link opens
       the browser at the right section, layout intact at the minimum window
-      size, both locales.
+      size, both locales. Completed by the user (explainer/popover/link and
+      the rest of the app verified in the dev build).
