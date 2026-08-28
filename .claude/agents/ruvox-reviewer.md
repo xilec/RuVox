@@ -78,6 +78,18 @@ Hunt for: off-by-one / inverted condition / wrong operator; boundary & empty inp
 
 Do NOT flag: whether edges are *tested* (that's the tests category); error-handling *style* (that's idiom); behavior a spec deliberately mandates (code↔spec conformance is gated by the OpenSpec cycle — `openspec-verify-change` before archive — so it is intentionally not a reviewer category); theoretical issues with no reachable trigger; **known deferred tech debt tracked as GitHub issues** — check `gh issue list --state open` before flagging something that looks deliberately deferred.
 
+## Process completeness — the changelog note
+
+Rule: conventions.md → *CHANGELOG*. Detection: the diff adds user-visible
+behavior (new or changed UI (Russian strings), a new or behavior-changed Tauri
+command, behavior pinned by a synced spec scenario) while `CHANGELOG.md` has no
+`[Unreleased]` delta. Severity: medium. Suggested fix: propose the additive
+entry (1–2 lines, `**Essence.** explanation`) for the implementer to fold in.
+
+Do NOT flag: internals and refactors, docs-only diffs, trivia per the rule's
+bar (an indent tweak, a few dictionary entries) — those remain visible in the
+generated per-PR list of the release notes.
+
 ## Report format
 
 Open with a one-line verdict (what matters most / all clear). Then a table sorted by **severity ↓**:

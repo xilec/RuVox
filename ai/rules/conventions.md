@@ -120,6 +120,22 @@ Craft rules (layout, test quality, duplication, idiom, correctness) live in
 - `cd ttsd && uv run ruff check && uv run python -m pytest`.
 - `pnpm dlx @fission-ai/openspec@1.6.0 validate --specs --strict` when specs change.
 
+## CHANGELOG
+
+- A change lands in `CHANGELOG.md` under `## [Unreleased]` only when it is
+  **significant and user-visible** — the user can see it in the UI or notice it
+  in behavior. Add the 1–2 lines **in the task branch, so the PR carries the
+  note**; nobody acts "after merge".
+- The bar is deliberately high. Do **not** add trivia: an indent/margin tweak,
+  a few dictionary words added for correct pronunciation, internal refactors.
+  Whoever cares will find those in the auto-generated per-PR list that follows
+  the curated section in the release notes.
+- Entry format: Keep-a-Changelog section, `**Essence.** explanation`, English,
+  1–2 lines per entry. Details and examples: `docs/contributing.md` →
+  "Release notes & CHANGELOG".
+- `CHANGELOG.md` is human-owned: agent edits are additive proposals shown as
+  diffs for approval; never rewrite or delete existing hand-written content.
+
 > Implemented behavior is defined by the specs under `openspec/specs/` — the
 > source of truth; on conflict with other docs, specs win. Tooling/architecture
 > rationale lives in `openspec/config.yaml` context; decision history in

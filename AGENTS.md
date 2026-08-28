@@ -142,7 +142,7 @@ Hard rules and the craft standard live in `ai/rules/` and are **pulled on demand
 - [ai/rules/conventions.md](ai/rules/conventions.md) — language, toolchain, architecture boundaries, the TTS constraint, Rust/TS/Mantine/Python hard rules, testing gates.
 - [ai/rules/code-quality.md](ai/rules/code-quality.md) — craft standard: file layout, tests, duplication, idiom, security, correctness.
 
-The load-bearing summary: code and comments in English, user-facing UI strings in Russian; no emoji; commits `<type>(<module>): <desc>` in English with no AI attribution; task-branch implementation commits are made autonomously (review-first workflow, point 2 above), while every other GitHub-bound text (PR, issue, comment) and the PR title itself is drafted and approved first; after the user accepts a task's result, push/PR/merge proceed autonomously (points 4–5); all tooling via `nix develop -c`.
+The load-bearing summary: code and comments in English, user-facing UI strings in Russian; no emoji; commits `<type>(<module>): <desc>` in English with no AI attribution; task-branch implementation commits are made autonomously (review-first workflow, point 2 above), while every other GitHub-bound text (PR, issue, comment) and the PR title itself is drafted and approved first; after the user accepts a task's result, push/PR/merge proceed autonomously (points 4–5); all tooling via `nix develop -c`; a significant user-visible change adds a 1–2-line `[Unreleased]` note to `CHANGELOG.md` in the task branch ([ai/rules/conventions.md](ai/rules/conventions.md#changelog)).
 
 When a CI step, script flag, or workaround exists because of a specific incident, leave a comment explaining why it is load-bearing (see the slim/full gate in `.github/workflows/ci.yml`, the `shellHook` comments in `nix/devshell.nix`).
 
@@ -154,8 +154,11 @@ by **audience**, not by file type:
 - **User-facing entry (Russian, primary):** the repository short description and
   `README.md` (Russian). `README.en.md` is the English mirror.
 - **Developer-facing (English, canonical):** code, comments, issues, PRs, commit
-  messages, `CHANGELOG.md`, and release notes. `CHANGELOG.md` is generated from
-  PRs, so PR/commit titles **must stay in English** to keep it coherent.
+  messages, `CHANGELOG.md`, and release notes. Hand-written highlights
+  accumulate under `[Unreleased]` in `CHANGELOG.md` as changes land
+  ([ai/rules/conventions.md](ai/rules/conventions.md#changelog)); only the
+  release-time per-PR skeleton is generated, so PR/commit titles **must stay in
+  English** to keep it coherent.
 
 Translation between the two is cheap (LLMs), so there is no obligation to
 localize deep docs by hand. If the audience grows, user docs move to a dedicated
