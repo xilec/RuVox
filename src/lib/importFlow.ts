@@ -14,6 +14,7 @@
  * between the HTML extraction path and plain text.
  */
 import type { AddAction } from './addFlow';
+import { detectFormat } from './detectFormat';
 import { previewTextFor } from './html';
 import type { EntryFormat } from './tauri';
 
@@ -108,9 +109,9 @@ function looksLikeSpaShell(rawMarkup: string, extractedText: string): boolean {
 }
 
 /** Whether a fetched body goes through HTML extraction (`true`) or is read
- *  as plain text under today's interim routing (full auto-detection arrives
- *  with #241). A missing Content-Type falls back to a markup sniff of the
- *  body itself. */
+ *  as text whose format is auto-detected from the content itself
+ *  (preview-dialog spec, "Source format auto-detection"). A missing
+ *  Content-Type falls back to a markup sniff of the body itself. */
 function routesAsHtml(contentType: string | null, body: string): boolean {
   const ct = (contentType ?? '').toLowerCase();
   if (ct.includes('html') || ct.endsWith('+xml')) return true;
@@ -143,7 +144,11 @@ export function resolveImport(source: ImportSource, o: ImportOptions): AddAction
 
   const raw = source.body;
   if (!routesAsHtml(source.contentType, raw)) {
-    return routed('plain', raw, o);
+    // The Content-Type says this is not markup: the format comes from
+    // content auto-detection (text-import spec, "URL falls back to
+    // detection") so a markdown document served as text/plain imports as
+    // markdown rather than plain.
+    return routed(detectFormat(raw), raw, o);
   }
   const extracted = previewTextFor(raw, 'html');
   if (looksLikeSpaShell(raw, extracted)) {

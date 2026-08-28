@@ -90,8 +90,8 @@ describe('file imports: extension decides (spec scenario)', () => {
   });
 });
 
-describe('url imports: content-type routing (#241 interim)', () => {
-  it('treats text/plain responses as plain text (spec scenario)', () => {
+describe('url imports: content-type routing', () => {
+  it('treats plain text/plain responses as plain text (spec scenario)', () => {
     const body = 'Сервер отдал чистый текст';
     const on = expectAction(() =>
       resolveImport({ kind: 'url', body, contentType: 'text/plain; charset=windows-1251' }, GATE_ON),
@@ -103,6 +103,14 @@ describe('url imports: content-type routing (#241 interim)', () => {
       resolveImport({ kind: 'url', body, contentType: 'text/plain' }, GATE_OFF),
     );
     expect(off).toEqual({ kind: 'direct-plain', text: body, format: 'plain' });
+  });
+
+  it('detects markdown in a text/plain response (spec scenario "URL falls back to detection")', () => {
+    const body = '# Инструкция\n\nШаг первый.\n\n```bash\njust test\n```';
+    const action = expectAction(() =>
+      resolveImport({ kind: 'url', body, contentType: 'text/plain' }, GATE_OFF),
+    );
+    expect(action).toEqual({ kind: 'direct-plain', text: body, format: 'markdown' });
   });
 
   it('extracts a server-rendered html article through the html path', () => {

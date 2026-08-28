@@ -8,11 +8,15 @@ import type { EntryFormat } from './tauri';
  * `direct-plain.format` is set only by the import flow (importFlow.ts),
  * where the entry format comes from the source's extension rather than the
  * clipboard defaults; the clipboard paths leave it undefined so the entry
- * keeps its historical unset-format behavior.
+ * keeps its historical unset-format behavior. The same split applies to
+ * `preview.format`: imports preselect their routed format in the dialog
+ * (text-import spec, "Import format routing"), while clipboard previews
+ * omit it and the dialog opens in the auto-detect mode (preview-dialog
+ * spec, "Source format selection").
  */
 export type AddAction =
   | { kind: 'empty' }
-  | { kind: 'preview'; text: string; format: EntryFormat; plainFallback: string | null }
+  | { kind: 'preview'; text: string; format?: EntryFormat; plainFallback: string | null }
   | { kind: 'direct-html'; html: string; plainFallback: string | null }
   | { kind: 'direct-plain'; text: string; format?: EntryFormat };
 
@@ -37,17 +41,16 @@ export function resolveAddAction(input: {
   html: string | null;
   plain: string;
   previewEnabled: boolean;
-  defaultFormat: EntryFormat;
 }): AddAction {
   const html = input.html !== null && input.html.trim() ? input.html : null;
   const plain = input.plain.trim() ? input.plain : null;
 
   if (input.previewEnabled) {
     if (html !== null) {
-      return { kind: 'preview', text: html, format: 'html', plainFallback: plain };
+      return { kind: 'preview', text: html, plainFallback: plain };
     }
     if (plain !== null) {
-      return { kind: 'preview', text: plain, format: input.defaultFormat, plainFallback: null };
+      return { kind: 'preview', text: plain, plainFallback: null };
     }
     return { kind: 'empty' };
   }

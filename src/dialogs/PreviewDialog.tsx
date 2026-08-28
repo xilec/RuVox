@@ -2,24 +2,30 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActionIcon, Button, Checkbox, Group, Loader, Portal, Select, Switch, Text, Textarea } from '@mantine/core';
 import { Rnd } from 'react-rnd';
 import classes from './PreviewDialog.module.css';
-import { commands, toEntryFormat } from '../lib/tauri';
+import { commands } from '../lib/tauri';
 import type { EntryFormat } from '../lib/tauri';
 import { formatError } from '../lib/errors';
 import { useT } from '../lib/i18n';
 import { previewTextFor } from '../lib/html';
+import { detectFormat } from '../lib/detectFormat';
 
 export interface PreviewDialogProps {
   /** Raw clipboard text to preview and optionally edit before synthesis. */
   text: string;
   opened: boolean;
-  /** Initial source format (the configured viewer default). */
-  defaultFormat: EntryFormat;
+  /**
+   * Format preselected in the selector instead of the auto mode. Imports set
+   * it (the routed format — text-import spec); clipboard openings omit it so
+   * the dialog starts in the auto-detect mode.
+   */
+  initialFormat?: EntryFormat;
   /**
    * Called when the user confirms synthesis.
    * `finalText` is either the original or the user-edited version.
    * `skipShortTexts` is true when the user checked the "skip for short texts" box.
    * `playWhenReady` reflects the dialog's "Read Now" toggle state.
-   * `sourceFormat` is the dialog's source-format selection.
+   * `sourceFormat` is the effective source-format selection: the explicitly
+   * chosen value, or the detected one while the selector is in auto mode.
    */
   onSynthesize: (
     finalText: string,
@@ -67,13 +73,18 @@ function IconClose() {
 export function PreviewDialog({
   text,
   opened,
-  defaultFormat,
+  initialFormat,
   onSynthesize,
   onCancel,
 }: PreviewDialogProps) {
   const tt = useT();
   const [editedText, setEditedText] = useState<string>(text);
-  const [sourceFormat, setSourceFormat] = useState<EntryFormat>(defaultFormat);
+  // 'auto' is the selector state, not an entry format: the effective format
+  // is detected from the content and re-detected while editing (preview-dialog
+  // spec, "Source format selection").
+  const [sourceFormat, setSourceFormat] = useState<EntryFormat | 'auto'>(
+    initialFormat ?? 'auto',
+  );
   const [skipShortTexts, setSkipShortTexts] = useState(false);
   const [playWhenReady, setPlayWhenReady] = useState(true);
   const [normalized, setNormalized] = useState<string>('');
@@ -103,10 +114,20 @@ export function PreviewDialog({
     setSkipShortTexts(false);
     setPlayWhenReady(true);
     setEditedText(text);
-    setSourceFormat(defaultFormat);
+    setSourceFormat(initialFormat ?? 'auto');
     setSize({ width: INITIAL_W, height: INITIAL_H });
     setPosition(centeredPosition(INITIAL_W, INITIAL_H));
-  }, [opened, text, defaultFormat]);
+  }, [opened, text, initialFormat]);
+
+  // The effective format drives both the preview and the ingest decision:
+  // in the auto mode it is re-detected on every text change (including edits).
+  const effectiveFormat: EntryFormat =
+    sourceFormat === 'auto' ? detectFormat(editedText) : sourceFormat;
+  const formatLabels: Record<EntryFormat, string> = {
+    plain: tt('preview.source_format.plain'),
+    markdown: tt('preview.source_format.markdown'),
+    html: tt('preview.source_format.html'),
+  };
 
   // Debounced (re-)normalization.  Runs whenever the text under consideration
   // changes — the initial clipboard text on open, or the edited text once
@@ -115,7 +136,7 @@ export function PreviewDialog({
   // be narrated (preview-dialog spec).
   useEffect(() => {
     if (!opened) return;
-    const source = previewTextFor(editedText, sourceFormat);
+    const source = previewTextFor(editedText, effectiveFormat);
     if (!source.trim()) {
       setNormalized('');
       setLoading(false);
@@ -143,7 +164,7 @@ export function PreviewDialog({
       stale = true;
       window.clearTimeout(timer);
     };
-  }, [opened, editedText, sourceFormat, tt]);
+  }, [opened, editedText, effectiveFormat, tt]);
 
   // ESC closes the floating window (mantine Modal used to handle this; non-modal
   // react-rnd has no built-in handler, so we bind one manually while opened).
@@ -158,7 +179,7 @@ export function PreviewDialog({
 
   function handleSynthesize() {
     const finalText = editMode ? editedText.trim() : text;
-    onSynthesize(finalText || text, skipShortTexts, playWhenReady, sourceFormat);
+    onSynthesize(finalText || text, skipShortTexts, playWhenReady, effectiveFormat);
   }
 
   function handleEdit() {
@@ -281,12 +302,22 @@ export function PreviewDialog({
                   size="xs"
                   aria-label={tt('preview.source_format.aria')}
                   data={[
-                    { value: 'plain', label: 'Plain' },
-                    { value: 'markdown', label: 'Markdown' },
-                    { value: 'html', label: 'HTML' },
+                    {
+                      value: 'auto',
+                      label: tt('preview.source_format.auto_detected', [
+                        formatLabels[effectiveFormat],
+                      ]),
+                    },
+                    { value: 'plain', label: formatLabels.plain },
+                    { value: 'markdown', label: formatLabels.markdown },
+                    { value: 'html', label: formatLabels.html },
                   ]}
                   value={sourceFormat}
-                  onChange={(v) => setSourceFormat(toEntryFormat(v, defaultFormat))}
+                  onChange={(v) => {
+                    if (v === 'auto' || v === 'plain' || v === 'markdown' || v === 'html') {
+                      setSourceFormat(v);
+                    }
+                  }}
                   allowDeselect={false}
                 />
                 <Checkbox
