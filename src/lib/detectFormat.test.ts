@@ -26,6 +26,13 @@ describe('detectFormat: html', () => {
     expect(detectFormat('<b>жирным</b>')).toBe('html');
   });
 
+  it('treats a text consisting of a single tag as html', () => {
+    // Both boundary tests match the same tag — intentional per the spec
+    // ("starts … AND ends with a well-formed tag").
+    expect(detectFormat('<br>')).toBe('html');
+    expect(detectFormat('<br/>')).toBe('html');
+  });
+
   it('detects tag-delimited text after trimming invisible edge characters', () => {
     expect(detectFormat('  \n\t<div><p>текст</p></div>\n ')).toBe('html');
     expect(detectFormat('\u200B<span>текст</span>\uFEFF')).toBe('html');
