@@ -113,8 +113,7 @@ impl PiperEngine {
             return Err(TtsError::Ttsd {
                 code: "voice_not_installed".to_string(),
                 message: format!(
-                    "Piper voice \"{voice_id}\" не установлен ({}). \
-                     Загрузка по требованию будет добавлена в Phase 4.",
+                    "Piper voice \"{voice_id}\" не установлен ({}).",
                     config_path.display()
                 ),
             });
@@ -170,8 +169,7 @@ impl TtsEngine for PiperEngine {
             let config_path = PiperEngine::config_path_for(&voices_dir, &voice_id);
             if !config_path.exists() {
                 let msg = format!(
-                    "Piper voice \"{voice_id}\" не установлен ({}). \
-                     Загрузка по требованию будет добавлена в Phase 4.",
+                    "Piper voice \"{voice_id}\" не установлен ({}).",
                     config_path.display()
                 );
                 warn!(target: "tts::piper", "warmup skipped: {msg}");

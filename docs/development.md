@@ -162,7 +162,7 @@ uninstaller's "Delete the application data" checkbox can remove it):
 Installs from before 2026-08 keep their files in `~/.cache/ruvox/`; the first
 launch of a current build migrates them automatically (issue #222).
 
-See [Storage schema](storage-schema.md) for details.
+See [Storage schema](../openspec/specs/storage/spec.md) for details.
 
 ## Workflow
 

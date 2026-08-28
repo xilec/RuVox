@@ -7,7 +7,7 @@
 # subprocess) via the fallback path in src-tauri/src/lib.rs.
 set -euo pipefail
 
-REPO_DIR="/home/evgen/work/github/RuVox"
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Matches rebuild_prod.sh's CARGO_TARGET_DIR override (short path — see that
 # script for why), falling back to the in-tree default for binaries built
