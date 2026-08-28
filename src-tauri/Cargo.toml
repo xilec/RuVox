@@ -128,6 +128,14 @@ futures-util = "0.3"
 # a single copy.
 sha2 = "0.10"
 
+# Legacy-Cyrillic text-file import (#224): encoding_rs decodes any WHATWG
+# encoding (incl. CP1251/KOI8-R/CP866/MacCyrillic) to UTF-8 — both for BOM /
+# statistically detected input and for the user-chosen override; chardetng
+# provides the statistical fallback for non-UTF-8, BOM-less bytes. The pair
+# is the Firefox-designed combo; glue lives in src-tauri/src/import.rs.
+encoding_rs = "0.8"
+chardetng = "1"
+
 [dev-dependencies]
 tempfile = "3"
 similar = "2"

@@ -14,13 +14,15 @@ The header height of 74 px with asymmetric padding (top 18 / bottom 8 in `Player
 
 The navbar SHALL be drag-resizable via an invisible 6 px strip on its right border with `cursor: col-resize`; the width MUST be clamped to a minimum of 180 px and a maximum of 70% of the window width.
 
-The navbar SHALL contain a "Очередь" title with an "Add" button (size `xs`) to its right, a search input filtering the queue, and the `QueueList` component. The `PreviewDialog` and `SettingsModal` SHALL be mounted from `AppShell`.
+The navbar SHALL contain a "Очередь" title with an Add split-button (size `xs`) to its right — the primary part keeps the clipboard Add behavior and the dropdown menu offers the import actions «Файл…», «Файл с кодировкой…», and «По ссылке…» (see the text-import capability) — plus a search input filtering the queue, and the `QueueList` component. The `PreviewDialog` and `SettingsModal` SHALL be mounted from `AppShell`.
+
+While content is dragged over the window, AppShell SHALL render a full-window drop overlay («Отпустите, чтобы добавить») above the layout; the overlay SHALL not intercept clicks when no drag is active.
 
 #### Scenario: Window renders the three regions
 
 - GIVEN the application has started
 - WHEN the main window is displayed
-- THEN the header shows only the player controls, the navbar shows "Очередь" with an Add button, a search field and the entry list, and the main area shows the selected entry's text (or a "Нет выбранной записи" placeholder)
+- THEN the header shows only the player controls, the navbar shows "Очередь" with an Add split-button, a search field and the entry list, and the main area shows the selected entry's text (or a "Нет выбранной записи" placeholder)
 
 #### Scenario: Navbar resize respects bounds
 

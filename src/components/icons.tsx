@@ -128,3 +128,11 @@ export function IconSettings({ size = 18, className }: IconProps) {
     </svg>
   );
 }
+
+export function IconChevronDown({ size = 14, className }: IconProps) {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="M6.4 9 5 10.4l7 7 7-7L17.6 9 12 14.6z" />
+    </svg>
+  );
+}

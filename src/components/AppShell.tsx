@@ -3,21 +3,28 @@ import {
   Title,
   Group,
   Button,
+  ActionIcon,
   TextInput,
   CloseButton,
   useMantineColorScheme,
 } from '@mantine/core';
+import { Menu } from '@mantine/core';
 import { useHotkeys } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { useState, useEffect, useRef } from 'react';
 import { readText as readClipboardText } from '@tauri-apps/plugin-clipboard-manager';
+import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { commands, toEntryFormat } from '../lib/tauri';
-import type { EntryFormat, UIConfig } from '../lib/tauri';
+import type { EntryFormat, UIConfig, UnlistenFn } from '../lib/tauri';
+import type { ReadTextFileResult } from '../lib/tauri';
 import { formatError } from '../lib/errors';
 import { useT } from '../lib/i18n';
 import { setLocale, toLocale } from '../stores/locale';
 import { resolveIngest } from '../lib/ingest';
 import { resolveAddAction } from '../lib/addFlow';
+import { resolveImport } from '../lib/importFlow';
+import { IMPORTABLE_FILE_EXTENSIONS } from '../lib/importFlow';
+import type { ImportSource } from '../lib/importFlow';
 import { shouldOfferBundleDownload } from '../lib/bundlePrompt';
 import { TextViewer } from './TextViewer';
 import { Player } from './Player';
@@ -27,7 +34,22 @@ import { useSearchQuery } from '../stores/searchQuery';
 import { PreviewDialog } from '../dialogs/PreviewDialog';
 import { SettingsModal } from '../dialogs/Settings';
 import { SileroBundlePrompt } from '../dialogs/SileroBundlePrompt';
-import { IconSearch } from './icons';
+import { EncodingDialog } from '../dialogs/EncodingDialog';
+import { UrlImportDialog } from '../dialogs/UrlImportDialog';
+import { IconSearch, IconChevronDown } from './icons';
+import classes from './AppShell.module.css';
+
+/** File whose lowercased extension is importable — the silent pre-filter for
+ *  drops (unsupported extensions are ignored without an error per spec). */
+function hasImportableExtension(fileName: string): boolean {
+  const lower = fileName.toLowerCase();
+  return IMPORTABLE_FILE_EXTENSIONS.some((ext) => lower.endsWith(`.${ext}`));
+}
+
+interface EncodingDialogState {
+  path: string;
+  detected: ReadTextFileResult;
+}
 
 export function AppShell() {
   const tt = useT();
@@ -58,6 +80,11 @@ export function AppShell() {
   } | null>(null);
   const { query, setQuery } = useSearchQuery();
   const searchInputRef = useRef<HTMLInputElement>(null);
+  // Import entry points (text-import spec): URL modal, manual-encoding step,
+  // and the full-window drag-over overlay driven by enter/leave transitions.
+  const [urlDialogOpen, setUrlDialogOpen] = useState(false);
+  const [encodingDialog, setEncodingDialog] = useState<EncodingDialogState | null>(null);
+  const [dropDepth, setDropDepth] = useState(0);
 
   // Ctrl+F / Cmd+F focuses the queue search field. preventDefault stops the
   // webview's built-in "find in page" behaviour so the hotkey is consistent
@@ -189,6 +216,172 @@ export function AppShell() {
       color: 'blue',
     });
   }
+
+  // ── Import flow glue (text-import spec, #224) ─────────────────────────────
+
+  // Shared red-error notification for import/fetch failures (coded errors
+  // localize through formatError's catalog lookup).
+  function notifyError(err: unknown) {
+    notifications.show({
+      title: tt('errors.title'),
+      message: formatError(err),
+      color: 'red',
+    });
+  }
+
+  /**
+   * Runs a resolved import decision. Imports share the Add flow's preview
+   * gate, but their direct arm differs from the clipboard one in error
+   * semantics: HTML whose extraction yields nothing is an explicit red
+   * error for an explicitly chosen source — never the neutral
+   * «Буфер обмена пуст» hint.
+   */
+  async function runImportSource(source: ImportSource) {
+    setPending(true);
+    try {
+      const action = resolveImport(source, {
+        previewEnabled: config?.preview_dialog_enabled ?? false,
+      });
+      switch (action.kind) {
+        case 'preview':
+          setPreviewText(action.text);
+          setPreviewFormat(action.format);
+          setPreviewPlainFallback(null);
+          setPreviewOpen(true);
+          setPending(false);
+          return;
+        case 'direct-plain':
+          await doAddEntry(action.text, true, action.format);
+          return;
+        case 'direct-html': {
+          const ingested = await addHtmlEntry(action.html, true);
+          if (!ingested) {
+            notifications.show({
+              title: tt('errors.title'),
+              message: tt('app.html.extract_failed'),
+              color: 'red',
+            });
+            setPending(false);
+          }
+          return;
+        }
+        case 'empty':
+          // Unreachable for imports: a decoded source is never empty here,
+          // backend rejects empty payloads with input.empty first.
+          setPending(false);
+          return;
+        default: {
+          const exhaustive: never = action;
+          throw new Error(`unknown import action: ${JSON.stringify(exhaustive)}`);
+        }
+      }
+    } catch (err) {
+      // Coded import errors (SPA shell, empty page, decode failure) surface
+      // as notifications; no dialog opens (preview-dialog spec).
+      notifyError(err);
+      setPending(false);
+    }
+  }
+
+  /** Reads a picked/dropped file and continues the flow; the optional
+   *  encoding-dialog branch pauses before routing so the user can correct
+   *  auto-detection. */
+  async function startFileImport(path: string, encodingDialogFirst = false) {
+    if (pending) return;
+    setPending(true);
+    try {
+      const detected = await commands.readTextFile(path);
+      if (encodingDialogFirst) {
+        setPending(false);
+        setEncodingDialog({ path, detected });
+        return;
+      }
+      await runImportSource({ kind: 'file', fileName: path, text: detected.text });
+    } catch (err) {
+      notifyError(err);
+      setPending(false);
+    }
+  }
+
+  async function pickAndImport(encodingDialogFirst: boolean) {
+    if (pending) return;
+    try {
+      const picked = await commands.pickImportFile();
+      if (!picked) return;
+      await startFileImport(picked, encodingDialogFirst);
+    } catch (err) {
+      notifyError(err);
+      setPending(false);
+    }
+  }
+
+  async function importFromUrl(url: string) {
+    if (pending) return;
+    setPending(true);
+    try {
+      const fetched = await commands.fetchUrlText(url);
+      await runImportSource({ kind: 'url', body: fetched.text, contentType: fetched.content_type });
+    } catch (err) {
+      notifyError(err);
+      setPending(false);
+    }
+  }
+
+  function confirmEncodingDialog(result: ReadTextFileResult) {
+    const state = encodingDialog;
+    setEncodingDialog(null);
+    if (state) void runImportSource({ kind: 'file', fileName: state.path, text: result.text });
+  }
+
+  // Drag & drop: subscribe once via the webview-level API (HTML5 DnD events
+  // are suppressed by Tauri's native handler); the latest committed handlers
+  // are reached through a ref so locale/pending state never goes stale.
+  const dropHandlerRef = useRef<(paths: string[]) => void>(() => {});
+  useEffect(() => {
+    dropHandlerRef.current = (paths) => {
+      if (pending || paths.length !== 1) return; // zero/several items ignored silently
+      const dropped = paths[0].trim();
+      if (/^https?:\/\//i.test(dropped)) {
+        void importFromUrl(dropped);
+        return;
+      }
+      // Unsupported extensions are ignored without an error (spec scenario
+      // "Unsupported drop is ignored"); paths that are neither URLs nor
+      // importable files stay silent too.
+      if (!hasImportableExtension(dropped)) return;
+      void startFileImport(dropped);
+    };
+  });
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: UnlistenFn | undefined;
+    getCurrentWebview()
+      .onDragDropEvent((event) => {
+        const payload = event.payload;
+        // Overlay state derives from enter/leave transitions; some window
+        // managers skip `over`, none of the logic needs it.
+        if (payload.type === 'enter') {
+          setDropDepth((d) => Math.min(d + 1, 4));
+        } else if (payload.type === 'leave' || payload.type === 'drop') {
+          setDropDepth(0);
+        }
+        if (payload.type === 'drop') dropHandlerRef.current(payload.paths);
+      })
+      .then((fn) => {
+        if (disposed) fn();
+        else unlisten = fn;
+      })
+      .catch(() => {
+        // Subscription failed (pre-webview teardown): drops stay inert, the
+        // menu-driven import paths are unaffected. Logged for diagnosis.
+        console.warn('drag-drop subscription failed');
+      });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   // Shared direct-HTML executor for the Add button and the paste listener.
   // HTML whose markup yields no readable text (e.g. pure nav/button chrome)
@@ -435,15 +628,53 @@ export function AppShell() {
         >
           <Group justify="space-between" align="center" mb="xs" wrap="nowrap">
             <Title order={6} c="dimmed">{tt('app.queue.title')}</Title>
-            <Button
-              size="xs"
-              color="blue"
-              loading={pending}
-              disabled={pending}
-              onClick={() => addEntry()}
-            >
-              {tt('app.add')}
-            </Button>
+            {/* Split-button (ui spec): primary click keeps the clipboard Add
+                flow; the dropdown shares one import flow with drag & drop. */}
+            <Group gap={4} wrap="nowrap">
+              <Button
+                size="xs"
+                color="blue"
+                loading={pending}
+                disabled={pending}
+                onClick={() => addEntry()}
+                style={{
+                  borderTopRightRadius: 0,
+                  borderBottomRightRadius: 0,
+                }}
+              >
+                {tt('app.add')}
+              </Button>
+              <Menu withinPortal position="bottom-end" disabled={pending}>
+                <Menu.Target>
+                  <ActionIcon
+                    size="xs"
+                    color="blue"
+                    variant="filled"
+                    disabled={pending}
+                    aria-label={tt('app.import.menu.file')}
+                    style={{
+                      borderTopLeftRadius: 0,
+                      borderBottomLeftRadius: 0,
+                      height: 'auto',
+                      minHeight: 'var(--button-height-xs)',
+                    }}
+                  >
+                    <IconChevronDown />
+                  </ActionIcon>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  <Menu.Item onClick={() => void pickAndImport(false)}>
+                    {tt('app.import.menu.file')}
+                  </Menu.Item>
+                  <Menu.Item onClick={() => void pickAndImport(true)}>
+                    {tt('app.import.menu.file_encoding')}
+                  </Menu.Item>
+                  <Menu.Item onClick={() => setUrlDialogOpen(true)}>
+                    {tt('app.import.menu.url')}
+                  </Menu.Item>
+                </Menu.Dropdown>
+              </Menu>
+            </Group>
           </Group>
           <TextInput
             ref={searchInputRef}
@@ -513,6 +744,33 @@ export function AppShell() {
         onSynthesize={handlePreviewSynthesize}
         onCancel={handlePreviewCancel}
       />
+
+      <UrlImportDialog
+        opened={urlDialogOpen}
+        onConfirm={(url) => {
+          setUrlDialogOpen(false);
+          void importFromUrl(url);
+        }}
+        onClose={() => setUrlDialogOpen(false)}
+      />
+
+      {encodingDialog && (
+        <EncodingDialog
+          opened
+          path={encodingDialog.path}
+          initial={encodingDialog.detected}
+          onConfirm={confirmEncodingDialog}
+          onCancel={() => setEncodingDialog(null)}
+        />
+      )}
+
+      {/* Full-window drop overlay (ui spec): visible only while a drag is
+          over the window, never intercepts pointer events. */}
+      {dropDepth > 0 && (
+        <div className={classes.dropOverlay} aria-hidden>
+          <div className={classes.dropCard}>{tt('app.import.drop_overlay')}</div>
+        </div>
+      )}
     </MantineAppShell>
   );
 }

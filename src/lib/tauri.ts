@@ -117,6 +117,40 @@ export interface PreviewNormalizeResult {
   normalized: string;
 }
 
+/** Result of the backend import file reader: UTF-8 text plus the canonical
+ *  name of the encoding actually used (text-import spec, #224). */
+export interface ReadTextFileResult {
+  text: string;
+  encoding: string;
+}
+
+/** Result of the backend page fetcher for URL imports: decoded text, the
+ *  encoding used, and the response content type the frontend routes on. */
+export interface FetchUrlTextResult {
+  text: string;
+  encoding: string;
+  content_type: string | null;
+}
+
+/** Canonical `encoding_rs` names of every encoding offered by the manual
+ *  override dialog — mirrors SUPPORTED_ENCODING_NAMES in
+ *  src-tauri/src/import.rs (the Rust side stays the source of truth). */
+export const IMPORT_ENCODING_NAMES = [
+  'UTF-8',
+  'UTF-16LE',
+  'UTF-16BE',
+  'windows-1251',
+  'IBM866',
+  'ISO-8859-5',
+  'KOI8-R',
+  'KOI8-U',
+  'x-mac-cyrillic',
+  'windows-1250',
+  'windows-1252',
+  'ISO-8859-1',
+  'ISO-8859-15',
+] as const;
+
 export type CleanupMode =
   | { mode: 'size_limit'; target_mb: number }
   | { mode: 'all' };
@@ -237,6 +271,21 @@ export const commands = {
    * the webview holds no arbitrary-host http capability (#231). */
   fetchImageBytes: (url: string): Promise<number[]> =>
     tauriInvoke('fetch_image_bytes', { url }),
+
+  /** Native file picker filtered to importable extensions; null = cancelled
+   * (#224). Runs on plain rfd backend-side (no dialog plugin/capability). */
+  pickImportFile: (): Promise<string | null> =>
+    tauriInvoke('pick_import_file'),
+
+  /** Read a local text file for import; pass an encoding name from
+   * IMPORT_ENCODING_NAMES to re-decode under the user's explicit choice. */
+  readTextFile: (path: string, encoding?: string): Promise<ReadTextFileResult> =>
+    tauriInvoke('read_text_file', { path, encoding: encoding ?? null }),
+
+  /** Fetch an http(s) page for import (scheme/size/timeouts validated in
+   * the backend command), decoded to UTF-8 with its content type (#224). */
+  fetchUrlText: (url: string): Promise<FetchUrlTextResult> =>
+    tauriInvoke('fetch_url_text', { url }),
 };
 
 // --- Events (backend → frontend) ---

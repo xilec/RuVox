@@ -1555,7 +1555,7 @@ const MAX_IMAGE_BYTES: usize = 20 * 1024 * 1024;
 pub async fn fetch_image_bytes(url: String) -> CmdResult<Vec<u8>> {
     let parsed = validate_image_url(&url)?;
 
-    let response = image_client().get(parsed).send().await.map_err(|e| {
+    let response = http_client().get(parsed).send().await.map_err(|e| {
         CommandError::internal("image.fetch_failed", vec![]).with_message(e.to_string())
     })?;
     if !response.status().is_success() {
@@ -1591,13 +1591,18 @@ pub async fn fetch_image_bytes(url: String) -> CmdResult<Vec<u8>> {
     Ok(bytes.into())
 }
 
+// Import commands live in commands/import.rs (domain seam, see review);
+// the glob below re-exports them for lib.rs registration.
+mod import;
+pub use import::{fetch_url_text, pick_import_file, read_text_file};
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-/// Shared HTTP client for [`fetch_image_bytes`]. Built once (a fresh client
-/// per call would rebuild the TLS config every time) and bounded: without a
-/// total timeout a stalled server would hang "Copy image" forever with no
-/// defined failure path.
-fn image_client() -> &'static reqwest::Client {
+/// Shared HTTP client for [`fetch_image_bytes`] and [`fetch_url_text`].
+/// Built once (a fresh client per call would rebuild the TLS config every
+/// time) and bounded: without a total timeout a stalled server would hang
+/// the caller forever with no defined failure path.
+fn http_client() -> &'static reqwest::Client {
     static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
     CLIENT.get_or_init(|| {
         reqwest::Client::builder()
@@ -1608,23 +1613,47 @@ fn image_client() -> &'static reqwest::Client {
     })
 }
 
-/// Parse and validate an image URL for [`fetch_image_bytes`]: only absolute
-/// http(s) URLs are accepted (no `file:`, `data:`, custom schemes). Plain
-/// http stays allowed deliberately — CSP `img-src` limits *display* to
-/// https, but the copy path produces inert clipboard bytes, so legacy
-/// plain-http images remain copyable.
-fn validate_image_url(url: &str) -> Result<reqwest::Url, CommandError> {
-    let parsed = reqwest::Url::parse(url).map_err(|e| {
-        CommandError::internal("image.url_invalid", vec![url.to_string()])
-            .with_message(e.to_string())
+/// What went wrong while parsing an absolute http(s) URL
+/// ([`parse_http_url`]). Callers map variants onto their own wire-code
+/// namespace (`image.*`, `import.*`).
+enum HttpUrlError {
+    Invalid { input: String },
+    SchemeUnsupported { scheme: String },
+}
+
+/// Parse and validate an absolute http(s) URL for outbound fetches: only
+/// absolute `http`/`https` URLs are accepted (no `file:`, `data:`, custom
+/// schemes). Plain http stays allowed deliberately — CSP limits *display*
+/// of plain-http images, but clipboard-bound bytes and text imports are
+/// inert reads, so legacy plain-http sources remain reachable.
+fn parse_http_url(url: &str) -> Result<reqwest::Url, HttpUrlError> {
+    let parsed = reqwest::Url::parse(url).map_err(|_| HttpUrlError::Invalid {
+        input: url.to_string(),
     })?;
     match parsed.scheme() {
         "https" | "http" => Ok(parsed),
-        scheme => Err(CommandError::internal(
-            "image.url_scheme_unsupported",
-            vec![format!("{scheme}:")],
-        )),
+        scheme => Err(HttpUrlError::SchemeUnsupported {
+            scheme: format!("{scheme}:"),
+        }),
     }
+}
+
+fn map_url_error(code_namespace: &str, e: HttpUrlError) -> CommandError {
+    match e {
+        HttpUrlError::Invalid { input } => {
+            CommandError::internal(format!("{code_namespace}.url_invalid"), vec![input])
+        }
+        HttpUrlError::SchemeUnsupported { scheme } => CommandError::internal(
+            format!("{code_namespace}.url_scheme_unsupported"),
+            vec![scheme],
+        ),
+    }
+}
+
+/// Parse and validate an image URL for [`fetch_image_bytes`] on top of
+/// [`parse_http_url`], keeping the historical `image.*` wire codes.
+fn validate_image_url(url: &str) -> Result<reqwest::Url, CommandError> {
+    parse_http_url(url).map_err(|e| map_url_error("image", e))
 }
 
 /// Lowercase media type of a Content-Type header (parameters stripped),
