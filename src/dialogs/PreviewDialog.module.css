@@ -67,6 +67,17 @@
   padding: var(--mantine-spacing-md);
 }
 
+.explainer {
+  flex: 0 0 auto;
+  color: var(--mantine-color-dimmed);
+  margin-bottom: var(--mantine-spacing-sm);
+}
+
+.helpText {
+  white-space: pre-line;
+  margin-bottom: var(--mantine-spacing-sm);
+}
+
 .panes {
   flex: 1 1 auto;
   min-height: 0;
