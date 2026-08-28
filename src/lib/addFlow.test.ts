@@ -6,26 +6,24 @@ const HTML = '<p>Раз <b>два</b></p>';
 const PLAIN = 'Раз два';
 
 describe('resolveAddAction', () => {
-  it('opens the dialog with the raw HTML and the html selector when preview is enabled', () => {
+  it('opens the dialog with the raw HTML when preview is enabled', () => {
     expect(
       resolveAddAction({
         html: HTML,
         plain: PLAIN,
         previewEnabled: true,
-        defaultFormat: 'plain',
       }),
-    ).toEqual({ kind: 'preview', text: HTML, format: 'html', plainFallback: PLAIN });
+    ).toEqual({ kind: 'preview', text: HTML, plainFallback: PLAIN });
   });
 
-  it('opens the dialog with plain text and the configured default format', () => {
+  it('opens the dialog with plain text when only a plain flavor exists', () => {
     expect(
       resolveAddAction({
         html: null,
         plain: PLAIN,
         previewEnabled: true,
-        defaultFormat: 'markdown',
       }),
-    ).toEqual({ kind: 'preview', text: PLAIN, format: 'markdown', plainFallback: null });
+    ).toEqual({ kind: 'preview', text: PLAIN, plainFallback: null });
   });
 
   it('reports empty when neither flavor has text (preview enabled)', () => {
@@ -34,7 +32,6 @@ describe('resolveAddAction', () => {
         html: null,
         plain: '',
         previewEnabled: true,
-        defaultFormat: 'plain',
       }),
     ).toEqual({ kind: 'empty' });
   });
@@ -45,7 +42,6 @@ describe('resolveAddAction', () => {
         html: HTML,
         plain: PLAIN,
         previewEnabled: false,
-        defaultFormat: 'plain',
       }),
     ).toEqual({ kind: 'direct-html', html: HTML, plainFallback: PLAIN });
   });
@@ -56,7 +52,6 @@ describe('resolveAddAction', () => {
         html: null,
         plain: PLAIN,
         previewEnabled: false,
-        defaultFormat: 'plain',
       }),
     ).toEqual({ kind: 'direct-plain', text: PLAIN });
   });
@@ -67,7 +62,6 @@ describe('resolveAddAction', () => {
         html: null,
         plain: '',
         previewEnabled: false,
-        defaultFormat: 'plain',
       }),
     ).toEqual({ kind: 'empty' });
   });
@@ -78,7 +72,6 @@ describe('resolveAddAction', () => {
         html: '   ',
         plain: ' \n ',
         previewEnabled: false,
-        defaultFormat: 'plain',
       }),
     ).toEqual({ kind: 'empty' });
   });
@@ -89,7 +82,6 @@ describe('resolveAddAction', () => {
         html: HTML,
         plain: '  ',
         previewEnabled: false,
-        defaultFormat: 'plain',
       }),
     ).toEqual({ kind: 'direct-html', html: HTML, plainFallback: null });
   });
@@ -100,9 +92,8 @@ describe('resolveAddAction', () => {
         html: HTML,
         plain: '',
         previewEnabled: true,
-        defaultFormat: 'plain',
       }),
-    ).toEqual({ kind: 'preview', text: HTML, format: 'html', plainFallback: null });
+    ).toEqual({ kind: 'preview', text: HTML, plainFallback: null });
   });
 
   it('preview ignores a whitespace-only HTML flavor and opens with the plain text', () => {
@@ -111,8 +102,7 @@ describe('resolveAddAction', () => {
         html: '  ',
         plain: PLAIN,
         previewEnabled: true,
-        defaultFormat: 'markdown',
       }),
-    ).toEqual({ kind: 'preview', text: PLAIN, format: 'markdown', plainFallback: null });
+    ).toEqual({ kind: 'preview', text: PLAIN, plainFallback: null });
   });
 });

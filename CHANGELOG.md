@@ -4,6 +4,11 @@ Notable changes in RuVox, in chronological order.
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Auto-detected source format in the preview dialog** — the format selector now defaults to «Авто», which classifies pasted text as HTML, Markdown or plain instead of always assuming Markdown; file and URL imports still preselect the format they know.
+
 ## [0.4.0] — 2026-08-25 — Linux packages
 
 ### Added

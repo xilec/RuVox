@@ -1,7 +1,7 @@
 # linux-runtime Specification
 
 ## Purpose
-TBD - created by archiving change linux-runtime-bundling. Update Purpose after archive.
+Covers the Linux runtime bundling for the packaged builds (.deb, AppImage): how the pinned ONNX Runtime, espeak-ng data, and Piper voice resources are placed next to the installed binary, how the app resolves them at startup outside the Nix dev shell, and what the packages must carry so a clean distro install synthesizes speech without extra setup.
 
 ## Requirements
 

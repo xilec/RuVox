@@ -14,7 +14,7 @@ import { notifications } from '@mantine/notifications';
 import { useState, useEffect, useRef } from 'react';
 import { readText as readClipboardText } from '@tauri-apps/plugin-clipboard-manager';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
-import { commands, toEntryFormat } from '../lib/tauri';
+import { commands } from '../lib/tauri';
 import type { EntryFormat, UIConfig, UnlistenFn } from '../lib/tauri';
 import type { ReadTextFileResult } from '../lib/tauri';
 import { formatError } from '../lib/errors';
@@ -59,9 +59,9 @@ export function AppShell() {
   const [settingsOpened, setSettingsOpened] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewText, setPreviewText] = useState('');
-  // Per-opening format override for the preview dialog: 'html' when the Add
-  // flow auto-detected an HTML clipboard flavor, null = use the configured
-  // viewer default (#195).
+  // Format preselected in the dialog for imported sources (text-import spec,
+  // "Import format routing": extension decides for files). Clipboard openings
+  // leave it null so the dialog starts in the auto-detect mode.
   const [previewFormat, setPreviewFormat] = useState<EntryFormat | null>(null);
   // Plain flavor carried alongside an auto-detected HTML opening of the
   // preview dialog: when the markup yields no readable text, synthesis falls
@@ -175,9 +175,6 @@ export function AppShell() {
         html: rawHtml,
         plain,
         previewEnabled: false,
-        // Unused while the preview gate is off; a constant avoids closing
-        // over `config` in this long-lived listener.
-        defaultFormat: 'plain',
       });
       switch (action.kind) {
         case 'empty':
@@ -245,7 +242,7 @@ export function AppShell() {
       switch (action.kind) {
         case 'preview':
           setPreviewText(action.text);
-          setPreviewFormat(action.format);
+          setPreviewFormat(action.format ?? null);
           setPreviewPlainFallback(null);
           setPreviewOpen(true);
           setPending(false);
@@ -453,7 +450,6 @@ export function AppShell() {
         html: clipboardHtml,
         plain: clipboardText,
         previewEnabled: config?.preview_dialog_enabled ?? false,
-        defaultFormat: toEntryFormat(config?.text_format),
       });
 
       switch (action.kind) {
@@ -463,10 +459,10 @@ export function AppShell() {
           return;
         case 'preview':
           // The preview gate applies to the HTML flavor too (#195): the raw
-          // markup goes into the dialog with the selector pre-set to html,
+          // markup goes into the dialog, which detects the format itself,
           // instead of being ingested directly behind the user's back.
           setPreviewText(action.text);
-          setPreviewFormat(action.format);
+          setPreviewFormat(null);
           setPreviewPlainFallback(action.plainFallback);
           setPreviewOpen(true);
           setPending(false);
@@ -740,7 +736,7 @@ export function AppShell() {
       <PreviewDialog
         opened={previewOpen}
         text={previewText}
-        defaultFormat={previewFormat ?? toEntryFormat(config?.text_format)}
+        initialFormat={previewFormat ?? undefined}
         onSynthesize={handlePreviewSynthesize}
         onCancel={handlePreviewCancel}
       />
