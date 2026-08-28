@@ -63,7 +63,7 @@ const DEBOUNCE_MS = 1000;
  *  section in the language matching the UI (see the README language policy:
  *  README.md is Russian, README.en.md is its English mirror). */
 const README_HELP_URLS = {
-  ru: 'https://github.com/xilec/RuVox#Нормализация',
+  ru: 'https://github.com/xilec/RuVox#нормализация',
   en: 'https://github.com/xilec/RuVox#normalization',
 } as const;
 
@@ -212,14 +212,21 @@ export function PreviewDialog({
 
   // ESC closes the floating window (mantine Modal used to handle this; non-modal
   // react-rnd has no built-in handler, so we bind one manually while opened).
+  // With the help popover open, ESC closes it first and only a second ESC
+  // cancels the dialog.
   useEffect(() => {
     if (!opened) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCancel();
+      if (e.key !== 'Escape') return;
+      if (helpOpened) {
+        setHelpOpened(false);
+        return;
+      }
+      onCancel();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [opened, onCancel]);
+  }, [opened, onCancel, helpOpened]);
 
   function handleSynthesize() {
     onSynthesize(synthesisText, skipShortTexts, playWhenReady, effectiveFormat);

@@ -31,7 +31,7 @@
 
 ## 4. Validation
 
-- [ ] 4.1 `nix develop -c just lint` and `nix develop -c just test` green.
+- [x] 4.1 `nix develop -c just lint` and `nix develop -c just test` green.
 - [ ] 4.2 Manual pass (checklist to the user): open the Add flow with real
       clipboard text — explainer visible, popover opens, README link opens
       the browser at the right section, layout intact at the minimum window

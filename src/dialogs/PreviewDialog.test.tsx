@@ -14,13 +14,19 @@ vi.mock('@tauri-apps/plugin-opener', () => ({
   openUrl: vi.fn(),
 }));
 
+vi.mock('@mantine/notifications', () => ({
+  notifications: { show: vi.fn() },
+}));
+
 import { PreviewDialog } from './PreviewDialog';
 import { commands } from '../lib/tauri';
 import { openUrl } from '@tauri-apps/plugin-opener';
+import { notifications } from '@mantine/notifications';
 import { useLocaleStore } from '../stores/locale';
 
 const previewNormalize = vi.mocked(commands.previewNormalize);
 const openUrlMock = vi.mocked(openUrl);
+const showMock = vi.mocked(notifications.show);
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -72,6 +78,7 @@ describe('PreviewDialog normalization explainer', () => {
   beforeEach(() => {
     previewNormalize.mockReset().mockResolvedValue({ normalized: 'нормализованный текст' });
     openUrlMock.mockReset().mockResolvedValue(undefined);
+    showMock.mockReset();
     useLocaleStore.setState({ locale: 'ru' });
     host = document.createElement('div');
     document.body.appendChild(host);
@@ -122,7 +129,7 @@ describe('PreviewDialog normalization explainer', () => {
       link!.click();
     });
     expect(openUrlMock).toHaveBeenCalledWith(
-      'https://github.com/xilec/RuVox#Нормализация',
+      'https://github.com/xilec/RuVox#нормализация',
     );
   });
 
@@ -146,5 +153,52 @@ describe('PreviewDialog normalization explainer', () => {
     expect(openUrlMock).toHaveBeenCalledWith(
       'https://github.com/xilec/RuVox#normalization',
     );
+  });
+
+  it('a failed README open surfaces a red error notification', async () => {
+    openUrlMock.mockRejectedValueOnce(new Error('boom'));
+    render();
+    const button = helpButton();
+    expect(button).toBeTruthy();
+    act(() => {
+      button!.click();
+    });
+    const link = Array.from(document.body.querySelectorAll('a')).find((a) =>
+      a.textContent?.includes('Подробнее'),
+    );
+    expect(link, 'README link rendered').toBeTruthy();
+    await act(async () => {
+      link!.click();
+      await Promise.resolve();
+    });
+    expect(showMock).toHaveBeenCalledWith(
+      expect.objectContaining({ color: 'red' }),
+    );
+  });
+
+  it('first ESC closes the help popover, second ESC cancels the dialog', () => {
+    const onCancel = vi.fn();
+    act(() => {
+      root.render(
+        <MantineProvider>
+          <PreviewDialog text={TEXT} opened onSynthesize={vi.fn()} onCancel={onCancel} />
+        </MantineProvider>,
+      );
+    });
+    const button = helpButton();
+    expect(button).toBeTruthy();
+    act(() => {
+      button!.click();
+    });
+    expect(document.body.textContent).toContain('Переписывается всё');
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    });
+    expect(onCancel).not.toHaveBeenCalled();
+    expect(document.body.textContent).not.toContain('Переписывается всё');
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    });
+    expect(onCancel).toHaveBeenCalledTimes(1);
   });
 });
