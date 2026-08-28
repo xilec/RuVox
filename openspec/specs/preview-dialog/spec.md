@@ -39,6 +39,14 @@ clipboard surfaces as a read error from the plugin).
 `AppShell` SHALL load `UIConfig` once per mount for this decision and treat
 a config load failure as "dialog disabled".
 
+The same gating decision SHALL apply to every import entry point (drag &
+drop, «Файл…», «Файл с кодировкой…», «По ссылке…»): with the gate enabled,
+the imported source opens the `PreviewDialog` pre-filled with its decoded
+text or fetched markup — it SHALL NOT create an entry directly. Import
+failures that happen before any text exists (undecodable file, fetch error,
+SPA shell) SHALL surface their own error notifications instead of opening
+the dialog.
+
 #### Scenario: Dialog opens for HTML clipboard content
 
 - GIVEN `preview_dialog_enabled` is `true` and the clipboard holds
@@ -75,6 +83,26 @@ a config load failure as "dialog disabled".
   that yields no readable text, and no plain-text flavor
 - WHEN the user clicks Add
 - THEN a neutral blue «Буфер обмена пуст» notification is shown and no
+  entry is created
+
+#### Scenario: Dropped file respects the gate
+
+- GIVEN `preview_dialog_enabled` is `true`
+- WHEN the user drops a `.txt` file onto the window
+- THEN the preview dialog opens pre-filled with the decoded text and no
+  entry is created until confirmation
+
+#### Scenario: Dropped file ingests directly when disabled
+
+- GIVEN `preview_dialog_enabled` is `false`
+- WHEN the user drops a `.txt` file onto the window
+- THEN no dialog opens and an entry is created from the decoded text at once
+
+#### Scenario: Failed import never opens the dialog
+
+- GIVEN `preview_dialog_enabled` is `true`
+- WHEN the user imports a URL that responds with HTTP 403
+- THEN the localized error notification is shown, no dialog opens, and no
   entry is created
 
 ### Requirement: Floating non-modal window

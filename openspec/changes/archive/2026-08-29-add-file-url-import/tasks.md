@@ -15,10 +15,12 @@
 
 ## 4. Frontend: UI entry points
 
-- [ ] 4.1 Split-button «Добавить» in AppShell navbar: primary click unchanged, menu «Файл…» / «Файл с кодировкой…» / «По ссылке…»; file picker via Tauri dialog plugin (add capability entry), URL input modal; i18n keys added to `src/i18n/{ru,en}.ts`; verify `pnpm test:unit` + manual click-through
-- [ ] 4.2 Encoding dialog component: raw decoded preview + encoding Select preselected with detected value; confirm re-decodes and continues to the preview dialog; cancel aborts; verify component test
-- [ ] 4.3 Drag & drop: subscribe `getCurrentWebview().onDragDropEvent()` in AppShell; full-window overlay during drag-over; single supported file/link starts the import flow; unsupported drops ignored silently; verify manual on Linux (KDE Wayland) per spec scenarios
-- [ ] 4.4 Wire all entry points through the preview gate: enabled → PreviewDialog prefilled (file text or fetched markup), disabled → direct ingestion via the existing executor; failures before text exists → error notifications, no dialog; verify unit tests around the gating glue + manual pass
+- [x] 4.1 Split-button «Добавить» in AppShell navbar: primary click unchanged, menu «Файл…» / «Файл с кодировкой…» / «По ссылке…»; file picker via Tauri dialog plugin (add capability entry), URL input modal; i18n keys added to `src/i18n/{ru,en}.ts`; verify `pnpm test:unit` + manual click-through
+  - Deviation: file picker implemented on plain `rfd` (`pick_import_file` command) per the #223 precedent — no dialog plugin, no capability change; recorded in design.md.
+- [x] 4.2 Encoding dialog component: raw decoded preview + encoding Select preselected with detected value; confirm re-decodes and continues to the preview dialog; cancel aborts; verify component test
+- [x] 4.3 Drag & drop: subscribe `getCurrentWebview().onDragDropEvent()` in AppShell; full-window overlay during drag-over; single supported file/link starts the import flow; unsupported drops ignored silently; verify manual on Linux (KDE Wayland) per spec scenarios
+  - Verified manually by the user on host (niri): D&D works.
+- [x] 4.4 Wire all entry points through the preview gate: enabled → PreviewDialog prefilled (file text or fetched markup), disabled → direct ingestion via the existing executor; failures before text exists → error notifications, no dialog; verify unit tests around the gating glue + manual pass
 
 ## 5. Gates & docs
 
@@ -26,4 +28,7 @@
   - Note: on the dev machine (NixOS) the `uv run ruff check` step cannot exec
     uv's manylinux ruff binary (stub-ld); ttsd sources verified clean with a
     nixpkgs ruff build instead. CI runs the pinned step normally.
-- [ ] 5.2 Manual-test task: fresh app — drop `.txt` (UTF-8), `.txt` (CP1251), `.md`, `.html`, an SPA URL, a static-article URL, a 404 URL; check overlay behavior, split-button actions, encoding-dialog correction flow, preview-gate on/off paths, RU/EN notifications
+- [x] 5.2 Manual-test task: fresh app — drop `.txt` (UTF-8), `.txt` (CP1251), `.md`, `.html`, an SPA URL, a static-article URL, a 404 URL; check overlay behavior, split-button actions, encoding-dialog correction flow, preview-gate on/off paths, RU/EN notifications
+  - Covered by the VM auto-run (article/SPA/404/empty/KOI8, gate on/off, RU/EN)
+    + user's manual pass (D&D, file flows, legacy-encoded files KOI8-R/CP866/
+    ISO-8859-5 in ~ of the VM — all confirmed working).
