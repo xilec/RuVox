@@ -23,9 +23,13 @@ When `config.preview_dialog_enabled` is `true` (the default in
 for **either** flavor — HTML content SHALL NOT bypass the dialog:
 
 - HTML flavor present → the dialog opens pre-filled with the raw HTML markup
-  and the source-format selector initialized to `html`.
+  and the source-format selector initialized to the auto mode; the effective
+  source format is the detected one (`html` for clipboard markup).
 - Only plain text present → the dialog opens pre-filled with the plain text
-  and the selector initialized from `UIConfig.text_format`.
+  and the selector initialized to the auto mode; the effective source format
+  is the detected one. `UIConfig.text_format` is no longer consumed by the
+  dialog — and, after this change, by any frontend code at all; the field
+  stays in the schema untouched.
 - Neither → no dialog; a neutral blue «Буфер обмена пуст» hint is shown.
 
 When `preview_dialog_enabled` is `false`, no dialog opens and the flow is
@@ -53,15 +57,17 @@ the dialog.
   `text/html` copied from a browser
 - WHEN the user clicks Add
 - THEN the preview dialog opens pre-filled with the raw HTML markup, the
-  source-format selector is set to `html`, and no queue entry is created yet
+  source-format selector is set to the auto mode showing the detected `html`,
+  and no queue entry is created yet
 
 #### Scenario: Dialog opens when enabled
 
 - GIVEN `preview_dialog_enabled` is `true` and the clipboard contains only
   plain text
 - WHEN the user clicks Add
-- THEN the preview dialog opens pre-filled with the clipboard text and no
-  queue entry is created yet
+- THEN the preview dialog opens pre-filled with the clipboard text, the
+  source-format selector is set to the auto mode, and no queue entry is
+  created yet
 
 #### Scenario: Direct add when disabled
 
@@ -229,20 +235,29 @@ The system SHALL store the dialog gate as `preview_dialog_enabled: boolean` in `
 
 ### Requirement: Source format selection
 
-The dialog SHALL provide a source-format selector with the values `plain`,
-`markdown`, and `html`. Its initial value is the `defaultFormat` prop: the
-configured viewer default (`UIConfig.text_format`), or `html` when the Add
-flow auto-detected an HTML clipboard flavor for this opening. The selector
-controls how the text is interpreted when "Синтезировать" is pressed:
+The dialog SHALL provide a source-format selector with the values `auto`
+(the default), `plain`, `markdown`, and `html`. The `auto` value SHALL be
+selected when the dialog opens from a clipboard flow; an opening from an
+import SHALL preselect the routed format instead (text-import spec,
+"Import format routing"), and every opening allows switching to any value
+including the auto mode. The `auto` label SHALL show the format currently
+detected for the text under consideration (e.g. «Авто (HTML)»), and the
+detection SHALL re-run whenever the text changes — including while the user
+edits it.
+
+The effective source format is the explicitly chosen value when the selector
+is not in the auto mode, and the detected format when it is. The effective
+format controls both the right preview pane and what happens when
+"Синтезировать" is pressed:
 
 - `plain` / `markdown`: the (original or edited) text is ingested unchanged
-  and the chosen value SHALL be persisted as the entry's `format`.
+  and that value SHALL be persisted as the entry's `format`.
 - `html`: the text SHALL be treated as HTML markup — sanitized and
   extracted on the frontend (`sanitizeHtml` + `extractTextForTts`) — and
   the entry SHALL be created with `format: "html"`, the extracted text as
   `original_text`, and the sanitized markup as `html_source`. If extraction
-  yields no readable text, the outcome depends on how the `html` selection
-  came about:
+  yields no readable text, the outcome depends on how the `html` effective
+  format came about:
   - the dialog was opened from an **auto-detected** HTML clipboard flavor
     and a plain flavor was carried along → the system SHALL fall back to
     ingesting the plain text (the same rule as the ungated direct path);
@@ -250,10 +265,34 @@ controls how the text is interpreted when "Синтезировать" is presse
     clipboard) → the system SHALL reject ingestion with a red error
     notification and create no entry.
 
-The right preview pane SHALL reflect the selection: with `html` it shows
-the normalization of the extracted text (what will actually be narrated);
-with `plain` / `markdown` it shows the normalization of the text as-is.
-Changing the selector SHALL re-trigger the debounced preview.
+The right preview pane SHALL reflect the effective format: with `html` it
+shows the normalization of the extracted text (what will actually be
+narrated); with `plain` / `markdown` it shows the normalization of the text
+as-is. Changing the selector or — in the auto mode — the text SHALL
+re-trigger the debounced preview.
+
+#### Scenario: Auto is the default and shows the detection
+
+- GIVEN the dialog opens with plain technical prose
+- WHEN the user looks at the source-format selector
+- THEN it shows the auto mode with the detected format in its label
+  (e.g. «Авто (Plain)»), and no explicit format is selected
+
+#### Scenario: Auto re-detects after an edit
+
+- GIVEN the dialog is open in edit mode with the auto mode selected and
+  plain text
+- WHEN the user replaces the text with an HTML fragment carrying three or
+  more tags
+- THEN the selector's label switches to the detected `html` and the right
+  pane (after the debounce) shows the normalization of the extracted text
+
+#### Scenario: Explicit choice overrides detection
+
+- GIVEN the dialog is open with text detected as `markdown`
+- WHEN the user explicitly selects `plain` and presses "Синтезировать"
+- THEN the text is ingested unchanged with `format: "plain"` — detection
+  plays no further role
 
 #### Scenario: HTML markup picked explicitly
 
@@ -274,15 +313,15 @@ Changing the selector SHALL re-trigger the debounced preview.
 #### Scenario: Auto-detected HTML with no extractable text falls back to plain
 
 - GIVEN the dialog was opened from an auto-detected HTML clipboard flavor
-  (selector pre-set to `html`, plain flavor carried), and the markup is
-  chrome that yields no readable text while the plain flavor has content
+  (effective format `html`, plain flavor carried), and the markup is chrome
+  that yields no readable text while the plain flavor has content
 - WHEN the user presses "Синтезировать" without changing the selector
 - THEN the plain clipboard text is ingested as a normal entry and no error
   is shown
 
 #### Scenario: Markdown choice persists display format
 
-- GIVEN the dialog is open and `markdown` is selected
+- GIVEN the dialog is open and `markdown` is the effective format
 - WHEN the user presses "Синтезировать"
 - THEN the entry is created with the text unchanged and `format:
   "markdown"` persisted, so the viewer renders it in markdown mode
@@ -292,5 +331,74 @@ Changing the selector SHALL re-trigger the debounced preview.
 - GIVEN the dialog is open with raw HTML markup as text
 - WHEN the user switches the selector from `markdown` to `html`
 - THEN the right pane updates (after the debounce) to the normalization of
-  the text extracted from the markup instead of the normalization of the
-  raw markup
+  the text extracted from the markup instead of the normalization of
+  the raw markup
+
+### Requirement: Source format auto-detection
+
+The system SHALL classify text into a source format (`plain`, `markdown`, or
+`html`) from content signals only, without any configuration or user input:
+
+- `html` — when the trimmed text starts with a `<!DOCTYPE html` or `<html`
+  prefix (case-insensitive), or when it contains **three or more** well-formed
+  tag fragments (an angle-bracket construct that opens with `<` or `</`
+  followed by a letter, may carry attributes, and closes with `>`).
+- `markdown` — when the text carries at least one **strong structural signal**:
+  an ATX heading line (`#`–`######` followed by a space), a fenced code block
+  delimiter (``` ``` ```` or `~~~`) on its own line, three or more list-item
+  lines (starting with `-`, `*`, `+`, or a numbered `1.`-style marker), or two
+  or more inline links (`[text](target)`).
+- `plain` — otherwise, and always for empty or whitespace-only text.
+
+The classification SHALL be conservative on the `html` side, because reading
+markup aloud is the costlier mistake than under-detecting it: technical prose
+with angle brackets (`a < b`, `x -> y`, C++ includes), single generic
+parameters (`<T>`), or one stray tag-looking fragment in an otherwise plain
+text SHALL NOT classify as `html`.
+
+#### Scenario: Full HTML document is detected
+
+- WHEN the text starts with `<!DOCTYPE html>` (or `<html`) and contains markup
+- THEN the detected format is `html`
+
+#### Scenario: Markup fragment with several tags is detected
+
+- GIVEN the text is not a full document but carries three or more well-formed
+  tags (e.g. `<p>Первый</p><p>Второй</p><b>третий</b>`)
+- WHEN the format is detected
+- THEN the detected format is `html`
+
+#### Scenario: Angle-bracket prose stays plain
+
+- GIVEN the text is technical prose such as `if a < b && c > d` or
+  `Vec<T> get_user_data()`
+- WHEN the format is detected
+- THEN the detected format is `plain` — the fragments are not tags and fewer
+  than three tag-like constructs exist
+
+#### Scenario: Single stray tag-looking fragment stays plain
+
+- GIVEN a plain paragraph that contains exactly one tag-looking fragment
+  (e.g. `<cmath>` in `подключите <cmath> для std::sqrt`)
+- WHEN the format is detected
+- THEN the detected format is `plain`
+
+#### Scenario: Markdown structural signals are detected
+
+- GIVEN a text with an ATX heading, or a fenced code block, or three or more
+  list-item lines, or two or more inline links
+- WHEN the format is detected
+- THEN the detected format is `markdown`
+
+#### Scenario: Sparse markdown-looking decoration stays plain
+
+- GIVEN a plain paragraph where a single line happens to start with `-` and no
+  other structural signal exists
+- WHEN the format is detected
+- THEN the detected format is `plain`
+
+#### Scenario: Empty text classifies as plain
+
+- GIVEN the text is empty or whitespace-only
+- WHEN the format is detected
+- THEN the detected format is `plain`
