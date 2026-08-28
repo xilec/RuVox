@@ -131,6 +131,7 @@ describe('PreviewDialog normalization explainer', () => {
     expect(openUrlMock).toHaveBeenCalledWith(
       'https://github.com/xilec/RuVox#нормализация',
     );
+    expect(showMock).not.toHaveBeenCalled();
   });
 
   it('README link follows the active UI language', () => {
@@ -172,7 +173,7 @@ describe('PreviewDialog normalization explainer', () => {
       await Promise.resolve();
     });
     expect(showMock).toHaveBeenCalledWith(
-      expect.objectContaining({ color: 'red' }),
+      expect.objectContaining({ color: 'red', title: 'Ошибка', message: 'boom' }),
     );
   });
 

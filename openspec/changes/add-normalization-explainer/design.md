@@ -44,13 +44,14 @@ tooltip" wording is satisfied by this toggle behavior.
 
 ### D3: the README link target and opener
 
-Target: `https://github.com/xilec/RuVox#Нормализация` — the user-facing
-README's normalization section on the default branch (GitHub keeps Cyrillic
-anchors). Opened via `openUrl` from `@tauri-apps/plugin-opener`; fire-and-
-forget is not acceptable per the craft rules, so a rejected promise surfaces
-as a red error notification (same pattern as other frontend command errors).
-If the heading is ever renamed, the anchor update is part of that edit
-(both README mirrors).
+Target: `https://github.com/xilec/RuVox#нормализация` — the user-facing
+README's normalization section on the default branch. GitHub lowercases
+Cyrillic heading anchors (github-slugger), so the fragment must be lowercase
+to match the `## Нормализация` heading. Opened via `openUrl` from
+`@tauri-apps/plugin-opener`; fire-and-forget is not acceptable per the craft
+rules, so a rejected promise surfaces as a red error notification (same
+pattern as other frontend command errors). If the heading is ever renamed,
+the anchor update is part of that edit (both README mirrors).
 
 ### D4: copy ownership and language
 

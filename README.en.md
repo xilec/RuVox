@@ -48,7 +48,7 @@ The preview dialog (opens when you add text) shows the result before synthesis: 
 ### Steering it
 
 - **Source format** in the preview dialog: «Auto», «Plain», «Markdown», or «HTML». «Auto» is the default — RuVox detects the format itself: readable text is extracted from HTML, and Markdown markup (headings, lists, code blocks) is processed by meaning instead of being read symbol by symbol. If detection gets it wrong, pick the format manually.
-- **The `<!-- ruvox-code: brief -->` directive** in the text switches code-block narration to a short description («here is a code example in Python»); `<!-- ruvox-code: full -->` switches back to full reading. By default, code is read in full.
+- **The `<!-- ruvox-code: brief -->` directive** in the text switches code-block narration to a short description («далее следует пример кода на пайтон» — "here is a code example in Python"); `<!-- ruvox-code: full -->` switches back to full reading. By default, code is read in full.
 
 ## Requirements
 
