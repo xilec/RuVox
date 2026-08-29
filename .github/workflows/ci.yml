@@ -22,6 +22,7 @@ jobs:
       nix: ${{ steps.filter.outputs.nix }}
       openspec: ${{ steps.filter.outputs.openspec }}
       windows: ${{ steps.filter.outputs.windows }}
+      nonnix: ${{ steps.filter.outputs.nonnix }}
     steps:
       - uses: actions/checkout@v5
       - uses: dorny/paths-filter@v4
@@ -59,6 +60,17 @@ jobs:
               - '.github/workflows/ci.yml'
               - '.github/workflows/release.yml'
               - 'scripts/fetch-windows-resources.sh'
+            nonnix:
+              - 'src-tauri/**'
+              - 'silero-native/**'
+              - 'src/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'tsconfig.json'
+              - 'vite.config.ts'
+              - 'index.html'
+              - 'docs/install.md'
+              - '.github/workflows/ci.yml'
 
   # Compile-only guard for the Windows port: catches cfg/platform breakage
   # on the real MSVC toolchain without bundling (no resource downloads, no
@@ -92,6 +104,54 @@ jobs:
           # cache key includes the job id, so the release rebuilt all ~600 deps
           # from scratch on every run (~8.5 min lost).
           shared-key: win-msvc
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm tauri build --no-bundle
+
+
+  # End-to-end guard for docs/install.md (the non-Nix build path, #230):
+  # builds the app on a stock ubuntu-24.04 runner with the same system
+  # packages the guide prescribes, so drift between the doc and the real
+  # dependency set fails CI instead of a user's machine. Bundling is
+  # skipped (--no-bundle) to keep the job lean (no AppImage bundler
+  # downloads); the deb/AppImage bundle path is covered by release.yml.
+  nonnix-build:
+    name: Non-Nix build (Ubuntu 24.04)
+    needs: changes
+    if: needs.changes.outputs.nonnix == 'true'
+    runs-on: ubuntu-24.04
+    # Cold run: ~5 min apt + ~20 min cold release build + frontend install.
+    # Warm apt/cargo caches cut it roughly in half.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install the system packages from docs/install.md (Ubuntu block)
+        uses: awalsh128/cache-apt-pkgs-action@v1
+        with:
+          packages: build-essential pkg-config cmake clang libclang-dev libwebkit2gtk-4.1-dev libsoup-3.0-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libmpv-dev libopus-dev libssl-dev libasound2-dev libpulse-dev libpipewire-0.3-dev libfontconfig1-dev libfreetype6-dev libgl-dev libdrm-dev libwayland-dev libxkbcommon-dev wayland-protocols espeak-ng espeak-ng-data curl file git
+          version: 1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri\nsilero-native"
+          # Own cache namespace: this job builds release binaries while the
+          # rust job builds debug test artifacts — a shared key would make
+          # each job thrash the other's cache.
+          shared-key: nonnix-gnu
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: ONNX Runtime dylib (Piper engine, dlopened at run time)
+        run: |
+          ORT_VERSION=1.20.1
+          mkdir -p "$HOME/.local/onnxruntime"
+          curl -L -o /tmp/onnxruntime.tgz \
+            "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz"
+          tar -xzf /tmp/onnxruntime.tgz -C "$HOME/.local/onnxruntime" --strip-components=1
+          echo "ORT_DYLIB_PATH=$HOME/.local/onnxruntime/lib/libonnxruntime.so" >> "$GITHUB_ENV"
       - run: pnpm install --frozen-lockfile
       - run: pnpm tauri build --no-bundle
 
