@@ -157,7 +157,7 @@ async fn run_save_dialog(entry_id: &str) -> CmdResult<Option<(String, Option<Str
 #[cfg(not(target_os = "linux"))]
 async fn run_save_dialog(entry_id: &str) -> CmdResult<Option<(String, Option<String>)>> {
     let default_name = format!("ruvox-{entry_id}.opus");
-    tokio::task::spawn_blocking(move || {
+    let chosen = tokio::task::spawn_blocking(move || {
         let path = rfd::FileDialog::new()
             .set_file_name(&default_name)
             .add_filter("Ogg Opus", &["opus"])
@@ -169,7 +169,8 @@ async fn run_save_dialog(entry_id: &str) -> CmdResult<Option<(String, Option<Str
     .await
     .map_err(|e| {
         CommandError::internal("export.dialog_panicked", vec![]).with_message(e.to_string())
-    })?
+    })?;
+    Ok(chosen)
 }
 
 /// Copy an entry's stored audio file to a user-chosen path (#225).
