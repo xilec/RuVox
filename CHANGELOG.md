@@ -8,6 +8,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 
 ### Added
 - **Auto-detected source format in the preview dialog** — the format selector now defaults to «Авто», which classifies pasted text as HTML, Markdown or plain instead of always assuming Markdown; file and URL imports still preselect the format they know.
+- **"Save audio as…" audio export** — the queue context menu exports an entry's audio to any folder via the native save dialog (#225).
 
 ## [0.4.0] — 2026-08-25 — Linux packages
 
