@@ -41,7 +41,7 @@ sudo dnf install -y \
   alsa-lib-devel pulseaudio-libs-devel pipewire-devel \
   fontconfig-devel freetype-devel mesa-libGL-devel libdrm-devel \
   wayland-devel libxkbcommon-devel wayland-protocols-devel \
-  espeak-ng espeak-ng-data \
+  espeak-ng \
   curl file
 ```
 
@@ -143,9 +143,11 @@ depends on the distribution:
 - **Ubuntu 24.04 / Debian 13:** the apt package ships the data under the
   multiarch lib dir, so point the variable at
   `/usr/lib/x86_64-linux-gnu`.
-- **Fedora / Arch:** check `dpkg -L espeak-ng-data` equivalent
-  (`rpm -ql espeak-ng-data`, `pacman -Ql espeak-ng`) and use the parent
-  of the `espeak-ng-data` directory.
+- **Fedora / RHEL:** the data ships inside the single `espeak-ng`
+  package at `/usr/share/espeak-ng-data`, so the parent is
+  `/usr/share`.
+- **Arch:** check `pacman -Ql espeak-ng` and use the parent of the
+  `espeak-ng-data` directory.
 
 ```bash
 # Ubuntu 24.04 / Debian 13:
