@@ -362,6 +362,7 @@ export const ru = {
   'errors.import.task_panicked': 'Внутренняя ошибка при импорте',
   'errors.export.no_audio': 'У записи {0} нет сохранённого аудиофайла',
   'errors.export.copy_failed': 'Не удалось скопировать аудиофайл: {0}',
+  'errors.export.convert_failed': 'Не удалось преобразовать аудио в WAV: {0}',
   'errors.export.dialog_panicked': 'Внутренняя ошибка при открытии диалога сохранения',
   'errors.export.task_panicked': 'Внутренняя ошибка при экспорте аудио',
 

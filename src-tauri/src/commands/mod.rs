@@ -3222,6 +3222,69 @@ mod tests {
             other => panic!("expected Internal, got {other:?}"),
         }
     }
+
+    /// A real Opus file exported to a `.wav` target is decoded to PCM WAV,
+    /// and the cached original stays untouched (#252).
+    #[test]
+    fn export_audio_to_wav_target_converts_opus_audio() {
+        let (storage, _dir) = make_service();
+        // Encode a real Opus file from a sine WAV into the cache.
+        let id = storage.add_entry("текст".to_string()).unwrap().id;
+        let dir = TempDir::new().unwrap();
+        let wav_path = dir.path().join("src.wav");
+        crate::storage::test_util::write_sine_wav(&wav_path, 24_000, 440.0, 0.25);
+        crate::audio::encode_wav_to_opus(
+            &wav_path,
+            &storage.data_dir().join("audio").join(format!("{id}.opus")),
+        )
+        .unwrap();
+        let mut entry = storage.get_entry(&id).unwrap();
+        entry.audio_path = Some(format!("{id}.opus"));
+        entry.status = EntryStatus::Ready;
+        storage.update_entry(entry).unwrap();
+
+        let target_dir = TempDir::new().unwrap();
+        let target = target_dir.path().join("export.wav");
+
+        super::export::export_audio_to(&storage, &id.to_string(), &target).unwrap();
+
+        let reader = hound::WavReader::open(&target).unwrap();
+        let spec = reader.spec();
+        assert_eq!(spec.channels, 1);
+        assert_eq!(spec.sample_rate, 48_000);
+        assert_eq!(spec.sample_format, hound::SampleFormat::Int);
+        assert!(
+            reader.duration() > 44_000,
+            "expected ~1 s of audio, got {}",
+            reader.duration()
+        );
+        assert!(
+            storage
+                .data_dir()
+                .join("audio")
+                .join(format!("{id}.opus"))
+                .exists(),
+            "cached opus original must stay in place"
+        );
+    }
+
+    /// A corrupt `.opus` exported to a `.wav` target fails with the
+    /// conversion error, not the copy error (#252).
+    #[test]
+    fn export_audio_to_wav_target_maps_decode_failure_to_convert_failed() {
+        let (storage, _dir) = make_service();
+        let id = seed_audio_entry(&storage, "audio.opus", b"corrupt payload");
+        let target_dir = TempDir::new().unwrap();
+        let target = target_dir.path().join("export.wav");
+
+        let err = super::export::export_audio_to(&storage, &id.to_string(), &target).unwrap_err();
+
+        match err {
+            CommandError::Internal { code, .. } => assert_eq!(code, "export.convert_failed"),
+            other => panic!("expected Internal, got {other:?}"),
+        }
+        assert!(!target.exists(), "no target file must be left behind");
+    }
 }
 
 #[cfg(test)]

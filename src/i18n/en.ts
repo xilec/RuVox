@@ -359,6 +359,7 @@ export const en: Record<MessageKey, string> = {
   'errors.import.task_panicked': 'Internal error during import',
   'errors.export.no_audio': 'Entry {0} has no stored audio file',
   'errors.export.copy_failed': 'Failed to copy the audio file: {0}',
+  'errors.export.convert_failed': 'Failed to convert the audio to WAV: {0}',
   'errors.export.dialog_panicked': 'Internal error while opening the save dialog',
   'errors.export.task_panicked': 'Internal error during audio export',
 
