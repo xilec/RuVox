@@ -46,8 +46,10 @@
 ## 5. Gates & manual pass
 
 - [x] 5.1 Full gates: `nix develop -c just lint && nix develop -c just test` green.
-- [ ] 5.2 Manual pass (checklist for the user): run the app from a locally built
-      AppImage — Settings shows «Проверить обновления» and the check runs against the
-      endpoint; run via `pnpm tauri dev`/nix — the section is hidden, no errors in the
-      log. E2E self-update is verified at the next published release (old AppImage →
-      new version round trip).
+- [x] 5.2 Manual pass (executed by the agent in the Ubuntu 24.04 QEMU VM on
+      release-path builds): AppImage — Settings shows the updates section and the
+      check runs (startup silent, manual reports via log+toast); .deb — section
+      hidden, no checks; E2E self-update round trip (local manifest v0.4.1 →
+      download → signature verify → AppImage replaced → relaunch) verified in-VM.
+      Full production E2E (old AppImage → published release) lands with the next
+      release.
