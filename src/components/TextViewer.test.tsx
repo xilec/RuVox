@@ -25,33 +25,6 @@ vi.mock('../lib/mermaid', () => ({
 }));
 vi.mock('../lib/viewerCopy', () => ({ copyLinkAddress }));
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
-
-// jsdom has no matchMedia; Mantine's useComputedColorScheme needs it.
-Object.defineProperty(window, 'matchMedia', {
-  writable: true,
-  value: (query: string) => ({
-    matches: false,
-    media: query,
-    onchange: null,
-    addListener: () => {},
-    removeListener: () => {},
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    dispatchEvent: () => false,
-  }),
-});
-
-// jsdom has no ResizeObserver; Mantine's ScrollArea needs it.
-class ResizeObserverStub {
-  observe(): void {}
-  unobserve(): void {}
-  disconnect(): void {}
-}
-(globalThis as { ResizeObserver?: unknown }).ResizeObserver ??=
-  ResizeObserverStub;
-
 import { TextViewer } from './TextViewer';
 
 function makeEntry(): TextEntry {
