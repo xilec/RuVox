@@ -152,7 +152,7 @@ async fn regenerate_entry_replaces_audio_and_resynthesizes() {
     std::fs::write(&audio_file, b"old-marker").unwrap();
 
     let events = record_events(&t.app, &["entry_updated"]);
-    regenerate_entry(t.app.handle().clone(), t.state(), id.clone())
+    regenerate_entry(t.app.handle().clone(), t.state(), id.clone(), false)
         .await
         .unwrap();
 
@@ -171,6 +171,40 @@ async fn regenerate_entry_replaces_audio_and_resynthesizes() {
         log.iter()
             .any(|(_, p)| p["entry"]["id"] == id && p["entry"]["was_regenerated"] == true)
     );
+}
+
+/// With `play_when_ready: true` the regenerated audio autoplays once the
+/// fresh synthesis reaches `ready` — the same autoplay rule as the initial
+/// synthesis.
+#[tokio::test(flavor = "multi_thread")]
+async fn regenerate_entry_with_play_when_ready_autoplays_fresh_audio() {
+    let t = build_test_app();
+    let id = add_ready_entry(&t).await;
+    let uuid = entry_uuid(&id);
+
+    regenerate_entry(t.app.handle().clone(), t.state(), id.clone(), true)
+        .await
+        .unwrap();
+
+    // The poller can observe `ready` in the window between the storage write
+    // and the autoplay calls, so wait for the player calls themselves.
+    wait_until("autoplay after regeneration", TIMEOUT, || {
+        t.player.calls().len() == 2
+    })
+    .await;
+
+    let (expected_path, _) = audio_paths(&t, &uuid);
+    let calls = t.player.calls();
+    assert_eq!(calls.len(), 2);
+    match &calls[0] {
+        PlayerCall::Load(path, entry_id) => {
+            assert_eq!(path, &expected_path);
+            assert_eq!(entry_id, &id);
+        }
+        other => panic!("expected Load first, got {other:?}"),
+    }
+    assert!(matches!(calls[1], PlayerCall::Play));
+    assert!(t.player.is_playing());
 }
 
 /// Regeneration is rejected while the entry is `processing`; the
@@ -193,7 +227,7 @@ async fn regenerate_entry_rejects_processing_entry_and_synthesis_continues() {
     let uuid = entry_uuid(&id);
     wait_entry_status(&t, &uuid, EntryStatus::Processing).await;
 
-    let err = regenerate_entry(t.app.handle().clone(), t.state(), id.clone())
+    let err = regenerate_entry(t.app.handle().clone(), t.state(), id.clone(), false)
         .await
         .unwrap_err();
     match err {
@@ -932,7 +966,7 @@ async fn regeneration_refreshes_generation_snapshot() {
         .save_config(&config)
         .expect("voice switch persisted");
 
-    regenerate_entry(t.app.handle().clone(), t.state(), id)
+    regenerate_entry(t.app.handle().clone(), t.state(), id, false)
         .await
         .expect("regeneration accepted");
     wait_entry_status(&t, &uuid, EntryStatus::Ready).await;

@@ -16,7 +16,7 @@ import { readText as readClipboardText } from '@tauri-apps/plugin-clipboard-mana
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { commands } from '../lib/tauri';
 import type { EntryFormat, EntrySource, UIConfig, UnlistenFn } from '../lib/tauri';
-import type { ReadTextFileResult } from '../lib/tauri';
+import type { ReadTextFileResult, TextEntry } from '../lib/tauri';
 import { formatError } from '../lib/errors';
 import { useT } from '../lib/i18n';
 import { setLocale, toLocale } from '../stores/locale';
@@ -72,6 +72,11 @@ export function AppShell() {
   // Where the previewed text came from (clipboard or an import): recorded on
   // the entry when synthesis is confirmed from the dialog.
   const [previewSource, setPreviewSource] = useState<EntrySource>('clipboard');
+  // Regeneration preview (preview-dialog spec): the queue context menu hands
+  // the entry here instead of synthesizing right away. The dialog shows the
+  // stored original_text; only a confirmed «Перегенерировать» reaches the
+  // backend, so cancelling never touches the existing audio.
+  const [regenEntry, setRegenEntry] = useState<TextEntry | null>(null);
   const [config, setConfig] = useState<UIConfig | null>(null);
   const configLoaded = useRef(false);
   const [bundlePromptOpen, setBundlePromptOpen] = useState(false);
@@ -596,6 +601,32 @@ export function AppShell() {
     setPending(false);
   }
 
+  // Regeneration confirm: the delete-then-synthesize sequence lives entirely
+  // behind the backend command, so the old audio is only dropped now that the
+  // user has seen the preview and confirmed (preview-dialog spec, "Regeneration
+  // preview"). Cancel never reaches here.
+  function handleRegenConfirm(playWhenReady: boolean) {
+    const entry = regenEntry;
+    setRegenEntry(null);
+    if (!entry) return;
+    commands
+      .regenerateEntry(entry.id, playWhenReady)
+      .then(() => {
+        notifications.show({
+          title: tt('queue.notify.regenerating.title'),
+          message: tt('queue.notify.regenerating.message'),
+          color: 'blue',
+        });
+      })
+      .catch((e) => {
+        notifications.show({
+          title: tt('errors.title'),
+          message: tt('queue.notify.regenerate_failed', [formatError(e)]),
+          color: 'red',
+        });
+      });
+  }
+
   return (
     <MantineAppShell
       header={{ height: 74 }}
@@ -711,7 +742,7 @@ export function AppShell() {
             size="xs"
             mb="xs"
           />
-          <QueueList />
+          <QueueList onRegenerate={setRegenEntry} />
           <div
             onPointerDown={onNavResizeDown}
             onPointerMove={onNavResizeMove}
@@ -752,6 +783,21 @@ export function AppShell() {
         initialFormat={previewFormat ?? undefined}
         onSynthesize={handlePreviewSynthesize}
         onCancel={handlePreviewCancel}
+      />
+
+      {/* Regeneration instance (preview-dialog spec, "Regeneration preview"):
+          mounted separately from the Add-flow dialog so the two flows keep
+          independent state; the component renders null while closed. Of the
+          dialog's confirmation decision only «Read Now» is consumed — the
+          text and format are the entry's own immutable values. */}
+      <PreviewDialog
+        opened={regenEntry !== null}
+        mode="regenerate"
+        text={regenEntry?.original_text ?? ''}
+        onSynthesize={(_finalText, _skipShortTexts, playWhenReady) =>
+          handleRegenConfirm(playWhenReady)
+        }
+        onCancel={() => setRegenEntry(null)}
       />
 
       <UrlImportDialog

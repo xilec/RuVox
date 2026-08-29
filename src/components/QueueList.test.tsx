@@ -90,6 +90,7 @@ function makeEntry(status: TextEntry['status']): TextEntry {
 describe('QueueList context menu', () => {
   let host: HTMLDivElement;
   let root: Root;
+  const onRegenerate = vi.fn();
 
   beforeEach(() => {
     host = document.createElement('div');
@@ -101,6 +102,7 @@ describe('QueueList context menu', () => {
     pickExportAudioPath.mockResolvedValue(null);
     exportAudio.mockClear();
     exportAudio.mockResolvedValue(undefined);
+    onRegenerate.mockClear();
   });
 
   afterEach(() => {
@@ -113,7 +115,7 @@ describe('QueueList context menu', () => {
     await act(async () => {
       root.render(
         <MantineProvider>
-          <QueueList />
+          <QueueList onRegenerate={onRegenerate} />
         </MantineProvider>,
       );
       // Let the getEntries effect resolve and re-render the list.
@@ -150,6 +152,50 @@ describe('QueueList context menu', () => {
     expect(el).toBeDefined();
     return el!;
   }
+
+  function regenerateItem(): HTMLElement {
+    const el = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).find((e) => e.textContent === 'Перегенерировать аудио');
+    expect(el).toBeDefined();
+    return el!;
+  }
+
+  it('clicking "Перегенерировать аудио" hands the entry to onRegenerate without invoking the backend', async () => {
+    const entry = makeEntry('ready');
+    await renderWith(entry);
+    await openMenu();
+
+    act(() => {
+      regenerateItem().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(onRegenerate).toHaveBeenCalledTimes(1);
+    expect(onRegenerate).toHaveBeenCalledWith(entry);
+  });
+
+  it.each(['pending', 'ready', 'playing', 'error'] as const)(
+    '"Перегенерировать аудио" is enabled for a %s entry',
+    async (status) => {
+      await renderWith(makeEntry(status));
+      await openMenu();
+
+      const item = regenerateItem();
+      expect(
+        item.hasAttribute('disabled') || item.dataset.disabled !== undefined,
+      ).toBe(false);
+    },
+  );
+
+  it('"Перегенерировать аудио" is disabled for a processing entry', async () => {
+    await renderWith(makeEntry('processing'));
+    await openMenu();
+
+    const item = regenerateItem();
+    expect(
+      item.hasAttribute('disabled') || item.dataset.disabled !== undefined,
+    ).toBe(true);
+  });
 
   it('clicking "Отменить синтез" on a processing entry calls cancelSynthesis', async () => {
     await renderWith(makeEntry('processing'));
