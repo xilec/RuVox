@@ -36,6 +36,28 @@ pub(crate) fn write_sine_wav(path: &Path, rate: u32, freq_hz: f32, amplitude: f3
     writer.finalize().expect("finalize wav");
 }
 
+/// Same waveform as [`write_sine_wav`] but as mono 16-bit int PCM — the
+/// shape the silero-native engine writes (upstream `save_wav` parity). Used
+/// by the #254 regression tests so the encoder/migration inputs match real
+/// engine output.
+pub(crate) fn write_sine_wav_i16(path: &Path, rate: u32, freq_hz: f32, amplitude: f32) {
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: rate,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut writer = hound::WavWriter::create(path, spec).expect("create wav");
+    for i in 0..rate as usize {
+        let t = i as f32 / rate as f32;
+        let s = (2.0 * std::f32::consts::PI * freq_hz * t).sin() * amplitude;
+        writer
+            .write_sample((s.clamp(-1.0, 1.0) * 32767.0).round() as i16)
+            .expect("write sample");
+    }
+    writer.finalize().expect("finalize wav");
+}
+
 /// Build a [`StorageService`] backed by a fresh temp dir. The returned
 /// [`TempDir`] must be kept alive for as long as the service is used —
 /// dropping it removes the directory from disk.

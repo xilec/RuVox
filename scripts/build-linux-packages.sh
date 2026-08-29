@@ -59,6 +59,9 @@ docker run --rm -i \
     -v "$out":/out \
     ruvox-build bash -s <<'EOF'
 set -euo pipefail
+# codegen-units=1 + the big tauri crate occasionally overflows rustc's
+# default stack in LLVM (hit 2026-08-29); raise it.
+export RUST_MIN_STACK=16777216
 case "$BUNDLES" in
     both) BUNDLES="deb appimage" ;;
 esac
@@ -75,6 +78,9 @@ pnpm config set store-dir /pnpm-store
 echo "[pnpm] install"
 pnpm install --frozen-lockfile
 
+echo "[frontend] build (tauri-codegen needs dist/ during cargo build)"
+pnpm build
+
 echo "[espeak] rlib build produces vendored espeak-ng-data"
 cargo rustc --release --lib --crate-type=rlib --features tauri/custom-protocol --manifest-path src-tauri/Cargo.toml
 src=$(ls -d /target/release/build/espeak-rs-sys-*/out/share/espeak-ng-data | head -1)
@@ -84,8 +90,8 @@ mkdir -p src-tauri/resources/espeak-ng-data
 cp -r "$src/." src-tauri/resources/espeak-ng-data/
 test -f src-tauri/resources/espeak-ng-data/ru_dict
 
-echo "[onnxruntime] fetch pinned libonnxruntime"
-bash scripts/fetch-linux-onnxruntime.sh
+echo "[onnxruntime] pinned libonnxruntime (download only when absent)"
+bash scripts/fetch-linux-onnxruntime.sh --check || bash scripts/fetch-linux-onnxruntime.sh
 
 echo "[tauri] build --bundles $BUNDLES"
 pnpm tauri build --bundles $BUNDLES

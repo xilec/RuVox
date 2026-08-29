@@ -604,6 +604,7 @@ mod tests {
     use crate::storage::schema::GenerationParams;
     use crate::storage::test_util::{
         add_entry_at, make_service, update_entry_with, write_history, write_sine_wav,
+        write_sine_wav_i16,
     };
     use tempfile::TempDir;
 
@@ -1031,6 +1032,37 @@ mod tests {
         let wav_filename = format!("{id}.wav");
         let wav_path = svc.data_dir().join("audio").join(&wav_filename);
         write_sine_wav(&wav_path, 48_000, 440.0, 0.2);
+
+        update_entry_with(&svc, &entry, |e| {
+            e.audio_path = Some(wav_filename.clone());
+            e.status = EntryStatus::Ready;
+        });
+
+        let stats = svc.migrate_wav_audio_to_opus();
+        assert_eq!(stats.considered, 1);
+        assert_eq!(stats.migrated, 1);
+        assert_eq!(stats.failed, 0);
+
+        let after = svc.get_entry(&id).unwrap();
+        let new_filename = after.audio_path.expect("audio_path must remain set");
+        assert!(new_filename.ends_with(".opus"), "got {new_filename}");
+        assert!(svc.data_dir().join("audio").join(&new_filename).exists());
+        assert!(!wav_path.exists(), "source .wav should be removed");
+    }
+
+    /// A legacy `.wav` produced by silero-native (mono 16-bit int PCM) must
+    /// migrate to `.opus` too. Regression for #254: real silero-native
+    /// history entries kept their `.wav` because the transcode rejected
+    /// int16, and the migration sweep counted the same failure.
+    #[test]
+    fn migrate_silero_native_16bit_wav_to_opus() {
+        let (svc, _dir) = make_service();
+        let entry = svc.add_entry("silero-native legacy".to_string()).unwrap();
+        let id = entry.id;
+
+        let wav_filename = format!("{id}.wav");
+        let wav_path = svc.data_dir().join("audio").join(&wav_filename);
+        write_sine_wav_i16(&wav_path, 24_000, 440.0, 0.2);
 
         update_entry_with(&svc, &entry, |e| {
             e.audio_path = Some(wav_filename.clone());
