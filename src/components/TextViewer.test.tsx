@@ -64,12 +64,15 @@ function makeEntry(): TextEntry {
     html_source:
       '<p><a href="/ru/users/maybe_elf/">maybe_elf</a></p>' +
       '<button>Кнопка</button>',
+    source: null,
     created_at: '2026-07-27T00:00:00Z',
     audio_generated_at: null,
     audio_path: null,
     timestamps_path: null,
     duration_sec: null,
     was_regenerated: false,
+    generation_count: 0,
+    generation: null,
     error_message: null,
   };
 }
@@ -79,6 +82,7 @@ function makeMermaidEntry(): TextEntry {
     ...makeEntry(),
     format: 'markdown',
     html_source: null,
+    source: null,
     original_text:
       '```mermaid\nflowchart LR\n  A[Node]\n  click A "https://example.com"\n```',
   };

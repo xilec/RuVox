@@ -20,14 +20,10 @@ import type { MessageKey } from '../i18n/ru';
 import { useTauriEvents } from '../lib/useTauriEvents';
 import { useSelectedEntry } from '../stores/selectedEntry';
 import { useSearchQuery } from '../stores/searchQuery';
+import { formatDuration } from '../lib/format';
+import { GenerationParamsDialog } from '../dialogs/GenerationParamsDialog';
 import { IconPlay, IconLocate } from './icons';
 import classes from './QueueList.module.css';
-
-function formatDuration(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m}:${s.toString().padStart(2, '0')}`;
-}
 
 function statusBadgeColor(status: EntryStatus): string {
   switch (status) {
@@ -154,6 +150,12 @@ export function QueueList() {
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(
     null,
   );
+  // Entry whose generation snapshot the params dialog shows (id, so the
+  // dialog sees live entry updates while open).
+  const [paramsEntryId, setParamsEntryId] = useState<EntryId | null>(null);
+  const paramsEntry = paramsEntryId
+    ? (entries.find((e) => e.id === paramsEntryId) ?? null)
+    : null;
   // Resolve the live entry at render time: the status may change while the
   // menu is open (e.g. synthesis finishes), and actions must see the current
   // state, not the snapshot taken at right-click time.
@@ -319,6 +321,11 @@ export function QueueList() {
   const menuCanPlay =
     menuEntry !== null &&
     (menuEntry.status === 'ready' || menuEntry.status === 'playing');
+  // The params dialog needs audio context: a snapshot, or at least a
+  // generation timestamp (legacy entry synthesized by an older build).
+  const menuHasGeneration =
+    menuEntry !== null &&
+    (menuEntry.generation !== null || menuEntry.audio_generated_at !== null);
 
   const handleDelete = useCallback(
     (id: string) => {
@@ -433,6 +440,12 @@ export function QueueList() {
             {tt('queue.menu.regenerate')}
           </Menu.Item>
           <Menu.Item
+            disabled={!menuHasGeneration}
+            onClick={() => menuEntry && setParamsEntryId(menuEntry.id)}
+          >
+            {tt('queue.menu.generation_params')}
+          </Menu.Item>
+          <Menu.Item
             disabled={menuEntry === null || menuEntry.status !== 'processing'}
             onClick={() => menuEntry && handleCancelSynthesis(menuEntry.id)}
           >
@@ -447,6 +460,12 @@ export function QueueList() {
           </Menu.Item>
         </Menu.Dropdown>
       </Menu>
+
+      <GenerationParamsDialog
+        entry={paramsEntry}
+        opened={paramsEntryId !== null && paramsEntry !== null}
+        onClose={() => setParamsEntryId(null)}
+      />
     </div>
   );
 }

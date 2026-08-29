@@ -15,7 +15,7 @@ import { useState, useEffect, useRef } from 'react';
 import { readText as readClipboardText } from '@tauri-apps/plugin-clipboard-manager';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { commands } from '../lib/tauri';
-import type { EntryFormat, UIConfig, UnlistenFn } from '../lib/tauri';
+import type { EntryFormat, EntrySource, UIConfig, UnlistenFn } from '../lib/tauri';
 import type { ReadTextFileResult } from '../lib/tauri';
 import { formatError } from '../lib/errors';
 import { useT } from '../lib/i18n';
@@ -69,6 +69,9 @@ export function AppShell() {
   // was opened with plain text — an explicit `html` selector choice then
   // keeps the red error on failed extraction (preview-dialog spec).
   const [previewPlainFallback, setPreviewPlainFallback] = useState<string | null>(null);
+  // Where the previewed text came from (clipboard or an import): recorded on
+  // the entry when synthesis is confirmed from the dialog.
+  const [previewSource, setPreviewSource] = useState<EntrySource>('clipboard');
   const [config, setConfig] = useState<UIConfig | null>(null);
   const configLoaded = useRef(false);
   const [bundlePromptOpen, setBundlePromptOpen] = useState(false);
@@ -244,14 +247,15 @@ export function AppShell() {
           setPreviewText(action.text);
           setPreviewFormat(action.format ?? null);
           setPreviewPlainFallback(null);
+          setPreviewSource(source.kind === 'url' ? 'url' : 'file');
           setPreviewOpen(true);
           setPending(false);
           return;
         case 'direct-plain':
-          await doAddEntry(action.text, true, action.format);
+          await doAddEntry(action.text, true, action.format, undefined, source.kind === 'url' ? 'url' : 'file');
           return;
         case 'direct-html': {
-          const ingested = await addHtmlEntry(action.html, true);
+          const ingested = await addHtmlEntry(action.html, true, source.kind === 'url' ? 'url' : 'file');
           if (!ingested) {
             notifications.show({
               title: tt('errors.title'),
@@ -390,9 +394,11 @@ export function AppShell() {
     plainFallback: string | null,
     notifyOnEmpty: boolean,
   ): Promise<void> {
-    if (await addHtmlEntry(html, true)) return;
+    // Only the clipboard paths (Add button, paste) go through here; imports
+    // call addHtmlEntry with their own source.
+    if (await addHtmlEntry(html, true, 'clipboard')) return;
     if (plainFallback) {
-      await doAddEntry(plainFallback, true);
+      await doAddEntry(plainFallback, true, undefined, undefined, 'clipboard');
       return;
     }
     if (notifyOnEmpty) showEmptyClipboardHint();
@@ -464,6 +470,7 @@ export function AppShell() {
           setPreviewText(action.text);
           setPreviewFormat(null);
           setPreviewPlainFallback(action.plainFallback);
+          setPreviewSource('clipboard');
           setPreviewOpen(true);
           setPending(false);
           return;
@@ -491,10 +498,14 @@ export function AppShell() {
   // "html" (extracted text goes to synthesis, sanitized markup is kept for
   // rendering). Returns false when the HTML yields no readable text, so the
   // caller can fall back to the plain-text flavor.
-  async function addHtmlEntry(rawHtml: string, playWhenReady: boolean): Promise<boolean> {
+  async function addHtmlEntry(
+    rawHtml: string,
+    playWhenReady: boolean,
+    source: EntrySource,
+  ): Promise<boolean> {
     const action = resolveIngest(rawHtml, 'html');
     if (action.kind !== 'html') return false;
-    await doAddEntry(action.text, playWhenReady, 'html', action.htmlSource);
+    await doAddEntry(action.text, playWhenReady, 'html', action.htmlSource, source);
     return true;
   }
 
@@ -503,6 +514,7 @@ export function AppShell() {
     playWhenReady: boolean,
     format?: EntryFormat,
     htmlSource?: string,
+    source: EntrySource = 'clipboard',
   ) {
     try {
       const entryId = await commands.addTextEntry(
@@ -510,6 +522,7 @@ export function AppShell() {
         playWhenReady,
         format,
         htmlSource,
+        source,
       );
       // Select the new entry so TextViewer swaps to its content; entry_updated
       // events from the backend will populate the full TextEntry shortly.
@@ -557,7 +570,7 @@ export function AppShell() {
         // plain text, exactly like the ungated direct path. With no carried
         // fallback the `html` selection was explicit — keep the red error.
         if (sourceFormat === 'html' && plainFallback) {
-          void doAddEntry(plainFallback, playWhenReady);
+          void doAddEntry(plainFallback, playWhenReady, undefined, undefined, previewSource);
           return;
         }
         notifications.show({
@@ -568,10 +581,10 @@ export function AppShell() {
         setPending(false);
         return;
       case 'html':
-        void doAddEntry(action.text, playWhenReady, 'html', action.htmlSource);
+        void doAddEntry(action.text, playWhenReady, 'html', action.htmlSource, previewSource);
         return;
       case 'direct':
-        void doAddEntry(action.text, playWhenReady, action.format);
+        void doAddEntry(action.text, playWhenReady, action.format, undefined, previewSource);
         return;
     }
   }

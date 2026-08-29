@@ -50,10 +50,12 @@ pub use crate::tts::supervisor::test_helpers::wait_until;
 // StubEngine
 // ---------------------------------------------------------------------------
 
-/// Minimal in-memory TTS engine. `synthesize` writes a placeholder file to
-/// `out_wav` (the synthesis pipeline only needs *some* bytes there; the Opus
-/// transcode is best-effort and keeps the WAV on failure) and returns a
-/// fixed-duration output. Never touches the network, ONNX, or a subprocess.
+/// Minimal in-memory TTS engine. `synthesize` writes a well-formed mono
+/// 32-bit-float WAV (a one-second 440 Hz sine at 24 kHz) to `out_wav`, so the
+/// downstream Opus transcode succeeds exactly as it does for the real
+/// engines — the full happy path, including the generation-params snapshot
+/// reading the WAV header — and returns a fixed-duration output. Never
+/// touches the network, ONNX, or a subprocess.
 ///
 /// Two knobs steer `synthesize` off the happy path, both settable after the
 /// app is built (via [`TestApp::engine`]):
@@ -123,7 +125,12 @@ impl TtsEngine for StubEngine {
                 message,
             });
         }
-        std::fs::write(&out_wav, b"stub audio").map_err(TtsError::Ipc)?;
+        crate::storage::test_util::write_sine_wav(
+            std::path::Path::new(&out_wav),
+            24_000,
+            440.0,
+            0.5,
+        );
         Ok(SynthesizeOutput {
             timestamps: Vec::new(),
             duration_sec: 1.0,

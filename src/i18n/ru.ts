@@ -13,6 +13,10 @@ export const ru = {
   'common.save': 'Сохранить',
   'common.error': 'Ошибка',
   'common.mb': 'МБ',
+  'common.kb': 'КБ',
+  'common.yes': 'Да',
+  'common.no': 'Нет',
+  'common.close': 'Закрыть',
 
   // ── App shell ───────────────────────────────────────────────────────────
   'app.queue.title': 'Очередь',
@@ -56,6 +60,7 @@ export const ru = {
   'queue.menu.regenerate': 'Перегенерировать аудио',
   'queue.menu.cancel_synthesis': 'Отменить синтез',
   'queue.menu.export_audio': 'Сохранить аудио как…',
+  'queue.menu.generation_params': 'Параметры записи…',
   'notify.export.ok': 'Аудио сохранено: {0}',
   'queue.delete.title': 'Удалить запись?',
   'queue.delete.body':
@@ -65,6 +70,33 @@ export const ru = {
   'queue.notify.regenerating.message': 'Запущена перегенерация аудио',
   'queue.notify.regenerate_failed': 'Не удалось запустить перегенерацию: {0}',
   'queue.notify.cancel_failed': 'Не удалось отменить синтез: {0}',
+
+  // ── Generation-params dialog (#243) ─────────────────────────────────────
+  'generation.title': 'Параметры записи',
+  'generation.source': 'Источник',
+  'generation.source.clipboard': 'Буфер обмена',
+  'generation.source.file': 'Файл',
+  'generation.source.url': 'Ссылка',
+  'generation.engine': 'Движок',
+  'generation.engine.silero_native': 'Silero (нативный)',
+  'generation.engine.piper': 'Piper',
+  'generation.engine.silero': 'Silero (Python)',
+  'generation.voice': 'Голос',
+  'generation.sample_rate': 'Частота дискретизации',
+  'generation.sample_rate.value': '{0} Гц',
+  'generation.model': 'Модель',
+  'generation.app_version': 'Версия приложения',
+  'generation.code_block': 'Код-блоки',
+  'generation.code_block.read': 'читать',
+  'generation.code_block.skip': 'пропускать',
+  'generation.read_operators': 'Чтение операторов',
+  'generation.normalized_sha': 'Контрольная сумма текста',
+  'generation.audio': 'Аудио',
+  'generation.duration': 'Длительность',
+  'generation.generated_at': 'Сгенерировано',
+  'generation.count': 'Номер генерации',
+  'generation.legacy':
+    'Параметры не записаны: аудио создано в более старой версии приложения.',
 
   // ── Player ──────────────────────────────────────────────────────────────
   'player.play': 'Воспроизвести',

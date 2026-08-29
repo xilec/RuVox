@@ -28,6 +28,21 @@ pub struct Voice {
     pub config_url: &'static str,
 }
 
+impl Voice {
+    /// Basename of the voice's `.onnx` model file on disk and in the HF URL
+    /// (`ru_RU-ruslan-medium.onnx`). Single home of the on-disk naming rule —
+    /// the downloader and the generation-params model identity both derive
+    /// from this.
+    pub fn model_filename(&self) -> String {
+        format!("ru_RU-{}-{}.onnx", self.id, self.quality)
+    }
+
+    /// Basename of the voice's `.onnx.json` config file.
+    pub fn model_config_filename(&self) -> String {
+        format!("{}.json", self.model_filename())
+    }
+}
+
 /// All voices known to the app.
 pub const VOICES: &[Voice] = &[
     Voice {

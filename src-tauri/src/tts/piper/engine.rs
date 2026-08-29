@@ -38,7 +38,7 @@ const PIPER_LENGTH_SCALE: f32 = 0.8;
 use super::timestamps::estimate_timestamps_single_chunk;
 use crate::tts::engine::{EngineKind, TtsEngine};
 use crate::tts::supervisor::Emitter;
-use crate::tts::{CharMappingEntry, SynthesizeOutput, TtsError};
+use crate::tts::{CharMappingEntry, ModelInfo, SynthesizeOutput, TtsError};
 
 type LoadedSlot = Arc<RwLock<Option<LoadedVoice>>>;
 
@@ -150,6 +150,17 @@ impl PiperEngine {
 impl TtsEngine for PiperEngine {
     fn kind(&self) -> EngineKind {
         EngineKind::Piper
+    }
+
+    /// Identity of the requested voice, resolved from the static catalog:
+    /// the `.onnx` file's basename (e.g. `ru_RU-ruslan-medium.onnx`). The
+    /// voice file itself is not hashed — the name is the catalog identity.
+    /// Unknown voice ids yield `None`.
+    async fn model_info(&self, voice: &str) -> Option<ModelInfo> {
+        super::catalog::lookup(voice).map(|v| ModelInfo {
+            name: v.model_filename(),
+            sha256: None,
+        })
     }
 
     async fn warmup(&self) -> Result<(), TtsError> {
@@ -391,5 +402,35 @@ mod tests {
             read, expected,
             "in-range samples must round-trip without quantization; out-of-range must clamp to ±1.0"
         );
+    }
+
+    #[tokio::test]
+    async fn model_info_resolves_voice_model_file_name() {
+        let (emitter, _) = crate::tts::supervisor::test_helpers::recording_emitter();
+        let engine = PiperEngine::new(
+            tempfile::tempdir().expect("tempdir").path().to_path_buf(),
+            "ruslan".to_string(),
+            emitter,
+        );
+        let info = engine
+            .model_info("ruslan")
+            .await
+            .expect("catalog voice resolves");
+        assert_eq!(info.name, "ru_RU-ruslan-medium.onnx");
+        assert_eq!(
+            info.sha256, None,
+            "voice files are not hashed per synthesis"
+        );
+    }
+
+    #[tokio::test]
+    async fn model_info_unknown_voice_is_none() {
+        let (emitter, _) = crate::tts::supervisor::test_helpers::recording_emitter();
+        let engine = PiperEngine::new(
+            tempfile::tempdir().expect("tempdir").path().to_path_buf(),
+            "ruslan".to_string(),
+            emitter,
+        );
+        assert!(engine.model_info("nonexistent").await.is_none());
     }
 }

@@ -54,8 +54,8 @@ pub async fn download_voice(
     let dest_dir = voices_dir.join(voice_id);
     fs::create_dir_all(&dest_dir).await.map_err(TtsError::Ipc)?;
 
-    let json_filename = format!("ru_RU-{voice_id}-medium.onnx.json");
-    let onnx_filename = format!("ru_RU-{voice_id}-medium.onnx");
+    let json_filename = voice.model_config_filename();
+    let onnx_filename = voice.model_filename();
     let json_path = dest_dir.join(&json_filename);
     let onnx_path = dest_dir.join(&onnx_filename);
 

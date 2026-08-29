@@ -35,7 +35,7 @@ use tracing::{info, warn};
 use crate::tts::engine::{EngineKind, TtsEngine};
 use crate::tts::map_via_spans;
 use crate::tts::supervisor::Emitter;
-use crate::tts::{CharMappingEntry, SynthesizeOutput, TtsError, WordTimestamp};
+use crate::tts::{CharMappingEntry, ModelInfo, SynthesizeOutput, TtsError, WordTimestamp};
 
 /// In-process Silero v5 engine (ONNX Runtime, no Python).
 pub struct SileroNativeEngine {
@@ -133,6 +133,23 @@ impl SileroNativeEngine {
     async fn ensure_loaded(&self) -> Result<Arc<SileroNative>, TtsError> {
         Self::load_single_flight(&self.bundle_dir, &self.loaded, &self.load_lock).await
     }
+
+    /// Reads the bundle manifest for the generation-params snapshot. The
+    /// bundle identity is voice-independent. Best-effort: any read/parse
+    /// failure — or a manifest without the main model file — yields `None`
+    /// rather than blocking synthesis or guessing a value.
+    fn bundle_model_info(bundle_dir: &std::path::Path) -> Option<ModelInfo> {
+        let manifest = silero_native::bundle::Manifest::load(bundle_dir).ok()?;
+        let sha256 = manifest
+            .files
+            .iter()
+            .find(|f| f.path == silero_native::bundle::TTS_MAIN)
+            .map(|f| f.sha256.clone());
+        Some(ModelInfo {
+            name: manifest.model_id,
+            sha256,
+        })
+    }
 }
 
 fn map_load_error(e: EngineError) -> TtsError {
@@ -180,6 +197,10 @@ fn map_timestamps(
 impl TtsEngine for SileroNativeEngine {
     fn kind(&self) -> EngineKind {
         EngineKind::SileroNative
+    }
+
+    async fn model_info(&self, _voice: &str) -> Option<ModelInfo> {
+        Self::bundle_model_info(&self.bundle_dir)
     }
 
     async fn warmup(&self) -> Result<(), TtsError> {
@@ -407,5 +428,67 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         assert_eq!(engine_at(dir.path()).kind(), EngineKind::SileroNative);
         assert_eq!(EngineKind::SileroNative.as_str(), "silero_native");
+    }
+
+    fn write_manifest(dir: &std::path::Path, json: &str) {
+        std::fs::write(dir.join("manifest.json"), json).unwrap();
+    }
+
+    #[tokio::test]
+    async fn model_info_reads_bundle_manifest() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_manifest(
+            dir.path(),
+            r#"{
+                "model_id": "silero_v5_ru",
+                "opset": 17,
+                "export_date_utc": "2026-01-01T00:00:00+00:00",
+                "files": [
+                    {"path": "tts_main.onnx", "size": 10, "sha256": "abc123"},
+                    {"path": "istft.onnx", "size": 10, "sha256": "def456"}
+                ]
+            }"#,
+        );
+        let info = engine_at(dir.path())
+            .model_info("xenia")
+            .await
+            .expect("manifest readable");
+        assert_eq!(info.name, "silero_v5_ru");
+        assert_eq!(info.sha256.as_deref(), Some("abc123"));
+    }
+
+    #[tokio::test]
+    async fn model_info_without_manifest_is_none() {
+        let dir = tempfile::TempDir::new().unwrap();
+        assert!(engine_at(dir.path()).model_info("xenia").await.is_none());
+    }
+
+    #[tokio::test]
+    async fn model_info_with_corrupt_manifest_is_none() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_manifest(dir.path(), "not json");
+        assert!(engine_at(dir.path()).model_info("xenia").await.is_none());
+    }
+
+    #[tokio::test]
+    async fn model_info_without_main_model_file_has_null_checksum() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_manifest(
+            dir.path(),
+            r#"{
+                "model_id": "silero_v5_ru",
+                "opset": 17,
+                "export_date_utc": "2026-01-01T00:00:00+00:00",
+                "files": [
+                    {"path": "istft.onnx", "size": 10, "sha256": "def456"}
+                ]
+            }"#,
+        );
+        let info = engine_at(dir.path())
+            .model_info("xenia")
+            .await
+            .expect("manifest readable");
+        assert_eq!(info.name, "silero_v5_ru");
+        assert_eq!(info.sha256, None);
     }
 }

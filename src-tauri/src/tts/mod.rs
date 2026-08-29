@@ -216,6 +216,22 @@ pub struct SynthesizeOutput {
 }
 
 // ---------------------------------------------------------------------------
+// Model identity
+// ---------------------------------------------------------------------------
+
+/// Identity of the loaded model/voice, reported by an engine via
+/// [`TtsEngine::model_info`](engine::TtsEngine::model_info). A `None` checksum
+/// means the engine cannot produce one cheaply — absence is honest, never a
+/// guessed value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelInfo {
+    /// e.g. the silero-native bundle `model_id` or the Piper voice model
+    /// file name (`ru_RU-ruslan-medium.onnx`).
+    pub name: String,
+    pub sha256: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
 // Internal driver message
 // ---------------------------------------------------------------------------
 

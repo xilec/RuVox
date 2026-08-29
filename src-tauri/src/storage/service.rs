@@ -11,7 +11,8 @@ use uuid::Uuid;
 use crate::storage::eviction;
 pub use crate::storage::eviction::{EvictStats, StartupCleanupStats, SweepStats};
 use crate::storage::schema::{
-    EntryId, EntryStatus, HistoryFile, TextEntry, TextFormat, Timestamps, UIConfig, WordTimestamp,
+    EntryId, EntrySource, EntryStatus, HistoryFile, TextEntry, TextFormat, Timestamps, UIConfig,
+    WordTimestamp,
 };
 
 const HISTORY_VERSION: u32 = 1;
@@ -172,6 +173,7 @@ impl StorageService {
                 entry.timestamps_path = None;
                 entry.duration_sec = None;
                 entry.audio_generated_at = None;
+                entry.generation = None;
                 if entry.status == EntryStatus::Ready {
                     entry.status = EntryStatus::Pending;
                     return true;
@@ -224,16 +226,18 @@ impl StorageService {
 
     /// Add a new entry with an auto-generated UUID. Persists history.
     pub fn add_entry(&self, original_text: String) -> Result<TextEntry> {
-        self.add_entry_with_source(original_text, None, None)
+        self.add_entry_with_source(original_text, None, None, None)
     }
 
-    /// Add a new entry with explicit display format and sanitized HTML source
-    /// (HTML ingestion path). Persists history.
+    /// Add a new entry with explicit display format, sanitized HTML source
+    /// (HTML ingestion path) and the ingestion source annotation. Persists
+    /// history.
     pub fn add_entry_with_source(
         &self,
         original_text: String,
         format: Option<TextFormat>,
         html_source: Option<String>,
+        source: Option<EntrySource>,
     ) -> Result<TextEntry> {
         // Strip the UTF-8 BOM if present (matches what the prior Qt-based build did,
         // keeping cached entries identical between the two implementations).
@@ -249,12 +253,15 @@ impl StorageService {
             status: EntryStatus::Pending,
             format,
             html_source,
+            source,
             created_at: Utc::now().naive_utc(),
             audio_path: None,
             timestamps_path: None,
             duration_sec: None,
             audio_generated_at: None,
             was_regenerated: false,
+            generation_count: 0,
+            generation: None,
             error_message: None,
         };
 
@@ -340,6 +347,9 @@ impl StorageService {
         entry.status = EntryStatus::Pending;
         entry.audio_generated_at = None;
         entry.duration_sec = None;
+        // The snapshot describes the deleted audio; the count survives like
+        // `was_regenerated` so it still pairs with regeneration.
+        entry.generation = None;
         drop(map);
 
         self.save_history()
@@ -591,6 +601,7 @@ fn remove_file_if_exists(path: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::schema::GenerationParams;
     use crate::storage::test_util::{
         add_entry_at, make_service, update_entry_with, write_history, write_sine_wav,
     };
@@ -812,6 +823,19 @@ mod tests {
         fs::create_dir_all(cache.join("audio")).unwrap();
 
         let missing_filename = "00000000-0000-0000-0000-000000000001.wav";
+        let generation_json = serde_json::to_string(&GenerationParams {
+            engine: "silero_native".to_string(),
+            voice: "xenia".to_string(),
+            sample_rate: Some(24000),
+            model: None,
+            app_version: "0.4.0".to_string(),
+            code_block_mode: Some("read".to_string()),
+            read_operators: Some(true),
+            normalized_text_sha256: None,
+            audio_codec: Some("Ogg Opus".to_string()),
+            audio_bytes: Some(1000),
+        })
+        .unwrap();
         let history_json = format!(
             r#"{{
                 "version": 1,
@@ -821,7 +845,9 @@ mod tests {
                         "original_text": "test",
                         "status": "ready",
                         "created_at": "2025-01-01T00:00:00.000000",
-                        "audio_path": "{missing_filename}"
+                        "audio_path": "{missing_filename}",
+                        "generation_count": 1,
+                        "generation": {generation_json}
                     }}
                 ]
             }}"#
@@ -834,6 +860,9 @@ mod tests {
         let entry = svc.get_entry(&id).unwrap();
         assert_eq!(entry.status, EntryStatus::Pending);
         assert!(entry.audio_path.is_none());
+        // Snapshot cleared with the audio; the count survives.
+        assert!(entry.generation.is_none());
+        assert_eq!(entry.generation_count, 1);
     }
 
     #[test]
@@ -934,6 +963,8 @@ mod tests {
             e.audio_path = Some(audio_filename.clone());
             e.timestamps_path = Some(ts_filename.clone());
             e.status = EntryStatus::Ready;
+            e.generation_count = 2;
+            e.generation = Some(sample_generation());
         });
 
         svc.delete_audio(&id).unwrap();
@@ -942,12 +973,31 @@ mod tests {
         assert_eq!(remaining.status, EntryStatus::Pending);
         assert!(remaining.audio_path.is_none());
         assert!(remaining.timestamps_path.is_none());
+        // The snapshot describes the deleted audio; the count survives.
+        assert!(remaining.generation.is_none());
+        assert_eq!(remaining.generation_count, 2);
+        assert!(!remaining.was_regenerated);
 
         // Files must be gone.
         let audio_path = svc.data_dir().join("audio").join(&audio_filename);
         let ts_path = svc.data_dir().join("audio").join(&ts_filename);
         assert!(!audio_path.exists());
         assert!(!ts_path.exists());
+    }
+
+    fn sample_generation() -> GenerationParams {
+        GenerationParams {
+            engine: "silero_native".to_string(),
+            voice: "xenia".to_string(),
+            sample_rate: Some(24000),
+            model: None,
+            app_version: "0.4.0".to_string(),
+            code_block_mode: Some("read".to_string()),
+            read_operators: Some(true),
+            normalized_text_sha256: None,
+            audio_codec: Some("Ogg Opus".to_string()),
+            audio_bytes: Some(1000),
+        }
     }
 
     #[test]

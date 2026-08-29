@@ -74,12 +74,15 @@ function makeEntry(status: TextEntry['status']): TextEntry {
     status,
     format: 'plain',
     html_source: null,
+    source: null,
     created_at: '2026-07-27T00:00:00Z',
     audio_generated_at: null,
     audio_path: null,
     timestamps_path: null,
     duration_sec: null,
     was_regenerated: false,
+    generation_count: 0,
+    generation: null,
     error_message: null,
   };
 }
@@ -316,4 +319,79 @@ describe('QueueList context menu', () => {
       ).toBe(true);
     },
   );
+
+  function generationParamsItem(): HTMLElement {
+    const el = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).find((e) => e.textContent === 'Параметры записи…');
+    expect(el).toBeDefined();
+    return el!;
+  }
+
+  it('clicking "Параметры озвучки…" opens the dialog with the snapshot', async () => {
+    // The base factory carries no snapshot (menu item disabled); give this
+    // entry one so the item is enabled and the dialog has data to show.
+    const entry: TextEntry = {
+      ...makeEntry('ready'),
+      generation_count: 1,
+      generation: {
+        engine: 'silero_native',
+        voice: 'xenia',
+        sample_rate: 24000,
+        model: null,
+        app_version: '0.5.0',
+        code_block_mode: 'read',
+        read_operators: true,
+        normalized_text_sha256: null,
+        audio_codec: 'Ogg Opus',
+        audio_bytes: 1024,
+      },
+    };
+    await renderWith(entry);
+    await openMenu();
+
+    act(() => {
+      generationParamsItem().dispatchEvent(
+        new MouseEvent('click', { bubbles: true }),
+      );
+    });
+
+    // The dialog renders into a Mantine portal; wait for its title.
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain('Silero (нативный)');
+    });
+  });
+
+  it('"Параметры озвучки…" is disabled for an entry that never produced audio', async () => {
+    await renderWith(makeEntry('pending'));
+    await openMenu();
+
+    const item = generationParamsItem();
+    expect(
+      item.hasAttribute('disabled') || item.dataset.disabled !== undefined,
+    ).toBe(true);
+  });
+
+  it('"Параметры озвучки…" opens with the legacy line for an old audio entry', async () => {
+    const legacy = {
+      ...makeEntry('ready'),
+      generation: null,
+      generation_count: 0,
+      audio_generated_at: '2026-01-01T10:00:00',
+    };
+    await renderWith(legacy);
+    await openMenu();
+
+    act(() => {
+      generationParamsItem().dispatchEvent(
+        new MouseEvent('click', { bubbles: true }),
+      );
+    });
+
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain(
+        'Параметры не записаны: аудио создано в более старой версии приложения.',
+      );
+    });
+  });
 });

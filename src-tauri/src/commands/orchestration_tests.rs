@@ -25,11 +25,12 @@ fn entry_uuid(id: &str) -> uuid::Uuid {
 }
 
 /// Paths of an entry's audio file and timestamps sidecar in the storage
-/// audio directory.
+/// audio directory. The stub engine writes a well-formed WAV, so the Opus
+/// transcode succeeds and the stored file is `{uuid}.opus`.
 fn audio_paths(t: &TestApp, uuid: &uuid::Uuid) -> (PathBuf, PathBuf) {
     let dir = audio_dir(t);
     (
-        dir.join(format!("{uuid}.wav")),
+        dir.join(format!("{uuid}.opus")),
         dir.join(format!("{uuid}.timestamps.json")),
     )
 }
@@ -63,6 +64,7 @@ async fn add_ready_entry(t: &TestApp) -> String {
         t.state(),
         "текст для озвучки".to_string(),
         false,
+        None,
         None,
         None,
     )
@@ -156,10 +158,8 @@ async fn regenerate_entry_replaces_audio_and_resynthesizes() {
 
     wait_entry_status(&t, &uuid, EntryStatus::Ready).await;
 
-    assert_eq!(
-        std::fs::read(&audio_file).unwrap().as_slice(),
-        b"stub audio"
-    );
+    // delete_audio removed the sentinel before synthesis rewrote the file.
+    assert_ne!(std::fs::read(&audio_file).unwrap(), b"old-marker".to_vec());
 
     let entry = t.state().storage.get_entry(&uuid).unwrap();
     assert!(entry.was_regenerated);
@@ -184,6 +184,7 @@ async fn regenerate_entry_rejects_processing_entry_and_synthesis_continues() {
         t.state(),
         "текст".to_string(),
         false,
+        None,
         None,
         None,
     )
@@ -224,6 +225,7 @@ async fn cancel_synthesis_aborts_in_flight_task_and_keeps_entry_pending() {
         t.state(),
         "текст".to_string(),
         true,
+        None,
         None,
         None,
     )
@@ -507,6 +509,7 @@ async fn add_text_entry_with_html_params_persists_source_and_synthesizes_text() 
         false,
         Some(TextFormat::Html),
         Some("<p>Вызови <code>API</code></p>".to_string()),
+        Some(crate::storage::schema::EntrySource::File),
     )
     .await
     .unwrap();
@@ -518,6 +521,11 @@ async fn add_text_entry_with_html_params_persists_source_and_synthesizes_text() 
     assert_eq!(
         entry.html_source.as_deref(),
         Some("<p>Вызови <code>API</code></p>")
+    );
+    assert_eq!(
+        entry.source,
+        Some(crate::storage::schema::EntrySource::File),
+        "ingestion source annotation is persisted"
     );
     assert_eq!(entry.original_text, "Вызови API");
     // The pipeline normalized the extracted text (Latin is transliterated),
@@ -541,6 +549,7 @@ async fn tts_failure_emits_entry_updated_error_then_tts_error() {
         t.state(),
         "текст".to_string(),
         false,
+        None,
         None,
         None,
     )
@@ -639,6 +648,7 @@ async fn add_text_entry_rejects_oversized_input_before_persistence() {
         false,
         None,
         None,
+        None,
     )
     .await
     .expect_err("oversized input must be rejected");
@@ -684,6 +694,7 @@ async fn add_text_entry_accepts_input_at_limit() {
         false,
         None,
         None,
+        None,
     )
     .await
     .expect("input at the limit must be accepted");
@@ -702,6 +713,7 @@ async fn add_text_entry_accepts_oversized_input_with_silero() {
         t.state(),
         "а".repeat(MAX_INPUT_CHARS + 1),
         false,
+        None,
         None,
         None,
     )
@@ -734,7 +746,7 @@ async fn synthesis_under_piper_fails_oversized_entry_accepted_under_silero() {
     let entry = t
         .state()
         .storage
-        .add_entry_with_source("а".repeat(MAX_INPUT_CHARS + 1), None, None)
+        .add_entry_with_source("а".repeat(MAX_INPUT_CHARS + 1), None, None, None)
         .unwrap();
     let uuid = entry.id;
 
@@ -841,4 +853,92 @@ async fn set_volume_rejects_out_of_range() {
             .iter()
             .all(|c| !matches!(c, PlayerCall::SetVolume(_)))
     );
+}
+
+// ── generation-params snapshot (#243) ────────────────────────────────
+
+/// A completed synthesis records a snapshot of the parameters that produced
+/// the audio. The stub engine writes a well-formed 24 kHz WAV, so the whole
+/// happy path is pinned: the rate comes from the rendered WAV header (read
+/// before the transcode removes it), the stored file is Ogg Opus, and its
+/// size is the final file's.
+#[tokio::test(flavor = "multi_thread")]
+async fn synthesis_records_generation_snapshot() {
+    let t = build_test_app();
+
+    let id = add_text_entry(
+        t.app.handle().clone(),
+        t.state(),
+        "Вызови getUserData()".to_string(),
+        false,
+        None,
+        None,
+        None,
+    )
+    .await
+    .expect("entry accepted");
+    let uuid = entry_uuid(&id);
+    wait_entry_status(&t, &uuid, EntryStatus::Ready).await;
+
+    let entry = t.state().storage.get_entry(&uuid).unwrap();
+    assert_eq!(entry.generation_count, 1);
+    let g = entry.generation.expect("snapshot recorded on success");
+    assert_eq!(g.engine, "piper");
+    assert_eq!(
+        g.voice,
+        t.state().storage.load_config().unwrap().piper_voice,
+        "voice is the resolved piper_voice, not the silero speaker"
+    );
+    assert_eq!(g.model, None, "stub engine exposes no model identity");
+    assert_eq!(
+        g.sample_rate,
+        Some(24_000),
+        "rate read from the rendered WAV"
+    );
+    assert_eq!(g.audio_codec.as_deref(), Some("Ogg Opus"));
+    assert!(g.audio_bytes.is_some(), "size of the final audio file");
+    assert!(g.normalized_text_sha256.is_some());
+    assert!(!g.app_version.is_empty());
+    assert_eq!(g.code_block_mode.as_deref(), Some("read"));
+    assert_eq!(g.read_operators, Some(true));
+}
+
+/// Regeneration re-runs the same spawn path: the snapshot is overwritten
+/// with the new voice and the count grows to 2.
+#[tokio::test(flavor = "multi_thread")]
+async fn regeneration_refreshes_generation_snapshot() {
+    let t = build_test_app();
+
+    let id = add_text_entry(
+        t.app.handle().clone(),
+        t.state(),
+        "Привет".to_string(),
+        false,
+        None,
+        None,
+        None,
+    )
+    .await
+    .expect("entry accepted");
+    let uuid = entry_uuid(&id);
+    wait_entry_status(&t, &uuid, EntryStatus::Ready).await;
+
+    // Persist the voice switch directly: `update_config` routes through the
+    // engine switcher, which validates the (absent) silero-native bundle.
+    let mut config = t.state().storage.load_config().unwrap();
+    config.piper_voice = "irina".to_string();
+    t.state()
+        .storage
+        .save_config(&config)
+        .expect("voice switch persisted");
+
+    regenerate_entry(t.app.handle().clone(), t.state(), id)
+        .await
+        .expect("regeneration accepted");
+    wait_entry_status(&t, &uuid, EntryStatus::Ready).await;
+
+    let entry = t.state().storage.get_entry(&uuid).unwrap();
+    assert_eq!(entry.generation_count, 2);
+    let g = entry.generation.expect("snapshot refreshed");
+    assert_eq!(g.voice, "irina");
 }
