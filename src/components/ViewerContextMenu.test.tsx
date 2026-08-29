@@ -12,31 +12,6 @@ vi.mock('../lib/viewerCopy', () => ({
   copyImageBitmap: vi.fn(),
 }));
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
-
-// jsdom has no matchMedia / ResizeObserver; Mantine needs both.
-Object.defineProperty(window, 'matchMedia', {
-  writable: true,
-  value: (query: string) => ({
-    matches: false,
-    media: query,
-    onchange: null,
-    addListener: () => {},
-    removeListener: () => {},
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    dispatchEvent: () => false,
-  }),
-});
-class ResizeObserverStub {
-  observe(): void {}
-  unobserve(): void {}
-  disconnect(): void {}
-}
-(globalThis as { ResizeObserver?: unknown }).ResizeObserver ??=
-  ResizeObserverStub;
-
 import { ViewerContextMenu } from './ViewerContextMenu';
 
 function Harness() {

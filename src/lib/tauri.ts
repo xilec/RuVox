@@ -220,8 +220,8 @@ export const commands = {
   deleteAudio: (id: EntryId): Promise<void> =>
     tauriInvoke('delete_audio', { id }),
 
-  regenerateEntry: (id: EntryId): Promise<void> =>
-    tauriInvoke('regenerate_entry', { id }),
+  regenerateEntry: (id: EntryId, play_when_ready: boolean): Promise<void> =>
+    tauriInvoke('regenerate_entry', { id, playWhenReady: play_when_ready }),
 
   setEntryFormat: (id: EntryId, format: EntryFormat): Promise<void> =>
     tauriInvoke('set_entry_format', { id, format }),

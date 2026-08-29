@@ -159,7 +159,7 @@ The right pane SHALL show the normalized result from `commands.previewNormalize(
 
 ### Requirement: Footer controls
 
-The dialog footer SHALL contain:
+In the Add/import mode the dialog footer SHALL contain:
 
 | Control | Behavior |
 |---------|----------|
@@ -170,6 +170,11 @@ The dialog footer SHALL contain:
 | "Редактировать" (Button) | Switches the left pane to edit mode; hidden while editing |
 | "Синтезировать" (Button) | Confirms and synthesizes; disabled while normalization is loading |
 
+In the regeneration mode (see "Regeneration preview") the footer SHALL omit
+the checkbox and the «Редактировать» button — they cannot apply to an
+immutable entry — and the confirm button SHALL be labeled
+«Перегенерировать»; the remaining controls stay.
+
 #### Scenario: Synchronized scrolling mirrors position
 
 - GIVEN "Синхронный скроллинг" is checked and both panes overflow
@@ -178,13 +183,13 @@ The dialog footer SHALL contain:
 
 ### Requirement: Synthesis confirmation
 
-When "Синтезировать" is pressed, the system SHALL:
+When "Синтезировать" is pressed in the Add/import mode, the system SHALL:
 
 1. Use `editedText.trim()` when in edit mode, otherwise the original clipboard text; an empty edited result MUST fall back to the original text.
 2. If "Больше не показывать этот диалог" is checked, call `commands.updateConfig({ preview_dialog_enabled: false })` and update the cached config in `AppShell`.
 3. Close the dialog and call `commands.addTextEntry(finalText, playWhenReady)`, selecting the new entry and showing a confirmation notification.
 
-The preview dialog SHALL be the only place in the UI where the user can edit source text before synthesis; after confirmation the text is stored as the entry's immutable `original_text`.
+The preview dialog SHALL be the only place in the UI where the user can edit source text before synthesis; after confirmation the text is stored as the entry's immutable `original_text`. The regeneration confirm is governed by "Regeneration preview" — it re-runs synthesis for the stored `original_text` instead of creating an entry.
 
 #### Scenario: Edited text is synthesized
 
@@ -235,15 +240,17 @@ The system SHALL store the dialog gate as `preview_dialog_enabled: boolean` in `
 
 ### Requirement: Source format selection
 
-The dialog SHALL provide a source-format selector with the values `auto`
-(the default), `plain`, `markdown`, and `html`. The `auto` value SHALL be
-selected when the dialog opens from a clipboard flow; an opening from an
-import SHALL preselect the routed format instead (text-import spec,
-"Import format routing"), and every opening allows switching to any value
-including the auto mode. The `auto` label SHALL show the format currently
-detected for the text under consideration (e.g. «Авто (HTML)»), and the
-detection SHALL re-run whenever the text changes — including while the user
-edits it.
+The Add/import dialog SHALL provide a source-format selector with the
+values `auto` (the default), `plain`, `markdown`, and `html`. The `auto`
+value SHALL be selected when the dialog opens from a clipboard flow; an
+opening from an import SHALL preselect the routed format instead
+(text-import spec, "Import format routing"), and every opening allows
+switching to any value including the auto mode. The `auto` label SHALL
+show the format currently detected for the text under consideration
+(e.g. «Авто (HTML)»), and the detection SHALL re-run whenever the text
+changes — including while the user edits it. The regeneration dialog
+SHALL NOT show the selector: its preview is the plain pipeline over the
+stored `original_text` (see "Regeneration preview").
 
 The effective source format is the explicitly chosen value when the selector
 is not in the auto mode, and the detected format when it is. The effective
@@ -485,3 +492,91 @@ dictionaries (`preview.explain.*` keys), Russian and English.
 - WHEN the dialog is open
 - THEN both the explainer line and the popover text are rendered in the
   active language from the `preview.explain.*` i18n keys
+
+### Requirement: Regeneration preview
+The «Перегенерировать аудио» queue context-menu action SHALL open the preview
+dialog pre-filled with the entry's `original_text` before any audio is
+touched. The right pane SHALL show the normalization the regeneration will
+narrate: the plain pipeline over `original_text` as-is — no source-format
+detection and no HTML extraction, because a stored entry's `original_text` is
+already synthesis-ready (HTML-ingested entries store the extracted text).
+
+In regeneration mode the dialog SHALL hide the controls that do not apply:
+
+- «Редактировать» — the entry's `original_text` is immutable after creation;
+- the source-format selector — regeneration does not consult it;
+- «Больше не показывать этот диалог» — that gate belongs to the Add flow and
+  MUST NOT disable the regeneration preview.
+
+The «Read Now» switch, the synchronized-scrolling checkbox, «Отмена», and the
+confirm button remain. The confirm button SHALL be labeled
+«Перегенерировать».
+
+Confirming SHALL close the dialog and invoke `regenerate_entry` with the
+entry id and the switch state; the command owns the delete-then-synthesize
+sequence, so the old audio is deleted only after confirmation. Cancelling —
+via the «Отмена» button, ESC, or the header close icon — SHALL leave the
+entry, its audio, and its status completely untouched. The blue
+«перегенерация» notification SHALL appear only after confirmation.
+
+The context-menu item stays disabled for `processing` entries (the backend
+rejects their regeneration).
+
+Only one preview dialog may be open at a time: opening the regeneration
+preview closes the Add-flow preview if it was open, and an Add/import
+opening closes the regeneration preview — the non-modal floating windows
+must never stack with their window-level ESC handlers doubled up.
+
+#### Scenario: Regenerate opens the preview instead of synthesizing
+
+- GIVEN a `ready` entry whose normalization the user wants to inspect
+- WHEN the user picks «Перегенерировать аудио» in the queue context menu
+- THEN the preview dialog opens pre-filled with the entry's `original_text`,
+  the right pane shows its normalization, and the old audio still exists
+
+#### Scenario: Cancel keeps the existing audio
+
+- GIVEN the regeneration preview is open for a `ready` entry
+- WHEN the user presses ESC (or «Отмена», or the close icon)
+- THEN the dialog closes, the entry keeps its audio, status, and timestamps,
+  and no notification is shown
+
+#### Scenario: Confirm regenerates
+
+- GIVEN the regeneration preview is open with «Read Now» off
+- WHEN the user presses «Перегенерировать»
+- THEN the dialog closes, `regenerate_entry` is invoked with
+  `play_when_ready: false`, and the blue «перегенерация» notification appears
+  while the entry re-runs synthesis
+
+#### Scenario: Regeneration mode hides inapplicable controls
+
+- GIVEN the regeneration preview is open
+- WHEN the user looks at the dialog
+- THEN «Редактировать», the source-format selector, and «Больше не
+  показывать этот диалог» are absent, while «Read Now», «Синхронный
+  скроллинг», «Отмена», and «Перегенерировать» are present
+
+#### Scenario: Preview shows the stored text without re-extraction
+
+- GIVEN an HTML-ingested entry (its `original_text` is the extracted TTS
+  text, `html_source` the sanitized markup)
+- WHEN the regeneration preview opens
+- THEN the left pane shows `original_text` and the right pane shows the
+  normalization of that text — the markup is not extracted again
+
+#### Scenario: Error entry can be regenerated through the preview
+
+- GIVEN an `error` entry
+- WHEN the user picks «Перегенерировать аудио»
+- THEN the preview dialog opens, and confirming re-runs synthesis for the
+  entry
+
+#### Scenario: Previews are mutually exclusive
+
+- GIVEN the Add-flow preview dialog is open (the dialog is non-modal, the
+  queue underneath stays interactive)
+- WHEN the user picks «Перегенерировать аудио»
+- THEN the Add-flow preview closes and only the regeneration preview is
+  shown — the two floating windows never stack, and ESC closes exactly one
+  dialog

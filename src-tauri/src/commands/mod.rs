@@ -1186,7 +1186,8 @@ pub async fn set_entry_format<R: Runtime>(
 /// Regenerate audio for an existing entry: drop its current audio + timestamps,
 /// reset status to `Pending`, and re-run the synthesis pipeline. Useful when
 /// the user has changed `speaker`, `speech_rate`, or other normalization
-/// settings and wants the cached audio to reflect them.
+/// settings and wants the cached audio to reflect them. With `play_when_ready`,
+/// the fresh audio autoplays on success (same rule as the initial synthesis).
 ///
 /// Rejects the call if the entry is currently being synthesized — re-entering
 /// `spawn_synthesis` for the same id would race with the in-flight task.
@@ -1195,6 +1196,7 @@ pub async fn regenerate_entry<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
     id: String,
+    play_when_ready: bool,
 ) -> CmdResult<()> {
     let entry = require_entry(&state.storage, &id)?;
     let uuid = entry.id;
@@ -1229,7 +1231,11 @@ pub async fn regenerate_entry<R: Runtime>(
         .map_err(CommandError::from)?;
     emit_entry_updated(&app, &entry);
 
-    spawn_synthesis(SynthesisDeps::from_state(&app, &state), uuid, false);
+    spawn_synthesis(
+        SynthesisDeps::from_state(&app, &state),
+        uuid,
+        play_when_ready,
+    );
 
     Ok(())
 }

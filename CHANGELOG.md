@@ -12,6 +12,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 - **Voiceover parameters in the history** — the queue context menu gains «Параметры записи…», a read-only view of the source, engine, voice, sample rate, model and settings that produced each recording (#243).
 - **Linux AppImage auto-updates** — AppImage installs now check GitHub releases in-app and self-update with signature verification; .deb and source builds get no update UI (#226).
 
+### Changed
+- **Regeneration asks before overwriting** — «Перегенерировать аудио» now opens the normalization preview first: the old audio is deleted only after you confirm, cancelling keeps it, and «Читать сейчас» plays the fresh audio.
+
 ## [0.4.0] — 2026-08-25 — Linux packages
 
 ### Added
