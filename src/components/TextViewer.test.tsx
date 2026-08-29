@@ -70,6 +70,8 @@ function makeEntry(): TextEntry {
     timestamps_path: null,
     duration_sec: null,
     was_regenerated: false,
+    generation_count: 0,
+    generation: null,
     error_message: null,
   };
 }

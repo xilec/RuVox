@@ -12,6 +12,9 @@ export const en: Record<MessageKey, string> = {
   'common.save': 'Save',
   'common.error': 'Error',
   'common.mb': 'MB',
+  'common.yes': 'Yes',
+  'common.no': 'No',
+  'common.close': 'Close',
 
   // ── App shell ───────────────────────────────────────────────────────────
   'app.queue.title': 'Queue',
@@ -55,6 +58,7 @@ export const en: Record<MessageKey, string> = {
   'queue.menu.regenerate': 'Regenerate audio',
   'queue.menu.cancel_synthesis': 'Cancel synthesis',
   'queue.menu.export_audio': 'Save audio as…',
+  'queue.menu.generation_params': 'Voiceover parameters…',
   'notify.export.ok': 'Audio saved: {0}',
   'queue.delete.title': 'Delete this entry?',
   'queue.delete.body':
@@ -64,6 +68,29 @@ export const en: Record<MessageKey, string> = {
   'queue.notify.regenerating.message': 'Audio regeneration started',
   'queue.notify.regenerate_failed': 'Failed to start regeneration: {0}',
   'queue.notify.cancel_failed': 'Failed to cancel synthesis: {0}',
+
+  // ── Generation-params dialog (#243) ─────────────────────────────────────
+  'generation.title': 'Voiceover parameters',
+  'generation.engine': 'Engine',
+  'generation.engine.silero_native': 'Silero (native)',
+  'generation.engine.piper': 'Piper',
+  'generation.engine.silero': 'Silero (Python)',
+  'generation.voice': 'Voice',
+  'generation.sample_rate': 'Sample rate',
+  'generation.sample_rate.value': '{0} Hz',
+  'generation.model': 'Model',
+  'generation.app_version': 'App version',
+  'generation.code_block': 'Code blocks',
+  'generation.code_block.read': 'read',
+  'generation.code_block.skip': 'skip',
+  'generation.read_operators': 'Read operators',
+  'generation.normalized_sha': 'Text checksum',
+  'generation.audio': 'Audio',
+  'generation.duration': 'Duration',
+  'generation.generated_at': 'Generated',
+  'generation.count': 'Generation number',
+  'generation.legacy':
+    'Parameters were not recorded: the audio was created by an older app version.',
 
   // ── Player ──────────────────────────────────────────────────────────────
   'player.play': 'Play',

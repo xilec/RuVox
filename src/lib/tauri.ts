@@ -28,7 +28,30 @@ export interface TextEntry {
   timestamps_path: string | null;
   duration_sec: number | null;
   was_regenerated: boolean;
+  /** How many times audio was successfully baked (survives regeneration). */
+  generation_count: number;
+  /** Snapshot of the synthesis parameters that produced the current audio;
+   * null for entries from older builds and entries without audio. */
+  generation: GenerationParams | null;
   error_message: string | null;
+}
+
+export interface ModelParams {
+  name: string;
+  sha256: string | null;
+}
+
+export interface GenerationParams {
+  engine: EngineKind;
+  voice: string;
+  sample_rate: number | null;
+  model: ModelParams | null;
+  app_version: string;
+  code_block_mode: string | null;
+  read_operators: boolean | null;
+  normalized_text_sha256: string | null;
+  audio_codec: string | null;
+  audio_bytes: number | null;
 }
 
 export interface WordTimestamp {

@@ -21,13 +21,15 @@ use crate::pipeline::TTSPipeline;
 use crate::pipeline::tracked_text::CharMapping;
 use crate::state::AppState;
 use crate::storage::schema::{
-    EntryId, EntryStatus, TextEntry, TextFormat, UIConfig, UIConfigPatch, WordTimestamp,
+    EntryId, EntryStatus, GenerationParams, ModelParams, TextEntry, TextFormat, UIConfig,
+    UIConfigPatch, WordTimestamp,
 };
 use crate::storage::service::{StorageError, StorageService};
 use crate::tts::engine::EngineKind;
 use crate::tts::piper::download::download_voice;
 use crate::tts::{
-    AvailableEngines, CharMappingEntry, SynthesizeOutput, TtsEngine, TtsError, availability,
+    AvailableEngines, CharMappingEntry, ModelInfo, SynthesizeOutput, TtsEngine, TtsError,
+    availability,
 };
 
 // ── Error type ─────────────────────────────────────────────────────────────────
@@ -377,6 +379,18 @@ fn mark_processing<R: Runtime>(
     emit_entry_updated(app, &entry);
 }
 
+/// Voice id for the engine actually serving the request: Piper uses
+/// `piper_voice` (e.g. "ruslan"), both Silero engines (ttsd and native) use
+/// `speaker` (e.g. "xenia"). Keyed on the active engine kind, not the
+/// persisted `config.engine`, so a session with a startup-fallback engine
+/// still gets its own voice choice.
+fn voice_for_engine(kind: EngineKind, config: &UIConfig) -> String {
+    match kind {
+        EngineKind::Piper => config.piper_voice.clone(),
+        EngineKind::Silero | EngineKind::SileroNative => config.speaker.clone(),
+    }
+}
+
 /// Phases 3–4: determine the WAV path / config / char-mapping inputs and
 /// call `tts.synthesize`. Returns the synthesize output along with the
 /// resolved WAV path and filename so [`finalize_audio_files`] can transcode
@@ -418,10 +432,7 @@ async fn synthesize_audio(
     // (`tts.kind()`), not the persisted `config.engine`: when the startup
     // fallback swapped engines (e.g. silero_native without a bundle runs
     // Piper for the session), the active engine must get its own voice id.
-    let voice = match tts.kind() {
-        EngineKind::Piper => config.piper_voice.clone(),
-        EngineKind::Silero | EngineKind::SileroNative => config.speaker.clone(),
-    };
+    let voice = voice_for_engine(tts.kind(), &config);
 
     // Track the entry as "inside the TTS stage" so `cancel_synthesis` knows
     // the ttsd subprocess must be killed. If the task is aborted at this
@@ -464,6 +475,77 @@ async fn synthesize_audio(
     };
 
     Ok((output, out_wav_path, wav_filename))
+}
+
+/// Actual output sample rate of a rendered WAV, read from the header. The
+/// engine has already written the complete file by the time this runs, so a
+/// header read captures the produced rate for every engine (including
+/// Piper's voice-fixed rate). `None` when the file cannot be read.
+fn wav_sample_rate(wav_path: &std::path::Path) -> Option<u32> {
+    hound::WavReader::open(wav_path)
+        .ok()
+        .map(|reader| reader.spec().sample_rate)
+}
+
+/// Codec of the stored audio file, keyed off the final filename: the Opus
+/// transcode renamed the intermediate WAV to `.opus`, or the encode failed
+/// and the `.wav` stayed as the playback fallback.
+fn audio_codec_for(audio_filename: &str) -> Option<&'static str> {
+    if audio_filename.ends_with(".opus") {
+        Some("Ogg Opus")
+    } else if audio_filename.ends_with(".wav") {
+        Some("WAV")
+    } else {
+        None
+    }
+}
+
+fn model_params(info: ModelInfo) -> ModelParams {
+    ModelParams {
+        name: info.name,
+        sha256: info.sha256,
+    }
+}
+
+/// Build the per-entry synthesis-parameter snapshot (spec `ipc-commands`,
+/// "Generation Parameters Snapshot"). Runs after [`finalize_audio_files`],
+/// when the final audio file exists. Every lookup is best-effort: unknown
+/// values stay `None` — a failed manifest read or a missing file must never
+/// fail a completed synthesis.
+fn build_generation_snapshot(
+    tts: &dyn TtsEngine,
+    storage: &StorageService,
+    normalized: &str,
+    out_wav_path: &std::path::Path,
+    audio_filename: &str,
+) -> GenerationParams {
+    let config = storage.load_config().unwrap_or_default();
+    let voice = voice_for_engine(tts.kind(), &config);
+    let sample_rate = wav_sample_rate(out_wav_path);
+    let model = tts.model_info(&voice).map(model_params);
+
+    let normalized_sha = {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(normalized.as_bytes());
+        Some(format!("{:x}", hasher.finalize()))
+    };
+
+    let audio_path = storage.data_dir().join("audio").join(audio_filename);
+    let audio_bytes = std::fs::metadata(&audio_path).ok().map(|m| m.len());
+
+    GenerationParams {
+        engine: tts.kind().as_str().to_string(),
+        voice,
+        sample_rate,
+        model,
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
+        code_block_mode: Some(config.code_block_mode),
+        read_operators: Some(config.read_operators),
+        normalized_text_sha256: normalized_sha,
+        audio_codec: audio_codec_for(audio_filename).map(str::to_string),
+        audio_bytes,
+    }
 }
 
 /// Phases 5 + 5b: persist word timestamps and transcode WAV → Opus.
@@ -554,6 +636,7 @@ fn apply_ready_if_current(
     output: &SynthesizeOutput,
     ts_filename: Option<String>,
     audio_filename: &str,
+    generation: GenerationParams,
 ) -> bool {
     // Atomic under a single storage lock (issue #179): the `processing` check
     // and the ready-field mutation cannot be raced by a concurrent cancel.
@@ -566,6 +649,8 @@ fn apply_ready_if_current(
             e.timestamps_path = ts_filename.clone();
             e.duration_sec = Some(output.duration_sec);
             e.audio_generated_at = Some(chrono::Utc::now().naive_utc());
+            e.generation_count = e.generation_count.saturating_add(1);
+            e.generation = Some(generation);
         },
     );
 
@@ -595,8 +680,16 @@ fn mark_ready_and_emit<R: Runtime>(
     output: &SynthesizeOutput,
     ts_filename: Option<String>,
     audio_filename: &str,
+    generation: GenerationParams,
 ) -> bool {
-    let applied = apply_ready_if_current(storage, entry_id, output, ts_filename, audio_filename);
+    let applied = apply_ready_if_current(
+        storage,
+        entry_id,
+        output,
+        ts_filename,
+        audio_filename,
+        generation,
+    );
     if applied {
         if let Some(entry) = storage.get_entry(entry_id) {
             emit_entry_updated(app, &entry);
@@ -660,6 +753,7 @@ pub fn spawn_synthesis<R: Runtime + 'static>(
                 let (normalized, mapping) =
                     run_normalization(Arc::clone(&pipeline), entry.original_text.clone()).await?;
                 mark_processing(&storage, &app, &entry_id, &normalized);
+                let normalized_for_snapshot = normalized.clone();
                 let (output, out_wav_path, wav_filename) = synthesize_audio(
                     tts.as_ref(),
                     &storage,
@@ -674,6 +768,13 @@ pub fn spawn_synthesis<R: Runtime + 'static>(
                 let (ts_filename, audio_filename) =
                     finalize_audio_files(&storage, &entry_id, &output, out_wav_path, &wav_filename)
                         .await;
+                let generation = build_generation_snapshot(
+                    tts.as_ref(),
+                    &storage,
+                    &normalized_for_snapshot,
+                    &storage.data_dir().join("audio").join(&wav_filename),
+                    &audio_filename,
+                );
                 let applied = mark_ready_and_emit(
                     &storage,
                     &app,
@@ -681,6 +782,7 @@ pub fn spawn_synthesis<R: Runtime + 'static>(
                     &output,
                     ts_filename,
                     &audio_filename,
+                    generation,
                 );
                 if applied && play_when_ready {
                     let path = storage.data_dir().join("audio").join(&audio_filename);
@@ -1882,6 +1984,21 @@ mod synthesis_tests {
         }
     }
 
+    fn fake_generation() -> GenerationParams {
+        GenerationParams {
+            engine: "silero_native".to_string(),
+            voice: "xenia".to_string(),
+            sample_rate: Some(24000),
+            model: None,
+            app_version: "test".to_string(),
+            code_block_mode: Some("read".to_string()),
+            read_operators: Some(true),
+            normalized_text_sha256: None,
+            audio_codec: Some("Ogg Opus".to_string()),
+            audio_bytes: None,
+        }
+    }
+
     fn set_status(storage: &StorageService, entry: &TextEntry, status: EntryStatus) {
         let mut updated = entry.clone();
         updated.status = status;
@@ -1907,6 +2024,7 @@ mod synthesis_tests {
             &fake_output(),
             Some(ts_name.clone()),
             &audio_name,
+            fake_generation(),
         );
 
         assert!(!applied);
@@ -1914,6 +2032,10 @@ mod synthesis_tests {
         assert_eq!(stored.status, EntryStatus::Pending);
         assert!(stored.audio_path.is_none());
         assert!(stored.timestamps_path.is_none());
+        assert!(
+            stored.generation.is_none(),
+            "stale completion must not resurrect a snapshot"
+        );
         assert!(!audio_dir.join(&audio_name).exists());
         assert!(!audio_dir.join(&ts_name).exists());
     }
@@ -1933,6 +2055,7 @@ mod synthesis_tests {
             &fake_output(),
             Some(format!("{id}.timestamps.json")),
             &format!("{id}.opus"),
+            fake_generation(),
         );
 
         assert!(applied);
@@ -1944,6 +2067,60 @@ mod synthesis_tests {
         );
         assert_eq!(stored.duration_sec, Some(1.0));
         assert!(stored.audio_generated_at.is_some());
+        assert_eq!(stored.generation_count, 1);
+        assert_eq!(
+            stored.generation.as_ref().map(|g| g.voice.as_str()),
+            Some("xenia")
+        );
+    }
+
+    /// Every successful bake increments the count and replaces the snapshot:
+    /// a re-synthesis with a different voice overwrites the old parameters.
+    #[test]
+    fn second_completion_bumps_generation_count_and_refreshes_snapshot() {
+        let (storage, _dir) = make_service();
+        let entry = storage.add_entry("текст".to_string()).unwrap();
+        set_status(&storage, &entry, EntryStatus::Processing);
+        let id = entry.id;
+
+        assert!(apply_ready_if_current(
+            &storage,
+            &id,
+            &fake_output(),
+            None,
+            &format!("{id}.opus"),
+            fake_generation(),
+        ));
+
+        let mut regenerated = fake_generation();
+        regenerated.voice = "baya".to_string();
+        regenerated.model = Some(ModelParams {
+            name: "ru_RU-baya-medium.onnx".to_string(),
+            sha256: None,
+        });
+        set_status(
+            &storage,
+            &storage.get_entry(&id).unwrap(),
+            EntryStatus::Processing,
+        );
+
+        assert!(apply_ready_if_current(
+            &storage,
+            &id,
+            &fake_output(),
+            None,
+            &format!("{id}.opus"),
+            regenerated,
+        ));
+
+        let stored = storage.get_entry(&id).unwrap();
+        assert_eq!(stored.generation_count, 2);
+        let generation = stored.generation.expect("snapshot refreshed");
+        assert_eq!(generation.voice, "baya");
+        assert_eq!(
+            generation.model.expect("model set").name,
+            "ru_RU-baya-medium.onnx"
+        );
     }
 
     /// A late TTS-stage failure for a non-`processing` entry changes no

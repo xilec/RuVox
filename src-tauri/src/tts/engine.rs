@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use super::{CharMappingEntry, SynthesizeOutput, TtsError};
+use super::{CharMappingEntry, ModelInfo, SynthesizeOutput, TtsError};
 
 /// Identifies which engine implementation is currently active. Used for
 /// logging, telemetry, and (future) UI events that need to differentiate
@@ -75,6 +75,18 @@ pub trait TtsEngine: Send + Sync {
         out_wav: String,
         char_mapping: Option<Vec<CharMappingEntry>>,
     ) -> Result<SynthesizeOutput, TtsError>;
+
+    /// Identity of the loaded model/voice, when the engine can report it
+    /// cheaply (no file hashing on the synthesis path). `voice` is the same
+    /// engine-specific voice id `synthesize` receives; engines whose model
+    /// identity is voice-independent (silero-native bundle) ignore it. `None`
+    /// means the engine cannot report an identity — the generation-params
+    /// snapshot renders it as absent. Default impl: `None` (engines with no
+    /// exposed model identity, and test stubs).
+    fn model_info(&self, voice: &str) -> Option<ModelInfo> {
+        let _ = voice;
+        None
+    }
 
     /// Forcibly terminate the engine's current in-flight work (for Silero,
     /// the ttsd subprocess). Default is a no-op: engines with no external

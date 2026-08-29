@@ -60,8 +60,54 @@ pub struct TextEntry {
     pub audio_generated_at: Option<NaiveDateTime>,
     #[serde(default)]
     pub was_regenerated: bool,
+    /// How many times audio was successfully baked for this entry (1 on the
+    /// first synthesis, +1 per regenerate). Survives audio-only deletion and
+    /// load-time audio validation, like `was_regenerated`.
+    #[serde(default)]
+    pub generation_count: u32,
+    /// Snapshot of the synthesis parameters that produced the current audio.
+    /// Refreshed on every regeneration; cleared together with the other audio
+    /// metadata when the audio is deleted or missing. `None` for entries from
+    /// older builds and for entries that never produced audio.
+    #[serde(default)]
+    pub generation: Option<GenerationParams>,
     #[serde(default)]
     pub error_message: Option<String>,
+}
+
+/// Identity of the model/voice that produced a generation, when the engine
+/// can report it cheaply. Absent checksums mean "unknown", never guessed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ModelParams {
+    /// e.g. the silero-native bundle `model_id` or the Piper voice model
+    /// file name (`ru_RU-ruslan-medium.onnx`).
+    pub name: String,
+    #[serde(default)]
+    pub sha256: Option<String>,
+}
+
+/// Per-entry snapshot of the synthesis parameters, written when audio is
+/// produced (see `ipc-commands` spec, "Generation Parameters Snapshot").
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GenerationParams {
+    /// Engine that served the request: `"silero_native"` | `"piper"` | `"silero"`.
+    pub engine: String,
+    /// Engine-specific voice id actually used (`xenia`, `ruslan`, ...).
+    pub voice: String,
+    /// Actual output sample rate of the rendered audio; `None` when unknown.
+    pub sample_rate: Option<u32>,
+    #[serde(default)]
+    pub model: Option<ModelParams>,
+    pub app_version: String,
+    /// Normalization settings in effect at synthesis time.
+    pub code_block_mode: Option<String>,
+    pub read_operators: Option<bool>,
+    /// sha256 of the normalized text used for this audio.
+    pub normalized_text_sha256: Option<String>,
+    /// Codec of the stored file: `"Ogg Opus"`, or `"WAV"` (encode fallback).
+    pub audio_codec: Option<String>,
+    /// Size of the stored audio file in bytes.
+    pub audio_bytes: Option<u64>,
 }
 
 /// Top-level structure of `<data root>/history.json`
@@ -358,6 +404,70 @@ mod tests {
         assert!(e.format.is_none());
         assert!(e.html_source.is_none());
         assert!(!e.was_regenerated);
+        assert!(e.generation.is_none());
+        assert_eq!(e.generation_count, 0);
+    }
+
+    #[test]
+    fn entry_generation_snapshot_roundtrip() {
+        let generation = GenerationParams {
+            engine: "silero_native".to_string(),
+            voice: "xenia".to_string(),
+            sample_rate: Some(24000),
+            model: Some(ModelParams {
+                name: "silero_v5_ru".to_string(),
+                sha256: Some("ab12".repeat(32)),
+            }),
+            app_version: "0.4.0".to_string(),
+            code_block_mode: Some("read".to_string()),
+            read_operators: Some(true),
+            normalized_text_sha256: Some("cd34".repeat(32)),
+            audio_codec: Some("Ogg Opus".to_string()),
+            audio_bytes: Some(54321),
+        };
+        let entry_json = format!(
+            r#"{{
+                "id": "550e8400-e29b-41d4-a716-446655440000",
+                "original_text": "Тест",
+                "status": "ready",
+                "created_at": "2025-01-01T12:00:00.000000",
+                "audio_generated_at": "2025-01-01T12:01:00.000000",
+                "generation_count": 2,
+                "generation": {}
+            }}"#,
+            serde_json::to_string(&generation).unwrap()
+        );
+        let e: TextEntry = serde_json::from_str(&entry_json).expect("parse entry with snapshot");
+        assert_eq!(e.generation_count, 2);
+        assert_eq!(e.generation.as_ref(), Some(&generation));
+
+        let round: TextEntry = serde_json::from_str(&serde_json::to_string(&e).unwrap()).unwrap();
+        assert_eq!(round.generation, e.generation);
+        assert_eq!(round.generation_count, 2);
+    }
+
+    #[test]
+    fn entry_generation_snapshot_absent_fields_deserialize_as_none() {
+        // A snapshot without optional keys (model, checksums, audio facts)
+        // must still parse; unknown-ness is null, not a parse error.
+        let json = r#"{
+            "id": "550e8400-e29b-41d4-a716-446655440000",
+            "original_text": "Тест",
+            "status": "ready",
+            "created_at": "2025-01-01T12:00:00.000000",
+            "generation": {
+                "engine": "piper",
+                "voice": "ruslan",
+                "app_version": "0.5.0"
+            }
+        }"#;
+        let e: TextEntry = serde_json::from_str(json).expect("parse minimal snapshot");
+        let g = e.generation.expect("snapshot present");
+        assert_eq!(g.engine, "piper");
+        assert_eq!(g.voice, "ruslan");
+        assert_eq!(g.sample_rate, None);
+        assert_eq!(g.model, None);
+        assert_eq!(g.audio_codec, None);
     }
 
     #[test]

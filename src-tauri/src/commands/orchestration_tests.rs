@@ -842,3 +842,84 @@ async fn set_volume_rejects_out_of_range() {
             .all(|c| !matches!(c, PlayerCall::SetVolume(_)))
     );
 }
+
+// ── generation-params snapshot (#243) ────────────────────────────────
+
+/// A completed synthesis records a snapshot of the parameters that produced
+/// the audio. The stub engine writes a non-WAV body, so the sample-rate and
+/// model lookups degrade to `None` — exactly the absence the dialog must
+/// render as a dash — while the WAV fallback keeps the codec `"WAV"`.
+#[tokio::test(flavor = "multi_thread")]
+async fn synthesis_records_generation_snapshot() {
+    let t = build_test_app();
+
+    let id = add_text_entry(
+        t.app.handle().clone(),
+        t.state(),
+        "Вызови getUserData()".to_string(),
+        false,
+        None,
+        None,
+    )
+    .await
+    .expect("entry accepted");
+    let uuid = entry_uuid(&id);
+    wait_entry_status(&t, &uuid, EntryStatus::Ready).await;
+
+    let entry = t.state().storage.get_entry(&uuid).unwrap();
+    assert_eq!(entry.generation_count, 1);
+    let g = entry.generation.expect("snapshot recorded on success");
+    assert_eq!(g.engine, "piper");
+    assert_eq!(
+        g.voice,
+        t.state().storage.load_config().unwrap().piper_voice,
+        "voice is the resolved piper_voice, not the silero speaker"
+    );
+    assert_eq!(g.model, None, "stub engine exposes no model identity");
+    assert_eq!(g.sample_rate, None, "stub body is not a parseable WAV");
+    assert_eq!(g.audio_codec.as_deref(), Some("WAV"));
+    assert_eq!(g.audio_bytes, Some("stub audio".len() as u64));
+    assert!(g.normalized_text_sha256.is_some());
+    assert!(!g.app_version.is_empty());
+    assert_eq!(g.code_block_mode.as_deref(), Some("read"));
+    assert_eq!(g.read_operators, Some(true));
+}
+
+/// Regeneration re-runs the same spawn path: the snapshot is overwritten
+/// with the new voice and the count grows to 2.
+#[tokio::test(flavor = "multi_thread")]
+async fn regeneration_refreshes_generation_snapshot() {
+    let t = build_test_app();
+
+    let id = add_text_entry(
+        t.app.handle().clone(),
+        t.state(),
+        "Привет".to_string(),
+        false,
+        None,
+        None,
+    )
+    .await
+    .expect("entry accepted");
+    let uuid = entry_uuid(&id);
+    wait_entry_status(&t, &uuid, EntryStatus::Ready).await;
+
+    // Persist the voice switch directly: `update_config` routes through the
+    // engine switcher, which validates the (absent) silero-native bundle.
+    let mut config = t.state().storage.load_config().unwrap();
+    config.piper_voice = "irina".to_string();
+    t.state()
+        .storage
+        .save_config(&config)
+        .expect("voice switch persisted");
+
+    regenerate_entry(t.app.handle().clone(), t.state(), id)
+        .await
+        .expect("regeneration accepted");
+    wait_entry_status(&t, &uuid, EntryStatus::Ready).await;
+
+    let entry = t.state().storage.get_entry(&uuid).unwrap();
+    assert_eq!(entry.generation_count, 2);
+    let g = entry.generation.expect("snapshot refreshed");
+    assert_eq!(g.voice, "irina");
+}
