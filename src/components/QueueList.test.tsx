@@ -267,6 +267,30 @@ describe('QueueList context menu', () => {
     );
   });
 
+  it('shows an error notification when the save-dialog pick itself rejects', async () => {
+    pickExportAudioPath.mockRejectedValueOnce({
+      type: 'internal',
+      code: 'export.dialog_panicked',
+    });
+    await renderWith(makeEntry('ready'));
+    await openMenu();
+
+    await act(async () => {
+      exportItem().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(exportAudio).not.toHaveBeenCalled();
+    expect(showNotification).toHaveBeenCalledTimes(1);
+    expect(showNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        color: 'red',
+        message: 'Внутренняя ошибка при открытии диалога сохранения',
+      }),
+    );
+  });
+
   it.each(['ready', 'playing'] as const)(
     '"Сохранить аудио как…" is enabled for a %s entry',
     async (status) => {

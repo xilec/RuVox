@@ -23,8 +23,10 @@ byte-for-byte to `path` on the blocking thread, and return `Unit`. The copy
 MUST NOT modify the cached original. A missing entry SHALL fail with
 `entry.not_found`; a missing source file SHALL fail with `export.no_audio`;
 an I/O failure of the copy SHALL fail with `export.copy_failed` carrying the
-underlying error as a message param. The commands MUST NOT create history
-or queue side effects — no `entry_updated` emission, no status change.
+underlying error as a message param. A panicked blocking task SHALL fail
+with `export.dialog_panicked` (pick) or `export.task_panicked` (copy). The
+commands MUST NOT create history or queue side effects — no `entry_updated`
+emission, no status change.
 
 The frontend wrappers SHALL be `commands.pickExportAudioPath(entryId)` and
 `commands.exportAudio(entryId, path)`.
