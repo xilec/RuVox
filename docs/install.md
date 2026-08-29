@@ -150,6 +150,15 @@ Outputs:
 - `src-tauri/target/release/bundle/deb/*.deb` — installable package
   (`sudo dpkg -i`).
 
+### Release artifacts & self-updates
+
+Prebuilt artifacts (Windows NSIS installer, Linux .deb and .AppImage) are
+attached to [GitHub releases](https://github.com/xilec/RuVox/releases). The
+Windows installer and the Linux **AppImage** self-update in-app: Settings →
+«Проверить обновления» (or the startup check) downloads a
+signature-verified artifact and relaunches. The .deb and source builds are
+not self-updating — reinstall the new version yourself.
+
 ## Troubleshooting
 
 - **`failed to run custom build command for espeak-rs-sys`** — you are
