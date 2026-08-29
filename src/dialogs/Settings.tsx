@@ -335,7 +335,7 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
 
   const piperVoiceOptions = useMemo(
     () => PIPER_VOICES.map((v) => ({ value: v.id, label: tt(v.key) })),
-    [],
+    [tt],
   );
 
   const speakerOptions = useMemo(
