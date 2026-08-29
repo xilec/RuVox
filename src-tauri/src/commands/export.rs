@@ -8,50 +8,43 @@ use std::path::Path;
 
 use super::*;
 
-/// Pure default-name/filter derivation for the save dialog (unit-testable
-/// without rfd): the pre-filled name carries NO extension — the native
-/// dialog appends the active filter's extension on save, so the filter
-/// choice (not a baked-in suffix) decides the format. For an `.opus` source
-/// (the normal case) the dialog offers both export formats — `Ogg Opus`
-/// first as the default, `WAV` second (#252); the synthesis-transcode
-/// fallback (`.wav` source) stays WAV-only. A no-extension stored name
-/// falls back to the Opus case.
-fn save_dialog_defaults(
-    entry_id: &EntryId,
-    audio_name: &str,
-) -> (String, Vec<(&'static str, &'static str)>) {
-    let ext = Path::new(audio_name)
+/// The stored audio file's extension, defaulting to `opus` (the normal
+/// case; the synthesis-transcode fallback stores `.wav`).
+fn stored_ext_of(audio_name: &str) -> String {
+    Path::new(audio_name)
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("opus")
-        .to_string();
-    let filters: Vec<(&'static str, &'static str)> = if ext == "wav" {
-        vec![("WAV", "wav")]
-    } else {
-        vec![("Ogg Opus", "opus"), ("WAV", "wav")]
-    };
-    (format!("ruvox-{entry_id}"), filters)
+        .to_string()
 }
 
-/// Normalize the dialog result against the stored audio format. The native
-/// dialog appends the active filter's extension to an extensionless name,
-/// but a manually typed name can carry a foreign extension (`foo.mp3`) or
-/// none at all — replace it (or append) with the stored format's extension
-/// so the file name always matches the exported bytes (#252 manual-pass
-/// feedback). A recognized `opus`/`wav` extension (any case) is kept as
-/// typed and decides the export format.
-fn normalize_export_target(chosen: &str, stored_ext: &str) -> String {
+/// Normalize the dialog result so the file name always matches the exported
+/// bytes. `requested` is the format the dialog's «Формат» choice reported
+/// (`Some`, Linux portal): a matching extension is kept as typed (any
+/// case), a mismatched or foreign one is replaced, a missing one appended.
+/// Without a reported choice (`None`, platforms whose dialog cannot report
+/// it): a recognized `opus`/`wav` extension is kept as typed, anything else
+/// falls back to the stored format's extension.
+fn normalize_export_target(chosen: &str, requested: Option<&str>, stored_ext: &str) -> String {
     let path = std::path::PathBuf::from(chosen);
-    let recognized = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| e.eq_ignore_ascii_case("opus") || e.eq_ignore_ascii_case("wav"));
-    if recognized {
-        return chosen.to_string();
-    }
-    path.with_extension(stored_ext)
-        .to_string_lossy()
-        .into_owned()
+    let typed = path.extension().and_then(|e| e.to_str());
+    let target = match requested {
+        Some(ext) => {
+            if typed.is_some_and(|e| e.eq_ignore_ascii_case(ext)) {
+                return chosen.to_string();
+            }
+            ext
+        }
+        None => {
+            if typed
+                .is_some_and(|e| e.eq_ignore_ascii_case("opus") || e.eq_ignore_ascii_case("wav"))
+            {
+                return chosen.to_string();
+            }
+            stored_ext
+        }
+    };
+    path.with_extension(target).to_string_lossy().into_owned()
 }
 
 /// Dialog-free export core (unit-testable without rfd): resolve the entry's
@@ -88,12 +81,9 @@ pub(crate) fn export_audio_to(storage: &StorageService, id: &str, target: &Path)
         .map_err(|e| CommandError::internal("export.copy_failed", vec![e.to_string()]))
 }
 
-/// Open the native save dialog for an entry's audio (#225): the pre-filled
-/// name has no extension (the active filter appends it on save); an
-/// `.opus` source offers both the `Ogg Opus` and `WAV` filters (#252).
-/// Returns the chosen path with its extension normalized against the
-/// stored format, or `None` on cancel. The dialog is modal-blocking, so it
-/// runs on the blocking pool (the #224 `pick_import_file` pattern).
+/// Open the native save dialog for an entry's audio and report the chosen
+/// path plus the format the dialog itself selected (`None` when the dialog
+/// cannot report one, or the user cancelled).
 #[tauri::command]
 pub async fn pick_export_audio_path(
     state: State<'_, AppState>,
@@ -103,26 +93,86 @@ pub async fn pick_export_audio_path(
     let audio_name = entry
         .audio_path
         .ok_or_else(|| CommandError::not_found("export.no_audio", vec![id.clone()]))?;
-    let (default_name, filters) = save_dialog_defaults(&entry.id, &audio_name);
-    let stored_ext = Path::new(&audio_name)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("opus")
-        .to_string();
+    let stored_ext = stored_ext_of(&audio_name);
 
-    tokio::task::spawn_blocking(move || {
-        let mut dialog = rfd::FileDialog::new().set_file_name(&default_name);
-        for (filter_name, filter_ext) in filters {
-            dialog = dialog.add_filter(filter_name, &[filter_ext]);
+    let chosen = run_save_dialog(&entry.id.to_string()).await?;
+    Ok(chosen.map(|(path, format)| normalize_export_target(&path, format.as_deref(), &stored_ext)))
+}
+
+/// Linux: the xdg-desktop-portal save dialog with a «Формат» choice combo —
+/// WAV first (the widely editable format a user exports for), Ogg Opus
+/// second. The portal response reports the combo's selected value, which
+/// rfd's flat `Option<PathBuf>` discards — hence the direct ashpd call.
+/// No file-type filters: the combo, not a filter switch, decides the
+/// format. Awaiting the portal future needs no blocking pool (it is IPC
+/// plus the user's think time, not CPU work).
+#[cfg(target_os = "linux")]
+async fn run_save_dialog(entry_id: &str) -> CmdResult<Option<(String, Option<String>)>> {
+    use ashpd::desktop::file_chooser::{Choice, SaveFileRequest};
+
+    let default_name = format!("ruvox-{entry_id}.wav");
+    let request = SaveFileRequest::default()
+        .title("Сохранить аудио как…")
+        .current_name(default_name.as_str())
+        .choice(
+            Choice::new("format", "Формат", "wav")
+                .insert("wav", "WAV")
+                .insert("opus", "Ogg Opus"),
+        );
+    let request = request
+        .send()
+        .await
+        .map_err(|e| CommandError::internal("export.dialog_failed", vec![e.to_string()]))?;
+    let selected = match request.response() {
+        Ok(selected) => selected,
+        Err(ashpd::Error::Response(ashpd::desktop::ResponseError::Cancelled)) => {
+            // The user cancelled the dialog — a silent no-op, like rfd.
+            return Ok(None);
         }
-        dialog
+        Err(e) => {
+            return Err(CommandError::internal(
+                "export.dialog_failed",
+                vec![e.to_string()],
+            ));
+        }
+    };
+
+    let path = selected
+        .uris()
+        .first()
+        .and_then(|uri| uri.to_file_path().ok())
+        .map(|p| p.to_string_lossy().into_owned());
+    // The choice's selected key ("wav"/"opus"); an implementation that
+    // dropped the combo falls back to the stored format via `None`.
+    let format = selected
+        .choices()
+        .iter()
+        .find(|(key, _)| key == "format")
+        .map(|(_, value)| value.to_string())
+        .filter(|value| value == "wav" || value == "opus");
+    Ok(path.map(|p| (p, format)))
+}
+
+/// Other platforms (Windows): rfd's native dialog with both filters —
+/// Win32 rewrites the typed extension to the selected filter's on save, so
+/// the resulting extension carries the format decision back to
+/// [`normalize_export_target`] (`None` = no reported choice).
+#[cfg(not(target_os = "linux"))]
+async fn run_save_dialog(entry_id: &str) -> CmdResult<Option<(String, Option<String>)>> {
+    let default_name = format!("ruvox-{entry_id}.opus");
+    tokio::task::spawn_blocking(move || {
+        let path = rfd::FileDialog::new()
+            .set_file_name(&default_name)
+            .add_filter("Ogg Opus", &["opus"])
+            .add_filter("WAV", &["wav"])
             .save_file()
-            .map(|p| normalize_export_target(&p.to_string_lossy(), &stored_ext))
+            .map(|p| p.to_string_lossy().into_owned());
+        path.map(|p| (p, None))
     })
     .await
     .map_err(|e| {
         CommandError::internal("export.dialog_panicked", vec![]).with_message(e.to_string())
-    })
+    })?
 }
 
 /// Copy an entry's stored audio file to a user-chosen path (#225).
@@ -144,71 +194,61 @@ mod tests {
     use super::*;
 
     #[test]
-    fn save_dialog_defaults_offer_both_formats_for_opus_source() {
-        let id: EntryId = "550e8400-e29b-41d4-a716-446655440000".parse().unwrap();
-        let (name, filters) =
-            save_dialog_defaults(&id, "550e8400-e29b-41d4-a716-446655440000.opus");
-        // No extension in the pre-filled name: the active filter appends it
-        // on save, so switching the filter never leaves a stale suffix.
-        assert_eq!(name, format!("ruvox-{id}"));
+    fn stored_ext_defaults_to_opus_without_extension() {
         assert_eq!(
-            filters,
-            vec![("Ogg Opus", "opus"), ("WAV", "wav")],
-            "Ogg Opus must stay the first (default) filter"
+            stored_ext_of("550e8400-e29b-41d4-a716-446655440000.opus"),
+            "opus"
         );
-    }
-
-    #[test]
-    fn save_dialog_defaults_follow_the_wav_fallback() {
-        let id: EntryId = "550e8400-e29b-41d4-a716-446655440000".parse().unwrap();
-        let (name, filters) = save_dialog_defaults(&id, "550e8400-e29b-41d4-a716-446655440000.wav");
-        assert_eq!(name, format!("ruvox-{id}"));
-        assert_eq!(filters, vec![("WAV", "wav")]);
-    }
-
-    #[test]
-    fn save_dialog_defaults_fall_back_to_opus_without_extension() {
-        let id: EntryId = "550e8400-e29b-41d4-a716-446655440000".parse().unwrap();
-        let (name, filters) = save_dialog_defaults(&id, "no-extension-name");
-        assert_eq!(name, format!("ruvox-{id}"));
-        assert_eq!(filters, vec![("Ogg Opus", "opus"), ("WAV", "wav")]);
-    }
-
-    #[test]
-    fn normalize_keeps_recognized_extensions_as_typed() {
         assert_eq!(
-            normalize_export_target("/tmp/ruvox-a.opus", "opus"),
+            stored_ext_of("550e8400-e29b-41d4-a716-446655440000.wav"),
+            "wav"
+        );
+        assert_eq!(stored_ext_of("no-extension-name"), "opus");
+    }
+
+    #[test]
+    fn normalize_with_reported_format_keeps_a_matching_extension() {
+        assert_eq!(
+            normalize_export_target("/tmp/ruvox-a.opus", Some("opus"), "opus"),
             "/tmp/ruvox-a.opus"
         );
         assert_eq!(
-            normalize_export_target("/tmp/ruvox-a.WAV", "opus"),
+            normalize_export_target("/tmp/ruvox-a.WAV", Some("wav"), "opus"),
             "/tmp/ruvox-a.WAV",
-            "a recognized extension decides the format regardless of case"
+            "case-insensitive match is kept, not rewritten"
         );
     }
 
     #[test]
-    fn normalize_replaces_foreign_extension_with_stored_format() {
+    fn normalize_with_reported_format_wins_over_the_typed_name() {
+        // The dialog's «Формат» combo is the explicit choice: even a typed
+        // .opus must not rename a WAV export behind its back.
         assert_eq!(
-            normalize_export_target("/tmp/audio.mp3", "opus"),
+            normalize_export_target("/tmp/audio.opus", Some("wav"), "opus"),
+            "/tmp/audio.wav"
+        );
+        assert_eq!(
+            normalize_export_target("/tmp/audio.mp3", Some("opus"), "opus"),
             "/tmp/audio.opus",
             "a foreign extension must not name a file whose bytes are Opus"
         );
-        assert_eq!(
-            normalize_export_target("/tmp/audio.mp3", "wav"),
-            "/tmp/audio.wav"
-        );
     }
 
     #[test]
-    fn normalize_appends_extension_when_missing() {
+    fn normalize_without_reported_format_keeps_recognized_extensions() {
+        // Platforms whose dialog cannot report the choice: the typed
+        // extension decides between the two supported formats.
         assert_eq!(
-            normalize_export_target("/tmp/ruvox-a", "opus"),
-            "/tmp/ruvox-a.opus"
+            normalize_export_target("/tmp/audio.wav", None, "opus"),
+            "/tmp/audio.wav"
         );
         assert_eq!(
-            normalize_export_target("/tmp/ruvox-a", "wav"),
-            "/tmp/ruvox-a.wav"
+            normalize_export_target("/tmp/audio.mp3", None, "opus"),
+            "/tmp/audio.opus"
+        );
+        assert_eq!(
+            normalize_export_target("/tmp/audio", None, "wav"),
+            "/tmp/audio.wav"
         );
     }
 }
