@@ -88,19 +88,6 @@ ogg = "0.9"
 hound = "3.5"
 byteorder = "1.5"
 
-# ── Audio export: portal save dialog with a format choice (Linux) ────────────
-# rfd's portal backend flattens the dialog response to a path, but the
-# xdg-desktop-portal response also carries the selected values of custom
-# choice combos — which is how the export dialog reports the chosen format
-# (#252). ashpd is already in the tree via rfd; declared directly (Linux
-# only) so the export picker can read those values. Windows keeps rfd,
-# where the native dialog rewrites the extension per selected filter.
-[target.'cfg(target_os = "linux")'.dependencies]
-# default-features = false: the runtime feature (async-std) must come only
-# from rfd's own declaration — ashpd 0.11 fails to compile with both the
-# async-std and tokio features enabled at once.
-ashpd = { version = "0.11", default-features = false }
-
 # ── Piper TTS (native engine) ────────────────────────────────────────────────
 # `piper-rs` runs Piper's VITS ONNX models in-process. We pin both `ort` and
 # `ort-sys` to `=2.0.0-rc.12` because `ort`/`ort-sys` use matching-exact
@@ -148,6 +135,22 @@ sha2 = "0.10"
 # is the Firefox-designed combo; glue lives in src-tauri/src/import.rs.
 encoding_rs = "0.8"
 chardetng = "1"
+
+# ── Audio export: portal save dialog with a format choice (Linux) ────────────
+# rfd's portal backend flattens the dialog response to a path, but the
+# xdg-desktop-portal response also carries the selected values of custom
+# choice combos — which is how the export dialog reports the chosen format
+# (#252). ashpd is already in the tree via rfd; declared directly (Linux
+# only) so the export picker can read those values. Windows keeps rfd,
+# where the native dialog rewrites the extension per selected filter.
+# Lives AFTER the shared [dependencies] entries: a target table opened
+# mid-section silently re-homes every key below it (the Windows CI
+# breakage of #261).
+[target.'cfg(target_os = "linux")'.dependencies]
+# default-features = false: the runtime feature (async-std) must come only
+# from rfd's own declaration — ashpd 0.11 fails to compile with both the
+# async-std and tokio features enabled at once.
+ashpd = { version = "0.11", default-features = false }
 
 [dev-dependencies]
 tempfile = "3"
