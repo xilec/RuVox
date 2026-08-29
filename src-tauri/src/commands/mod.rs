@@ -3228,20 +3228,7 @@ mod tests {
     #[test]
     fn export_audio_to_wav_target_converts_opus_audio() {
         let (storage, _dir) = make_service();
-        // Encode a real Opus file from a sine WAV into the cache.
-        let id = storage.add_entry("текст".to_string()).unwrap().id;
-        let dir = TempDir::new().unwrap();
-        let wav_path = dir.path().join("src.wav");
-        crate::storage::test_util::write_sine_wav(&wav_path, 24_000, 440.0, 0.25);
-        crate::audio::encode_wav_to_opus(
-            &wav_path,
-            &storage.data_dir().join("audio").join(format!("{id}.opus")),
-        )
-        .unwrap();
-        let mut entry = storage.get_entry(&id).unwrap();
-        entry.audio_path = Some(format!("{id}.opus"));
-        entry.status = EntryStatus::Ready;
-        storage.update_entry(entry).unwrap();
+        let (id, _src_dir) = seed_opus_entry_from_sine(&storage);
 
         let target_dir = TempDir::new().unwrap();
         let target = target_dir.path().join("export.wav");
@@ -3284,6 +3271,83 @@ mod tests {
             other => panic!("expected Internal, got {other:?}"),
         }
         assert!(!target.exists(), "no target file must be left behind");
+    }
+
+    /// A failure before the decoder writes anything (corrupt source) must
+    /// not delete a file the user already had at the target path — the save
+    /// dialog confirmed overwriting it, but this export never started (#252
+    /// review follow-up).
+    #[test]
+    fn export_audio_to_wav_failure_keeps_preexisting_target() {
+        let (storage, _dir) = make_service();
+        let id = seed_audio_entry(&storage, "audio.opus", b"corrupt payload");
+        let target_dir = TempDir::new().unwrap();
+        let target = target_dir.path().join("export.wav");
+        std::fs::write(&target, b"user's previous export").unwrap();
+
+        let err = super::export::export_audio_to(&storage, &id.to_string(), &target).unwrap_err();
+
+        match err {
+            CommandError::Internal { code, .. } => assert_eq!(code, "export.convert_failed"),
+            other => panic!("expected Internal, got {other:?}"),
+        }
+        assert_eq!(
+            std::fs::read(&target).unwrap(),
+            b"user's previous export",
+            "the pre-existing target file must survive a failed conversion"
+        );
+    }
+
+    /// The extension dispatch is case-insensitive: an `export.WAV` target
+    /// converts just like a lowercase one.
+    #[test]
+    fn export_audio_to_uppercase_wav_target_converts() {
+        let (storage, _dir) = make_service();
+        let (id, _wav_dir) = seed_opus_entry_from_sine(&storage);
+
+        let target_dir = TempDir::new().unwrap();
+        let target = target_dir.path().join("export.WAV");
+
+        super::export::export_audio_to(&storage, &id.to_string(), &target).unwrap();
+
+        let reader = hound::WavReader::open(&target).unwrap();
+        assert_eq!(reader.spec().sample_rate, 48_000);
+    }
+
+    /// A target without a recognizable extension is a byte-for-byte copy
+    /// (spec: "every other combination") — the source bytes must arrive
+    /// verbatim.
+    #[test]
+    fn export_audio_to_extensionless_target_copies_bytes() {
+        let (storage, _dir) = make_service();
+        let contents = b"ogg opus payload";
+        let id = seed_audio_entry(&storage, "audio.opus", contents);
+        let target_dir = TempDir::new().unwrap();
+        let target = target_dir.path().join("exported-audio");
+
+        super::export::export_audio_to(&storage, &id.to_string(), &target).unwrap();
+
+        assert_eq!(std::fs::read(&target).unwrap(), contents);
+    }
+
+    /// Seed a ready entry whose cached audio is a real Opus file (a sine
+    /// WAV encoded through `encode_wav_to_opus`), so conversion tests
+    /// exercise an actually decodable stream.
+    fn seed_opus_entry_from_sine(storage: &StorageService) -> (EntryId, TempDir) {
+        let id = storage.add_entry("текст".to_string()).unwrap().id;
+        let dir = TempDir::new().unwrap();
+        let wav_path = dir.path().join("src.wav");
+        crate::storage::test_util::write_sine_wav(&wav_path, 24_000, 440.0, 0.25);
+        crate::audio::encode_wav_to_opus(
+            &wav_path,
+            &storage.data_dir().join("audio").join(format!("{id}.opus")),
+        )
+        .unwrap();
+        let mut entry = storage.get_entry(&id).unwrap();
+        entry.audio_path = Some(format!("{id}.opus"));
+        entry.status = EntryStatus::Ready;
+        storage.update_entry(entry).unwrap();
+        (id, dir)
     }
 }
 
