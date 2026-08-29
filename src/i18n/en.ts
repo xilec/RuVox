@@ -54,6 +54,8 @@ export const en: Record<MessageKey, string> = {
   'queue.no_results': 'Nothing found',
   'queue.menu.regenerate': 'Regenerate audio',
   'queue.menu.cancel_synthesis': 'Cancel synthesis',
+  'queue.menu.export_audio': 'Save audio as…',
+  'notify.export.ok': 'Audio saved: {0}',
   'queue.delete.title': 'Delete this entry?',
   'queue.delete.body':
     'The entry and its audio file will be deleted permanently.',
@@ -323,6 +325,10 @@ export const en: Record<MessageKey, string> = {
   'errors.import.unknown_encoding': 'Unknown encoding: {0}',
   'errors.import.io_failed': 'Failed to read the file {0}',
   'errors.import.task_panicked': 'Internal error during import',
+  'errors.export.no_audio': 'Entry {0} has no stored audio file',
+  'errors.export.copy_failed': 'Failed to copy the audio file: {0}',
+  'errors.export.dialog_panicked': 'Internal error while opening the save dialog',
+  'errors.export.task_panicked': 'Internal error during audio export',
 
   // ── Engine availability reasons (get_available_engines) ─────────────────
   'errors.silero.ttsd_missing':

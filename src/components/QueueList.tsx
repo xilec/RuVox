@@ -290,6 +290,36 @@ export function QueueList() {
     }
   }, [tt]);
 
+  // "Save audio as…": pick a target with the native save dialog, then copy
+  // the cached audio there. A cancelled dialog is a silent no-op; any
+  // rejection (dialog or copy) surfaces the localized red error.
+  const handleExportAudio = useCallback(
+    async (id: string) => {
+      try {
+        const path = await commands.pickExportAudioPath(id);
+        if (path === null) return;
+        await commands.exportAudio(id, path);
+        notifications.show({
+          message: tt('notify.export.ok', [path]),
+          color: 'green',
+        });
+      } catch (e) {
+        notifications.show({
+          title: tt('errors.title'),
+          message: formatError(e),
+          color: 'red',
+        });
+      }
+    },
+    [tt],
+  );
+
+  // Play and "Save audio as…" share one gate: audio exists only on
+  // ready/playing entries.
+  const menuCanPlay =
+    menuEntry !== null &&
+    (menuEntry.status === 'ready' || menuEntry.status === 'playing');
+
   const handleDelete = useCallback(
     (id: string) => {
       modals.openConfirmModal({
@@ -382,14 +412,19 @@ export function QueueList() {
           />
         </Menu.Target>
         <Menu.Dropdown>
+          {/* Play and "Save audio as…" share one gate (audio-export spec:
+              "the same gate as Play"). */}
           <Menu.Item
-            disabled={
-              menuEntry === null ||
-              (menuEntry.status !== 'ready' && menuEntry.status !== 'playing')
-            }
+            disabled={!menuCanPlay}
             onClick={() => menuEntry && handlePlay(menuEntry.id)}
           >
             {tt('queue.play')}
+          </Menu.Item>
+          <Menu.Item
+            disabled={!menuCanPlay}
+            onClick={() => menuEntry && void handleExportAudio(menuEntry.id)}
+          >
+            {tt('queue.menu.export_audio')}
           </Menu.Item>
           <Menu.Item
             disabled={menuEntry === null || menuEntry.status === 'processing'}
