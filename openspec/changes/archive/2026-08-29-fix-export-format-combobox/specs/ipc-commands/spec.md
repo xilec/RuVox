@@ -9,7 +9,9 @@ The system SHALL expose two Tauri commands for per-entry audio export
 no capability changes):
 
 `pick_export_audio_path(entry_id)` SHALL open the xdg-desktop-portal save
-dialog (Linux) pre-filled with the name `ruvox-<entry_id>.wav` and a
+dialog (Linux) pre-filled with the extensionless name `ruvox-<entry_id>` (the portal
+does not sync the name with the combo, and a stale pre-filled extension
+would trip the overwrite confirmation) and a
 «Формат» choice combo — `WAV` selected by default, `Ogg Opus` as the
 alternative — and SHALL NOT gate it on file-type filters (the combo, not a
 filter switch, decides the format). The portal response SHALL report the
@@ -56,8 +58,9 @@ The frontend wrappers SHALL be `commands.pickExportAudioPath(entryId)` and
 
 - GIVEN an entry with stored audio
 - WHEN `pick_export_audio_path` is invoked
-- THEN the dialog opens pre-filled with `ruvox-<id>.wav` and a «Формат»
-  combo reporting `WAV` by default with `Ogg Opus` as the alternative
+- THEN the dialog opens pre-filled with the extensionless name `ruvox-<id>`
+  and a «Формат» combo reporting `WAV` by default with `Ogg Opus` as the
+  alternative
 
 #### Scenario: The chosen format decides the export
 

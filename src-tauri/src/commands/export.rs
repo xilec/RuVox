@@ -102,15 +102,18 @@ pub async fn pick_export_audio_path(
 /// Linux: the xdg-desktop-portal save dialog with a «Формат» choice combo —
 /// WAV first (the widely editable format a user exports for), Ogg Opus
 /// second. The portal response reports the combo's selected value, which
-/// rfd's flat `Option<PathBuf>` discards — hence the direct ashpd call.
-/// No file-type filters: the combo, not a filter switch, decides the
+/// rfd's flat `Option<PathBuf>` discards — hence the direct ashpd call. The
+/// pre-filled name carries no extension: the portal does not sync the name
+/// with the combo (a stale suffix would trip the overwrite confirmation),
+/// the backend normalization sets the extension after the fact. No
+/// file-type filters either: the combo, not a filter switch, decides the
 /// format. Awaiting the portal future needs no blocking pool (it is IPC
 /// plus the user's think time, not CPU work).
 #[cfg(target_os = "linux")]
 async fn run_save_dialog(entry_id: &str) -> CmdResult<Option<(String, Option<String>)>> {
     use ashpd::desktop::file_chooser::{Choice, SaveFileRequest};
 
-    let default_name = format!("ruvox-{entry_id}.wav");
+    let default_name = format!("ruvox-{entry_id}");
     let request = SaveFileRequest::default()
         .title("Сохранить аудио как…")
         .current_name(default_name.as_str())
@@ -125,16 +128,10 @@ async fn run_save_dialog(entry_id: &str) -> CmdResult<Option<(String, Option<Str
         .map_err(|e| CommandError::internal("export.dialog_failed", vec![e.to_string()]))?;
     let selected = match request.response() {
         Ok(selected) => selected,
-        Err(ashpd::Error::Response(ashpd::desktop::ResponseError::Cancelled)) => {
-            // The user cancelled the dialog — a silent no-op, like rfd.
-            return Ok(None);
-        }
-        Err(e) => {
-            return Err(CommandError::internal(
-                "export.dialog_failed",
-                vec![e.to_string()],
-            ));
-        }
+        // Any response-level error is the interaction ending without a file
+        // (cancel, Esc, window close) — a silent no-op, exactly rfd's own
+        // mapping of portal response errors to `None`.
+        Err(_) => return Ok(None),
     };
 
     let path = selected
