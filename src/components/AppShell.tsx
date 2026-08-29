@@ -249,6 +249,7 @@ export function AppShell() {
       });
       switch (action.kind) {
         case 'preview':
+          setRegenEntry(null); // only one preview open at a time
           setPreviewText(action.text);
           setPreviewFormat(action.format ?? null);
           setPreviewPlainFallback(null);
@@ -472,6 +473,7 @@ export function AppShell() {
           // The preview gate applies to the HTML flavor too (#195): the raw
           // markup goes into the dialog, which detects the format itself,
           // instead of being ingested directly behind the user's back.
+          setRegenEntry(null); // only one preview open at a time
           setPreviewText(action.text);
           setPreviewFormat(null);
           setPreviewPlainFallback(action.plainFallback);
@@ -742,7 +744,15 @@ export function AppShell() {
             size="xs"
             mb="xs"
           />
-          <QueueList onRegenerate={setRegenEntry} />
+          <QueueList
+            onRegenerate={(entry) => {
+              // The dialogs are non-modal, so both could stack centered on
+              // top of each other with clashing window-level ESC handlers;
+              // only one preview may be open at a time.
+              setPreviewOpen(false);
+              setRegenEntry(entry);
+            }}
+          />
           <div
             onPointerDown={onNavResizeDown}
             onPointerMove={onNavResizeMove}
