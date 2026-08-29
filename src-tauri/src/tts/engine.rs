@@ -83,7 +83,11 @@ pub trait TtsEngine: Send + Sync {
     /// means the engine cannot report an identity — the generation-params
     /// snapshot renders it as absent. Default impl: `None` (engines with no
     /// exposed model identity, and test stubs).
-    fn model_info(&self, voice: &str) -> Option<ModelInfo> {
+    ///
+    /// Async so engine wrappers (the switcher) can delegate to the engine
+    /// that is current at call time; concrete engines resolve theirs without
+    /// blocking awaits.
+    async fn model_info(&self, voice: &str) -> Option<ModelInfo> {
         let _ = voice;
         None
     }

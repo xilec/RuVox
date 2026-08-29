@@ -156,7 +156,7 @@ impl TtsEngine for PiperEngine {
     /// the `.onnx` file's basename (e.g. `ru_RU-ruslan-medium.onnx`). The
     /// voice file itself is not hashed — the name is the catalog identity.
     /// Unknown voice ids yield `None`.
-    fn model_info(&self, voice: &str) -> Option<ModelInfo> {
+    async fn model_info(&self, voice: &str) -> Option<ModelInfo> {
         super::catalog::lookup(voice).map(|v| ModelInfo {
             name: v.model_filename(),
             sha256: None,
@@ -404,15 +404,18 @@ mod tests {
         );
     }
 
-    #[test]
-    fn model_info_resolves_voice_model_file_name() {
+    #[tokio::test]
+    async fn model_info_resolves_voice_model_file_name() {
         let (emitter, _) = crate::tts::supervisor::test_helpers::recording_emitter();
         let engine = PiperEngine::new(
             tempfile::tempdir().expect("tempdir").path().to_path_buf(),
             "ruslan".to_string(),
             emitter,
         );
-        let info = engine.model_info("ruslan").expect("catalog voice resolves");
+        let info = engine
+            .model_info("ruslan")
+            .await
+            .expect("catalog voice resolves");
         assert_eq!(info.name, "ru_RU-ruslan-medium.onnx");
         assert_eq!(
             info.sha256, None,
@@ -420,14 +423,14 @@ mod tests {
         );
     }
 
-    #[test]
-    fn model_info_unknown_voice_is_none() {
+    #[tokio::test]
+    async fn model_info_unknown_voice_is_none() {
         let (emitter, _) = crate::tts::supervisor::test_helpers::recording_emitter();
         let engine = PiperEngine::new(
             tempfile::tempdir().expect("tempdir").path().to_path_buf(),
             "ruslan".to_string(),
             emitter,
         );
-        assert!(engine.model_info("nonexistent").is_none());
+        assert!(engine.model_info("nonexistent").await.is_none());
     }
 }

@@ -74,6 +74,7 @@ function makeEntry(status: TextEntry['status']): TextEntry {
     status,
     format: 'plain',
     html_source: null,
+    source: null,
     created_at: '2026-07-27T00:00:00Z',
     audio_generated_at: null,
     audio_path: null,
@@ -322,7 +323,7 @@ describe('QueueList context menu', () => {
   function generationParamsItem(): HTMLElement {
     const el = Array.from(
       document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
-    ).find((e) => e.textContent === 'Параметры озвучки…');
+    ).find((e) => e.textContent === 'Параметры записи…');
     expect(el).toBeDefined();
     return el!;
   }

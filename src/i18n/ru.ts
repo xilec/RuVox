@@ -60,7 +60,7 @@ export const ru = {
   'queue.menu.regenerate': 'Перегенерировать аудио',
   'queue.menu.cancel_synthesis': 'Отменить синтез',
   'queue.menu.export_audio': 'Сохранить аудио как…',
-  'queue.menu.generation_params': 'Параметры озвучки…',
+  'queue.menu.generation_params': 'Параметры записи…',
   'notify.export.ok': 'Аудио сохранено: {0}',
   'queue.delete.title': 'Удалить запись?',
   'queue.delete.body':
@@ -72,7 +72,11 @@ export const ru = {
   'queue.notify.cancel_failed': 'Не удалось отменить синтез: {0}',
 
   // ── Generation-params dialog (#243) ─────────────────────────────────────
-  'generation.title': 'Параметры озвучки',
+  'generation.title': 'Параметры записи',
+  'generation.source': 'Источник',
+  'generation.source.clipboard': 'Буфер обмена',
+  'generation.source.file': 'Файл',
+  'generation.source.url': 'Ссылка',
   'generation.engine': 'Движок',
   'generation.engine.silero_native': 'Silero (нативный)',
   'generation.engine.piper': 'Piper',

@@ -59,7 +59,7 @@ export const en: Record<MessageKey, string> = {
   'queue.menu.regenerate': 'Regenerate audio',
   'queue.menu.cancel_synthesis': 'Cancel synthesis',
   'queue.menu.export_audio': 'Save audio as…',
-  'queue.menu.generation_params': 'Voiceover parameters…',
+  'queue.menu.generation_params': 'Recording parameters…',
   'notify.export.ok': 'Audio saved: {0}',
   'queue.delete.title': 'Delete this entry?',
   'queue.delete.body':
@@ -71,7 +71,11 @@ export const en: Record<MessageKey, string> = {
   'queue.notify.cancel_failed': 'Failed to cancel synthesis: {0}',
 
   // ── Generation-params dialog (#243) ─────────────────────────────────────
-  'generation.title': 'Voiceover parameters',
+  'generation.title': 'Recording parameters',
+  'generation.source': 'Source',
+  'generation.source.clipboard': 'Clipboard',
+  'generation.source.file': 'File',
+  'generation.source.url': 'Link',
   'generation.engine': 'Engine',
   'generation.engine.silero_native': 'Silero (native)',
   'generation.engine.piper': 'Piper',

@@ -24,6 +24,11 @@ type TextFormat =
   | "markdown"
   | "html";
 
+type EntrySource =
+  | "clipboard"
+  | "file"
+  | "url";
+
 interface TextEntry {
   id: EntryId;
   original_text: string;
@@ -31,6 +36,7 @@ interface TextEntry {
   status: EntryStatus;
   format: TextFormat | null;            // Display format chosen for this entry; null = never chosen
   html_source: string | null;           // Sanitized HTML for rendering; set only for HTML-ingested entries
+  source: EntrySource | null;           // Where the text came from; null for legacy entries
   created_at: string;                   // Naive UTC timestamp, e.g. "2026-02-15T11:46:51.504055" (no TZ suffix)
   audio_generated_at: string | null;    // Naive UTC timestamp when audio file was written
   audio_path: string | null;            // Filename relative to audio/, e.g. "{uuid}.opus"
@@ -61,7 +67,7 @@ interface ModelParams {
 }
 ```
 
-Status and format values SHALL serialize as lowercase strings. `created_at` and `audio_generated_at` SHALL be stored as naive timestamps without a timezone suffix; both SHALL be generated from the UTC clock (`Utc::now().naive_utc()`), and readers treat the values as UTC. `audio_path` and `timestamps_path` SHALL store the filename only; the full path resolves as `<cache_root>/audio/{filename}`. All optional `TextEntry` fields SHALL default when absent from the JSON, so entries written by older builds keep parsing; a missing `format` SHALL default to `null`, meaning the viewer falls back to the `text_format` config default, a missing `html_source` SHALL default to `null`, a missing `generation` SHALL default to `null`, and a missing `generation_count` SHALL default to `0`. For HTML-ingested entries, `original_text` SHALL hold the extracted plain text (the TTS pipeline input) and `html_source` SHALL hold the sanitized markup.
+Status and format values SHALL serialize as lowercase strings. `created_at` and `audio_generated_at` SHALL be stored as naive timestamps without a timezone suffix; both SHALL be generated from the UTC clock (`Utc::now().naive_utc()`), and readers treat the values as UTC. `audio_path` and `timestamps_path` SHALL store the filename only; the full path resolves as `<cache_root>/audio/{filename}`. All optional `TextEntry` fields SHALL default when absent from the JSON, so entries written by older builds keep parsing; a missing `format` SHALL default to `null`, meaning the viewer falls back to the `text_format` config default, a missing `html_source` SHALL default to `null`, a missing `generation` SHALL default to `null`, a missing `generation_count` SHALL default to `0`, and a missing `source` SHALL default to `null`. For HTML-ingested entries, `original_text` SHALL hold the extracted plain text (the TTS pipeline input) and `html_source` SHALL hold the sanitized markup.
 
 #### Scenario: New entry is persisted
 - GIVEN an empty history
@@ -79,7 +85,7 @@ Status and format values SHALL serialize as lowercase strings. `created_at` and 
 - THEN the loaded entry has the same `normalized_text`, `format`, `html_source`, and field values as before the restart
 
 #### Scenario: Older entries without optional fields parse
-- GIVEN a `history.json` entry that lacks `format`, `html_source`, `normalized_text`, `audio_path`, `was_regenerated`, `generation`, `generation_count`, and other optional fields
+- GIVEN a `history.json` entry that lacks `format`, `html_source`, `normalized_text`, `audio_path`, `was_regenerated`, `generation`, `generation_count`, `source`, and other optional fields
 - WHEN the history is loaded
 - THEN the entry parses successfully with the missing fields defaulted (null / false / 0)
 
@@ -87,6 +93,11 @@ Status and format values SHALL serialize as lowercase strings. `created_at` and 
 - GIVEN a persisted entry whose `generation` snapshot is set
 - WHEN the storage service is re-initialized against the same cache directory
 - THEN the loaded entry has the same snapshot values, including engine, voice, sample rate, model identity, and audio facts
+
+#### Scenario: Ingestion source annotation round-trips
+- GIVEN an entry ingested from a file, persisted with `source: "file"`
+- WHEN the storage service is re-initialized against the same cache directory
+- THEN the loaded entry still has `source: "file"`
 
 ### Requirement: Status Validation on Load
 

@@ -11,7 +11,8 @@ use uuid::Uuid;
 use crate::storage::eviction;
 pub use crate::storage::eviction::{EvictStats, StartupCleanupStats, SweepStats};
 use crate::storage::schema::{
-    EntryId, EntryStatus, HistoryFile, TextEntry, TextFormat, Timestamps, UIConfig, WordTimestamp,
+    EntryId, EntrySource, EntryStatus, HistoryFile, TextEntry, TextFormat, Timestamps, UIConfig,
+    WordTimestamp,
 };
 
 const HISTORY_VERSION: u32 = 1;
@@ -225,16 +226,18 @@ impl StorageService {
 
     /// Add a new entry with an auto-generated UUID. Persists history.
     pub fn add_entry(&self, original_text: String) -> Result<TextEntry> {
-        self.add_entry_with_source(original_text, None, None)
+        self.add_entry_with_source(original_text, None, None, None)
     }
 
-    /// Add a new entry with explicit display format and sanitized HTML source
-    /// (HTML ingestion path). Persists history.
+    /// Add a new entry with explicit display format, sanitized HTML source
+    /// (HTML ingestion path) and the ingestion source annotation. Persists
+    /// history.
     pub fn add_entry_with_source(
         &self,
         original_text: String,
         format: Option<TextFormat>,
         html_source: Option<String>,
+        source: Option<EntrySource>,
     ) -> Result<TextEntry> {
         // Strip the UTF-8 BOM if present (matches what the prior Qt-based build did,
         // keeping cached entries identical between the two implementations).
@@ -250,6 +253,7 @@ impl StorageService {
             status: EntryStatus::Pending,
             format,
             html_source,
+            source,
             created_at: Utc::now().naive_utc(),
             audio_path: None,
             timestamps_path: None,

@@ -11,6 +11,10 @@ export type EntryStatus = 'pending' | 'processing' | 'ready' | 'playing' | 'erro
 
 export type EntryFormat = 'plain' | 'markdown' | 'html';
 
+/** Where an entry's text came from (recorded at ingestion; null for
+ * entries created before the field existed). */
+export type EntrySource = 'clipboard' | 'file' | 'url';
+
 export interface TextEntry {
   id: EntryId;
   original_text: string;
@@ -22,6 +26,8 @@ export interface TextEntry {
   /** Sanitized HTML kept for rendering in HTML mode; set only for
    * HTML-ingested entries (their original_text is the extracted TTS text). */
   html_source: string | null;
+  /** Where the text came from; null for legacy entries. */
+  source: EntrySource | null;
   created_at: string;               // ISO 8601
   audio_generated_at: string | null;
   audio_path: string | null;
@@ -192,12 +198,14 @@ export const commands = {
     play_when_ready: boolean,
     format?: EntryFormat,
     html_source?: string,
+    source?: EntrySource,
   ): Promise<EntryId> =>
     tauriInvoke('add_text_entry', {
       text,
       playWhenReady: play_when_ready,
       format: format ?? null,
       htmlSource: html_source ?? null,
+      source: source ?? null,
     }),
 
   getEntries: (): Promise<TextEntry[]> =>

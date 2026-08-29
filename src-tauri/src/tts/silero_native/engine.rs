@@ -199,7 +199,7 @@ impl TtsEngine for SileroNativeEngine {
         EngineKind::SileroNative
     }
 
-    fn model_info(&self, _voice: &str) -> Option<ModelInfo> {
+    async fn model_info(&self, _voice: &str) -> Option<ModelInfo> {
         Self::bundle_model_info(&self.bundle_dir)
     }
 
@@ -434,8 +434,8 @@ mod tests {
         std::fs::write(dir.join("manifest.json"), json).unwrap();
     }
 
-    #[test]
-    fn model_info_reads_bundle_manifest() {
+    #[tokio::test]
+    async fn model_info_reads_bundle_manifest() {
         let dir = tempfile::TempDir::new().unwrap();
         write_manifest(
             dir.path(),
@@ -451,26 +451,27 @@ mod tests {
         );
         let info = engine_at(dir.path())
             .model_info("xenia")
+            .await
             .expect("manifest readable");
         assert_eq!(info.name, "silero_v5_ru");
         assert_eq!(info.sha256.as_deref(), Some("abc123"));
     }
 
-    #[test]
-    fn model_info_without_manifest_is_none() {
+    #[tokio::test]
+    async fn model_info_without_manifest_is_none() {
         let dir = tempfile::TempDir::new().unwrap();
-        assert!(engine_at(dir.path()).model_info("xenia").is_none());
+        assert!(engine_at(dir.path()).model_info("xenia").await.is_none());
     }
 
-    #[test]
-    fn model_info_with_corrupt_manifest_is_none() {
+    #[tokio::test]
+    async fn model_info_with_corrupt_manifest_is_none() {
         let dir = tempfile::TempDir::new().unwrap();
         write_manifest(dir.path(), "not json");
-        assert!(engine_at(dir.path()).model_info("xenia").is_none());
+        assert!(engine_at(dir.path()).model_info("xenia").await.is_none());
     }
 
-    #[test]
-    fn model_info_without_main_model_file_has_null_checksum() {
+    #[tokio::test]
+    async fn model_info_without_main_model_file_has_null_checksum() {
         let dir = tempfile::TempDir::new().unwrap();
         write_manifest(
             dir.path(),
@@ -485,6 +486,7 @@ mod tests {
         );
         let info = engine_at(dir.path())
             .model_info("xenia")
+            .await
             .expect("manifest readable");
         assert_eq!(info.name, "silero_v5_ru");
         assert_eq!(info.sha256, None);

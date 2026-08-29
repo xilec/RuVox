@@ -1,5 +1,19 @@
 ## ADDED Requirements
 
+### Requirement: Entry Source Annotation
+
+The `add_text_entry` command SHALL accept an optional `source` parameter (`"clipboard"` | `"file"` | `"url"`) recording where the entry's text came from, and SHALL persist it in `TextEntry.source`. The `add_clipboard_entry` command (tray path) SHALL annotate its entries as `"clipboard"`. Older entries without the annotation carry `source: null`; the commands MUST NOT fail when it is absent.
+
+#### Scenario: Imported entry carries its source
+- GIVEN the frontend ingests text fetched from a URL
+- WHEN it invokes `add_text_entry` with `source: "url"`
+- THEN the persisted entry has `source: "url"` and the annotation survives restarts
+
+#### Scenario: Tray clipboard entries are annotated
+- GIVEN the user adds text from the tray menu
+- WHEN `add_clipboard_entry` runs
+- THEN the persisted entry has `source: "clipboard"`
+
 ### Requirement: Generation Parameters Snapshot
 
 On every successful synthesis the system SHALL record a `generation` snapshot on the entry describing the parameters that produced the current audio, and SHALL increment the entry's `generation_count` by one. The snapshot SHALL contain:

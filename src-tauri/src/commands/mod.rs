@@ -21,8 +21,8 @@ use crate::pipeline::TTSPipeline;
 use crate::pipeline::tracked_text::CharMapping;
 use crate::state::AppState;
 use crate::storage::schema::{
-    EntryId, EntryStatus, GenerationParams, ModelParams, TextEntry, TextFormat, UIConfig,
-    UIConfigPatch, WordTimestamp,
+    EntryId, EntrySource, EntryStatus, GenerationParams, ModelParams, TextEntry, TextFormat,
+    UIConfig, UIConfigPatch, WordTimestamp,
 };
 use crate::storage::service::{StorageError, StorageService};
 use crate::tts::engine::EngineKind;
@@ -535,7 +535,7 @@ fn model_params(info: ModelInfo) -> ModelParams {
 /// audio file exists. Every lookup is best-effort: unknown values stay
 /// `None` — a failed manifest read or a missing file must never fail a
 /// completed synthesis.
-fn build_generation_snapshot(
+async fn build_generation_snapshot(
     tts: &dyn TtsEngine,
     storage: &StorageService,
     voice: &str,
@@ -544,7 +544,7 @@ fn build_generation_snapshot(
     sample_rate: Option<u32>,
     audio_filename: &str,
 ) -> GenerationParams {
-    let model = tts.model_info(voice).map(model_params);
+    let model = tts.model_info(voice).await.map(model_params);
 
     let normalized_sha = {
         use sha2::{Digest, Sha256};
@@ -806,7 +806,8 @@ pub fn spawn_synthesis<R: Runtime + 'static>(
                     &normalized_for_snapshot,
                     sample_rate,
                     &audio_filename,
-                );
+                )
+                .await;
                 let applied = mark_ready_and_emit(
                     &storage,
                     &app,
@@ -955,6 +956,7 @@ fn set_entry_error<R: Runtime>(
 /// Shared implementation for the two "add text to queue" commands below.
 /// Rejects blank input, persists the entry, emits `entry_updated`, and
 /// spawns background synthesis.
+#[allow(clippy::too_many_arguments)]
 fn ingest_text<R: Runtime>(
     app: AppHandle<R>,
     state: &AppState,
@@ -962,6 +964,7 @@ fn ingest_text<R: Runtime>(
     play_when_ready: bool,
     format: Option<TextFormat>,
     html_source: Option<String>,
+    source: Option<EntrySource>,
 ) -> CmdResult<String> {
     if text.trim().is_empty() {
         return Err(CommandError::internal("input.empty", vec![]));
@@ -970,7 +973,7 @@ fn ingest_text<R: Runtime>(
 
     let entry = state
         .storage
-        .add_entry_with_source(text, format, html_source)
+        .add_entry_with_source(text, format, html_source, source)
         .map_err(CommandError::from)?;
     let entry_id = entry.id;
 
@@ -994,6 +997,8 @@ fn ingest_text<R: Runtime>(
 /// For HTML-ingested entries the frontend passes `format: "html"`, the
 /// extracted plain text as `text`, and the sanitized markup as
 /// `html_source` (rendering only — synthesis always normalizes `text`).
+/// `source` records where the text came from (clipboard / file / URL) for
+/// the generation-params dialog.
 #[tauri::command]
 pub async fn add_text_entry<R: Runtime>(
     app: AppHandle<R>,
@@ -1002,8 +1007,17 @@ pub async fn add_text_entry<R: Runtime>(
     play_when_ready: bool,
     format: Option<TextFormat>,
     html_source: Option<String>,
+    source: Option<EntrySource>,
 ) -> CmdResult<String> {
-    ingest_text(app, &state, text, play_when_ready, format, html_source)
+    ingest_text(
+        app,
+        &state,
+        text,
+        play_when_ready,
+        format,
+        html_source,
+        source,
+    )
 }
 
 /// Read text from the system clipboard and add a new entry to the queue.
@@ -1029,7 +1043,15 @@ pub async fn add_clipboard_entry<R: Runtime>(
         CommandError::internal("clipboard.task_panicked", vec![]).with_message(e.to_string())
     })??;
 
-    ingest_text(app, &state, text, play_when_ready, None, None)
+    ingest_text(
+        app,
+        &state,
+        text,
+        play_when_ready,
+        None,
+        None,
+        Some(EntrySource::Clipboard),
+    )
 }
 
 /// Pure normalization step behind [`preview_normalize`]: runs the pipeline on

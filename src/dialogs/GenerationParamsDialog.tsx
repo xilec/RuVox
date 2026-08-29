@@ -81,6 +81,17 @@ function displayAudio(g: GenerationParams, tt: T): string {
   return parts.filter((p) => p != null).join(', ') || ABSENT;
 }
 
+function displaySource(source: NonNullable<TextEntry['source']>, tt: T): string {
+  switch (source) {
+    case 'clipboard':
+      return tt('generation.source.clipboard');
+    case 'file':
+      return tt('generation.source.file');
+    case 'url':
+      return tt('generation.source.url');
+  }
+}
+
 /**
  * Read-only details of an entry's generation snapshot (spec `ui`,
  * "Voiceover parameters dialog"). Values absent from the snapshot render as
@@ -97,6 +108,7 @@ export function GenerationParamsDialog({ entry, opened, onClose }: GenerationPar
   const legacy = g === null && entry.audio_generated_at !== null;
 
   const rows: Array<[label: string, value: string]> = [
+    [tt('generation.source'), entry.source ? displaySource(entry.source, tt) : ABSENT],
     [tt('generation.engine'), g ? displayEngine(g.engine, tt) : ABSENT],
     [tt('generation.voice'), g ? displayVoice(g.voice, tt) : ABSENT],
     [

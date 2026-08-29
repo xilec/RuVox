@@ -6,7 +6,7 @@ The system SHALL load entries on mount via `commands.getEntries()` sorted by `cr
 
 Each queue item SHALL show a 60-character preview of `original_text`, a status badge (Ожидание/Обработка/Готово/Играет/Ошибка), the duration when available, and a Play action enabled only for `ready`/`playing` entries. Clicking an item SHALL store it as the selected entry in the Zustand `selectedEntry` store.
 
-Right-clicking an item SHALL open a context menu with "Воспроизвести", "Сохранить аудио как…", "Параметры озвучки…", "Перегенерировать аудио", "Отменить синтез" (for entries being synthesized) and "Удалить"; deletion MUST be confirmed via `modals.openConfirmModal` before calling `commands.deleteEntry`.
+Right-clicking an item SHALL open a context menu with "Воспроизвести", "Сохранить аудио как…", "Перегенерировать аудио", "Параметры записи…", "Отменить синтез" (for entries being synthesized) and "Удалить"; deletion MUST be confirmed via `modals.openConfirmModal` before calling `commands.deleteEntry`.
 
 The navbar search input SHALL filter entries case-insensitively by `original_text` substring; when the playing entry is scrolled out of view, a floating "К читаемому" button SHALL appear that selects and scrolls to the playing entry.
 
@@ -30,17 +30,17 @@ The navbar search input SHALL filter entries case-insensitively by `original_tex
 
 ## ADDED Requirements
 
-### Requirement: Voiceover parameters dialog
+### Requirement: Recording parameters dialog
 
-The queue context menu item "Параметры озвучки…" SHALL open a read-only dialog showing the entry's generation snapshot: engine, voice, sample rate, model identity (name and checksum when available), app version, normalization settings used (code-block mode, operator reading), normalized-text checksum, audio codec and size, duration, generation timestamp, and the generation number (`generation_count`). The item SHALL be disabled for entries that have neither a snapshot nor a generation timestamp (never synthesized).
+The queue context menu item "Параметры записи…" SHALL open a read-only dialog showing the entry's ingestion source ("Источник": буфер обмена / файл / ссылка) as the first row, followed by the generation snapshot: engine, voice, sample rate, model identity (name and checksum when available), app version, normalization settings used (code-block mode, operator reading), normalized-text checksum, audio codec and size, duration, generation timestamp, and the generation number (`generation_count`). The item SHALL be disabled for entries that have neither a snapshot nor a generation timestamp (never synthesized).
 
 Values absent from the snapshot SHALL render as a placeholder dash rather than guessed values. For entries with audio but no snapshot (synthesized by older builds), the dialog SHALL show an explanatory line that parameters were not recorded. Engine and Piper voice names SHALL be shown with their localized display names; the dialog and menu item SHALL be localized in Russian and English.
 
 #### Scenario: Dialog shows the snapshot
 
 - GIVEN a ready entry whose snapshot records engine `silero_native`, speaker `xenia`, and an Ogg Opus file
-- WHEN the user opens "Параметры озвучки…" for the entry
-- THEN the dialog shows the localized engine name, the voice, the sample rate, the audio codec and size, and the generation number
+- WHEN the user opens "Параметры записи…" for the entry
+- THEN the dialog shows the ingestion source first, then the localized engine name, the voice, the sample rate, the audio codec and size, and the generation number
 
 #### Scenario: Absent values render as a dash
 
@@ -51,11 +51,11 @@ Values absent from the snapshot SHALL render as a placeholder dash rather than g
 #### Scenario: Legacy entry without a snapshot
 
 - GIVEN a ready entry synthesized by an older build (`generation` is null, `audio_generated_at` is set)
-- WHEN the user opens "Параметры озвучки…" for the entry
+- WHEN the user opens "Параметры записи…" for the entry
 - THEN the dialog opens, shows the generation timestamp and duration where known, an explanatory line that parameters were not recorded, and dashes for unknown values
 
 #### Scenario: Item disabled for never-synthesized entries
 
 - GIVEN a pending entry with no audio
 - WHEN the user opens the context menu for the entry
-- THEN "Параметры озвучки…" is disabled
+- THEN "Параметры записи…" is disabled

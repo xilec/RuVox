@@ -52,6 +52,7 @@ function makeEntry(overrides: Partial<TextEntry> = {}): TextEntry {
     status: 'ready',
     format: null,
     html_source: null,
+    source: null,
     created_at: '2026-08-01T10:00:00',
     audio_generated_at: '2026-08-01T10:00:05',
     audio_path: 'entry-1.opus',
@@ -92,10 +93,11 @@ describe('GenerationParamsDialog', () => {
   }
 
   it('renders the snapshot with localized names and audio facts', () => {
-    render(makeEntry());
+    render(makeEntry({ source: 'url' }));
 
     const body = document.body.textContent ?? "";
-    expect(body).toContain('Параметры озвучки');
+    expect(body).toContain('Параметры записи');
+    expect(body).toContain('Ссылка');
     expect(body).toContain('Silero (нативный)');
     expect(body).toContain('Руслан (мужской)');
     expect(body).toContain('24000 Гц');
@@ -108,6 +110,11 @@ describe('GenerationParamsDialog', () => {
     expect(body).toContain('Ogg Opus, 1.5 МБ');
     // 75 s → 1:15.
     expect(body).toContain('1:15');
+  });
+
+  it('renders the clipboard source localized', () => {
+    render(makeEntry({ source: 'clipboard' }));
+    expect(document.body.textContent ?? '').toContain('Буфер обмена');
   });
 
   it('renders absent values as a dash', () => {
@@ -128,9 +135,9 @@ describe('GenerationParamsDialog', () => {
 
     const body = document.body.textContent ?? '';
     expect(body).not.toContain('silero_v5_ru');
-    // Every nulled row shows the placeholder: sample rate, model, code-block
-    // mode, operator reading, text checksum, and the audio row.
-    expect(body.split('—').length - 1).toBe(6);
+    // Every nulled row shows the placeholder: source, sample rate, model,
+    // code-block mode, operator reading, text checksum, and the audio row.
+    expect(body.split('—').length - 1).toBe(7);
   });
 
   it('shows the legacy line for an entry without a snapshot', () => {
@@ -145,6 +152,6 @@ describe('GenerationParamsDialog', () => {
 
   it('renders nothing without an entry', () => {
     render(null);
-    expect(document.body.textContent).not.toContain('Параметры озвучки');
+    expect(document.body.textContent).not.toContain('Параметры записи');
   });
 });

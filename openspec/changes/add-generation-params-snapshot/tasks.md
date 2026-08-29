@@ -19,6 +19,12 @@
 - [x] 4.2 Add `src/dialogs/GenerationParamsDialog.tsx` (read-only rows: engine, voice, sample rate, model, app version, normalization settings, normalized-text checksum, audio codec/size, duration, generated-at, generation number; absent → «—»; legacy-entry explanatory line) + RU/EN strings in `src/i18n/`; add component tests (snapshot render, dash for absent model, legacy line, disabled gate). Verify: `pnpm test:unit`
 - [x] 4.3 Add the «Параметры озвучки…» context-menu item in `src/components/QueueList.tsx` (between «Сохранить аудио как…» and «Перегенерировать аудио», enabled when `generation !== null || audio_generated_at !== null`) opening the dialog; extend `QueueList.test.tsx`. Verify: `pnpm test:unit`
 
+## 6. Review follow-ups (user feedback round)
+
+- [x] 6.1 Make `TtsEngine::model_info` async and delegate it through `EngineSwitcher` (the snapshot previously recorded `null` for every engine because only `kind()` was delegated); pin with a switcher delegation test. Verify: `cargo test --manifest-path src-tauri/Cargo.toml tts`
+- [x] 6.2 Rename the menu item and dialog to «Параметры записи…» (RU) / "Recording parameters…" (EN); move the item one position down (after «Перегенерировать аудио»); update QueueList and dialog tests. Verify: `pnpm test:unit`
+- [x] 6.3 Add `TextEntry.source` ingestion annotation (`clipboard`/`file`/`url`): schema + `add_entry_with_source`/`ingest_text` plumbing, frontend `doAddEntry`/`addHtmlEntry`/preview-state threading, dialog "Источник" row first; update storage/ipc/ui delta specs. Verify: `just lint && just test`
+
 ## 5. Gates and wrap-up
 
 - [x] 5.1 Full gates: `nix develop -c just lint && nix develop -c just test`; `openspec validate --specs --strict` after syncing deltas. Verify: all clean

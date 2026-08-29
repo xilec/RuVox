@@ -66,6 +66,7 @@ async fn add_ready_entry(t: &TestApp) -> String {
         false,
         None,
         None,
+        None,
     )
     .await
     .unwrap();
@@ -185,6 +186,7 @@ async fn regenerate_entry_rejects_processing_entry_and_synthesis_continues() {
         false,
         None,
         None,
+        None,
     )
     .await
     .unwrap();
@@ -223,6 +225,7 @@ async fn cancel_synthesis_aborts_in_flight_task_and_keeps_entry_pending() {
         t.state(),
         "текст".to_string(),
         true,
+        None,
         None,
         None,
     )
@@ -506,6 +509,7 @@ async fn add_text_entry_with_html_params_persists_source_and_synthesizes_text() 
         false,
         Some(TextFormat::Html),
         Some("<p>Вызови <code>API</code></p>".to_string()),
+        Some(crate::storage::schema::EntrySource::File),
     )
     .await
     .unwrap();
@@ -517,6 +521,11 @@ async fn add_text_entry_with_html_params_persists_source_and_synthesizes_text() 
     assert_eq!(
         entry.html_source.as_deref(),
         Some("<p>Вызови <code>API</code></p>")
+    );
+    assert_eq!(
+        entry.source,
+        Some(crate::storage::schema::EntrySource::File),
+        "ingestion source annotation is persisted"
     );
     assert_eq!(entry.original_text, "Вызови API");
     // The pipeline normalized the extracted text (Latin is transliterated),
@@ -540,6 +549,7 @@ async fn tts_failure_emits_entry_updated_error_then_tts_error() {
         t.state(),
         "текст".to_string(),
         false,
+        None,
         None,
         None,
     )
@@ -638,6 +648,7 @@ async fn add_text_entry_rejects_oversized_input_before_persistence() {
         false,
         None,
         None,
+        None,
     )
     .await
     .expect_err("oversized input must be rejected");
@@ -683,6 +694,7 @@ async fn add_text_entry_accepts_input_at_limit() {
         false,
         None,
         None,
+        None,
     )
     .await
     .expect("input at the limit must be accepted");
@@ -701,6 +713,7 @@ async fn add_text_entry_accepts_oversized_input_with_silero() {
         t.state(),
         "а".repeat(MAX_INPUT_CHARS + 1),
         false,
+        None,
         None,
         None,
     )
@@ -733,7 +746,7 @@ async fn synthesis_under_piper_fails_oversized_entry_accepted_under_silero() {
     let entry = t
         .state()
         .storage
-        .add_entry_with_source("а".repeat(MAX_INPUT_CHARS + 1), None, None)
+        .add_entry_with_source("а".repeat(MAX_INPUT_CHARS + 1), None, None, None)
         .unwrap();
     let uuid = entry.id;
 
@@ -860,6 +873,7 @@ async fn synthesis_records_generation_snapshot() {
         false,
         None,
         None,
+        None,
     )
     .await
     .expect("entry accepted");
@@ -900,6 +914,7 @@ async fn regeneration_refreshes_generation_snapshot() {
         t.state(),
         "Привет".to_string(),
         false,
+        None,
         None,
         None,
     )

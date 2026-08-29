@@ -434,16 +434,16 @@ export function QueueList() {
             {tt('queue.menu.export_audio')}
           </Menu.Item>
           <Menu.Item
-            disabled={!menuHasGeneration}
-            onClick={() => menuEntry && setParamsEntryId(menuEntry.id)}
-          >
-            {tt('queue.menu.generation_params')}
-          </Menu.Item>
-          <Menu.Item
             disabled={menuEntry === null || menuEntry.status === 'processing'}
             onClick={() => menuEntry && handleRegenerate(menuEntry.id)}
           >
             {tt('queue.menu.regenerate')}
+          </Menu.Item>
+          <Menu.Item
+            disabled={!menuHasGeneration}
+            onClick={() => menuEntry && setParamsEntryId(menuEntry.id)}
+          >
+            {tt('queue.menu.generation_params')}
           </Menu.Item>
           <Menu.Item
             disabled={menuEntry === null || menuEntry.status !== 'processing'}

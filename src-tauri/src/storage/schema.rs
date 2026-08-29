@@ -26,6 +26,16 @@ pub enum TextFormat {
     Html,
 }
 
+/// Where an entry's text came from. Set at ingestion; `None` for entries
+/// created before the field existed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EntrySource {
+    Clipboard,
+    File,
+    Url,
+}
+
 /// A text entry in the TTS queue.
 ///
 /// Field names match the on-disk `history.json` format that originated in
@@ -47,6 +57,10 @@ pub struct TextEntry {
     /// plain text that the TTS pipeline consumed.
     #[serde(default)]
     pub html_source: Option<String>,
+    /// Where the text came from (clipboard / file / URL). `None` for
+    /// entries created before the field existed.
+    #[serde(default)]
+    pub source: Option<EntrySource>,
     // Naive UTC timestamps (no TZ suffix), e.g. "2026-02-15T11:46:51.504055".
     // Callers treat these values as UTC.
     pub created_at: NaiveDateTime,
@@ -403,9 +417,26 @@ mod tests {
         assert!(e.normalized_text.is_none());
         assert!(e.format.is_none());
         assert!(e.html_source.is_none());
+        assert!(e.source.is_none());
         assert!(!e.was_regenerated);
         assert!(e.generation.is_none());
         assert_eq!(e.generation_count, 0);
+    }
+
+    #[test]
+    fn entry_source_serialization() {
+        // All source values must round-trip via JSON as lowercase strings.
+        let cases = [
+            (EntrySource::Clipboard, "\"clipboard\""),
+            (EntrySource::File, "\"file\""),
+            (EntrySource::Url, "\"url\""),
+        ];
+        for (source, expected) in cases {
+            let serialized = serde_json::to_string(&source).unwrap();
+            assert_eq!(serialized, expected);
+            let deserialized: EntrySource = serde_json::from_str(&serialized).unwrap();
+            assert_eq!(deserialized, source);
+        }
     }
 
     #[test]

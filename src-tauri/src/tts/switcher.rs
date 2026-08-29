@@ -16,6 +16,7 @@ use std::sync::{Arc, Weak};
 use async_trait::async_trait;
 use tokio::sync::RwLock;
 
+use super::ModelInfo;
 use super::engine::{EngineKind, TtsEngine};
 use super::piper::PiperEngine;
 use super::silero_native::SileroNativeEngine;
@@ -243,6 +244,13 @@ fn parse_kind(name: &str) -> Result<EngineKind, TtsError> {
 impl TtsEngine for EngineSwitcher {
     fn kind(&self) -> EngineKind {
         u8_to_kind(self.kind.load(Ordering::SeqCst))
+    }
+
+    /// Delegates to the engine current at call time: the generation-params
+    /// snapshot must carry the model identity of the engine that actually
+    /// served the synthesis, not the wrapper's default `None`.
+    async fn model_info(&self, voice: &str) -> Option<ModelInfo> {
+        self.current_engine().await.model_info(voice).await
     }
 
     async fn warmup(&self) -> Result<(), TtsError> {
@@ -557,5 +565,28 @@ mod tests {
 
         sw.kill_current_ttsd().await;
         assert_eq!(kills.load(Ordering::SeqCst), 1);
+    }
+
+    /// `model_info` must delegate to the engine current at call time: the
+    /// generation-params snapshot is taken behind the wrapper, and a missing
+    /// delegation would record no model identity at all.
+    #[tokio::test]
+    async fn model_info_delegates_to_current_engine() {
+        let (sw, _voices_tmp, _ttsd_tmp, bundle_tmp) = fake_switcher();
+
+        // Active engine is Piper — the catalog's model file name.
+        let info = sw.model_info("ruslan").await.expect("piper voice resolves");
+        assert_eq!(info.name, "ru_RU-ruslan-medium.onnx");
+
+        // After a switch the bundle manifest's model_id comes through.
+        write_fake_bundle(bundle_tmp.path(), &[("tts_main.onnx", b"m")]);
+        sw.apply_config("silero_native", "ruslan").await.unwrap();
+        assert_eq!(sw.kind(), EngineKind::SileroNative);
+        let info = sw
+            .model_info("ruslan")
+            .await
+            .expect("bundle manifest resolves");
+        assert_eq!(info.name, "test");
+        assert!(info.sha256.is_some());
     }
 }

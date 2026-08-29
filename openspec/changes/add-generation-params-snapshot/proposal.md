@@ -13,7 +13,8 @@ When the user returns to a history record after some time, there is no way to te
   - audio facts (codec from the final file extension, file size).
 - Add a monotonic `TextEntry.generation_count` (default 0) incremented on every successful bake; it survives deletion/regeneration like `was_regenerated`.
 - Clear the snapshot together with the existing audio metadata wherever that metadata is cleared (`delete_audio`, load-time validation when the audio file is missing).
-- Add a read-only «Параметры озвучки…» context-menu item in the queue list opening a details dialog for the snapshot; values that are absent (legacy entries, unknown model identity) render as absent, never guessed. RU/EN localization.
+- Add a read-only «Параметры записи…» context-menu item in the queue list opening a details dialog for the snapshot; values that are absent (legacy entries, unknown model identity) render as absent, never guessed. RU/EN localization.
+- Record an ingestion-source annotation on each entry (`TextEntry.source`: clipboard / file / URL, set by the frontend at ingestion; tray clipboard adds are annotated as clipboard) and show it as the dialog's first row.
 - Out of scope: pipeline/dictionary versions (not versioned today), a normalized-text staleness hint (the stored sha256 enables it later), prosody knobs (none exist; `speech_rate` is playback-only), ttsd model tag.
 
 ## Capabilities
@@ -24,9 +25,9 @@ When the user returns to a history record after some time, there is no way to te
 
 ### Modified Capabilities
 
-- `storage`: the `TextEntry` schema gains optional `generation` (synthesis-parameter snapshot) and `generation_count`; the snapshot is cleared together with the other audio metadata when audio is deleted or missing.
-- `ipc-commands`: synthesis SHALL record the generation snapshot (parameters above) on every successful synthesis and refresh it on regeneration; snapshots flow to the frontend inside entry payloads.
-- `ui`: the queue context menu gains a «Параметры озвучки…» item opening a read-only generation-parameters dialog.
+- `storage`: the `TextEntry` schema gains optional `generation` (synthesis-parameter snapshot), `generation_count`, and `source` (ingestion annotation); the snapshot is cleared together with the other audio metadata when audio is deleted or missing.
+- `ipc-commands`: synthesis SHALL record the generation snapshot (parameters above) on every successful synthesis and refresh it on regeneration; snapshots flow to the frontend inside entry payloads; `add_text_entry` accepts an optional `source` annotation.
+- `ui`: the queue context menu gains a «Параметры записи…» item opening a read-only recording-parameters dialog whose first row shows the ingestion source.
 
 ## Impact
 
