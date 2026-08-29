@@ -111,12 +111,26 @@ describe('GenerationParamsDialog', () => {
   });
 
   it('renders absent values as a dash', () => {
-    render(makeEntry({ generation: { ...SNAPSHOT, model: null, sample_rate: null, audio_codec: null, audio_bytes: null, read_operators: null, code_block_mode: null, normalized_text_sha256: null } }));
+    render(
+      makeEntry({
+        generation: {
+          ...SNAPSHOT,
+          model: null,
+          sample_rate: null,
+          audio_codec: null,
+          audio_bytes: null,
+          read_operators: null,
+          code_block_mode: null,
+          normalized_text_sha256: null,
+        },
+      }),
+    );
 
-    const body = document.body.textContent ?? "";
+    const body = document.body.textContent ?? '';
     expect(body).not.toContain('silero_v5_ru');
-    // Every empty row shows the placeholder — at minimum the model one.
-    expect(body).toContain('—');
+    // Every nulled row shows the placeholder: sample rate, model, code-block
+    // mode, operator reading, text checksum, and the audio row.
+    expect(body.split('—').length - 1).toBe(6);
   });
 
   it('shows the legacy line for an entry without a snapshot', () => {

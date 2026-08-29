@@ -60,16 +60,24 @@ function shortSha(sha: string): string {
 }
 
 /** The stored naive timestamps are UTC (storage spec); without the suffix
- *  JS would parse them as local time. Rendered in the app language, not the
- *  webview's system locale. */
+ *  JS would parse them as local time. chrono may write 3/6/9 fractional
+ *  digits while some JS engines only guarantee parsing exactly 3, so trim
+ *  to milliseconds. Rendered in the app language, not the webview locale. */
 function formatGeneratedAt(naiveUtc: string, locale: 'ru' | 'en'): string {
   const tag = locale === 'ru' ? 'ru-RU' : 'en-US';
-  return new Date(`${naiveUtc}Z`).toLocaleString(tag);
+  return new Date(`${naiveUtc.replace(/(\.\d{3})\d+$/, '$1')}Z`).toLocaleString(tag);
 }
 
 function displayAudio(g: GenerationParams, tt: T): string {
-  const parts = [g.audio_codec];
-  if (g.audio_bytes != null) parts.push(`${formatMb(g.audio_bytes)} ${tt('common.mb')}`);
+  const parts: Array<string | null> = [g.audio_codec];
+  if (g.audio_bytes != null) {
+    // Short clips sit far below a megabyte — show KiB rather than «0.0 МБ».
+    parts.push(
+      g.audio_bytes >= 512 * 1024
+        ? `${formatMb(g.audio_bytes)} ${tt('common.mb')}`
+        : `${Math.max(1, Math.round(g.audio_bytes / 1024))} ${tt('common.kb')}`,
+    );
+  }
   return parts.filter((p) => p != null).join(', ') || ABSENT;
 }
 

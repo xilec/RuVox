@@ -158,7 +158,7 @@ impl TtsEngine for PiperEngine {
     /// Unknown voice ids yield `None`.
     fn model_info(&self, voice: &str) -> Option<ModelInfo> {
         super::catalog::lookup(voice).map(|v| ModelInfo {
-            name: v.model_url.rsplit('/').next().unwrap_or(v.id).to_string(),
+            name: v.model_filename(),
             sha256: None,
         })
     }

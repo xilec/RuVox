@@ -12,6 +12,7 @@ export const en: Record<MessageKey, string> = {
   'common.save': 'Save',
   'common.error': 'Error',
   'common.mb': 'MB',
+  'common.kb': 'KB',
   'common.yes': 'Yes',
   'common.no': 'No',
   'common.close': 'Close',
