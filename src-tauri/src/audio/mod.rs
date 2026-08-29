@@ -1,7 +1,9 @@
 //! WAV → Ogg-Opus streaming encoder.
 //!
-//! Inputs are mono 32-bit-float WAV files. Output is a valid Ogg-Opus stream
-//! at 32 kbps VOIP, 20 ms frames. The implementation is streaming — samples
+//! Inputs are mono WAV files in one of the two shapes the TTS engines
+//! produce: 32-bit float PCM (ttsd, Piper) or 16-bit int PCM (silero-native,
+//! matching upstream `save_wav`). Output is a valid Ogg-Opus stream at
+//! 32 kbps VOIP, 20 ms frames. The implementation is streaming — samples
 //! are read from the WAV in frame-sized chunks and fed straight to the
 //! encoder, so memory use stays constant regardless of audio length.
 //!
@@ -62,8 +64,36 @@ pub enum AudioError {
 
 pub type Result<T> = std::result::Result<T, AudioError>;
 
-/// Encode a mono 32-bit-float WAV at `wav_path` to an Ogg-Opus file at
-/// `opus_path`. Streaming — memory use is bounded regardless of audio length.
+/// The mono WAV sample shapes the TTS engines write: 32-bit float PCM
+/// (ttsd, Piper) or 16-bit int PCM (silero-native, matching upstream
+/// `save_wav`, #254). Anything else is rejected before decoding a sample.
+#[derive(Clone, Copy)]
+enum SampleShape {
+    Float32,
+    Int16,
+}
+
+fn accepted_sample_shape(spec: hound::WavSpec) -> Result<SampleShape> {
+    match (spec.sample_format, spec.bits_per_sample) {
+        (hound::SampleFormat::Float, 32) => Ok(SampleShape::Float32),
+        (hound::SampleFormat::Int, 16) => Ok(SampleShape::Int16),
+        (format, bits) => Err(AudioError::UnsupportedFormat(format!(
+            "expected 32-bit float or 16-bit int PCM, got {format:?} {bits}-bit"
+        ))),
+    }
+}
+
+/// Map an int16 sample onto the f32 range [-1, 1). Scaling by 32768 maps
+/// `i16::MIN` to -1.0 exactly; the top end loses ~3e-5 of range, far below
+/// the audible/parity thresholds (silero-native encodes with `* 32767`, so
+/// the round trip differs by at most 1 LSB).
+fn int16_to_f32(s: i16) -> f32 {
+    s as f32 / 32768.0
+}
+
+/// Encode a mono WAV at `wav_path` (32-bit float or 16-bit int PCM — see
+/// [`SampleShape`]) to an Ogg-Opus file at `opus_path`. Streaming — memory
+/// use is bounded regardless of audio length.
 ///
 /// The WAV's sample rate must be one Opus accepts natively (8/12/16/24/48 kHz)
 /// or, if it is off-list (e.g. Piper's 22050 Hz), it is resampled to the
@@ -79,12 +109,7 @@ pub fn encode_wav_to_opus(wav_path: &Path, opus_path: &Path) -> Result<()> {
             spec.channels
         )));
     }
-    if spec.sample_format != hound::SampleFormat::Float || spec.bits_per_sample != 32 {
-        return Err(AudioError::UnsupportedFormat(format!(
-            "expected 32-bit float PCM, got {:?} {}-bit",
-            spec.sample_format, spec.bits_per_sample
-        )));
-    }
+    let shape = accepted_sample_shape(spec)?;
 
     let in_rate = spec.sample_rate;
     // libopus only takes native rates; anything else is resampled to the
@@ -124,17 +149,34 @@ pub fn encode_wav_to_opus(wav_path: &Path, opus_path: &Path) -> Result<()> {
     // Native rates stream straight from the WAV reader (constant memory).
     // Off-list rates must be buffered once to resample, then streamed out.
     let mut samples_iter: Box<dyn Iterator<Item = std::result::Result<f32, hound::Error>>> =
-        if encode_rate == in_rate {
-            Box::new(reader.samples::<f32>())
-        } else {
-            let samples: Vec<f32> = reader
-                .samples::<f32>()
-                .collect::<std::result::Result<Vec<f32>, hound::Error>>()?;
-            Box::new(
-                resample_linear(&samples, in_rate, encode_rate)
+        match (shape, encode_rate == in_rate) {
+            (SampleShape::Float32, true) => Box::new(reader.samples::<f32>()),
+            (SampleShape::Int16, true) => {
+                Box::new(reader.samples::<i16>().map(|s| s.map(int16_to_f32)))
+            }
+            (SampleShape::Float32, false) => {
+                let samples: Vec<f32> = reader
+                    .samples::<f32>()
+                    .collect::<std::result::Result<Vec<f32>, hound::Error>>()?;
+                Box::new(
+                    resample_linear(&samples, in_rate, encode_rate)
+                        .into_iter()
+                        .map(Ok),
+                )
+            }
+            (SampleShape::Int16, false) => {
+                let samples: Vec<f32> = reader
+                    .samples::<i16>()
+                    .collect::<std::result::Result<Vec<i16>, hound::Error>>()?
                     .into_iter()
-                    .map(Ok),
-            )
+                    .map(int16_to_f32)
+                    .collect();
+                Box::new(
+                    resample_linear(&samples, in_rate, encode_rate)
+                        .into_iter()
+                        .map(Ok),
+                )
+            }
         };
 
     write_frames(&mut encoder, &mut writer, encode_rate, &mut samples_iter)?;
@@ -276,7 +318,7 @@ fn build_opus_tags() -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::test_util::write_sine_wav;
+    use crate::storage::test_util::{write_sine_wav, write_sine_wav_i16};
     use test_case::test_case;
 
     /// Rates enumerated as per-rate `#[test_case]` rows below. Kept in sync with
@@ -480,11 +522,33 @@ mod tests {
         }
     }
 
-    /// Non-float sample formats must be rejected up front — `encode_wav_to_opus`
-    /// checks `spec.sample_format`/`bits_per_sample` before touching the
-    /// encoder, it does not convert integer PCM to float.
+    /// Mono 16-bit int PCM — the shape silero-native writes (upstream
+    /// `save_wav` parity) — must transcode. Regression for #254: every
+    /// silero-native entry kept its `.wav` fallback because the encoder
+    /// only accepted float32.
     #[test]
-    fn rejects_non_float_sample_format() {
+    fn accepts_silero_native_16bit_int_wav() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let wav_path = dir.path().join("in.wav");
+        let opus_path = dir.path().join("out.opus");
+
+        write_sine_wav_i16(&wav_path, 24_000, 440.0, 0.25);
+        encode_wav_to_opus(&wav_path, &opus_path)
+            .unwrap_or_else(|e| panic!("16-bit int wav should transcode, got: {e}"));
+
+        let bytes = std::fs::read(&opus_path).expect("read opus");
+        assert!(bytes.len() > 1000, "opus too small: {}", bytes.len());
+        assert_eq!(
+            read_opus_head_rate(&opus_path),
+            24_000,
+            "OpusHead must record the native 24000 Hz"
+        );
+    }
+
+    /// Sample formats outside the accepted set (float32 / int16) must be
+    /// rejected up front — the encoder does not convert arbitrary widths.
+    #[test]
+    fn rejects_32bit_int_wav() {
         let dir = tempfile::tempdir().expect("tempdir");
         let wav_path = dir.path().join("in.wav");
         let opus_path = dir.path().join("out.opus");
@@ -492,13 +556,17 @@ mod tests {
         let spec = hound::WavSpec {
             channels: 1,
             sample_rate: 48_000,
-            bits_per_sample: 16,
+            bits_per_sample: 32,
             sample_format: hound::SampleFormat::Int,
         };
-        write_wav_with_spec(&wav_path, spec);
+        let mut writer = hound::WavWriter::create(&wav_path, spec).expect("create wav");
+        for _ in 0..1000 {
+            writer.write_sample(0i32).expect("write sample");
+        }
+        writer.finalize().expect("finalize");
 
         let err = encode_wav_to_opus(&wav_path, &opus_path)
-            .expect_err("should reject 16-bit int PCM wav");
+            .expect_err("should reject 32-bit int PCM wav");
         match err {
             AudioError::UnsupportedFormat(_) => {}
             other => panic!("expected UnsupportedFormat, got {other:?}"),

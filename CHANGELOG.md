@@ -11,6 +11,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 - **"Save audio as…" audio export** — the queue context menu exports an entry's audio to any folder via the native save dialog (#225).
 - **Voiceover parameters in the history** — the queue context menu gains «Параметры записи…», a read-only view of the source, engine, voice, sample rate, model and settings that produced each recording (#243).
 
+### Fixed
+- **Silero (native) recordings are stored as Opus again** — the Opus transcode rejected the engine's 16-bit WAV, so its entries stayed as lossy-playback `.wav` fallbacks; existing `.wav` recordings are converted to `.opus` on the next launch (#254).
+
 ## [0.4.0] — 2026-08-25 — Linux packages
 
 ### Added
