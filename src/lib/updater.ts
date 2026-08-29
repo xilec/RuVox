@@ -10,13 +10,16 @@ import { commands } from './tauri';
 /**
  * Auto-update front end (tauri-plugin-updater).
  *
- * Only meaningful on Windows, where the NSIS installer is the distribution
- * channel — on Linux the app ships via nix and `latest.json` carries no
- * linux platform entry. `navigator.userAgent` is the zero-dependency way to
- * gate this (no plugin-os just for one check); the webview UA contains
- * "Windows" on Windows.
+ * Served on Windows (NSIS flow) and on Linux when the app runs from an
+ * AppImage — the only Linux format the plugin can self-update. The
+ * capability verdict comes from the backend (`updater_supported` command,
+ * which checks the `APPIMAGE` env var): the webview has no visibility into
+ * it, and a .deb/nix install must get no update UI rather than a check
+ * that always errors.
  */
-export const UPDATER_ENABLED = navigator.userAgent.includes('Windows');
+export async function updaterSupported(): Promise<boolean> {
+  return commands.updaterSupported();
+}
 
 const UPDATE_TOAST_ID = 'app-update';
 
@@ -91,9 +94,9 @@ function promptInstall(update: Update) {
   });
 }
 
-/** Startup check: silent on any failure (offline, no release yet, Linux). */
+/** Startup check: silent on any failure (offline, no release yet, unsupported install). */
 export async function checkForUpdatesOnStartup() {
-  if (!UPDATER_ENABLED) return;
+  if (!(await updaterSupported())) return;
   try {
     const update = await check();
     if (update) {

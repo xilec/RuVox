@@ -241,6 +241,12 @@ export const commands = {
   stopPlayback: (): Promise<void> =>
     tauriInvoke('stop_playback'),
 
+  /** Whether tauri-plugin-updater can serve this install (#226): Windows
+   * always, Linux only when running from an AppImage. Gates the whole
+   * update UI — .deb/nix installs opt out instead of failing checks. */
+  updaterSupported: (): Promise<boolean> =>
+    tauriInvoke('updater_supported'),
+
   /** Destroy the mpv subprocess before the updater runs the installer
    * (#211): the installer force-kills the app, so the exit-time cleanup
    * never runs and the orphaned mpv.exe would lock the install dir. */

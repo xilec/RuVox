@@ -30,7 +30,7 @@ import { t, useT } from '../lib/i18n';
 import { setLocale, toLocale } from '../stores/locale';
 import { bundleDownloadPercent } from '../lib/bundleDownload';
 import { PIPER_VOICES } from '../lib/piperVoices';
-import { checkForUpdatesManual, UPDATER_ENABLED } from '../lib/updater';
+import { checkForUpdatesManual, updaterSupported } from '../lib/updater';
 import {
   applyEngineChange,
   buildSettingsPatch,
@@ -250,6 +250,7 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
   const [cacheDir, setCacheDir] = useState<string>('');
   const [appVersion, setAppVersion] = useState<string>('');
   const [logDir, setLogDir] = useState<string>('');
+  const [updaterEnabled, setUpdaterEnabled] = useState(false);
   const [coercedAlert, setCoercedAlert] = useState(false);
   const [availability, setAvailability] = useState<AvailabilityMap>(() =>
     pessimisticAvailability(),
@@ -326,10 +327,13 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
         });
       });
     commands.getCacheDir().then(setCacheDir).catch(() => setCacheDir(''));
-    // Always resolve the version (independent of the Windows-only updater) so
-    // bug reports can quote it on every platform.
+    // Always resolve the version (independent of the updater gate) so bug
+    // reports can quote it on every platform.
     getVersion().then(setAppVersion).catch(() => setAppVersion(''));
     commands.getLogDir().then(setLogDir).catch(() => setLogDir(''));
+    // Update section only on installs the updater can serve (#226): Windows
+    // and Linux AppImage; a failed probe hides it like .deb/nix do.
+    updaterSupported().then(setUpdaterEnabled).catch(() => setUpdaterEnabled(false));
     // form is excluded intentionally: setValues is stable, re-running on form change would loop
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opened]);
@@ -746,7 +750,7 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
             }}
           />
 
-          {UPDATER_ENABLED && (
+          {updaterEnabled && (
             <>
               <Divider />
 

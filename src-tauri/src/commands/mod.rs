@@ -6,6 +6,7 @@
 //! to `message` for unknown codes.
 
 use std::collections::{HashMap, HashSet};
+use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -1386,6 +1387,34 @@ pub async fn stop_playback(state: State<'_, AppState>) -> CmdResult<()> {
     })
 }
 
+/// Whether the updater can serve this install (#226). Windows installs always
+/// (NSIS flow); on Linux only an AppImage exposes the `APPIMAGE` env var
+/// tauri-plugin-updater needs to replace the running image — .deb/nix installs
+/// get no update UI instead of a check that would always error. The env lookup
+/// is injectable for tests.
+fn updater_supported_with(appimage_env: Option<OsString>) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = appimage_env;
+        true
+    }
+    #[cfg(target_os = "linux")]
+    {
+        appimage_env.is_some()
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    {
+        let _ = appimage_env;
+        false
+    }
+}
+
+/// Report to the frontend whether the update check/UI should be offered.
+#[tauri::command]
+pub fn updater_supported() -> bool {
+    updater_supported_with(std::env::var_os("APPIMAGE"))
+}
+
 /// Destroy the mpv subprocess before the updater launches the installer
 /// (#211). The updater-launched NSIS installer force-kills this process,
 /// so `RunEvent::Exit` (which normally destroys mpv) never fires and the
@@ -1947,6 +1976,26 @@ mod image_url_tests {
         assert_eq!(media_type(Some(&empty)), None);
         let invalid = reqwest::header::HeaderValue::from_bytes(&[0xff, 0xfe]).unwrap();
         assert_eq!(media_type(Some(&invalid)), None);
+    }
+}
+
+#[cfg(test)]
+mod updater_tests {
+    use super::updater_supported_with;
+
+    #[test]
+    fn appimage_env_present_enables_the_updater_on_linux() {
+        let supported =
+            updater_supported_with(Some(std::ffi::OsString::from("/opt/RuVox.AppImage")));
+        assert_eq!(
+            supported,
+            cfg!(target_os = "windows") || cfg!(target_os = "linux")
+        );
+    }
+
+    #[test]
+    fn appimage_env_absent_disables_the_updater_except_windows() {
+        assert_eq!(updater_supported_with(None), cfg!(target_os = "windows"));
     }
 }
 

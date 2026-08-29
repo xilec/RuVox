@@ -413,6 +413,7 @@ pub(crate) fn invoke_handler<R: Runtime>()
         resume_playback,
         stop_playback,
         shutdown_player_for_update,
+        updater_supported,
         seek_to,
         set_speed,
         set_volume,

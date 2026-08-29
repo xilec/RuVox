@@ -2,9 +2,11 @@ name: release
 
 # Tag push `v*` (or a manual dispatch with an explicit tag) builds the
 # Windows NSIS installer and the Linux .deb/.AppImage packages and publishes
-# a DRAFT GitHub release with all artifacts attached to it. The draft is
-# published manually after the VM checklist passes (OpenSpec change
-# windows-installer-and-release, D1; Linux half = issue #218).
+# a DRAFT GitHub release with all artifacts plus the updater manifest
+# (latest.json, merged from both platforms by the updater-manifest job)
+# attached to it. The draft is published manually after the VM checklist
+# passes (OpenSpec change windows-installer-and-release, D1; Linux half =
+# issue #218; Linux updater = issue #226).
 
 on:
   push:
@@ -100,30 +102,14 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
-      # tauri-plugin-updater manifest. `releases/latest/download/latest.json`
-      # starts resolving only once the draft is PUBLISHED — before that the
-      # in-app check 404s, which the app treats as "no update".
-      - name: Generate latest.json updater manifest
-        shell: bash
-        run: |
-          set -euo pipefail
-          tag="${{ inputs.tag || github.ref_name }}"
-          version="${tag#v}"
-          nsis_dir=src-tauri/target/release/bundle/nsis
-          # Tauri v2 signs the plain NSIS installer as the updater
-          # artifact; the .nsis.zip is the v1-compatible format and is
-          # not produced by default (createUpdaterArtifacts: true).
-          exe=$(ls "$nsis_dir"/*_x64-setup.exe | head -1)
-          sig=$(cat "$exe.sig")
-          jq -n \
-            --arg v "$version" \
-            --arg tag "$tag" \
-            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --arg sig "$sig" \
-            --arg url "https://github.com/${{ github.repository }}/releases/download/$tag/$(basename "$exe")" \
-            '{version: $v, notes: "https://github.com/${{ github.repository }}/releases/tag/\($tag)", pub_date: $date, platforms: {"windows-x86_64": {signature: $sig, url: $url}}}' \
-            > latest.json
-          cat latest.json
+      # The updater manifest (latest.json) is written by the updater-manifest
+      # job, which needs both platforms' signatures — this job only uploads
+      # its own signature as a workflow artifact.
+      - name: Upload NSIS updater signature for the manifest job
+        uses: actions/upload-artifact@v4
+        with:
+          name: updater-windows-sig
+          path: src-tauri/target/release/bundle/nsis/*_x64-setup.exe.sig
 
       # Extract the CHANGELOG.md section for this version so the draft release
       # body is the human-curated notes, not GitHub's auto-generated diff
@@ -141,14 +127,15 @@ jobs:
           files: |
             src-tauri/target/release/bundle/nsis/*_x64-setup.exe
             src-tauri/target/release/bundle/nsis/*_x64-setup.exe.sig
-            latest.json
 
   # Linux half of #94, split out by issue #218: build .deb + .AppImage on a
   # Linux runner and attach them to the SAME draft release the Windows job
   # created (same tag_name; softprops/action-gh-release updates an existing
   # draft and merges assets — whichever job finishes first creates it, both
-  # write identical release notes via scripts/release-notes.sh). The in-app
-  # updater manifest (latest.json) stays Windows-only for now.
+  # write identical release notes via scripts/release-notes.sh). The AppImage
+  # doubles as the Linux updater artifact (#226): it is signed AFTER the
+  # wayland repack below, because the repack rewrites the file and would
+  # invalidate a build-time signature.
   linux-packages:
     runs-on: ubuntu-latest
     # Warm cargo cache ~12-15 min (two-stage build + bundling); cold apt+cargo
@@ -224,6 +211,28 @@ jobs:
           appimage=$(ls src-tauri/target/release/bundle/appimage/*.AppImage | head -1)
           bash scripts/fix-appimage-wayland.sh "$appimage" "$appimage"
 
+      # The updater signature must match the file we actually distribute, so
+      # signing happens here — after the repack above (the build itself runs
+      # without signing env; tauri only warns about the unkeyed pubkey). Same
+      # key env contract as the Windows job; `tauri signer sign` reads it
+      # directly (#226).
+      - name: Sign the repacked AppImage for the updater
+        run: |
+          set -euo pipefail
+          appimage=$(ls src-tauri/target/release/bundle/appimage/*.AppImage | head -1)
+          rm -f "$appimage.sig"
+          pnpm tauri signer sign "$appimage"
+          test -s "$appimage.sig"
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: Upload AppImage updater signature for the manifest job
+        uses: actions/upload-artifact@v4
+        with:
+          name: updater-linux-sig
+          path: src-tauri/target/release/bundle/appimage/*.AppImage.sig
+
       - name: Extract changelog section for release notes
         run: bash scripts/release-notes.sh "${{ inputs.tag || github.ref_name }}"
 
@@ -236,3 +245,58 @@ jobs:
           files: |
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/appimage/*.AppImage
+
+  # tauri-plugin-updater manifest (#226): merges the per-platform updater
+  # entries from both packaging jobs into the single latest.json the app
+  # polls. `releases/latest/download/latest.json` starts resolving only once
+  # the draft is PUBLISHED — before that the in-app check 404s, which the
+  # app treats as "no update".
+  updater-manifest:
+    runs-on: ubuntu-latest
+    needs: [windows-installer, linux-packages]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: updater-*-sig
+          merge-multiple: true
+          path: sigs
+
+      - name: Generate latest.json updater manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ inputs.tag || github.ref_name }}"
+          version="${tag#v}"
+          base="https://github.com/${{ github.repository }}/releases/download/$tag"
+          # Asset names double as the manifest URLs; the sig filename is the
+          # asset filename plus ".sig". Tauri v2 signs the plain NSIS
+          # installer as the updater artifact (createUpdaterArtifacts: true).
+          win_sig_file=$(ls sigs/*_x64-setup.exe.sig | head -1)
+          win_asset=$(basename "$win_sig_file" .sig)
+          linux_sig_file=$(ls sigs/*.AppImage.sig | head -1)
+          linux_asset=$(basename "$linux_sig_file" .sig)
+          win_sig=$(cat "$win_sig_file")
+          linux_sig=$(cat "$linux_sig_file")
+          jq -n \
+            --arg v "$version" \
+            --arg tag "$tag" \
+            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg win_sig "$win_sig" \
+            --arg win_url "$base/$win_asset" \
+            --arg linux_sig "$linux_sig" \
+            --arg linux_url "$base/$linux_asset" \
+            '{version: $v, notes: "https://github.com/${{ github.repository }}/releases/tag/\($tag)", pub_date: $date,
+              platforms: {
+                "windows-x86_64": {signature: $win_sig, url: $win_url},
+                "linux-x86_64": {signature: $linux_sig, url: $linux_url}
+              }}' \
+            > latest.json
+          cat latest.json
+
+      - name: Attach the manifest to the draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          draft: true
+          files: latest.json
