@@ -844,10 +844,16 @@ The system SHALL expose two Tauri commands for per-entry audio export
 no capability changes):
 
 `pick_export_audio_path(entry_id)` SHALL read the entry under the storage
-lock, derive the save-dialog default name `ruvox-<entry_id>.<ext>` from the
-entry's stored audio format, and open the native save dialog on the blocking
-thread (the dialog is modal-blocking and must not run on the tokio reactor),
-returning the chosen path as `Option<String>`: `None` when the user cancels.
+lock, pre-fill the save dialog with the extensionless default name
+`ruvox-<entry_id>` (the native dialog appends the active filter's extension
+on save, so the filter choice decides the format), and open the native save
+dialog on the blocking thread (the dialog is modal-blocking and must not run
+on the tokio reactor), returning the chosen path as `Option<String>`:
+`None` when the user cancels. The returned path SHALL be normalized against
+the stored format: a recognized `opus`/`wav` extension (case-insensitive)
+SHALL be kept as typed; a foreign extension SHALL be replaced, and a missing
+one appended, with the stored format's extension so the file name always
+matches the exported bytes.
 For an `.opus`-stored entry (the normal case) the dialog SHALL offer two
 file filters — `Ogg Opus`/`opus` first and `WAV`/`wav` second; for a
 `.wav`-stored entry (the synthesis-transcode fallback) the dialog SHALL
@@ -878,16 +884,25 @@ The frontend wrappers SHALL be `commands.pickExportAudioPath(entryId)` and
 
 - GIVEN an entry whose stored audio file is `audio/<id>.opus`
 - WHEN `pick_export_audio_path` is invoked for the entry
-- THEN the save dialog opens pre-filled with `ruvox-<id>.opus` offering an
-  `Ogg Opus`/`opus` filter (first/default) and a `WAV`/`wav` filter, and the
-  chosen path is returned
+- THEN the save dialog opens pre-filled with the extensionless name
+  `ruvox-<id>`, offering an `Ogg Opus`/`opus` filter (first/default) and a
+  `WAV`/`wav` filter, and the chosen path is returned
 
 #### Scenario: WAV-stored entry keeps the WAV-only dialog
 
 - GIVEN an entry whose stored audio file is `audio/<id>.wav`
 - WHEN `pick_export_audio_path` is invoked for the entry
-- THEN the save dialog opens pre-filled with `ruvox-<id>.wav` and a single
-  `WAV`/`wav` filter
+- THEN the save dialog opens pre-filled with the extensionless name
+  `ruvox-<id>` and a single `WAV`/`wav` filter
+
+#### Scenario: Returned path is normalized to the stored format
+
+- GIVEN an `.opus`-stored entry and a dialog result of `/tmp/audio.mp3` (or
+  an extensionless `/tmp/audio`)
+- WHEN the command normalizes the returned path
+- THEN the path is `/tmp/audio.opus` — a foreign extension is replaced and a
+  missing one appended with the stored format's extension, while a
+  recognized `opus`/`wav` extension (any case) is kept as typed
 
 #### Scenario: Cancelled dialog resolves to null
 
