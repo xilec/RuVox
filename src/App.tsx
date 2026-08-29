@@ -17,7 +17,8 @@ export function App() {
       cleanup = fn;
     });
 
-    // Silent auto-update check (no-op off Windows); failures stay invisible.
+    // Silent auto-update check (no-op on installs the updater cannot serve,
+    // e.g. Linux .deb/nix); failures stay invisible.
     void checkForUpdatesOnStartup();
 
     // Disable the default webview context menu; editable elements keep their

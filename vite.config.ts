@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
@@ -5,6 +6,13 @@ const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig(() => ({
   plugins: [react()],
+
+  // Shared stubs for browser APIs jsdom lacks (matchMedia, ResizeObserver);
+  // see src/test/setup.ts. Applies to every test file, so the setup itself
+  // must stay a no-op outside the jsdom environment.
+  test: {
+    setupFiles: ["src/test/setup.ts"],
+  },
 
   // react-rnd's Draggable reads `process.env.DRAGGABLE_DEBUG` at render
   // time (its `log()` helper). The webview has no Node `process` global, so

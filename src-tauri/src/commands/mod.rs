@@ -6,6 +6,7 @@
 //! to `message` for unknown codes.
 
 use std::collections::{HashMap, HashSet};
+use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -1185,7 +1186,8 @@ pub async fn set_entry_format<R: Runtime>(
 /// Regenerate audio for an existing entry: drop its current audio + timestamps,
 /// reset status to `Pending`, and re-run the synthesis pipeline. Useful when
 /// the user has changed `speaker`, `speech_rate`, or other normalization
-/// settings and wants the cached audio to reflect them.
+/// settings and wants the cached audio to reflect them. With `play_when_ready`,
+/// the fresh audio autoplays on success (same rule as the initial synthesis).
 ///
 /// Rejects the call if the entry is currently being synthesized — re-entering
 /// `spawn_synthesis` for the same id would race with the in-flight task.
@@ -1194,6 +1196,7 @@ pub async fn regenerate_entry<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
     id: String,
+    play_when_ready: bool,
 ) -> CmdResult<()> {
     let entry = require_entry(&state.storage, &id)?;
     let uuid = entry.id;
@@ -1228,7 +1231,11 @@ pub async fn regenerate_entry<R: Runtime>(
         .map_err(CommandError::from)?;
     emit_entry_updated(&app, &entry);
 
-    spawn_synthesis(SynthesisDeps::from_state(&app, &state), uuid, false);
+    spawn_synthesis(
+        SynthesisDeps::from_state(&app, &state),
+        uuid,
+        play_when_ready,
+    );
 
     Ok(())
 }
@@ -1384,6 +1391,34 @@ pub async fn stop_playback(state: State<'_, AppState>) -> CmdResult<()> {
     state.player.stop().map_err(|e| {
         CommandError::playback("playback.stop_failed", vec![]).with_message(e.to_string())
     })
+}
+
+/// Whether the updater can serve this install (#226). Windows installs always
+/// (NSIS flow); on Linux only an AppImage exposes the `APPIMAGE` env var
+/// tauri-plugin-updater needs to replace the running image — .deb/nix installs
+/// get no update UI instead of a check that would always error. The env lookup
+/// is injectable for tests.
+fn updater_supported_with(appimage_env: Option<OsString>) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = appimage_env;
+        true
+    }
+    #[cfg(target_os = "linux")]
+    {
+        appimage_env.is_some()
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    {
+        let _ = appimage_env;
+        false
+    }
+}
+
+/// Report to the frontend whether the update check/UI should be offered.
+#[tauri::command]
+pub fn updater_supported() -> bool {
+    updater_supported_with(std::env::var_os("APPIMAGE"))
 }
 
 /// Destroy the mpv subprocess before the updater launches the installer
@@ -1947,6 +1982,32 @@ mod image_url_tests {
         assert_eq!(media_type(Some(&empty)), None);
         let invalid = reqwest::header::HeaderValue::from_bytes(&[0xff, 0xfe]).unwrap();
         assert_eq!(media_type(Some(&invalid)), None);
+    }
+}
+
+#[cfg(test)]
+mod updater_tests {
+    use super::updater_supported_with;
+
+    // `cargo test` runs on Linux CI (the windows-build job is compile-only),
+    // so the Windows branch is pinned by a cfg-gated test for Windows
+    // runners and by compilation everywhere else.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn appimage_env_presence_decides_on_linux() {
+        assert!(updater_supported_with(Some(std::ffi::OsString::from(
+            "/opt/RuVox.AppImage"
+        ))));
+        assert!(!updater_supported_with(None));
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn updater_is_always_supported_on_windows() {
+        assert!(updater_supported_with(None));
+        assert!(updater_supported_with(Some(std::ffi::OsString::from(
+            "C:\\apps\\RuVox.exe"
+        ))));
     }
 }
 
