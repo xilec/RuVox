@@ -1,4 +1,5 @@
-//! WAV → Ogg-Opus streaming encoder.
+//! WAV → Ogg-Opus streaming encoder, plus the Opus → WAV decode used by
+//! audio export (#252).
 //!
 //! Inputs are mono WAV files in one of the two shapes the TTS engines
 //! produce: 32-bit float PCM (ttsd, Piper) or 16-bit int PCM (silero-native,
@@ -18,12 +19,12 @@
 //! over the pure-Rust `opus-rs` (issue #19).
 
 use std::fs::{self, File};
-use std::io::{BufWriter, Write};
+use std::io::{BufReader, BufWriter, Write};
 use std::path::Path;
 
 use byteorder::{LittleEndian, WriteBytesExt};
-use ogg::{PacketWriteEndInfo, PacketWriter};
-use opus::{Application, Bitrate, Channels, Encoder};
+use ogg::{PacketReader, PacketWriteEndInfo, PacketWriter};
+use opus::{Application, Bitrate, Channels, Decoder, Encoder};
 use thiserror::Error;
 
 const FRAME_MS: u32 = 20;
@@ -58,6 +59,8 @@ pub enum AudioError {
     Wav(#[from] hound::Error),
     #[error("opus error: {0}")]
     Opus(#[from] opus::Error),
+    #[error("ogg error: {0}")]
+    Ogg(String),
     #[error("unsupported wav format: {0}")]
     UnsupportedFormat(String),
 }
@@ -291,6 +294,136 @@ pub fn replace_wav_with_opus(wav_path: &Path) -> Result<std::path::PathBuf> {
     encode_wav_to_opus(wav_path, &opus_path)?;
     fs::remove_file(wav_path)?;
     Ok(opus_path)
+}
+
+// ── Opus → WAV decode (audio export, #252) ──────────────────────────────────
+
+/// Opus always decodes natively at 48 kHz (RFC 6716 §2) — the export WAV's
+/// rate, regardless of the rate the stream was encoded from.
+const OPUS_DECODE_RATE: u32 = 48_000;
+/// One decoded frame is at most 120 ms (RFC 6716 §2.1.3) — the decode
+/// buffer bound.
+const MAX_FRAME_SAMPLES_48K: usize = OPUS_DECODE_RATE as usize / 1000 * 120;
+
+/// Decode a stored Ogg-Opus file at `opus_path` to a mono 16-bit PCM WAV at
+/// `wav_path` (48 kHz). Used by audio export: the cached Opus original stays
+/// untouched, only the exported file is written (#252).
+///
+/// Honors the RFC 7845 §4.9-4.10 trim rules: the `OpusHead` pre-skip is
+/// discarded from the decoded start, and output is capped at the final page
+/// granule minus pre-skip, so encoder padding never reaches the file. A
+/// failure before the writer opens the target (unreadable source, bad
+/// headers) never touches an existing file there; a failure after it does
+/// removes the partial output this call wrote — a half-written WAV must not
+/// be left at the user-chosen path.
+pub fn decode_opus_to_wav(opus_path: &Path, wav_path: &Path) -> Result<()> {
+    let created = !wav_path.exists();
+    match decode_opus_to_wav_stream(opus_path, wav_path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            if created {
+                // Best-effort cleanup of our own partial output; the
+                // original error is what matters to the caller.
+                let _ = fs::remove_file(wav_path);
+            }
+            Err(e)
+        }
+    }
+}
+
+fn decode_opus_to_wav_stream(opus_path: &Path, wav_path: &Path) -> Result<()> {
+    let mut reader = PacketReader::new(BufReader::new(File::open(opus_path)?));
+    let mut decoder = Decoder::new(OPUS_DECODE_RATE, Channels::Mono)?;
+
+    let head = reader
+        .read_packet()
+        .map_err(map_ogg_read_error)?
+        .ok_or_else(|| AudioError::Ogg("no OpusHead packet".to_string()))?;
+    let (channels, pre_skip) = parse_opus_head(&head.data)?;
+    if channels != 1 {
+        return Err(AudioError::UnsupportedFormat(format!(
+            "expected mono stream, got {channels} channels"
+        )));
+    }
+    // OpusTags carries no samples, but its presence marks a well-formed
+    // stream: a file ending after OpusHead must fail (not export a silent
+    // 0-sample WAV), and a stream whose second packet is not OpusTags would
+    // misalign our header/audio split.
+    match reader.read_packet().map_err(map_ogg_read_error)? {
+        Some(tags) if tags.data.len() >= 8 && &tags.data[..8] == b"OpusTags" => {}
+        Some(_) => return Err(AudioError::Ogg("missing OpusTags packet".to_string())),
+        None => return Err(AudioError::Ogg("stream ends after OpusHead".to_string())),
+    }
+
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: OPUS_DECODE_RATE,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut out = hound::WavWriter::create(wav_path, spec)?;
+    let mut frame_buf = vec![0f32; MAX_FRAME_SAMPLES_48K];
+    let mut skip_remaining = u64::from(pre_skip);
+    // Audible length once the final page's granule is known:
+    // granule (48 kHz ticks) minus the discarded pre-skip.
+    let mut audible_limit: Option<u64> = None;
+    let mut written: u64 = 0;
+
+    while let Some(pkt) = reader.read_packet().map_err(map_ogg_read_error)? {
+        let is_last = pkt.last_in_stream();
+        let n = decoder.decode_float(&pkt.data, &mut frame_buf, false)?;
+        if is_last {
+            audible_limit = Some(pkt.absgp_page().saturating_sub(u64::from(pre_skip)));
+        }
+
+        let start = skip_remaining.min(n as u64) as usize;
+        skip_remaining -= start as u64;
+        let end = match audible_limit {
+            // Never write past the audible length.
+            Some(limit) => (start + limit.saturating_sub(written) as usize).min(n),
+            None => n,
+        };
+        for &s in &frame_buf[start..end] {
+            out.write_sample(f32_to_i16(s))?;
+        }
+        written += (end - start) as u64;
+    }
+
+    out.finalize()?;
+    Ok(())
+}
+
+/// Parse the `OpusHead` fields the decoder needs: channel count and
+/// pre-skip (RFC 7845 §5.1 — version at byte 8, channels at 9, pre-skip
+/// u16 LE at 10-11).
+fn parse_opus_head(data: &[u8]) -> Result<(u8, u16)> {
+    if data.len() < 19 || &data[..8] != b"OpusHead" {
+        return Err(AudioError::UnsupportedFormat(
+            "missing OpusHead packet".to_string(),
+        ));
+    }
+    if data[8] != 1 {
+        return Err(AudioError::UnsupportedFormat(format!(
+            "unsupported OpusHead version {}",
+            data[8]
+        )));
+    }
+    Ok((data[9], u16::from_le_bytes([data[10], data[11]])))
+}
+
+/// Convert a decoded float sample to 16-bit PCM: clamp to [-1, 1] and
+/// round (`* 32767`), matching the silero-native WAV convention.
+fn f32_to_i16(s: f32) -> i16 {
+    (s.clamp(-1.0, 1.0) * 32767.0).round() as i16
+}
+
+/// Ogg transport errors: real I/O keeps the `Io` variant, structure errors
+/// get their own message (`OggReadError` implements only `Debug`).
+fn map_ogg_read_error(e: ogg::OggReadError) -> AudioError {
+    match e {
+        ogg::OggReadError::ReadError(io) => AudioError::Io(io),
+        other => AudioError::Ogg(format!("{other:?}")),
+    }
 }
 
 fn build_opus_head(input_sample_rate: u32, pre_skip: u16) -> Vec<u8> {
@@ -609,5 +742,85 @@ mod tests {
         assert!(opus_path.exists(), "opus file missing");
         assert!(!wav_path.exists(), "source wav should be gone");
         assert_eq!(opus_path.extension().and_then(|e| e.to_str()), Some("opus"));
+    }
+
+    /// Decode is the inverse of the encode side: a sine encoded to Opus at
+    /// 24 kHz decodes back as a mono 16-bit PCM WAV at 48 kHz, with the
+    /// audible duration preserved (pre-skip discarded, end trim applied —
+    /// within one 20 ms frame of the source) and a non-silent signal.
+    #[test]
+    fn decode_opus_to_wav_round_trips_encoded_sine() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let wav_path = dir.path().join("src.wav");
+        let opus_path = dir.path().join("src.opus");
+        let out_path = dir.path().join("out.wav");
+
+        write_sine_wav(&wav_path, 24_000, 440.0, 0.25);
+        encode_wav_to_opus(&wav_path, &opus_path).expect("encode");
+        decode_opus_to_wav(&opus_path, &out_path).expect("decode");
+
+        let mut reader = hound::WavReader::open(&out_path).expect("open decoded wav");
+        let spec = reader.spec();
+        assert_eq!(spec.channels, 1);
+        assert_eq!(spec.sample_rate, 48_000);
+        assert_eq!(spec.bits_per_sample, 16);
+        assert_eq!(spec.sample_format, hound::SampleFormat::Int);
+
+        let samples: Vec<i16> = reader
+            .samples::<i16>()
+            .collect::<std::result::Result<_, _>>()
+            .expect("read samples");
+        let one_frame = 48_000usize * FRAME_MS as usize / 1000;
+        assert!(
+            samples.len() >= 48_000 - one_frame && samples.len() <= 48_000 + one_frame,
+            "audible length must stay within one frame of 1 s, got {}",
+            samples.len()
+        );
+        let peak = samples.iter().map(|s| s.abs()).max().expect("non-empty");
+        assert!(
+            peak > 3_000,
+            "decoded signal must not be silence, peak {peak}"
+        );
+    }
+
+    /// A file that is not an Ogg stream must fail the decode (not write a
+    /// silent or partial WAV) — export maps this to `export.convert_failed`.
+    #[test]
+    fn decode_opus_to_wav_rejects_non_ogg_input() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let opus_path = dir.path().join("garbage.opus");
+        let out_path = dir.path().join("out.wav");
+        std::fs::write(&opus_path, b"definitely not an ogg stream").expect("write garbage");
+
+        let err = decode_opus_to_wav(&opus_path, &out_path)
+            .expect_err("non-ogg input must fail the decode");
+        assert!(matches!(err, AudioError::Ogg(_)), "got {err:?}");
+    }
+
+    /// A stream that ends right after OpusHead (no OpusTags, no audio
+    /// packets) must fail, not "succeed" with a silent 0-sample WAV. The
+    /// file is built with the same ogg writer the encoder uses, so the
+    /// transport framing is valid.
+    #[test]
+    fn decode_opus_to_wav_rejects_head_only_stream() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let opus_path = dir.path().join("head-only.opus");
+        let out_path = dir.path().join("out.wav");
+
+        let file = BufWriter::new(File::create(&opus_path).expect("create ogg"));
+        let mut writer = PacketWriter::new(file);
+        writer
+            .write_packet(
+                build_opus_head(24_000, 0),
+                SERIAL,
+                PacketWriteEndInfo::EndPage,
+                0,
+            )
+            .expect("write OpusHead page");
+
+        let err = decode_opus_to_wav(&opus_path, &out_path)
+            .expect_err("head-only stream must fail the decode");
+        assert!(matches!(err, AudioError::Ogg(_)), "got {err:?}");
+        assert!(!out_path.exists(), "no partial WAV may be left behind");
     }
 }

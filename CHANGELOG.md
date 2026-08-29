@@ -9,6 +9,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 ### Added
 - **Auto-detected source format in the preview dialog** — the format selector now defaults to «Авто», which classifies pasted text as HTML, Markdown or plain instead of always assuming Markdown; file and URL imports still preselect the format they know.
 - **"Save audio as…" audio export** — the queue context menu exports an entry's audio to any folder via the native save dialog (#225).
+- **WAV audio export** — «Сохранить аудио как…» gains a format chooser in the save dialog (WAV default, Ogg Opus alternative), converting an Opus recording to editable 16-bit PCM WAV on export; the cache keeps the Opus original (#252).
 - **Voiceover parameters in the history** — the queue context menu gains «Параметры записи…», a read-only view of the source, engine, voice, sample rate, model and settings that produced each recording (#243).
 - **Linux AppImage auto-updates** — AppImage installs now check GitHub releases in-app and self-update with signature verification; .deb and source builds get no update UI (#226).
 

@@ -46,5 +46,5 @@
        storage — dialog pre-filled, file lands on disk and plays; cancel is
        a no-op; error paths surface localized messages; no `entry_updated`
        side effects.
-- [ ] 5.3 Propose the additive `CHANGELOG.md` `[Unreleased]` entry as a diff
+- [x] 5.3 Propose the additive `CHANGELOG.md` `[Unreleased]` entry as a diff
       for user approval (human-owned file).
