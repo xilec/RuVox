@@ -20,33 +20,39 @@ sudo apt update
 sudo apt install -y \
   build-essential pkg-config cmake clang libclang-dev \
   libwebkit2gtk-4.1-dev libsoup-3.0-dev libgtk-3-dev librsvg2-dev \
-  libayatana-appindicator3-dev libmpv-dev libopus-dev libssl-dev \
+  libayatana-appindicator3-dev libmpv-dev mpv libopus-dev libssl-dev \
   libasound2-dev libpulse-dev libpipewire-0.3-dev \
   libfontconfig1-dev libfreetype6-dev libgl-dev libdrm-dev \
   libwayland-dev libxkbcommon-dev wayland-protocols \
   espeak-ng espeak-ng-data \
-  curl file
+  curl file git
 ```
+
+> `libmpv-dev` provides the headers to compile against; `mpv` is the
+> player binary the app drives at run time — both are required.
 
 ### Fedora 40+ / RHEL 10+
 
 ```bash
 sudo dnf install -y \
-  gcc gcc-c++ pkgconf-pkg-config cmake clang clang-devel \
+  gcc gcc-c++ pkgconf-pkg-config cmake clang clang-devel git \
   webkit2gtk4.1-devel libsoup3-devel gtk3-devel librsvg2-devel \
-  libayatana-appindicator-gtk3-devel mpv-libs-devel opus-devel openssl-devel \
+  libayatana-appindicator-gtk3-devel mpv-libs-devel mpv opus-devel openssl-devel \
   alsa-lib-devel pulseaudio-libs-devel pipewire-devel \
   fontconfig-devel freetype-devel mesa-libGL-devel libdrm-devel \
   wayland-devel libxkbcommon-devel wayland-protocols-devel \
-  espeak-ng espeak-ng-data \
+  espeak-ng \
   curl file
 ```
+
+> The `mpv` player binary lives in RPM Fusion on Fedora/RHEL — enable
+> the repo if `dnf` cannot find it.
 
 ### Arch Linux
 
 ```bash
 sudo pacman -S --needed \
-  base-devel cmake clang \
+  base-devel cmake clang git \
   webkit2gtk-4.1 libsoup3 gtk3 librsvg libayatana-appindicator \
   mpv opus openssl \
   alsa-lib libpulse pipewire \
@@ -81,10 +87,12 @@ source ~/.bashrc
 ## 3. Rust toolchain
 
 ```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 source "$HOME/.cargo/env"
-cargo install tauri-cli --version '^2.0' --locked
 ```
+
+The Tauri CLI comes from the repo's dev dependencies (`pnpm tauri …`), so
+there is nothing else to install globally.
 
 ## 4. Node 20 + pnpm
 
@@ -93,8 +101,14 @@ Ubuntu's stock `nodejs` lags behind; use NodeSource:
 ```bash
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt install -y nodejs
-corepack enable pnpm
+sudo corepack enable pnpm
 ```
+
+`sudo` is required: `corepack enable` writes symlinks into `/usr/bin`.
+The first `pnpm` invocation asks to download the pnpm release — answer
+«Y» in a terminal; scripted/non-interactive setups should export
+`COREPACK_ENABLE_DOWNLOAD_PROMPT=0` (or install pnpm via
+`sudo npm install -g pnpm` instead of corepack).
 
 ## 5. (Optional) Python 3.12 + uv — for the Python Silero engine (`ttsd`)
 
@@ -121,13 +135,23 @@ single distributable binary on Ubuntu is out of scope for this guide
 
 ## 6. Configure espeak-ng data directory
 
-`piper-rs` looks for `espeak-ng-data/` under
-`PIPER_ESPEAKNG_DATA_DIRECTORY`. On Ubuntu, the apt package ships the
-data at `/usr/share/espeak-ng-data/`, so point the variable at the
-parent:
+`piper-rs` looks for `espeak-ng-data/` **under**
+`PIPER_ESPEAKNG_DATA_DIRECTORY` — the variable points at the parent
+directory, not at `espeak-ng-data` itself. Where that parent lives
+depends on the distribution:
+
+- **Ubuntu 24.04 / Debian 13:** the apt package ships the data under the
+  multiarch lib dir, so point the variable at
+  `/usr/lib/x86_64-linux-gnu`.
+- **Fedora / RHEL:** the data ships inside the single `espeak-ng`
+  package at `/usr/share/espeak-ng-data`, so the parent is
+  `/usr/share`.
+- **Arch:** check `pacman -Ql espeak-ng` and use the parent of the
+  `espeak-ng-data` directory.
 
 ```bash
-echo 'export PIPER_ESPEAKNG_DATA_DIRECTORY=/usr/share' >> ~/.bashrc
+# Ubuntu 24.04 / Debian 13:
+echo 'export PIPER_ESPEAKNG_DATA_DIRECTORY=/usr/lib/x86_64-linux-gnu' >> ~/.bashrc
 source ~/.bashrc
 ```
 
@@ -149,6 +173,8 @@ Outputs:
 - `src-tauri/target/release/ruvox-tauri` — the binary.
 - `src-tauri/target/release/bundle/deb/*.deb` — installable package
   (`sudo dpkg -i`).
+- `src-tauri/target/release/bundle/appimage/*.AppImage` — portable
+  AppImage.
 
 ### Release artifacts & self-updates
 
@@ -161,6 +187,9 @@ not self-updating — reinstall the new version yourself.
 
 ## Troubleshooting
 
+- **`mpv init failed … Is mpv installed and in your PATH?` on
+  startup** — the headers (`libmpv-dev`) are installed but the player
+  binary is missing. Install the `mpv` package (step 1).
 - **`failed to run custom build command for espeak-rs-sys`** — you are
   missing `cmake` or `libclang-dev`. Re-run step 1.
 - **`libonnxruntime.so: cannot open shared object file`** —
@@ -176,7 +205,16 @@ not self-updating — reinstall the new version yourself.
 
 ## Verifying
 
-This guide is derived from `nix/devshell.nix` (the Nix dev shell, which
-is the source of truth for build dependencies). It has not been
-end-to-end tested on a fresh Ubuntu install — if a step fails on your
-machine, please open an issue or PR with the correction.
+The **Ubuntu 24.04** path was verified end-to-end (2026-08-30) on a
+fresh desktop install in a VM: the step-1 package list, ONNX Runtime
+download, rustup, Node 20 + pnpm, the espeak-ng data directory, the
+clone + `pnpm tauri build` (producing the binary, the .deb and the
+AppImage), and launching the built binary (first-run Silero download
+prompt renders; the app starts once `mpv` is installed).
+
+The Debian / Fedora / RHEL / Arch blocks are derived from
+`nix/devshell.nix` (the source of truth for build dependencies) and
+package-name equivalences — they have not been run on those
+distributions. The Piper stress fix (step 6) was verified at the
+path-layout level, not by listening to synthesized speech. If a step
+fails on your machine, please open an issue or PR with the correction.
