@@ -59,6 +59,9 @@ docker run --rm -i \
     -v "$out":/out \
     ruvox-build bash -s <<'EOF'
 set -euo pipefail
+# codegen-units=1 + the big tauri crate occasionally overflows rustc's
+# default stack in LLVM (hit 2026-08-29); raise it.
+export RUST_MIN_STACK=16777216
 case "$BUNDLES" in
     both) BUNDLES="deb appimage" ;;
 esac
