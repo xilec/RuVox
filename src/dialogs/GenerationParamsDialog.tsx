@@ -4,6 +4,7 @@ import { formatDuration, formatMb } from '../lib/format';
 import { useT } from '../lib/i18n';
 import type { MessageKey } from '../i18n/ru';
 import { PIPER_VOICES } from '../lib/piperVoices';
+import { useLocaleStore } from '../stores/locale';
 
 export interface GenerationParamsDialogProps {
   entry: TextEntry | null;
@@ -59,9 +60,11 @@ function shortSha(sha: string): string {
 }
 
 /** The stored naive timestamps are UTC (storage spec); without the suffix
- *  JS would parse them as local time. */
-function formatGeneratedAt(naiveUtc: string): string {
-  return new Date(`${naiveUtc}Z`).toLocaleString();
+ *  JS would parse them as local time. Rendered in the app language, not the
+ *  webview's system locale. */
+function formatGeneratedAt(naiveUtc: string, locale: 'ru' | 'en'): string {
+  const tag = locale === 'ru' ? 'ru-RU' : 'en-US';
+  return new Date(`${naiveUtc}Z`).toLocaleString(tag);
 }
 
 function displayAudio(g: GenerationParams, tt: T): string {
@@ -78,6 +81,7 @@ function displayAudio(g: GenerationParams, tt: T): string {
  */
 export function GenerationParamsDialog({ entry, opened, onClose }: GenerationParamsDialogProps) {
   const tt = useT();
+  const locale = useLocaleStore((s) => s.locale);
 
   if (!entry) return null;
 
@@ -109,7 +113,7 @@ export function GenerationParamsDialog({ entry, opened, onClose }: GenerationPar
     [tt('generation.duration'), entry.duration_sec != null ? formatDuration(entry.duration_sec) : ABSENT],
     [
       tt('generation.generated_at'),
-      entry.audio_generated_at ? formatGeneratedAt(entry.audio_generated_at) : ABSENT,
+      entry.audio_generated_at ? formatGeneratedAt(entry.audio_generated_at, locale) : ABSENT,
     ],
     [tt('generation.count'), String(entry.generation_count)],
   ];

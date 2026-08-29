@@ -391,10 +391,24 @@ fn voice_for_engine(kind: EngineKind, config: &UIConfig) -> String {
     }
 }
 
+/// Everything later synthesis phases need from [`synthesize_audio`]: the
+/// engine output plus the inputs resolved *for this request* — the snapshot
+/// must record the voice/settings actually used, not a fresh config read
+/// (the user may flip settings while a synthesis is in flight).
+#[derive(Debug)]
+struct SynthOutcome {
+    output: SynthesizeOutput,
+    out_wav_path: PathBuf,
+    wav_filename: String,
+    voice: String,
+    config: UIConfig,
+}
+
 /// Phases 3–4: determine the WAV path / config / char-mapping inputs and
 /// call `tts.synthesize`. Returns the synthesize output along with the
-/// resolved WAV path and filename so [`finalize_audio_files`] can transcode
-/// to Opus without rebuilding them.
+/// resolved WAV path / filename (so [`finalize_audio_files`] can transcode
+/// to Opus without rebuilding them) and the resolved voice / config (so
+/// [`build_generation_snapshot`] records what was actually used).
 ///
 /// When the engine returns `voice_not_installed` and the active engine is
 /// Piper, the function auto-fetches the voice files via
@@ -411,7 +425,7 @@ async fn synthesize_audio(
     entry_id: &EntryId,
     normalized: String,
     mapping: &CharMapping,
-) -> Result<(SynthesizeOutput, PathBuf, String), SynthesisError> {
+) -> Result<SynthOutcome, SynthesisError> {
     // ttsd writes WAV; finalize_audio_files transcodes it to Opus right after.
     let wav_filename = format!("{entry_id}.wav");
     let out_wav_path = storage.data_dir().join("audio").join(&wav_filename);
@@ -462,7 +476,7 @@ async fn synthesize_audio(
             let retry = tts
                 .synthesize(
                     normalized,
-                    voice,
+                    voice.clone(),
                     config.sample_rate,
                     out_wav,
                     tts_char_mapping,
@@ -474,7 +488,13 @@ async fn synthesize_audio(
         Err(e) => return Err(SynthesisError::TtsFailed(e.to_string())),
     };
 
-    Ok((output, out_wav_path, wav_filename))
+    Ok(SynthOutcome {
+        output,
+        out_wav_path,
+        wav_filename,
+        voice,
+        config,
+    })
 }
 
 /// Actual output sample rate of a rendered WAV, read from the header. The
@@ -508,21 +528,23 @@ fn model_params(info: ModelInfo) -> ModelParams {
 }
 
 /// Build the per-entry synthesis-parameter snapshot (spec `ipc-commands`,
-/// "Generation Parameters Snapshot"). Runs after [`finalize_audio_files`],
-/// when the final audio file exists. Every lookup is best-effort: unknown
-/// values stay `None` — a failed manifest read or a missing file must never
-/// fail a completed synthesis.
+/// "Generation Parameters Snapshot"). `voice` / `config` / `sample_rate` come
+/// from the synthesis request itself — the resolved voice and the WAV header
+/// read *before* the Opus transcode removes the intermediate file — not from
+/// a fresh config read. Runs after [`finalize_audio_files`], when the final
+/// audio file exists. Every lookup is best-effort: unknown values stay
+/// `None` — a failed manifest read or a missing file must never fail a
+/// completed synthesis.
 fn build_generation_snapshot(
     tts: &dyn TtsEngine,
     storage: &StorageService,
+    voice: &str,
+    config: &UIConfig,
     normalized: &str,
-    out_wav_path: &std::path::Path,
+    sample_rate: Option<u32>,
     audio_filename: &str,
 ) -> GenerationParams {
-    let config = storage.load_config().unwrap_or_default();
-    let voice = voice_for_engine(tts.kind(), &config);
-    let sample_rate = wav_sample_rate(out_wav_path);
-    let model = tts.model_info(&voice).map(model_params);
+    let model = tts.model_info(voice).map(model_params);
 
     let normalized_sha = {
         use sha2::{Digest, Sha256};
@@ -536,11 +558,11 @@ fn build_generation_snapshot(
 
     GenerationParams {
         engine: tts.kind().as_str().to_string(),
-        voice,
+        voice: voice.to_string(),
         sample_rate,
         model,
         app_version: env!("CARGO_PKG_VERSION").to_string(),
-        code_block_mode: Some(config.code_block_mode),
+        code_block_mode: Some(config.code_block_mode.clone()),
         read_operators: Some(config.read_operators),
         normalized_text_sha256: normalized_sha,
         audio_codec: audio_codec_for(audio_filename).map(str::to_string),
@@ -754,7 +776,7 @@ pub fn spawn_synthesis<R: Runtime + 'static>(
                     run_normalization(Arc::clone(&pipeline), entry.original_text.clone()).await?;
                 mark_processing(&storage, &app, &entry_id, &normalized);
                 let normalized_for_snapshot = normalized.clone();
-                let (output, out_wav_path, wav_filename) = synthesize_audio(
+                let outcome = synthesize_audio(
                     tts.as_ref(),
                     &storage,
                     &piper_voices_dir,
@@ -765,21 +787,31 @@ pub fn spawn_synthesis<R: Runtime + 'static>(
                     &mapping,
                 )
                 .await?;
-                let (ts_filename, audio_filename) =
-                    finalize_audio_files(&storage, &entry_id, &output, out_wav_path, &wav_filename)
-                        .await;
+                // Read the header before finalize_audio_files transcodes the
+                // WAV to Opus and removes the intermediate file.
+                let sample_rate = wav_sample_rate(&outcome.out_wav_path);
+                let (ts_filename, audio_filename) = finalize_audio_files(
+                    &storage,
+                    &entry_id,
+                    &outcome.output,
+                    outcome.out_wav_path,
+                    &outcome.wav_filename,
+                )
+                .await;
                 let generation = build_generation_snapshot(
                     tts.as_ref(),
                     &storage,
+                    &outcome.voice,
+                    &outcome.config,
                     &normalized_for_snapshot,
-                    &storage.data_dir().join("audio").join(&wav_filename),
+                    sample_rate,
                     &audio_filename,
                 );
                 let applied = mark_ready_and_emit(
                     &storage,
                     &app,
                     &entry_id,
-                    &output,
+                    &outcome.output,
                     ts_filename,
                     &audio_filename,
                     generation,
@@ -2948,7 +2980,7 @@ mod tests {
         let voices_dir = TempDir::new().unwrap();
         let entered = Mutex::new(HashSet::new());
 
-        synthesize_audio(
+        let outcome = synthesize_audio(
             &engine,
             &storage,
             voices_dir.path(),
@@ -2962,6 +2994,8 @@ mod tests {
         .unwrap();
 
         assert_eq!(engine.recorded_voices(), vec!["ruslan"]);
+        // The outcome must carry the resolved voice for the snapshot.
+        assert_eq!(outcome.voice, "ruslan");
     }
 
     /// The reverse case must not coerce either: an active Silero Native
@@ -2976,7 +3010,7 @@ mod tests {
         let voices_dir = TempDir::new().unwrap();
         let entered = Mutex::new(HashSet::new());
 
-        synthesize_audio(
+        let outcome = synthesize_audio(
             &engine,
             &storage,
             voices_dir.path(),
@@ -2990,6 +3024,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(engine.recorded_voices(), vec!["aidar"]);
+        assert_eq!(outcome.voice, "aidar");
     }
 
     /// A `voice_not_installed` failure on the active Piper engine enters the

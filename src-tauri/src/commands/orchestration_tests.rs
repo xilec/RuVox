@@ -25,11 +25,12 @@ fn entry_uuid(id: &str) -> uuid::Uuid {
 }
 
 /// Paths of an entry's audio file and timestamps sidecar in the storage
-/// audio directory.
+/// audio directory. The stub engine writes a well-formed WAV, so the Opus
+/// transcode succeeds and the stored file is `{uuid}.opus`.
 fn audio_paths(t: &TestApp, uuid: &uuid::Uuid) -> (PathBuf, PathBuf) {
     let dir = audio_dir(t);
     (
-        dir.join(format!("{uuid}.wav")),
+        dir.join(format!("{uuid}.opus")),
         dir.join(format!("{uuid}.timestamps.json")),
     )
 }
@@ -156,10 +157,8 @@ async fn regenerate_entry_replaces_audio_and_resynthesizes() {
 
     wait_entry_status(&t, &uuid, EntryStatus::Ready).await;
 
-    assert_eq!(
-        std::fs::read(&audio_file).unwrap().as_slice(),
-        b"stub audio"
-    );
+    // delete_audio removed the sentinel before synthesis rewrote the file.
+    assert_ne!(std::fs::read(&audio_file).unwrap(), b"old-marker".to_vec());
 
     let entry = t.state().storage.get_entry(&uuid).unwrap();
     assert!(entry.was_regenerated);
@@ -846,9 +845,10 @@ async fn set_volume_rejects_out_of_range() {
 // ── generation-params snapshot (#243) ────────────────────────────────
 
 /// A completed synthesis records a snapshot of the parameters that produced
-/// the audio. The stub engine writes a non-WAV body, so the sample-rate and
-/// model lookups degrade to `None` — exactly the absence the dialog must
-/// render as a dash — while the WAV fallback keeps the codec `"WAV"`.
+/// the audio. The stub engine writes a well-formed 24 kHz WAV, so the whole
+/// happy path is pinned: the rate comes from the rendered WAV header (read
+/// before the transcode removes it), the stored file is Ogg Opus, and its
+/// size is the final file's.
 #[tokio::test(flavor = "multi_thread")]
 async fn synthesis_records_generation_snapshot() {
     let t = build_test_app();
@@ -876,9 +876,13 @@ async fn synthesis_records_generation_snapshot() {
         "voice is the resolved piper_voice, not the silero speaker"
     );
     assert_eq!(g.model, None, "stub engine exposes no model identity");
-    assert_eq!(g.sample_rate, None, "stub body is not a parseable WAV");
-    assert_eq!(g.audio_codec.as_deref(), Some("WAV"));
-    assert_eq!(g.audio_bytes, Some("stub audio".len() as u64));
+    assert_eq!(
+        g.sample_rate,
+        Some(24_000),
+        "rate read from the rendered WAV"
+    );
+    assert_eq!(g.audio_codec.as_deref(), Some("Ogg Opus"));
+    assert!(g.audio_bytes.is_some(), "size of the final audio file");
     assert!(g.normalized_text_sha256.is_some());
     assert!(!g.app_version.is_empty());
     assert_eq!(g.code_block_mode.as_deref(), Some("read"));

@@ -22,6 +22,7 @@ import { notifications } from '@mantine/notifications';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { getVersion } from '@tauri-apps/api/app';
 import { commands, events } from '../lib/tauri';
+import { formatMb as formatMbValue } from '../lib/format';
 import type { CleanupMode, EngineKind, UIConfigPatch } from '../lib/tauri';
 import type { MessageKey } from '../i18n/ru';
 import { formatError } from '../lib/errors';
@@ -119,7 +120,7 @@ const LANGUAGE_OPTIONS = [
 ];
 
 function formatMb(bytes: number, t: Translator): string {
-  return `${(bytes / (1024 * 1024)).toFixed(1)} ${t('common.mb')}`;
+  return `${formatMbValue(bytes)} ${t('common.mb')}`;
 }
 
 interface CleanupCacheModalProps {
