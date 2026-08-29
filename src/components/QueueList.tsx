@@ -290,6 +290,29 @@ export function QueueList() {
     }
   }, [tt]);
 
+  // "Save audio as…": pick a target with the native save dialog, then copy
+  // the cached audio there. A cancelled dialog is a silent no-op.
+  const handleExportAudio = useCallback(
+    async (id: string) => {
+      const path = await commands.pickExportAudioPath(id);
+      if (path === null) return;
+      try {
+        await commands.exportAudio(id, path);
+        notifications.show({
+          message: tt('notify.export.ok', [path]),
+          color: 'green',
+        });
+      } catch (e) {
+        notifications.show({
+          title: tt('errors.title'),
+          message: formatError(e),
+          color: 'red',
+        });
+      }
+    },
+    [tt],
+  );
+
   const handleDelete = useCallback(
     (id: string) => {
       modals.openConfirmModal({
@@ -390,6 +413,15 @@ export function QueueList() {
             onClick={() => menuEntry && handlePlay(menuEntry.id)}
           >
             {tt('queue.play')}
+          </Menu.Item>
+          <Menu.Item
+            disabled={
+              menuEntry === null ||
+              (menuEntry.status !== 'ready' && menuEntry.status !== 'playing')
+            }
+            onClick={() => menuEntry && void handleExportAudio(menuEntry.id)}
+          >
+            {tt('queue.menu.export_audio')}
           </Menu.Item>
           <Menu.Item
             disabled={menuEntry === null || menuEntry.status === 'processing'}

@@ -258,6 +258,17 @@ export const commands = {
   previewNormalize: (text: string): Promise<PreviewNormalizeResult> =>
     tauriInvoke('preview_normalize', { text }),
 
+  /** Native save dialog for an entry's audio export (#225): the default name
+   * and filter follow the entry's stored audio format (rfd backend, like the
+   * import picker). null = the user cancelled the dialog. */
+  pickExportAudioPath: (id: EntryId): Promise<string | null> =>
+    tauriInvoke('pick_export_audio_path', { id }),
+
+  /** Copy the entry's cached audio file to the chosen path (#225). The cache
+   * original is untouched and no entry_updated is emitted. */
+  exportAudio: (id: EntryId, path: string): Promise<void> =>
+    tauriInvoke('export_audio', { id, path }),
+
   /** Raw bytes of a remote image for the viewer's "Copy image" action.
    * Fetched by a Rust command (scheme/content-type/size validated there) —
    * the webview holds no arbitrary-host http capability (#231). */

@@ -5,11 +5,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MantineProvider } from '@mantine/core';
 import type { TextEntry } from '../lib/tauri';
 
-const { cancelSynthesis, getEntries, showNotification } = vi.hoisted(() => ({
-  cancelSynthesis: vi.fn().mockResolvedValue(undefined),
-  getEntries: vi.fn(),
-  showNotification: vi.fn(),
-}));
+const { cancelSynthesis, getEntries, showNotification, pickExportAudioPath, exportAudio } =
+  vi.hoisted(() => ({
+    cancelSynthesis: vi.fn().mockResolvedValue(undefined),
+    getEntries: vi.fn(),
+    showNotification: vi.fn(),
+    pickExportAudioPath: vi.fn().mockResolvedValue(null),
+    exportAudio: vi.fn().mockResolvedValue(undefined),
+  }));
 
 vi.mock('@mantine/notifications', () => ({
   notifications: { show: showNotification },
@@ -22,6 +25,8 @@ vi.mock('../lib/tauri', () => ({
     playEntry: vi.fn().mockResolvedValue(undefined),
     regenerateEntry: vi.fn().mockResolvedValue(undefined),
     deleteEntry: vi.fn().mockResolvedValue(undefined),
+    pickExportAudioPath,
+    exportAudio,
   },
   events: {
     entryUpdated: vi.fn().mockResolvedValue(() => {}),
@@ -89,6 +94,10 @@ describe('QueueList context menu', () => {
     root = createRoot(host);
     cancelSynthesis.mockClear();
     showNotification.mockClear();
+    pickExportAudioPath.mockClear();
+    pickExportAudioPath.mockResolvedValue(null);
+    exportAudio.mockClear();
+    exportAudio.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -187,4 +196,100 @@ describe('QueueList context menu', () => {
       }),
     );
   });
+
+  function exportItem(): HTMLElement {
+    const el = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).find((e) => e.textContent === 'Сохранить аудио как…');
+    expect(el).toBeDefined();
+    return el!;
+  }
+
+  it('clicking "Сохранить аудио как…" exports the chosen path and confirms', async () => {
+    pickExportAudioPath.mockResolvedValue('/home/user/ruvox-entry-1.opus');
+    await renderWith(makeEntry('ready'));
+    await openMenu();
+
+    await act(async () => {
+      exportItem().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(pickExportAudioPath).toHaveBeenCalledWith('entry-1');
+    expect(exportAudio).toHaveBeenCalledWith('entry-1', '/home/user/ruvox-entry-1.opus');
+    expect(showNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        color: 'green',
+        message: 'Аудио сохранено: /home/user/ruvox-entry-1.opus',
+      }),
+    );
+  });
+
+  it('a cancelled save dialog invokes no export and shows nothing', async () => {
+    pickExportAudioPath.mockResolvedValue(null);
+    await renderWith(makeEntry('ready'));
+    await openMenu();
+
+    await act(async () => {
+      exportItem().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(exportAudio).not.toHaveBeenCalled();
+    expect(showNotification).not.toHaveBeenCalled();
+  });
+
+  it('shows an error notification when exportAudio rejects', async () => {
+    // The cached file was evicted: the coded export.no_audio error must be
+    // localized, not stringified.
+    pickExportAudioPath.mockResolvedValue('/home/user/ruvox-entry-1.opus');
+    exportAudio.mockRejectedValueOnce({
+      type: 'not_found',
+      code: 'export.no_audio',
+      params: ['entry-1'],
+    });
+    await renderWith(makeEntry('ready'));
+    await openMenu();
+
+    await act(async () => {
+      exportItem().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(showNotification).toHaveBeenCalledTimes(1);
+    expect(showNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        color: 'red',
+        message: 'У записи entry-1 нет сохранённого аудиофайла',
+      }),
+    );
+  });
+
+  it.each(['ready', 'playing'] as const)(
+    '"Сохранить аудио как…" is enabled for a %s entry',
+    async (status) => {
+      await renderWith(makeEntry(status));
+      await openMenu();
+
+      const item = exportItem();
+      expect(
+        item.hasAttribute('disabled') || item.dataset.disabled !== undefined,
+      ).toBe(false);
+    },
+  );
+
+  it.each(['pending', 'processing', 'error'] as const)(
+    '"Сохранить аудио как…" is disabled for a %s entry',
+    async (status) => {
+      await renderWith(makeEntry(status));
+      await openMenu();
+
+      const item = exportItem();
+      expect(
+        item.hasAttribute('disabled') || item.dataset.disabled !== undefined,
+      ).toBe(true);
+    },
+  );
 });

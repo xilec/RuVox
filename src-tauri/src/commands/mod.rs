@@ -1596,6 +1596,10 @@ pub async fn fetch_image_bytes(url: String) -> CmdResult<Vec<u8>> {
 mod import;
 pub use import::{fetch_url_text, pick_import_file, read_text_file};
 
+// Audio export commands live in commands/export.rs (same domain-seam split).
+mod export;
+pub use export::{export_audio, pick_export_audio_path};
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 /// Shared HTTP client for [`fetch_image_bytes`] and [`fetch_url_text`].
@@ -2160,6 +2164,7 @@ mod tests {
     use super::*;
     use crate::storage::test_util::make_service;
     use std::collections::HashMap;
+    use std::path::Path;
     use test_case::test_case;
 
     // ── apply_config_patch ──────────────────────────────────────────────────
@@ -2888,6 +2893,100 @@ mod tests {
         );
         // One pre-download attempt, no retry after the failed download.
         assert_eq!(engine.recorded_voices(), vec!["ghost"]);
+    }
+
+    /// Seed a ready entry with a stored audio file: set `audio_path` and
+    /// write `audio/<name>` under the storage data dir.
+    fn seed_audio_entry(storage: &StorageService, audio_name: &str, contents: &[u8]) -> EntryId {
+        let mut entry = storage.add_entry("текст".to_string()).unwrap();
+        entry.audio_path = Some(audio_name.to_string());
+        entry.status = EntryStatus::Ready;
+        storage.update_entry(entry.clone()).unwrap();
+        let path = storage.data_dir().join("audio").join(audio_name);
+        std::fs::write(path, contents).unwrap();
+        entry.id
+    }
+
+    #[test]
+    fn export_audio_to_copies_bytes_and_keeps_cache_intact() {
+        let (storage, _dir) = make_service();
+        let contents = b"ogg opus payload";
+        let id = seed_audio_entry(&storage, "audio.opus", contents);
+        let target_dir = TempDir::new().unwrap();
+        let target = target_dir.path().join("export.opus");
+
+        super::export::export_audio_to(&storage, &id.to_string(), &target).unwrap();
+
+        assert_eq!(std::fs::read(&target).unwrap(), contents);
+        // The cached original must stay in place.
+        assert!(storage.data_dir().join("audio").join("audio.opus").exists());
+    }
+
+    #[test]
+    fn export_audio_to_fails_with_no_audio_when_entry_has_no_file() {
+        let (storage, _dir) = make_service();
+        let entry = storage.add_entry("текст".to_string()).unwrap();
+
+        let err = super::export::export_audio_to(
+            &storage,
+            &entry.id.to_string(),
+            Path::new("/tmp/ruvox-export-should-not-exist.opus"),
+        )
+        .unwrap_err();
+
+        assert_not_found(err, "export.no_audio");
+    }
+
+    #[test]
+    fn export_audio_to_fails_with_no_audio_when_cache_file_was_evicted() {
+        let (storage, _dir) = make_service();
+        let id = seed_audio_entry(&storage, "audio.opus", b"payload");
+        // Evict the cached file: the entry still references it.
+        std::fs::remove_file(storage.data_dir().join("audio").join("audio.opus")).unwrap();
+        let target_dir = TempDir::new().unwrap();
+
+        let err = super::export::export_audio_to(
+            &storage,
+            &id.to_string(),
+            &target_dir.path().join("export.opus"),
+        )
+        .unwrap_err();
+
+        assert_not_found(err, "export.no_audio");
+    }
+
+    #[test]
+    fn export_audio_to_fails_with_not_found_for_missing_entry() {
+        let (storage, _dir) = make_service();
+        let target_dir = TempDir::new().unwrap();
+
+        let err = super::export::export_audio_to(
+            &storage,
+            &uuid::Uuid::new_v4().to_string(),
+            &target_dir.path().join("export.opus"),
+        )
+        .unwrap_err();
+
+        assert_not_found(err, "entry.not_found");
+    }
+
+    #[test]
+    fn export_audio_to_maps_target_io_failure_to_copy_failed() {
+        let (storage, _dir) = make_service();
+        let contents = b"ogg opus payload";
+        let id = seed_audio_entry(&storage, "audio.opus", contents);
+        // Target parent directory does not exist — the copy fails at the OS
+        // level (the save dialog guarantees an existing parent in real use;
+        // this pins the error mapping).
+        let target_dir = TempDir::new().unwrap();
+        let target = target_dir.path().join("missing-dir").join("export.opus");
+
+        let err = super::export::export_audio_to(&storage, &id.to_string(), &target).unwrap_err();
+
+        match err {
+            CommandError::Internal { code, .. } => assert_eq!(code, "export.copy_failed"),
+            other => panic!("expected Internal, got {other:?}"),
+        }
     }
 }
 

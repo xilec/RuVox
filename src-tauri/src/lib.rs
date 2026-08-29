@@ -430,6 +430,8 @@ pub(crate) fn invoke_handler<R: Runtime>()
         pick_import_file,
         read_text_file,
         fetch_url_text,
+        pick_export_audio_path,
+        export_audio,
     ]
 }
 
