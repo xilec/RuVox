@@ -43,12 +43,12 @@
 
 ## 5. Docs & validation
 
-- [ ] 5.1 Add the 1–2-line `[Unreleased]` CHANGELOG note (user-visible
+- [x] 5.1 Add the 1–2-line `[Unreleased]` CHANGELOG note (user-visible
       behavior; additive diff per the human-owned-file rule).
 - [x] 5.2 Gates green: `nix develop -c just lint`, `nix develop -c just test`
       (cargo with `CARGO_TARGET_DIR=<worktree>/dist` per the espeak long-path
       workaround), `pnpm dlx @fission-ai/openspec validate --specs --strict`.
-- [ ] 5.3 Manual pass checklist to the user: regenerate a ready entry —
+- [x] 5.3 Manual pass checklist to the user: regenerate a ready entry —
       preview opens with normalization, cancel keeps audio playable,
       confirm regenerates; «Read Now» on autoplays the fresh audio; an HTML
       entry previews the stored text without re-extraction.
