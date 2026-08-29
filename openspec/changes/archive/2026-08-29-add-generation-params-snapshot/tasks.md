@@ -28,4 +28,4 @@
 ## 5. Gates and wrap-up
 
 - [x] 5.1 Full gates: `nix develop -c just lint && nix develop -c just test`; `openspec validate --specs --strict` after syncing deltas. Verify: all clean
-- [ ] 5.2 Manual pass checklist handed to the user (synthesize → inspect dialog; regenerate → refreshed voice/count; legacy entry → explanatory line; pending entry → disabled item; RU/EN). Verify: user acceptance
+- [x] 5.2 Manual pass checklist handed to the user (synthesize → inspect dialog; regenerate → refreshed voice/count; legacy entry → explanatory line; pending entry → disabled item; RU/EN). Verify: user acceptance
