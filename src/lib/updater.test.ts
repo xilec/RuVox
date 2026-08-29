@@ -61,6 +61,9 @@ function fakeUpdate() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // clearAllMocks keeps mock implementations — restore the supported
+  // default explicitly so order can never leak a `false` between tests.
+  supportedMock.mockResolvedValue(true);
 });
 
 describe('checkForUpdatesOnStartup', () => {

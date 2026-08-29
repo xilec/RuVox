@@ -245,6 +245,7 @@ jobs:
           files: |
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/appimage/*.AppImage.sig
 
   # tauri-plugin-updater manifest (#226): merges the per-platform updater
   # entries from both packaging jobs into the single latest.json the app

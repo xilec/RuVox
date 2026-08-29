@@ -1983,19 +1983,25 @@ mod image_url_tests {
 mod updater_tests {
     use super::updater_supported_with;
 
+    // `cargo test` runs on Linux CI (the windows-build job is compile-only),
+    // so the Windows branch is pinned by a cfg-gated test for Windows
+    // runners and by compilation everywhere else.
     #[test]
-    fn appimage_env_present_enables_the_updater_on_linux() {
-        let supported =
-            updater_supported_with(Some(std::ffi::OsString::from("/opt/RuVox.AppImage")));
-        assert_eq!(
-            supported,
-            cfg!(target_os = "windows") || cfg!(target_os = "linux")
-        );
+    #[cfg(target_os = "linux")]
+    fn appimage_env_presence_decides_on_linux() {
+        assert!(updater_supported_with(Some(std::ffi::OsString::from(
+            "/opt/RuVox.AppImage"
+        ))));
+        assert!(!updater_supported_with(None));
     }
 
     #[test]
-    fn appimage_env_absent_disables_the_updater_except_windows() {
-        assert_eq!(updater_supported_with(None), cfg!(target_os = "windows"));
+    #[cfg(target_os = "windows")]
+    fn updater_is_always_supported_on_windows() {
+        assert!(updater_supported_with(None));
+        assert!(updater_supported_with(Some(std::ffi::OsString::from(
+            "C:\\apps\\RuVox.exe"
+        ))));
     }
 }
 

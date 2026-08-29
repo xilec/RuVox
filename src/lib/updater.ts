@@ -96,7 +96,10 @@ function promptInstall(update: Update) {
 
 /** Startup check: silent on any failure (offline, no release yet, unsupported install). */
 export async function checkForUpdatesOnStartup() {
-  if (!(await updaterSupported())) return;
+  // A rejected probe must not become an unhandled rejection — the caller
+  // fire-and-forgets this function (`.catch(() => false)` = treat as
+  // unsupported, matching the Settings fallback).
+  if (!(await updaterSupported().catch(() => false))) return;
   try {
     const update = await check();
     if (update) {
