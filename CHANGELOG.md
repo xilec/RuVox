@@ -4,9 +4,17 @@ Notable changes in RuVox, in chronological order.
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [0.5.0] — 2026-08-30 — Localization, import and export
 
 ### Added
+- **Russian and English interface** — the whole UI is localized; the language
+  is picked in Settings (Russian by default), and backend and engine errors
+  are shown as readable localized messages instead of raw error strings (#240).
+- **Import from files and web pages** — «Добавить» becomes a split button with
+  «Файл…», «Файл с кодировкой…» and «По ссылке…», and dragging a .txt/.md/.html
+  file or a link onto the window adds a new entry; text encoding is
+  auto-detected (BOM, UTF-8, then CP1251/KOI8-R/CP866 and other Cyrillic
+  encodings) with a manual override for misdetected files (#224).
 - **Auto-detected source format in the preview dialog** — the format selector now defaults to «Авто», which classifies pasted text as HTML, Markdown or plain instead of always assuming Markdown; file and URL imports still preselect the format they know.
 - **"Save audio as…" audio export** — the queue context menu exports an entry's audio to any folder via the native save dialog (#225).
 - **WAV audio export** — «Сохранить аудио как…» gains a format chooser in the save dialog (WAV default, Ogg Opus alternative), converting an Opus recording to editable 16-bit PCM WAV on export; the cache keeps the Opus original (#252).
@@ -14,6 +22,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 - **Linux AppImage auto-updates** — AppImage installs now check GitHub releases in-app and self-update with signature verification; .deb and source builds get no update UI (#226).
 
 ### Changed
+- **Playback speed up to 3.0× and restored on startup** — the speed limit
+  rises from 2.0× to 3.0×, and the saved speech rate is applied to the player
+  itself on startup, not just to the slider (#227).
 - **Regeneration asks before overwriting** — «Перегенерировать аудио» now opens the normalization preview first: the old audio is deleted only after you confirm, cancelling keeps it, and «Читать сейчас» plays the fresh audio.
 
 ### Fixed
