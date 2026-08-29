@@ -84,9 +84,9 @@ fn accepted_sample_shape(spec: hound::WavSpec) -> Result<SampleShape> {
 }
 
 /// Map an int16 sample onto the f32 range [-1, 1). Scaling by 32768 maps
-/// `i16::MIN` to -1.0 exactly; the top end loses ~3e-5 of range, far below
-/// the audible/parity thresholds (silero-native encodes with `* 32767`, so
-/// the round trip differs by at most 1 LSB).
+/// `i16::MIN` to -1.0 exactly; the top end loses ~3e-5 of range (silero-native
+/// encodes with `* 32767`, so a full-scale round trip differs by at most
+/// ~1.5 LSB ≈ −86 dBFS — inaudible and below the 32 kbps Opus noise floor).
 fn int16_to_f32(s: i16) -> f32 {
     s as f32 / 32768.0
 }
@@ -330,17 +330,23 @@ mod tests {
     /// (unlike `write_sine_wav`, which is float/mono-only). Used by the
     /// `rejects_*` negative tests to build inputs `encode_wav_to_opus` must
     /// reject before it ever decodes a sample -- silence is fine since the
-    /// content never gets that far.
+    /// content never gets that far. Integer PCM is written at the spec's bit
+    /// width (16 → i16, 32 → i32).
     fn write_wav_with_spec(path: &Path, spec: hound::WavSpec) {
         let mut writer = hound::WavWriter::create(path, spec).expect("create wav");
         let total_samples = 1000 * spec.channels as usize;
-        match spec.sample_format {
-            hound::SampleFormat::Float => {
+        match (spec.sample_format, spec.bits_per_sample) {
+            (hound::SampleFormat::Float, _) => {
                 for _ in 0..total_samples {
                     writer.write_sample(0.0f32).expect("write sample");
                 }
             }
-            hound::SampleFormat::Int => {
+            (hound::SampleFormat::Int, 32) => {
+                for _ in 0..total_samples {
+                    writer.write_sample(0i32).expect("write sample");
+                }
+            }
+            (hound::SampleFormat::Int, _) => {
                 for _ in 0..total_samples {
                     writer.write_sample(0i16).expect("write sample");
                 }
@@ -553,17 +559,15 @@ mod tests {
         let wav_path = dir.path().join("in.wav");
         let opus_path = dir.path().join("out.opus");
 
-        let spec = hound::WavSpec {
-            channels: 1,
-            sample_rate: 48_000,
-            bits_per_sample: 32,
-            sample_format: hound::SampleFormat::Int,
-        };
-        let mut writer = hound::WavWriter::create(&wav_path, spec).expect("create wav");
-        for _ in 0..1000 {
-            writer.write_sample(0i32).expect("write sample");
-        }
-        writer.finalize().expect("finalize");
+        write_wav_with_spec(
+            &wav_path,
+            hound::WavSpec {
+                channels: 1,
+                sample_rate: 48_000,
+                bits_per_sample: 32,
+                sample_format: hound::SampleFormat::Int,
+            },
+        );
 
         let err = encode_wav_to_opus(&wav_path, &opus_path)
             .expect_err("should reject 32-bit int PCM wav");
@@ -571,6 +575,27 @@ mod tests {
             AudioError::UnsupportedFormat(_) => {}
             other => panic!("expected UnsupportedFormat, got {other:?}"),
         }
+    }
+
+    /// The resample arm must accept int16 input too: a 16-bit int WAV at an
+    /// off-list rate (silero-native's shape at a hypothetical off-list rate)
+    /// converts to f32, resamples, and encodes — mirroring the float-path
+    /// `resamples_off_list_rate_to_nearest_native`.
+    #[test]
+    fn resamples_off_list_rate_16bit_int_wav() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let wav_path = dir.path().join("in.wav");
+        let opus_path = dir.path().join("out.opus");
+
+        write_sine_wav_i16(&wav_path, 22_050, 440.0, 0.25);
+        encode_wav_to_opus(&wav_path, &opus_path)
+            .unwrap_or_else(|e| panic!("22050 Hz int16 wav should resample+encode, got: {e}"));
+
+        assert_eq!(
+            read_opus_head_rate(&opus_path),
+            24_000,
+            "22050 Hz must be resampled to 24000 Hz in OpusHead"
+        );
     }
 
     #[test]
