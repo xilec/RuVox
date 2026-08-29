@@ -220,8 +220,8 @@ export const commands = {
   deleteAudio: (id: EntryId): Promise<void> =>
     tauriInvoke('delete_audio', { id }),
 
-  regenerateEntry: (id: EntryId): Promise<void> =>
-    tauriInvoke('regenerate_entry', { id }),
+  regenerateEntry: (id: EntryId, play_when_ready: boolean): Promise<void> =>
+    tauriInvoke('regenerate_entry', { id, playWhenReady: play_when_ready }),
 
   setEntryFormat: (id: EntryId, format: EntryFormat): Promise<void> =>
     tauriInvoke('set_entry_format', { id, format }),
@@ -240,6 +240,12 @@ export const commands = {
 
   stopPlayback: (): Promise<void> =>
     tauriInvoke('stop_playback'),
+
+  /** Whether tauri-plugin-updater can serve this install (#226): Windows
+   * always, Linux only when running from an AppImage. Gates the whole
+   * update UI — .deb/nix installs opt out instead of failing checks. */
+  updaterSupported: (): Promise<boolean> =>
+    tauriInvoke('updater_supported'),
 
   /** Destroy the mpv subprocess before the updater runs the installer
    * (#211): the installer force-kills the app, so the exit-time cleanup

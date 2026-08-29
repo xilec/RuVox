@@ -131,7 +131,14 @@ function QueueItem({ entry, isSelected, isPlaying, onSelect, onPlay, onContextMe
   );
 }
 
-export function QueueList() {
+interface QueueListProps {
+  /** Called by «Перегенерировать аудио»: hands the entry to AppShell, which
+   * opens the regeneration preview instead of synthesizing right away
+   * (preview-dialog spec, "Regeneration preview"). */
+  onRegenerate: (entry: TextEntry) => void;
+}
+
+export function QueueList({ onRegenerate }: QueueListProps) {
   const tt = useT();
   const [entries, setEntries] = useState<TextEntry[]>([]);
   const [playingId, setPlayingId] = useState<EntryId | null>(null);
@@ -258,23 +265,6 @@ export function QueueList() {
       notifications.show({
         title: tt('errors.title'),
         message: tt('queue.notify.play_failed', [formatError(err)]),
-        color: 'red',
-      });
-    }
-  }, [tt]);
-
-  const handleRegenerate = useCallback(async (id: string) => {
-    try {
-      await commands.regenerateEntry(id);
-      notifications.show({
-        title: tt('queue.notify.regenerating.title'),
-        message: tt('queue.notify.regenerating.message'),
-        color: 'blue',
-      });
-    } catch (e) {
-      notifications.show({
-        title: tt('errors.title'),
-        message: tt('queue.notify.regenerate_failed', [formatError(e)]),
         color: 'red',
       });
     }
@@ -435,7 +425,7 @@ export function QueueList() {
           </Menu.Item>
           <Menu.Item
             disabled={menuEntry === null || menuEntry.status === 'processing'}
-            onClick={() => menuEntry && handleRegenerate(menuEntry.id)}
+            onClick={() => menuEntry && onRegenerate(menuEntry)}
           >
             {tt('queue.menu.regenerate')}
           </Menu.Item>

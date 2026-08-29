@@ -30,9 +30,18 @@ export interface PreviewDialogProps {
   text: string;
   opened: boolean;
   /**
+   * 'add' (default): the Add/import flow — editing, the source-format
+   * selector, and the opt-out checkbox are available. 'regenerate': opened
+   * from «Перегенерировать аудио» — the entry text is immutable and
+   * regeneration normalizes it directly, so the preview runs the plain path
+   * (no detection, no HTML extraction) and the inapplicable controls are
+   * hidden (preview-dialog spec, "Regeneration preview").
+   */
+  mode?: 'add' | 'regenerate';
+  /**
    * Format preselected in the selector instead of the auto mode. Imports set
    * it (the routed format — text-import spec); clipboard openings omit it so
-   * the dialog starts in the auto-detect mode.
+   * the dialog starts in the auto-detect mode. Ignored in regenerate mode.
    */
   initialFormat?: EntryFormat;
   /**
@@ -103,15 +112,23 @@ function IconHelp() {
  *   - edit the original text (right pane live-renormalizes with a 1 s debounce),
  *   - toggle synchronised scrolling between the two panes.
  * ESC closes (behaves like Cancel).
+ *
+ * Two modes (preview-dialog spec): 'add' gates the Add/import flows and
+ * offers editing plus the source-format selector; 'regenerate' gates
+ * «Перегенерировать аудио» — the stored entry text is shown as-is and the
+ * inapplicable controls are hidden, so cancelling never touches the
+ * existing audio.
  */
 export function PreviewDialog({
   text,
   opened,
+  mode = 'add',
   initialFormat,
   onSynthesize,
   onCancel,
 }: PreviewDialogProps) {
   const tt = useT();
+  const isRegen = mode === 'regenerate';
   const [editedText, setEditedText] = useState<string>(text);
   // 'auto' is the selector state, not an entry format: the effective format
   // is detected from the content and re-detected while editing (preview-dialog
@@ -159,14 +176,16 @@ export function PreviewDialog({
   // The text synthesis will actually use: the edited version, falling back
   // to the original when the edit is empty (preview-dialog spec, "Synthesis
   // confirmation"). Detection runs on that same text so the auto label and
-  // the ingest decision always match what will be sent.
+  // the ingest decision always match what will be sent. Regeneration never
+  // detects: the entry text is stored synthesis-ready, so the preview (and
+  // the later regeneration) normalize it as-is.
   const synthesisText = (editMode ? editedText.trim() : text) || text;
   // Memoized: react-rnd emits position/size updates on every drag/resize
   // frame, and detection runs several regex passes over the full text.
-  const effectiveFormat: EntryFormat = useMemo(
-    () => (sourceFormat === 'auto' ? detectFormat(synthesisText) : sourceFormat),
-    [sourceFormat, synthesisText],
-  );
+  const effectiveFormat: EntryFormat = useMemo(() => {
+    if (isRegen) return 'plain';
+    return sourceFormat === 'auto' ? detectFormat(synthesisText) : sourceFormat;
+  }, [isRegen, sourceFormat, synthesisText]);
   const formatLabels: Record<EntryFormat, string> = {
     plain: tt('preview.source_format.plain'),
     markdown: tt('preview.source_format.markdown'),
@@ -403,35 +422,39 @@ export function PreviewDialog({
               wrap="wrap"
             >
               <Group gap="md" wrap="wrap">
-                <Select
-                  size="xs"
-                  aria-label={tt('preview.source_format.aria')}
-                  data={[
-                    {
-                      value: 'auto',
-                      label: tt('preview.source_format.auto_detected', [
-                        formatLabels[effectiveFormat],
-                      ]),
-                    },
-                    { value: 'plain', label: formatLabels.plain },
-                    { value: 'markdown', label: formatLabels.markdown },
-                    { value: 'html', label: formatLabels.html },
-                  ]}
-                  value={sourceFormat}
-                  onChange={(v) => {
-                    if (v === 'auto' || v === 'plain' || v === 'markdown' || v === 'html') {
-                      setSourceFormat(v);
+                {!isRegen && (
+                  <Select
+                    size="xs"
+                    aria-label={tt('preview.source_format.aria')}
+                    data={[
+                      {
+                        value: 'auto',
+                        label: tt('preview.source_format.auto_detected', [
+                          formatLabels[effectiveFormat],
+                        ]),
+                      },
+                      { value: 'plain', label: formatLabels.plain },
+                      { value: 'markdown', label: formatLabels.markdown },
+                      { value: 'html', label: formatLabels.html },
+                    ]}
+                    value={sourceFormat}
+                    onChange={(v) => {
+                      if (v === 'auto' || v === 'plain' || v === 'markdown' || v === 'html') {
+                        setSourceFormat(v);
+                      }
+                    }}
+                    allowDeselect={false}
+                  />
+                )}
+                {!isRegen && (
+                  <Checkbox
+                    label={tt('preview.dont_show_again')}
+                    checked={skipShortTexts}
+                    onChange={(e) =>
+                      setSkipShortTexts(e.currentTarget.checked)
                     }
-                  }}
-                  allowDeselect={false}
-                />
-                <Checkbox
-                  label={tt('preview.dont_show_again')}
-                  checked={skipShortTexts}
-                  onChange={(e) =>
-                    setSkipShortTexts(e.currentTarget.checked)
-                  }
-                />
+                  />
+                )}
                 <Checkbox
                   label={tt('preview.sync_scroll')}
                   checked={syncScroll}
@@ -448,13 +471,13 @@ export function PreviewDialog({
                 <Button variant="default" onClick={onCancel}>
                   {tt('common.cancel')}
                 </Button>
-                {!editMode && (
+                {!editMode && !isRegen && (
                   <Button variant="outline" onClick={handleEdit}>
                     {tt('preview.edit')}
                   </Button>
                 )}
                 <Button onClick={handleSynthesize} disabled={loading}>
-                  {tt('preview.synthesize')}
+                  {isRegen ? tt('preview.regenerate') : tt('preview.synthesize')}
                 </Button>
               </Group>
             </Group>

@@ -25,7 +25,10 @@ vi.mock('@tauri-apps/plugin-log', () => ({
   error: vi.fn(),
 }));
 vi.mock('./tauri', () => ({
-  commands: { shutdownPlayerForUpdate: vi.fn().mockResolvedValue(undefined) },
+  commands: {
+    shutdownPlayerForUpdate: vi.fn().mockResolvedValue(undefined),
+    updaterSupported: vi.fn().mockResolvedValue(true),
+  },
 }));
 
 import { notifications } from '@mantine/notifications';
@@ -34,7 +37,11 @@ import { check } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { error as logError, info as logInfo } from '@tauri-apps/plugin-log';
 import { commands } from './tauri';
-import { checkForUpdatesManual, checkForUpdatesOnStartup, UPDATER_ENABLED } from './updater';
+import {
+  checkForUpdatesManual,
+  checkForUpdatesOnStartup,
+  updaterSupported,
+} from './updater';
 
 const checkMock = vi.mocked(check);
 const showMock = vi.mocked(notifications.show);
@@ -43,6 +50,7 @@ const modalMock = vi.mocked(modals.openConfirmModal);
 const relaunchMock = vi.mocked(relaunch);
 const logInfoMock = vi.mocked(logInfo);
 const logErrorMock = vi.mocked(logError);
+const supportedMock = vi.mocked(commands.updaterSupported);
 
 function fakeUpdate() {
   return {
@@ -53,15 +61,25 @@ function fakeUpdate() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // clearAllMocks keeps mock implementations — restore the supported
+  // default explicitly so order can never leak a `false` between tests.
+  supportedMock.mockResolvedValue(true);
 });
 
 describe('checkForUpdatesOnStartup', () => {
-  // jsdom's userAgent has no "Windows" — UPDATER_ENABLED is false here, so
-  // the startup check must be a complete no-op (Linux ships via nix).
-  it('is a no-op off Windows', async () => {
-    expect(UPDATER_ENABLED).toBe(false);
+  it('is a no-op when the install cannot self-update (.deb/nix)', async () => {
+    supportedMock.mockResolvedValue(false);
+    expect(await updaterSupported()).toBe(false);
     await checkForUpdatesOnStartup();
     expect(checkMock).not.toHaveBeenCalled();
+  });
+
+  it('checks and logs when the install is served (Windows / Linux AppImage)', async () => {
+    supportedMock.mockResolvedValue(true);
+    checkMock.mockResolvedValue(null);
+    await checkForUpdatesOnStartup();
+    expect(checkMock).toHaveBeenCalled();
+    expect(logInfoMock).toHaveBeenCalledWith('update check (startup): up to date');
   });
 });
 

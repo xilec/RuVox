@@ -137,6 +137,7 @@ export const en: Record<MessageKey, string> = {
   'preview.read_now': 'Read now',
   'preview.edit': 'Edit',
   'preview.synthesize': 'Synthesize',
+  'preview.regenerate': 'Regenerate',
   'preview.normalize_error': '(normalization error: {0})',
   'preview.explain.line':
     'Normalization prepares technical text for narration: English identifiers, abbreviations, numbers, URLs and symbols are rewritten so the speech engine can read them aloud in Russian. The left pane is the source text; the right pane is what will be spoken.',
