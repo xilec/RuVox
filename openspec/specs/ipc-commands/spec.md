@@ -837,27 +837,24 @@ The snapshot SHALL flow to the frontend as part of entry payloads (`get_entries`
 - THEN the entry is returned with `generation: null` and `generation_count: 0`, and no error is raised
 
 
+
 ### Requirement: Audio Export Commands
 
 The system SHALL expose two Tauri commands for per-entry audio export
 (issue #225), following the #224 rfd-backend pattern (no dialog/fs plugin,
 no capability changes):
 
-`pick_export_audio_path(entry_id)` SHALL read the entry under the storage
-lock, pre-fill the save dialog with the extensionless default name
-`ruvox-<entry_id>` (the native dialog appends the active filter's extension
-on save, so the filter choice decides the format), and open the native save
-dialog on the blocking thread (the dialog is modal-blocking and must not run
-on the tokio reactor), returning the chosen path as `Option<String>`:
-`None` when the user cancels. The returned path SHALL be normalized against
-the stored format: a recognized `opus`/`wav` extension (case-insensitive)
-SHALL be kept as typed; a foreign extension SHALL be replaced, and a missing
-one appended, with the stored format's extension so the file name always
-matches the exported bytes.
-For an `.opus`-stored entry (the normal case) the dialog SHALL offer two
-file filters — `Ogg Opus`/`opus` first and `WAV`/`wav` second; for a
-`.wav`-stored entry (the synthesis-transcode fallback) the dialog SHALL
-offer only `WAV`/`wav`, as before. A missing entry SHALL fail with
+`pick_export_audio_path(entry_id)` SHALL open the xdg-desktop-portal save
+dialog (Linux) pre-filled with the name `ruvox-<entry_id>.wav` and a
+«Формат» choice combo — `WAV` selected by default, `Ogg Opus` as the
+alternative — and SHALL NOT gate it on file-type filters (the combo, not a
+filter switch, decides the format). The portal response SHALL report the
+combo's selected value, and the returned path SHALL be normalized to that
+format: a matching extension (case-insensitive) SHALL be kept as typed, a
+mismatched or foreign extension SHALL be replaced, and a missing one
+appended, so the file name always matches the exported bytes. If the
+response carries no usable choice, the stored format's extension SHALL be
+used as the fallback. Cancelling the dialog SHALL return `None`. A missing entry SHALL fail with
 `entry.not_found`; an entry without a stored `audio_path` SHALL fail with
 `export.no_audio`.
 
@@ -880,20 +877,7 @@ The commands MUST NOT create history or queue side effects — no
 The frontend wrappers SHALL be `commands.pickExportAudioPath(entryId)` and
 `commands.exportAudio(entryId, path)`.
 
-#### Scenario: Save dialog offers both formats for an Opus-stored entry
 
-- GIVEN an entry whose stored audio file is `audio/<id>.opus`
-- WHEN `pick_export_audio_path` is invoked for the entry
-- THEN the save dialog opens pre-filled with the extensionless name
-  `ruvox-<id>`, offering an `Ogg Opus`/`opus` filter (first/default) and a
-  `WAV`/`wav` filter, and the chosen path is returned
-
-#### Scenario: WAV-stored entry keeps the WAV-only dialog
-
-- GIVEN an entry whose stored audio file is `audio/<id>.wav`
-- WHEN `pick_export_audio_path` is invoked for the entry
-- THEN the save dialog opens pre-filled with the extensionless name
-  `ruvox-<id>` and a single `WAV`/`wav` filter
 
 #### Scenario: Returned path is normalized to the stored format
 
@@ -903,6 +887,28 @@ The frontend wrappers SHALL be `commands.pickExportAudioPath(entryId)` and
 - THEN the path is `/tmp/audio.opus` — a foreign extension is replaced and a
   missing one appended with the stored format's extension, while a
   recognized `opus`/`wav` extension (any case) is kept as typed
+
+#### Scenario: Export dialog carries a format choice with WAV default
+
+- GIVEN an entry with stored audio
+- WHEN `pick_export_audio_path` is invoked
+- THEN the dialog opens pre-filled with `ruvox-<id>.wav` and a «Формат»
+  combo reporting `WAV` by default with `Ogg Opus` as the alternative
+
+#### Scenario: The chosen format decides the export
+
+- GIVEN a dialog result of `/tmp/audio.wav` while the «Формат» combo
+  reports `Ogg Opus`
+- WHEN the command normalizes the returned path
+- THEN the path is `/tmp/audio.opus` — the chosen format's extension is
+  enforced (matching extensions in any case are kept as typed), and the
+  subsequent `export_audio` copy/convert decision follows it
+
+#### Scenario: A response without a usable choice falls back to the stored format
+
+- GIVEN a portal response that carries no «Формат» value
+- WHEN `pick_export_audio_path` is invoked for an `.opus`-stored entry
+- THEN the returned path is normalized to the stored format's extension
 
 #### Scenario: Cancelled dialog resolves to null
 
