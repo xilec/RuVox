@@ -85,6 +85,10 @@ src-tauri/resources/espeak-ng-data/*
 !src-tauri/resources/espeak-ng-data/PLACEHOLDER
 src-tauri/resources/crt/*
 !src-tauri/resources/crt/PLACEHOLDER.dll
+# Pinned mpv player bundle for the AppImage, fetched at release-build time
+# by scripts/fetch-linux-mpv.sh. The README placeholder IS committed.
+src-tauri/resources/mpv-linux/*
+!src-tauri/resources/mpv-linux/README.md
 
 # pnpm
 .pnpm-debug.log

@@ -94,10 +94,12 @@ symlinks that only exist after `postinst` runs — the `.deb` payload keeps
 the real files in `usr/lib/x86_64-linux-gnu/{blas,lapack}/`, and
 `libpulse0` keeps `libpulsecommon` in `usr/lib/x86_64-linux-gnu/pulseaudio/`.
 The assembler therefore flattens those three subdirs into the bundle root
-(next to `$ORIGIN`), which the loader resolves via D4. A full `ldd` sweep
-of the assembled bundle (clean-environment) gates the fetch script's
-`--check` mode and the Docker builder, so any future moved soname fails
-the build instead of the user's playback.
+(next to `$ORIGIN`), which the loader resolves via D4. A strict loader
+gate on the assembled bundle — a clean-environment `ldd` sweep that fails
+when any non-core dependency resolves `not found` OR outside the bundle —
+runs inside the fetch script, so a missing or system-borrowed library
+fails the build instead of the user's playback (build images carrying
+`libmpv-dev` would otherwise mask gaps with system libraries).
 
 ## Risks / Trade-offs
 

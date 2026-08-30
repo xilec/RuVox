@@ -110,7 +110,11 @@ bash scripts/fetch-linux-onnxruntime.sh --check || bash scripts/fetch-linux-onnx
 case "$BUNDLES" in
     *appimage*)
         echo "[mpv] pinned player bundle (download only when absent)"
-        bash scripts/fetch-linux-mpv.sh --check || bash scripts/fetch-linux-mpv.sh
+        # MPV_DEB_CACHE: reuse the ~90 MB of pinned debs across runs
+        # (sha256-verified on every hit).
+        mkdir -p "$cache/docker-mpv-debs"
+        MPV_DEB_CACHE="$cache/docker-mpv-debs" bash scripts/fetch-linux-mpv.sh --check \
+            || MPV_DEB_CACHE="$cache/docker-mpv-debs" bash scripts/fetch-linux-mpv.sh
         ;;
 esac
 

@@ -48,6 +48,13 @@ if [ "${1:-}" = "--check" ]; then
     # placeholder tree (mirrors the "never bundle placeholders" rule).
     [ -s "$target/mpv" ] || { echo "error: $target/mpv is missing or a placeholder — run $0 first" >&2; exit 1; }
     head -c 4 "$target/mpv" | grep -q $'\x7fELF' || { echo "error: $target/mpv is not an ELF executable" >&2; exit 1; }
+    # Guard against partially assembled trees (an interrupted earlier run
+    # would leave the binary without its library closure).
+    lib_count=$(find "$target" -maxdepth 1 -name "*.so.*" | wc -l)
+    [ "$lib_count" -ge 300 ] || { echo "error: $target looks incomplete ($lib_count libraries, expected ~480) — run $0 first" >&2; exit 1; }
+    for sentinel in libpulsecommon* libblas.so* liblapack*; do
+        ls "$target"/$sentinel >/dev/null 2>&1 || { echo "error: $target is missing $sentinel — run $0 first" >&2; exit 1; }
+    done
     exit 0
 fi
 
@@ -264,28 +271,44 @@ tmp_dir=$(mktemp -d)
 trap 'rm -rf "$tmp_dir"' EXIT
 
 echo "==> downloading pinned mpv debs"
+# MPV_DEB_CACHE (optional): a directory to reuse downloaded debs across
+# runs (~90 MB per cold fetch); entries are sha256-verified like fresh
+# downloads, so a stale or poisoned cache fails the build.
+deb_cache="${MPV_DEB_CACHE:-}"
+deb_paths="$tmp_dir/deb-paths.txt"
+: > "$deb_paths"
 while read -r fname sha kind; do
     [ -n "$fname" ] || continue
     # launchpad files carry no epoch prefix (libavcodec60_7%3a6.1.1… →
     # libavcodec60_6.1.1…)
     url="https://launchpad.net/ubuntu/+archive/primary/+files/$(printf '%s' "$fname" | sed -E 's/_[0-9]+%3a/_/')"
-    ok=""
-    for attempt in 1 2 3; do
-        curl -fsSL --retry 2 -o "$tmp_dir/$fname" "$url" && { ok=1; break; }
-        sleep 2
-    done
-    [ -n "$ok" ] || { echo "error: failed to download $url" >&2; exit 1; }
-    echo "$sha  $tmp_dir/$fname" | sha256sum -c - >/dev/null \
+    deb_path="$tmp_dir/$fname"
+    if [ -n "$deb_cache" ] && [ -s "$deb_cache/$fname" ]; then
+        deb_path="$deb_cache/$fname"
+    else
+        ok=""
+        for attempt in 1 2 3; do
+            curl -fsSL --retry 2 -o "$tmp_dir/$fname" "$url" && { ok=1; break; }
+            sleep 2
+        done
+        [ -n "$ok" ] || { echo "error: failed to download $url" >&2; exit 1; }
+        if [ -n "$deb_cache" ]; then
+            mkdir -p "$deb_cache"
+            cp "$tmp_dir/$fname" "$deb_cache/$fname"
+        fi
+    fi
+    echo "$sha  $deb_path" | sha256sum -c - >/dev/null \
         || { echo "error: sha256 mismatch for $fname" >&2; exit 1; }
+    printf '%s\t%s\n' "$fname" "$deb_path" >> "$deb_paths"
 done <<<"$MANIFEST"
 
 echo "==> assembling bundle"
 stage="$tmp_dir/stage"
 bundle="$tmp_dir/bundle"
 mkdir -p "$stage" "$bundle"
-for deb in "$tmp_dir"/*.deb; do
-    dpkg-deb -x "$deb" "$stage"
-done
+while IFS=$'\t' read -r fname deb_path; do
+    dpkg-deb -x "$deb_path" "$stage"
+done < "$deb_paths"
 find "$stage/usr/lib/x86_64-linux-gnu" -maxdepth 1 \( -type f -o -type l \) -name "*.so*" \
     -exec cp -a {} "$bundle/" \;
 for sub in blas lapack pulseaudio; do
@@ -298,23 +321,60 @@ cp "$stage/usr/bin/mpv" "$bundle/mpv"
 find "$bundle" -maxdepth 1 -type f -exec patchelf --set-rpath '$ORIGIN' {} +
 
 echo "==> verifying the bundle loader closure"
-missing=""
+# Strict gate: every non-core dependency must resolve INSIDE the bundle.
+# A plain "not found" grep is not enough — build environments that carry
+# mpv's libraries (libmpv-dev on CI, the Docker image) let the loader
+# silently borrow from the system, shipping a bundle that breaks on clean
+# hosts. Core libraries are the documented AppImage exceptions the host
+# always provides — the same set the manifest computation excluded
+# (glibc family, libstdc++, libgcc_s and zlib, which is a required
+# package on every Debian-based host).
+core_re='^(ld-linux|libc\.so|libm\.so|libpthread|libdl\.so|librt\.so|libresolv|libnsl|libutil|libcrypt|libgcc_s|libstdc\+\+|libz\.so)'
+outside=""
 for elf in "$bundle/mpv" "$bundle"/*.so.*; do
     [ -f "$elf" ] || continue
-    unresolved=$(env -i LD_LIBRARY_PATH="$bundle" ldd "$elf" 2>/dev/null | grep "not found" || true)
-    if [ -n "$unresolved" ]; then
-        echo "error: unresolved dependencies in $(basename "$elf"):" >&2
-        printf '%s\n' "$unresolved" >&2
-        missing=1
-    fi
+    while read -r line; do
+        case "$line" in
+            *"not found"*)
+                outside="$outside
+$(basename "$elf"): $line"
+                continue
+                ;;
+            *"=>"*)
+                path=$(printf '%s' "$line" | awk '{print $3}')
+                ;;
+            /*)
+                # direct entry, e.g. the dynamic loader itself
+                path=$(printf '%s' "$line" | awk '{print $1}')
+                ;;
+            *) continue ;;
+        esac
+        case "$path" in
+            "$bundle"/*) ;;
+            *)
+                if ! printf '%s' "$(basename "$path")" | grep -qE "$core_re"; then
+                    outside="$outside
+$(basename "$elf"): resolved outside the bundle: $path"
+                fi
+                ;;
+        esac
+    done < <(env -i LD_LIBRARY_PATH="$bundle" ldd "$elf" 2>/dev/null)
 done
-[ -z "$missing" ] || { echo "error: the bundle loader closure is incomplete" >&2; exit 1; }
+[ -z "$outside" ] || { echo "error: incomplete bundle closure:$outside" >&2; exit 1; }
 env -i "$bundle/mpv" --version >/dev/null
 
 echo "==> installing $target"
+# Keep the committed placeholder README: it is tracked in git and the
+# resource path must exist on fresh checkouts (tauri-build validates it).
+if [ -f "$target/README.md" ]; then
+    cp "$target/README.md" "$tmp_dir/README.md.keep"
+fi
 rm -rf "$target"
 mkdir -p "$target"
 cp -a "$bundle/." "$target/"
+if [ -f "$tmp_dir/README.md.keep" ]; then
+    cp "$tmp_dir/README.md.keep" "$target/README.md"
+fi
 {
     echo "# Pinned Ubuntu noble debs this mpv bundle was assembled from"
     echo "# (scripts/fetch-linux-mpv.sh; format: filename sha256 kind)"

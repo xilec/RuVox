@@ -140,7 +140,9 @@ jobs:
     runs-on: ubuntu-latest
     # Warm cargo cache ~12-15 min (two-stage build + bundling); cold apt+cargo
     # caches can push past 30 min (apt throttling note in ci.yml applies).
-    timeout-minutes: 45
+    # 60 min headroom for the mpv bundle: ~90 MB of pinned debs + a second
+    # full bundling pass + the squashfs/repack round-trips (#265).
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
 
