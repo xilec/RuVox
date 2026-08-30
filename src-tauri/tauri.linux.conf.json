@@ -9,6 +9,11 @@
       "resources/espeak-ng-data": "espeak-ng-data",
       "resources/libonnxruntime.so": "libonnxruntime.so"
     },
-    "createUpdaterArtifacts": false
+    "createUpdaterArtifacts": false,
+    "linux": {
+      "deb": {
+        "depends": ["mpv"]
+      }
+    }
   }
 }

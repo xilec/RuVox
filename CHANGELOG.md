@@ -20,6 +20,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 - **WAV audio export** — «Сохранить аудио как…» gains a format chooser in the save dialog (WAV default, Ogg Opus alternative), converting an Opus recording to editable 16-bit PCM WAV on export; the cache keeps the Opus original (#252).
 - **Voiceover parameters in the history** — the queue context menu gains «Параметры записи…», a read-only view of the source, engine, voice, sample rate, model and settings that produced each recording (#243).
 - **Linux AppImage auto-updates** — AppImage installs now check GitHub releases in-app and self-update with signature verification; .deb and source builds get no update UI (#226).
+- **Linux packages need `mpv`** — the .deb installs the player binary automatically as a dependency; AppImage users install it once via the system package manager (`sudo apt install mpv`). Bundling `mpv` into the AppImage is planned for 0.5.1 (#265).
 
 ### Changed
 - **Playback speed up to 3.0× and restored on startup** — the speed limit
