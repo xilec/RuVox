@@ -140,7 +140,9 @@ jobs:
     runs-on: ubuntu-latest
     # Warm cargo cache ~12-15 min (two-stage build + bundling); cold apt+cargo
     # caches can push past 30 min (apt throttling note in ci.yml applies).
-    timeout-minutes: 45
+    # 60 min headroom for the mpv bundle: ~90 MB of pinned debs + a second
+    # full bundling pass + the squashfs/repack round-trips (#265).
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
 
@@ -200,8 +202,18 @@ jobs:
       - name: Fetch libonnxruntime into bundle resources
         run: bash scripts/fetch-linux-onnxruntime.sh
 
-      - name: Build .deb and .AppImage packages
-        run: pnpm tauri build
+      # Pinned + sha256-verified mpv player bundle for the AppImage (#265).
+      # The .deb does NOT carry it — it Depends on the system mpv instead
+      # (#266) — so the resource is wired through the AppImage-only CLI
+      # config overlay and the build is split by bundle type.
+      - name: Fetch bundled mpv into AppImage resources
+        run: bash scripts/fetch-linux-mpv.sh
+
+      - name: Build .deb package
+        run: pnpm tauri build --bundles deb
+
+      - name: Build .AppImage package (bundles mpv via the appimage overlay)
+        run: pnpm tauri build --bundles appimage --config src-tauri/tauri.appimage.conf.json
 
       # Repack the AppImage with GDK_BACKEND autodetection — without this the
       # CI-built AppImage fails to start on pure-Wayland sessions (the local

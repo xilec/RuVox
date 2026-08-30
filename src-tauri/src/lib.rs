@@ -495,73 +495,73 @@ pub fn init_platform_env() {
     }
 }
 
-/// Search the install layouts a bundled Linux build can have for
-/// `espeak-ng-data`: flat/portable (`<exe_dir>/espeak-ng-data`) and the
-/// shared `/usr/bin` + `/usr/lib/<product>` layout of both `.deb` and
-/// `.AppImage`. Returns `None` when nothing is bundled — piper-rs then uses
-/// its built-in search (degraded Russian stress, still functional), matching
+/// Search the install layouts a bundled Linux build can have for `rel` (a
+/// resource path relative to the resource root): flat/portable
+/// (`<exe_dir>/<rel>`) and the shared `/usr/bin` + `/usr/lib/<product>`
+/// layout of both `.deb` and `.AppImage`. Our own product dir is tried
+/// before the wildcard over sibling products, so another app's files can
+/// never shadow ours. Returns the first candidate satisfying `pred`.
+#[cfg(not(windows))]
+fn find_bundled(
+    exe_dir: &std::path::Path,
+    rel: &str,
+    pred: impl Fn(&std::path::Path) -> bool,
+) -> Option<std::path::PathBuf> {
+    let parent = exe_dir.parent()?;
+    let mut candidates = vec![exe_dir.join(rel), parent.join(rel)];
+    let lib = parent.join("lib");
+    if let Ok(entries) = std::fs::read_dir(&lib) {
+        let mut bundled: Vec<_> = entries.flatten().map(|e| e.path().join(rel)).collect();
+        bundled.sort();
+        if let Some(pos) = bundled
+            .iter()
+            .position(|p| p.ends_with(std::path::Path::new("RuVox").join(rel)))
+        {
+            let ours = bundled.remove(pos);
+            candidates.push(ours);
+        }
+        candidates.append(&mut bundled);
+    }
+    candidates.into_iter().find(|c| pred(c))
+}
+
+/// A real payload, not the committed compile-time placeholder (a zero-byte
+/// or README-only stand-in must lose to the PATH/dev fallback).
+#[cfg(not(windows))]
+fn is_nonempty_file(path: &std::path::Path) -> bool {
+    path.is_file()
+        && std::fs::metadata(path)
+            .map(|m| m.len() > 0)
+            .unwrap_or(false)
+}
+
+/// Flat/portable + shared install-layout search for `espeak-ng-data`.
+/// Returns `None` when nothing is bundled — piper-rs then uses its built-in
+/// search (degraded Russian stress, still functional), matching
 /// pre-packaging behavior.
 #[cfg(not(windows))]
 fn find_bundled_espeak_data(exe_dir: &std::path::Path) -> Option<std::path::PathBuf> {
-    let parent = exe_dir.parent()?;
-    let mut candidates = vec![
-        exe_dir.join("espeak-ng-data"),
-        parent.join("espeak-ng-data"),
-    ];
-    let lib = parent.join("lib");
-    // Our own product dir first — a wildcard over sibling products must be
-    // last so another app's files can never shadow ours.
-    if let Ok(entries) = std::fs::read_dir(&lib) {
-        let mut bundled: Vec<_> = entries
-            .flatten()
-            .map(|e| e.path().join("espeak-ng-data"))
-            .collect();
-        bundled.sort();
-        if let Some(pos) = bundled
-            .iter()
-            .position(|p| p.ends_with("RuVox/espeak-ng-data"))
-        {
-            let ours = bundled.remove(pos);
-            candidates.push(ours);
-        }
-        candidates.append(&mut bundled);
-    }
-    candidates.into_iter().find(|c| c.is_dir())
+    find_bundled(exe_dir, "espeak-ng-data", |p| p.is_dir())
 }
 
-/// Same install-layout search as [`find_bundled_espeak_data`], but for the
-/// bundled `libonnxruntime.so` file. Returns `None` (→ keep the default
-/// loader search / Piper fallback) when only the committed placeholder is
-/// present, so a placeholder build never points `ort` at a broken dylib.
+/// Same install-layout search, but for the bundled `libonnxruntime.so`
+/// file. Returns `None` (→ keep the default loader search / Piper fallback)
+/// when only the committed placeholder is present, so a placeholder build
+/// never points `ort` at a broken dylib.
 #[cfg(not(windows))]
 fn find_bundled_onnxruntime(exe_dir: &std::path::Path) -> Option<std::path::PathBuf> {
-    let parent = exe_dir.parent()?;
-    let mut candidates = vec![
-        exe_dir.join("libonnxruntime.so"),
-        parent.join("libonnxruntime.so"),
-    ];
-    let lib = parent.join("lib");
-    // Our own product dir first — a wildcard over sibling products must be
-    // last so another app's ABI-incompatible libonnxruntime can never shadow
-    // ours (the pinned ort-sys bindings target ONNX Runtime 1.24).
-    if let Ok(entries) = std::fs::read_dir(&lib) {
-        let mut bundled: Vec<_> = entries
-            .flatten()
-            .map(|e| e.path().join("libonnxruntime.so"))
-            .collect();
-        bundled.sort();
-        if let Some(pos) = bundled
-            .iter()
-            .position(|p| p.ends_with("RuVox/libonnxruntime.so"))
-        {
-            let ours = bundled.remove(pos);
-            candidates.push(ours);
-        }
-        candidates.append(&mut bundled);
-    }
-    candidates
-        .into_iter()
-        .find(|c| c.is_file() && std::fs::metadata(c).map(|m| m.len() > 0).unwrap_or(false))
+    find_bundled(exe_dir, "libonnxruntime.so", is_nonempty_file)
+}
+
+/// Same install-layout search, but for the bundled `mpv` player the
+/// AppImage ships as the `mpv/` resource (the player binary plus its
+/// non-core library closure, RPATH'd to `$ORIGIN` — see
+/// `scripts/fetch-linux-mpv.sh`). Returns `None` when nothing (or only the
+/// committed placeholder) is present, so dev runs, Nix builds and `.deb`
+/// installs keep resolving `mpv` from PATH.
+#[cfg(not(windows))]
+pub(crate) fn find_bundled_mpv(exe_dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    find_bundled(exe_dir, "mpv/mpv", is_nonempty_file)
 }
 
 #[cfg(all(test, not(windows)))]
@@ -723,6 +723,83 @@ mod onnxruntime_lookup_tests {
             find_bundled_onnxruntime(&bin),
             Some(ours.join("libonnxruntime.so"))
         );
+    }
+}
+
+#[cfg(all(test, not(windows)))]
+mod mpv_lookup_tests {
+    use super::find_bundled_mpv;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn write_player(dir: &std::path::Path) {
+        fs::create_dir_all(dir).unwrap();
+        fs::write(dir.join("mpv"), b"ELF payload").unwrap();
+    }
+
+    #[test]
+    fn finds_flat_portable_layout() {
+        let tmp = TempDir::new().unwrap();
+        let bin = tmp.path().join("app").join("bin");
+        let player = tmp.path().join("app").join("mpv").join("mpv");
+        fs::create_dir_all(&bin).unwrap();
+        write_player(player.parent().unwrap());
+
+        assert_eq!(find_bundled_mpv(&bin), Some(player));
+    }
+
+    #[test]
+    fn finds_deb_and_appimage_layout() {
+        let tmp = TempDir::new().unwrap();
+        let bin = tmp.path().join("usr").join("bin");
+        let player = tmp
+            .path()
+            .join("usr")
+            .join("lib")
+            .join("RuVox")
+            .join("mpv")
+            .join("mpv");
+        fs::create_dir_all(&bin).unwrap();
+        write_player(player.parent().unwrap());
+
+        assert_eq!(find_bundled_mpv(&bin), Some(player));
+    }
+
+    #[test]
+    fn none_when_not_bundled() {
+        let tmp = TempDir::new().unwrap();
+        let bin = tmp.path().join("usr").join("bin");
+        fs::create_dir_all(&bin).unwrap();
+
+        assert_eq!(find_bundled_mpv(&bin), None);
+    }
+
+    #[test]
+    fn ignores_placeholder_file() {
+        // The committed placeholder tree must not win over the PATH lookup:
+        // spawning a 0-byte "player" would just fail the init.
+        let tmp = TempDir::new().unwrap();
+        let bin = tmp.path().join("usr").join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        fs::create_dir_all(bin.join("mpv")).unwrap();
+        fs::write(bin.join("mpv").join("mpv"), b"").unwrap();
+
+        assert_eq!(find_bundled_mpv(&bin), None);
+    }
+
+    #[test]
+    fn prefers_own_product_dir_over_siblings() {
+        // Another product's mpv must never shadow ours. The player lives at
+        // <product>/mpv/mpv, so the helper gets the mpv/ subdirectory.
+        let tmp = TempDir::new().unwrap();
+        let bin = tmp.path().join("usr").join("bin");
+        let other = tmp.path().join("usr").join("lib").join("ZProduct");
+        let ours = tmp.path().join("usr").join("lib").join("RuVox");
+        fs::create_dir_all(&bin).unwrap();
+        write_player(&other.join("mpv"));
+        write_player(&ours.join("mpv"));
+
+        assert_eq!(find_bundled_mpv(&bin), Some(ours.join("mpv").join("mpv")));
     }
 }
 
