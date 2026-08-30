@@ -42,7 +42,11 @@ pub const WINDOW_LABEL: &str = "main";
 /// resource dir could not be resolved (`None` — probing a relative
 /// `mpv/mpv.exe` against the process CWD would risk executing a foreign
 /// binary).
-/// Other platforms: plain `mpv` from PATH (the nix wrapper puts it there).
+/// Other platforms: prefer the bundled `mpv/mpv` shipped by the AppImage
+/// (the player binary plus its non-core library closure; found through the
+/// same install-layout search as the other bundled Linux resources), fall
+/// back to a PATH lookup — dev runs, the nix wrapper and `.deb` installs
+/// (system mpv, pulled in via `Depends`) all land here.
 #[cfg(windows)]
 fn resolve_mpv_path(resource_dir: Option<&std::path::Path>) -> std::path::PathBuf {
     if let Some(dir) = resource_dir {
@@ -54,9 +58,17 @@ fn resolve_mpv_path(resource_dir: Option<&std::path::Path>) -> std::path::PathBu
     std::path::PathBuf::from("mpv")
 }
 
-/// Non-Windows resolution — always PATH (see the Windows variant above).
+/// Non-Windows resolution — bundled `mpv/mpv` first, then PATH (see the
+/// Windows variant above for the shared rationale).
 #[cfg(not(windows))]
 fn resolve_mpv_path(_resource_dir: Option<&std::path::Path>) -> std::path::PathBuf {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            if let Some(bundled) = crate::find_bundled_mpv(exe_dir) {
+                return bundled;
+            }
+        }
+    }
     std::path::PathBuf::from("mpv")
 }
 
@@ -762,7 +774,9 @@ mod tests {
     }
 
     /// On non-Windows the resolver ignores the resource dir entirely, even
-    /// if something mpv-like sits there (the nix wrapper owns mpv on Linux).
+    /// if something mpv-like sits there: the bundled lookup goes through
+    /// the install-layout search around the running executable (covered by
+    /// the mpv tests in lib.rs), everything else falls back to PATH.
     #[cfg(not(windows))]
     #[test]
     fn mpv_path_ignores_resource_dir_off_windows() {

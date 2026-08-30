@@ -4,6 +4,13 @@ Notable changes in RuVox, in chronological order.
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Linux AppImage bundles the `mpv` player** — the AppImage now works on a
+  clean system without installing anything; the `.deb` keeps installing the
+  system `mpv` automatically via `Depends` (#265).
+
 ## [0.5.0] — 2026-08-30 — Localization, import and export
 
 ### Added

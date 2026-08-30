@@ -17,6 +17,10 @@ At release time they are replaced with real content:
   silero-native engine
 - `espeak-ng-data/` — copied out of the espeak-rs-sys build tree by the
   release workflow (`.github/workflows/release.yml`)
+- `mpv-linux/` — the pinned Ubuntu noble `mpv` player bundle for the
+  AppImage only (#265; the .deb depends on the system `mpv` instead,
+  #266), assembled by `scripts/fetch-linux-mpv.sh` and wired into the
+  build via `tauri.appimage.conf.json`; see `mpv-linux/README.md`
 
 Never bundle a build where these are still placeholders — the release
 workflow always runs the fetch/extract steps before `pnpm tauri build`.

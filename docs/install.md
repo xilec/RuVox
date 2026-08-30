@@ -179,9 +179,12 @@ Outputs:
 ### Release artifacts & self-updates
 
 Prebuilt artifacts (Windows NSIS installer, Linux .deb and .AppImage) are
-attached to [GitHub releases](https://github.com/xilec/RuVox/releases). The
-Windows installer and the Linux **AppImage** self-update in-app: Settings →
-«Проверить обновления» (or the startup check) downloads a
+attached to [GitHub releases](https://github.com/xilec/RuVox/releases). Both
+the Windows installer and the Linux **AppImage** ship their own `mpv`
+player, so they work on a clean system; the .deb installs the system `mpv`
+automatically via its `Depends` — only from-source builds need the step-1
+`mpv` package. The Windows installer and the Linux **AppImage** self-update
+in-app: Settings → «Проверить обновления» (or the startup check) downloads a
 signature-verified artifact and relaunches. The .deb and source builds are
 not self-updating — reinstall the new version yourself.
 

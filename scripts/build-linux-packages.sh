@@ -11,7 +11,10 @@
 #   2. cargo rustc --lib --crate-type=rlib  (espeak-rs-sys emits espeak-ng-data)
 #   3. copy espeak-ng-data into src-tauri/resources/
 #   4. scripts/fetch-linux-onnxruntime.sh   (pinned libonnxruntime for `ort`)
-#   5. pnpm tauri build --bundles ...
+#   4b. scripts/fetch-linux-mpv.sh          (pinned player bundle, AppImage
+#       only — the .deb depends on the system mpv instead, #266)
+#   5. pnpm tauri build --bundles deb, then --bundles appimage with the
+#      appimage overlay (bundled mpv resource, #265)
 #   6. AppImage only: apply scripts/fix-appimage-wayland.sh in place —
 #      linuxdeploy-plugin-gtk hardcodes GDK_BACKEND=x11 in the AppRun hook,
 #      which makes the AppImage fail to start on pure-Wayland sessions.
@@ -67,11 +70,19 @@ case "$BUNDLES" in
 esac
 
 echo "[copy] repo -> /work"
-cp -a /src /work
+# Exclude the heavy host-side trees: tmp/ holds the VM stands and docker
+# caches (they ride in through the mounts below instead), target/ is the
+# host build dir replaced by the mounted cache, node_modules is host-owned.
+mkdir -p /work
+cd /src
+tar cf - \
+    --exclude=./tmp \
+    --exclude=./node_modules \
+    --exclude=./src-tauri/target \
+    --exclude=./dist \
+    --exclude=./.git \
+    . | tar xf - -C /work
 cd /work
-# Host-owned node_modules/target would confuse pnpm/cargo here; the cargo
-# build dir is the mounted cache instead (CARGO_TARGET_DIR below).
-rm -rf node_modules src-tauri/target
 export CI=true CARGO_TARGET_DIR=/target
 pnpm config set store-dir /pnpm-store
 
@@ -93,8 +104,24 @@ test -f src-tauri/resources/espeak-ng-data/ru_dict
 echo "[onnxruntime] pinned libonnxruntime (download only when absent)"
 bash scripts/fetch-linux-onnxruntime.sh --check || bash scripts/fetch-linux-onnxruntime.sh
 
-echo "[tauri] build --bundles $BUNDLES"
-pnpm tauri build --bundles $BUNDLES
+# Bundled mpv for the AppImage (#265) — the .deb stays on Depends: mpv
+# (#266), so the resource is only wired for appimage builds via the CLI
+# overlay.
+case "$BUNDLES" in
+    *appimage*)
+        echo "[mpv] pinned player bundle (download only when absent)"
+        bash scripts/fetch-linux-mpv.sh --check || bash scripts/fetch-linux-mpv.sh
+        ;;
+esac
+
+if [[ "$BUNDLES" == *deb* ]]; then
+    echo "[tauri] build .deb"
+    pnpm tauri build --bundles deb
+fi
+if [[ "$BUNDLES" == *appimage* ]]; then
+    echo "[tauri] build .AppImage (bundles mpv via the appimage overlay)"
+    pnpm tauri build --bundles appimage --config src-tauri/tauri.appimage.conf.json
+fi
 
 case "$BUNDLES" in
     *appimage*)
