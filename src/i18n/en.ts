@@ -52,6 +52,7 @@ export const en: Record<MessageKey, string> = {
   'queue.status.ready': 'Ready',
   'queue.status.playing': 'Playing',
   'queue.status.error': 'Error',
+  'queue.status.cancelled': 'Cancelled',
   'queue.play': 'Play',
   'queue.jump_to_playing': 'To playing entry',
   'queue.empty': 'Copy some text and press Add',
@@ -68,6 +69,8 @@ export const en: Record<MessageKey, string> = {
   'queue.notify.regenerating.title': 'Regeneration',
   'queue.notify.regenerating.message': 'Audio regeneration started',
   'queue.notify.regenerate_failed': 'Failed to start regeneration: {0}',
+  'queue.notify.cancelled.title': 'Synthesis cancelled',
+  'queue.notify.cancelled.message': 'Entry synthesis stopped',
   'queue.notify.cancel_failed': 'Failed to cancel synthesis: {0}',
 
   // ── Generation-params dialog (#243) ─────────────────────────────────────
@@ -310,8 +313,6 @@ export const en: Record<MessageKey, string> = {
   'errors.entry.not_ready': 'Entry {0} is not ready for playback (status: {1})',
   'errors.entry.cannot_cancel': 'Entry {0} cannot be cancelled (status: {1})',
   'errors.input.empty': 'There is no text to add',
-  'errors.input.too_long':
-    'The text is too long for the {0} engine (max {1} characters); shorten it or switch to Silero in Settings',
   'errors.clipboard.unavailable': 'Could not open the clipboard',
   'errors.clipboard.empty': 'The clipboard contains no text',
   'errors.clipboard.task_panicked': 'Internal error while reading the clipboard',

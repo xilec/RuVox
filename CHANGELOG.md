@@ -7,6 +7,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 ## [Unreleased]
 
 ### Changed
+- **Piper narrates long texts without freezing the machine** — synthesis now
+  runs in sentence-bounded chunks instead of one inference, so pasting long
+  documents no longer risks a system-wide freeze with the Piper engine;
+  paragraph breaks in the text now get a distinct silence pause (#155).
+- **Cancelling synthesis is explicit** — a confirmation toast appears and the
+  entry gets its own `Отменено` status instead of silently returning to
+  `Ожидание` while the spinner toast kept hanging (#155).
 - **Code block narration is now a working setting** — the "Озвучка блоков
   кода" selector in Settings («Кратко» / «Читать полностью») drives the
   pipeline live: brief mode (new default) replaces fenced code blocks with a
@@ -14,6 +21,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   without restarting the app (#89).
 
 ### Removed
+- **The 100 000-character input limit for the Piper engine** — chunked
+  synthesis makes it redundant; long texts are now narrated with Piper just
+  like with Silero (#155).
 - **The inline `<!-- ruvox-code: … -->` directives** — code block narration
   is controlled solely by the Settings option (#89).
 - **The dead `read_operators` config field** — it never affected synthesis;

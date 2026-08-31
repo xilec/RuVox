@@ -173,6 +173,29 @@ async fn regenerate_entry_replaces_audio_and_resynthesizes() {
     );
 }
 
+/// A `cancelled` entry is terminal until regenerated: `regenerate_entry`
+/// accepts it and restarts synthesis from scratch (back to `ready`).
+#[tokio::test(flavor = "multi_thread")]
+async fn regenerate_entry_restarts_a_cancelled_entry() {
+    let t = build_test_app();
+    let id = add_ready_entry(&t).await;
+    let uuid = entry_uuid(&id);
+
+    // Simulate an earlier cancellation.
+    let entry = t.state().storage.get_entry(&uuid).unwrap();
+    let mut cancelled = entry.clone();
+    cancelled.status = EntryStatus::Cancelled;
+    t.state().storage.update_entry(cancelled).unwrap();
+
+    regenerate_entry(t.app.handle().clone(), t.state(), id.clone(), false)
+        .await
+        .unwrap();
+
+    wait_entry_status(&t, &uuid, EntryStatus::Ready).await;
+    let entry = t.state().storage.get_entry(&uuid).unwrap();
+    assert!(entry.was_regenerated);
+}
+
 /// With `play_when_ready: true` the regenerated audio autoplays once the
 /// fresh synthesis reaches `ready` — the same autoplay rule as the initial
 /// synthesis.
@@ -246,11 +269,11 @@ async fn regenerate_entry_rejects_processing_entry_and_synthesis_continues() {
 // ── cancel_synthesis (new #129 semantics) ─────────────────────────────
 
 /// Cancelling an in-flight synthesis aborts the spawned task, flips the
-/// entry back to `pending` (emitting `entry_updated`), and clears both
+/// entry to `cancelled` (emitting `entry_updated`), and clears both
 /// registries. Nothing is resurrected afterwards: no `ready` event, no
 /// autoplay — even though the entry was added with `play_when_ready`.
 #[tokio::test(flavor = "multi_thread")]
-async fn cancel_synthesis_aborts_in_flight_task_and_keeps_entry_pending() {
+async fn cancel_synthesis_aborts_in_flight_task_and_marks_entry_cancelled() {
     let t = build_test_app();
     t.engine.block_synthesis();
     let events = record_events(&t.app, &["entry_updated"]);
@@ -278,16 +301,16 @@ async fn cancel_synthesis_aborts_in_flight_task_and_keeps_entry_pending() {
         .unwrap();
 
     let entry = t.state().storage.get_entry(&uuid).unwrap();
-    assert_eq!(entry.status, EntryStatus::Pending);
+    assert_eq!(entry.status, EntryStatus::Cancelled);
     assert!(t.state().synthesis_tasks.lock().is_empty());
     assert!(t.state().synthesize_entered.lock().is_empty());
 
-    // The last entry_updated is the reset to pending.
+    // The last entry_updated is the flip to cancelled.
     {
         let log = events.lock().unwrap();
         let payload = last_entry_updated(&log);
         assert_eq!(payload["entry"]["id"], id);
-        assert_eq!(payload["entry"]["status"], "pending");
+        assert_eq!(payload["entry"]["status"], "cancelled");
     }
 
     // The task was aborted at the blocked await: releasing the gate
@@ -299,10 +322,10 @@ async fn cancel_synthesis_aborts_in_flight_task_and_keeps_entry_pending() {
     assert!(t.player.calls().is_empty());
 }
 
-/// Cancelling an idle (pending, no synthesis task) entry succeeds and
-/// simply re-confirms `pending` with an `entry_updated` event.
+/// Cancelling an idle (pending, no synthesis task) entry succeeds and flips
+/// it to `cancelled` with an `entry_updated` event.
 #[tokio::test(flavor = "multi_thread")]
-async fn cancel_synthesis_on_idle_entry_succeeds_and_stays_pending() {
+async fn cancel_synthesis_on_idle_entry_succeeds_and_marks_cancelled() {
     let t = build_test_app();
     let entry = t.state().storage.add_entry("текст".to_string()).unwrap();
     let id = entry.id.to_string();
@@ -313,11 +336,11 @@ async fn cancel_synthesis_on_idle_entry_succeeds_and_stays_pending() {
         .unwrap();
 
     let stored = t.state().storage.get_entry(&entry.id).unwrap();
-    assert_eq!(stored.status, EntryStatus::Pending);
+    assert_eq!(stored.status, EntryStatus::Cancelled);
     let log = events.lock().unwrap();
     assert!(
         log.iter()
-            .any(|(_, p)| p["entry"]["id"] == id && p["entry"]["status"] == "pending")
+            .any(|(_, p)| p["entry"]["id"] == id && p["entry"]["status"] == "cancelled")
     );
 }
 
@@ -665,58 +688,47 @@ async fn preview_normalize_returns_text_without_history_or_audio_side_effects() 
     assert!(t.state().synthesis_tasks.lock().is_empty());
 }
 
-// ── input length limit (MAX_INPUT_CHARS = 100 000 codepoints, Piper only) ──
+// ── long input acceptance (no length limit; engines bound their own inference) ──
 
-/// Oversized text is rejected by `add_text_entry` before persistence when the
-/// active engine is Piper (the default test-app kind): typed `internal` error
-/// naming the engine and the limit, no entry, no synthesis task.
+/// Long text is accepted by `add_text_entry` with the Piper engine active
+/// (the default test-app kind): Piper synthesizes in bounded chunks, so
+/// there is no length-based rejection and the entry synthesizes normally.
 #[tokio::test(flavor = "multi_thread")]
-async fn add_text_entry_rejects_oversized_input_before_persistence() {
+async fn add_text_entry_accepts_long_input_with_piper() {
     let t = build_test_app();
     assert_eq!(t.state().tts.kind(), EngineKind::Piper);
 
-    let err = add_text_entry(
+    let id = add_text_entry(
         t.app.handle().clone(),
         t.state(),
-        "а".repeat(MAX_INPUT_CHARS + 1),
+        "а".repeat(100_001),
         false,
         None,
         None,
         None,
     )
     .await
-    .expect_err("oversized input must be rejected");
-    match err {
-        CommandError::Internal { code, params, .. } => {
-            assert_eq!(code, "input.too_long");
-            assert_eq!(params, vec!["piper".to_string(), "100000".to_string()]);
-        }
-        other => panic!("expected internal error, got {other:?}"),
-    }
-
-    assert!(get_entries(t.state()).await.unwrap().is_empty());
-    assert!(t.state().synthesis_tasks.lock().is_empty());
+    .expect("long input must be accepted with Piper active");
+    // Pin the behavioral outcome: the entry synthesizes to Ready with no
+    // error. (The synthesis-task registry is drained by a detached reaper
+    // after the status flip, so it is not asserted here — no happens-before.)
+    wait_entry_status(&t, &entry_uuid(&id), EntryStatus::Ready).await;
 }
 
-/// Oversized text is rejected by `preview_normalize` before normalization
-/// when the active engine is Piper.
+/// Long input is normalized by `preview_normalize` with Piper active — in
+/// full, with no content dropped.
 #[tokio::test(flavor = "multi_thread")]
-async fn preview_normalize_rejects_oversized_input() {
+async fn preview_normalize_accepts_long_input_with_piper() {
     let t = build_test_app();
+    assert_eq!(t.state().tts.kind(), EngineKind::Piper);
 
-    let err = preview_normalize(t.state(), "а".repeat(MAX_INPUT_CHARS + 1))
+    let result = preview_normalize(t.state(), "а".repeat(100_001))
         .await
-        .expect_err("oversized input must be rejected");
-    match err {
-        CommandError::Internal { code, params, .. } => {
-            assert_eq!(code, "input.too_long");
-            assert_eq!(params, vec!["piper".to_string(), "100000".to_string()]);
-        }
-        other => panic!("expected internal error, got {other:?}"),
-    }
+        .expect("long input must be normalized with Piper active");
+    assert_eq!(result.normalized.chars().count(), 100_001);
 }
 
-/// Text of exactly `MAX_INPUT_CHARS` codepoints is accepted and synthesized.
+/// Text of exactly 100 000 codepoints is accepted and synthesized.
 #[tokio::test(flavor = "multi_thread")]
 async fn add_text_entry_accepts_input_at_limit() {
     let t = build_test_app();
@@ -724,7 +736,7 @@ async fn add_text_entry_accepts_input_at_limit() {
     let id = add_text_entry(
         t.app.handle().clone(),
         t.state(),
-        "а".repeat(MAX_INPUT_CHARS),
+        "а".repeat(100_000),
         false,
         None,
         None,
@@ -735,68 +747,36 @@ async fn add_text_entry_accepts_input_at_limit() {
     wait_entry_status(&t, &entry_uuid(&id), EntryStatus::Ready).await;
 }
 
-/// With Silero active the length limit does not apply: Silero synthesizes in
-/// bounded chunks, so oversized input is ingested and synthesized.
+/// With Silero active long input is ingested and synthesized (Silero has
+/// always synthesized in bounded chunks).
 #[tokio::test(flavor = "multi_thread")]
-async fn add_text_entry_accepts_oversized_input_with_silero() {
+async fn add_text_entry_accepts_long_input_with_silero() {
     let t = build_test_app_with_kind(EngineKind::Silero);
     assert_eq!(t.state().tts.kind(), EngineKind::Silero);
 
     let id = add_text_entry(
         t.app.handle().clone(),
         t.state(),
-        "а".repeat(MAX_INPUT_CHARS + 1),
+        "а".repeat(100_001),
         false,
         None,
         None,
         None,
     )
     .await
-    .expect("oversized input must be accepted when Silero is active");
+    .expect("long input must be accepted when Silero is active");
     wait_entry_status(&t, &entry_uuid(&id), EntryStatus::Ready).await;
 }
 
-/// With Silero active `preview_normalize` normalizes oversized input instead
-/// of rejecting it — in full, with no content dropped.
+/// With Silero active `preview_normalize` normalizes long input in full.
 #[tokio::test(flavor = "multi_thread")]
-async fn preview_normalize_accepts_oversized_input_with_silero() {
+async fn preview_normalize_accepts_long_input_with_silero() {
     let t = build_test_app_with_kind(EngineKind::Silero);
 
-    let result = preview_normalize(t.state(), "а".repeat(MAX_INPUT_CHARS + 1))
+    let result = preview_normalize(t.state(), "а".repeat(100_001))
         .await
-        .expect("oversized input must be normalized when Silero is active");
-    assert_eq!(result.normalized.chars().count(), MAX_INPUT_CHARS + 1);
-}
-
-/// The length guard is re-checked at synthesis time: an oversized entry that
-/// was accepted while Silero was active (simulated here by inserting it
-/// directly into storage) must fail with the limit message when synthesis
-/// runs under Piper, instead of feeding Piper an unchunked oversized run.
-#[tokio::test(flavor = "multi_thread")]
-async fn synthesis_under_piper_fails_oversized_entry_accepted_under_silero() {
-    let t = build_test_app();
-    assert_eq!(t.state().tts.kind(), EngineKind::Piper);
-
-    let entry = t
-        .state()
-        .storage
-        .add_entry_with_source("а".repeat(MAX_INPUT_CHARS + 1), None, None, None)
-        .unwrap();
-    let uuid = entry.id;
-
-    spawn_synthesis(
-        SynthesisDeps::from_state(t.app.handle(), &t.state()),
-        uuid,
-        false,
-    );
-
-    wait_entry_status(&t, &uuid, EntryStatus::Error).await;
-    let entry = t.state().storage.get_entry(&uuid).unwrap();
-    let message = entry.error_message.expect("error entry carries a message");
-    assert!(
-        message.contains("Piper"),
-        "message names the engine: {message}"
-    );
+        .expect("long input must be normalized when Silero is active");
+    assert_eq!(result.normalized.chars().count(), 100_001);
 }
 
 // ── set_speed / set_volume range guards ──────────────────────────────

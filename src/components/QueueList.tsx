@@ -37,6 +37,8 @@ function statusBadgeColor(status: EntryStatus): string {
       return 'teal';
     case 'error':
       return 'red';
+    case 'cancelled':
+      return 'gray';
   }
 }
 
@@ -46,6 +48,7 @@ const STATUS_KEY: Record<EntryStatus, MessageKey> = {
   ready: 'queue.status.ready',
   playing: 'queue.status.playing',
   error: 'queue.status.error',
+  cancelled: 'queue.status.cancelled',
 };
 
 interface QueueItemProps {
@@ -275,6 +278,11 @@ export function QueueList({ onRegenerate }: QueueListProps) {
   const handleCancelSynthesis = useCallback(async (id: string) => {
     try {
       await commands.cancelSynthesis(id);
+      notifications.show({
+        title: tt('queue.notify.cancelled.title'),
+        message: tt('queue.notify.cancelled.message'),
+        color: 'green',
+      });
     } catch (e) {
       notifications.show({
         title: tt('errors.title'),
@@ -446,7 +454,10 @@ export function QueueList({ onRegenerate }: QueueListProps) {
             {tt('queue.menu.generation_params')}
           </Menu.Item>
           <Menu.Item
-            disabled={menuEntry === null || menuEntry.status !== 'processing'}
+            disabled={
+              menuEntry === null ||
+              (menuEntry.status !== 'processing' && menuEntry.status !== 'pending')
+            }
             onClick={() => menuEntry && handleCancelSynthesis(menuEntry.id)}
           >
             {tt('queue.menu.cancel_synthesis')}

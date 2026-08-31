@@ -15,6 +15,9 @@ pub enum EntryStatus {
     /// the storage layer normalizes Playing -> Ready before save.
     Playing,
     Error,
+    /// Synthesis was cancelled by the user. Terminal until the entry is
+    /// regenerated (which restarts the lifecycle at `pending`).
+    Cancelled,
 }
 
 /// Display format of a text entry in the viewer.
@@ -556,6 +559,7 @@ mod tests {
             (EntryStatus::Ready, "\"ready\""),
             (EntryStatus::Playing, "\"playing\""),
             (EntryStatus::Error, "\"error\""),
+            (EntryStatus::Cancelled, "\"cancelled\""),
         ];
         for (status, expected) in cases {
             let serialized = serde_json::to_string(&status).unwrap();

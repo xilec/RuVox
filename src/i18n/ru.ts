@@ -53,6 +53,7 @@ export const ru = {
   'queue.status.ready': 'Готово',
   'queue.status.playing': 'Играет',
   'queue.status.error': 'Ошибка',
+  'queue.status.cancelled': 'Отменено',
   'queue.play': 'Воспроизвести',
   'queue.jump_to_playing': 'К читаемому',
   'queue.empty': 'Скопируйте текст и нажмите «Добавить»',
@@ -69,6 +70,8 @@ export const ru = {
   'queue.notify.regenerating.title': 'Перегенерация',
   'queue.notify.regenerating.message': 'Запущена перегенерация аудио',
   'queue.notify.regenerate_failed': 'Не удалось запустить перегенерацию: {0}',
+  'queue.notify.cancelled.title': 'Синтез отменён',
+  'queue.notify.cancelled.message': 'Синтез записи остановлен',
   'queue.notify.cancel_failed': 'Не удалось отменить синтез: {0}',
 
   // ── Generation-params dialog (#243) ─────────────────────────────────────
@@ -311,8 +314,6 @@ export const ru = {
   'errors.entry.not_ready': 'Запись {0} не готова к воспроизведению (статус: {1})',
   'errors.entry.cannot_cancel': 'Запись {0} не может быть отменена (статус: {1})',
   'errors.input.empty': 'Нет текста для добавления',
-  'errors.input.too_long':
-    'Текст слишком длинный для движка {0} (максимум {1} символов); сократите текст или переключитесь на Silero в настройках',
   'errors.clipboard.unavailable': 'Не удалось открыть буфер обмена',
   'errors.clipboard.empty': 'В буфере обмена нет текста',
   'errors.clipboard.task_panicked': 'Внутренняя ошибка при чтении буфера обмена',

@@ -182,7 +182,21 @@ describe('QueueList context menu', () => {
     expect(cancelSynthesis).toHaveBeenCalledWith('entry-1');
   });
 
-  it.each(['ready', 'playing', 'pending', 'error'] as const)(
+  it('clicking "Отменить синтез" on a pending entry calls cancelSynthesis', async () => {
+    // A pending entry may still be inside normalization (long texts), and the
+    // backend accepts cancelling it — the menu item must stay enabled.
+    await renderWith(makeEntry('pending'));
+    await openMenu();
+
+    act(() => {
+      cancelItem().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(cancelSynthesis).toHaveBeenCalledTimes(1);
+    expect(cancelSynthesis).toHaveBeenCalledWith('entry-1');
+  });
+
+  it.each(['ready', 'playing', 'error', 'cancelled'] as const)(
     '"Отменить синтез" is disabled for a %s entry',
     async (status) => {
       await renderWith(makeEntry(status));

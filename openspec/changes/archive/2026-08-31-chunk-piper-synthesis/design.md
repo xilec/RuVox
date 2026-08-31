@@ -1,0 +1,155 @@
+## Context
+
+`PiperEngine::synthesize` (`src-tauri/src/tts/piper/engine.rs`) runs the whole normalized text
+through a single `piper_rs::Piper::create` call — the only API piper-rs 0.2.0 exposes
+(monolithic phonemization + inference; no sentence-level or streaming surface, and the project
+is nearly dormant: the latest release 0.2.0 from 2026-05 is also the tip of `main`). VITS
+encoder activation memory grows quadratically, so long texts freeze machines (proposal.md —
+Why). Both sibling engines already chunk: ttsd (`ttsd/ttsd/chunking.py`) and silero-native
+(`silero-native/src/chunking.rs`), and the official piper1-gpl synthesizes one audio chunk per
+sentence. Piper's `timestamps.rs` already anticipated a chunked variant in its module docs.
+The `Mutex<Piper>` is currently taken for the single `create` call inside one `spawn_blocking`;
+`TtsEngine::kill_current` is a no-op for Piper, so a "cancelled" inference keeps running in the
+background holding the model lock until the whole text finishes.
+
+## Goals / Non-Goals
+
+**Goals:**
+- Bound Piper inference memory to a per-chunk constant regardless of input length.
+- Keep the `TtsEngine::synthesize` signature, output contract (one WAV + word timestamps +
+  duration) and frontend behavior unchanged.
+- Make cancellation actually stop Piper work (between chunks) instead of leaving a zombie
+  inference holding the model mutex.
+- Remove the now-redundant Piper-only 100k input gate (spec deltas for `ipc-commands`,
+  `text-pipeline`).
+
+**Non-Goals:**
+- Streaming/progressive playback of chunk audio (chunks concatenate into one WAV; progress
+  events are a separate future change — the frontend has no synthesis-progress listener today).
+- Changes to the ttsd or silero-native engines; refactoring their chunkers into a shared crate.
+- Upstreaming a sentence-level API to piper-rs.
+- Re-measuring or tuning the normalization pipeline (already near-linear since
+  fix-pipeline-quadratic).
+
+## Decisions
+
+### D1: Standalone chunker in `src-tauri/src/tts/chunking.rs` (not reusing `silero_native::chunking`)
+
+Port the ttsd split logic (sentence punct → clause punct → whitespace run → hard split at the
+limit, `split >= window/2` filter) into a new `tts`-level module. `src-tauri/src/tts/` is
+already the shared-helper layer for engines (`map_via_spans`, `CharMappingEntry` live there).
+
+- Alternative considered: make `split_with_limit` pub in silero-native and call it. Rejected:
+  silero-native is a standalone engine crate whose chunking module is documented in Silero
+  terms (`MAX_CHUNK_SIZE` "Silero limit", `sanitize_for_silero`); pointing the Piper engine at
+  a sibling engine crate's internals is hidden coupling — a little duplication beats it
+  (code-quality.md → Duplication). A shared mini-crate is over-engineering at two Rust
+  consumers; revisit if a third appears.
+
+### D2: Chunk limit — measured, then set to 500 codepoints
+
+`PIPER_MAX_CHUNK_CHARS` in `src-tauri/src/tts/piper/engine.rs`. Memory is not the binding
+constraint at these sizes; the real constraints are VITS attention stability/prosody on long
+chunks and chunk latency. A small env-gated `#[ignore]` measurement probe (pattern:
+`SILERO_NATIVE_BUNDLE` gating) runs `create` on 300/600/900/1200/1800-codepoint inputs with
+the real voice and prints peak RSS (`VmHWM` from `/proc/self/status`): 300 → ~0.5 GB,
+600 → ~0.9 GB, 1800 → ~3 GB, with per-codepoint synthesis time nearly flat across the range.
+The user picked 500 (~0.7–0.9 GB peak, ≈3-5 sentences) over the originally suggested 300 as
+the better prosody/memory balance. Not run in CI (needs the downloaded voice).
+
+### D3: Chunk loop inside one `spawn_blocking`, streaming samples into the WAV
+
+The existing `piper.lock()` guard extends over the loop instead of a single call. Extract the
+loop into a testable helper taking a synthesis closure, so chunking/timestamps/cancel logic is
+unit-testable without a real Piper model. Samples are NOT accumulated: each chunk's audio
+streams straight into the WAV file as it is synthesized (the voice's fixed `sample_rate` comes
+from the loaded config, so the writer opens before the first chunk) — accumulating the whole
+text's samples in a `Vec<f32>` made RSS grow linearly with input length, which the manual pass
+caught. A failed or cancelled synthesis drops the writer without `finalize` and removes the
+stub file, so no partial audio is ever left at the output path.
+
+### D7: Paragraph breaks force a chunk split and earn a silence pause
+
+The manual pass reported paragraphs read back-to-back: espeak-ng (used by piper-rs for
+phonemization) collapses `\n\n` into a plain space, so the model produces no paragraph pause —
+and it cannot be inserted inside a chunk's audio anyway (Piper exposes no per-word timing).
+Therefore the chunker ends the current chunk at every blank line (regardless of the limit),
+and the engine writes a fixed 0.45 s silence between chunks separated by a paragraph break.
+The pause is folded into the preceding chunk's recorded duration, keeping the timeline, the
+WAV and the timestamp estimator aligned. Sentence-boundary chunk boundaries get no inserted
+silence — the model's own inter-sentence pause covers those, matching unchunked behavior.
+ ttsd/Silero do not do this (they hand the model a single space); Piper narrations read better
+with it, and it is engine-local.
+
+### D4: Cancellation via a per-synthesis `Arc<AtomicBool>` registered in an engine slot
+
+Concurrent `synthesize` calls are real (each queue entry spawns its own task;
+the model mutex serializes only the blocking loops), so a single engine-wide
+flag was rejected in review — one synthesis's reset could erase another's
+cancel, and a cancel could kill a newcomer that never owned it. Instead:
+each `synthesize` creates a fresh `AtomicBool` and installs it in the
+engine's `Mutex<Option<Arc<AtomicBool>>>` slot *under the model mutex, right
+before its chunk loop* — so the slot always names the inference actually
+running, never one still waiting for the lock. `kill_current` (overridden,
+replacing the default no-op) sets the registered flag; the loop checks it
+before each chunk and once more after the last (so a cancel during a final
+single chunk still discards the audio); on completion the synthesis
+unregisters its flag only if it still owns the slot. Lock order is
+model-mutex → cancel-slot, `kill_current` takes only the cancel-slot, so no
+deadlock. With no synthesis registered, kill is a no-op. This matches the
+existing ttsd semantics, where killing the subprocess fails whatever work is
+in flight. A typed `piper_cancelled` error surfaces to the entry.
+
+### D5: Chunked timestamps — direct port of `estimate_timestamps_chunked` from ttsd
+
+New `estimate_timestamps_chunked(text, chunk_durations, char_mapping)` in
+`src-tauri/src/tts/piper/timestamps.rs`, where `chunk_durations: Vec<(usize, usize, f64)>` is
+`(norm_start, norm_end, duration_sec)` per chunk. Words inside a chunk are distributed
+proportionally to their codepoint length; each chunk's contribution is shifted by the
+accumulated duration of preceding chunks. `original_pos` semantics and `map_via_spans` usage
+are unchanged from the single-chunk variant.
+
+### D6: Remove the Piper input gate entirely
+
+Delete `MAX_INPUT_CHARS`, the rejection helpers and the three call sites in
+`src-tauri/src/commands/mod.rs` (ingestion, preview, synthesis-time re-check). After chunking,
+residual long-input risk is linear (CPU time; bounded memory; sample buffers ~0.5 GB f32 at
+100k chars — the same Silero already accepts unguarded). The obsolete gate comment is removed
+with the code.
+
+## Risks / Trade-offs
+
+- [Prosody discontinuity at chunk boundaries — each chunk synthesizes with fresh noise/latents]
+  → the splitter prefers sentence boundaries, where a pause is natural; this is exactly how
+  official Piper and both Silero engines behave. Manual pass includes listening to chunk
+  boundaries on a real voice.
+- [Hard split can cut inside a word] → only reachable when a limit-sized window has no
+  whitespace at all (a single token longer than the limit, e.g. a long URL); pinned by a unit
+  test, and unchanged from the behavior the Silero engines already ship.
+- [Cancellation races] → the slot holds the flag of whichever synthesis holds
+  the model, so a cancel targets the inference actually running; a synthesis
+  that already released the model never receives a late cancel. A chunk in
+  flight when `kill_current` fires finishes; the loop then stops before the
+  next chunk and after the last one. Worst case is one extra chunk of wasted
+  work, never corruption. Cross-entry imprecision (a cancel failing whatever
+  synthesis holds the engine) matches the ttsd kill-the-subprocess semantics.
+- [Measured safe chunk limit turns out very small (<150)] → would mean revisiting the gate
+  removal in a follow-up; unlikely, since tensor sizes scale with the square of chunk length
+  and the 600-char start point is already two orders of magnitude below the freeze threshold.
+
+## Migration Plan
+
+No data migration. The gate removal changes IPC behavior in the same release as the chunking
+that justifies it — specs (`ipc-commands`, `text-pipeline`) sync on archive. Rollback is a
+plain revert of the task branch.
+
+Tooling note: validate and archive for this change MUST use the repo-pinned CLI
+(`pnpm dlx @fission-ai/openspec@1.6.0`, per conventions.md → Testing gates). Newer CLI
+versions (≥1.7) reject MODIFIED deltas that rename scenarios, which this change does
+legitimately — the gate scenarios ("oversized text is rejected…") become acceptance scenarios,
+the same rename pattern the archived engine-aware-input-limit change shipped.
+
+## Open Questions
+
+None — the chunk limit is settled by a measurement task inside this change, not by a deferred
+decision.

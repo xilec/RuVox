@@ -195,42 +195,8 @@ fn entry_status_str(status: EntryStatus) -> &'static str {
         EntryStatus::Ready => "ready",
         EntryStatus::Playing => "playing",
         EntryStatus::Error => "error",
+        EntryStatus::Cancelled => "cancelled",
     }
-}
-
-/// Maximum accepted input length in Unicode codepoints when the active engine
-/// is Piper. Piper still synthesizes the whole text in one unchunked ONNX run,
-/// so unbounded input risks both a CPU wedge and an OOM (see openspec change
-/// `fix-pipeline-quadratic` and issue #155). Silero synthesizes in bounded
-/// chunks (`ttsd/ttsd/chunking.py`), so no limit applies while it is active.
-const MAX_INPUT_CHARS: usize = 100_000;
-
-/// The rejection message for input longer than `MAX_INPUT_CHARS` codepoints
-/// when the active engine is Piper; `None` for Silero (it synthesizes in
-/// bounded chunks and accepts any length).
-fn oversized_input_message(text: &str, engine: EngineKind) -> Option<String> {
-    if engine == EngineKind::Piper && text.chars().count() > MAX_INPUT_CHARS {
-        // Keep the space-grouped literal in sync with MAX_INPUT_CHARS.
-        return Some(
-            "текст слишком длинный для движка Piper (максимум 100 000 символов); \
-             сократите текст или переключитесь на Silero в настройках"
-                .to_string(),
-        );
-    }
-    None
-}
-
-/// Reject input longer than `MAX_INPUT_CHARS` codepoints when the active
-/// engine is Piper; Silero chunks the text and accepts any length.
-fn validate_input_length(text: &str, engine: EngineKind) -> CmdResult<()> {
-    if oversized_input_message(text, engine).is_some() {
-        // Params order matches the localized sentence: engine first, limit second.
-        return Err(CommandError::internal(
-            "input.too_long",
-            vec![engine.as_str().to_string(), MAX_INPUT_CHARS.to_string()],
-        ));
-    }
-    Ok(())
 }
 
 // ── Helper: emit entry_updated ─────────────────────────────────────────────────
@@ -315,7 +281,6 @@ impl<R: Runtime> SynthesisDeps<R> {
 enum SynthesisError {
     PipelinePanic(String),
     EmptyText,
-    InputTooLong(String),
     TtsFailed(String),
 }
 
@@ -324,7 +289,6 @@ impl SynthesisError {
         match self {
             Self::PipelinePanic(msg) => format!("pipeline task panicked: {msg}"),
             Self::EmptyText => "нормализация вернула пустой текст".to_string(),
-            Self::InputTooLong(msg) => msg.clone(),
             Self::TtsFailed(msg) => msg.clone(),
         }
     }
@@ -630,9 +594,9 @@ async fn finalize_audio_files(
 }
 
 /// Stale-completion guard: a synthesis completion or failure applies only
-/// while the entry is still `processing`. A cancelled entry is already back
-/// at `pending`, so its late result must be discarded instead of
-/// resurrecting it to `ready` / `error`.
+/// while the entry is still `processing`. A cancelled entry is `cancelled`
+/// (terminal until regenerated), so its late result must be discarded
+/// instead of resurrecting it to `ready` / `error`.
 fn completion_is_current(status: EntryStatus) -> bool {
     status == EntryStatus::Processing
 }
@@ -769,14 +733,6 @@ pub fn spawn_synthesis<R: Runtime + 'static>(
             };
 
             let result: Result<(), SynthesisError> = async {
-                // Re-check the length guard at synthesis time: the engine may
-                // have been switched to Piper after the entry was ingested
-                // under Silero (queued synthesis or regenerate_entry), and an
-                // unchunked oversized run is exactly what the limit guards
-                // against.
-                if let Some(msg) = oversized_input_message(&entry.original_text, tts.kind()) {
-                    return Err(SynthesisError::InputTooLong(msg));
-                }
                 let (normalized, mapping, applied_code_block_mode) =
                     run_normalization(Arc::clone(&pipeline), entry.original_text.clone()).await?;
                 mark_processing(&storage, &app, &entry_id, &normalized);
@@ -894,7 +850,7 @@ fn cleanup_finished_handle(tasks: &Mutex<HashMap<EntryId, AbortHandle>>, entry_i
 /// Core of [`set_entry_error`] without Tauri handles: flip the entry to
 /// `error`. With `require_processing` the stale-completion guard applies —
 /// a failure arriving for an entry that left `processing` (e.g. cancelled
-/// back to `pending`) is discarded together with the files the late request
+/// to `cancelled`) is discarded together with the files the late request
 /// may have written. Normalization-stage failures pass `false` because the
 /// entry is legitimately still `pending` before `mark_processing` runs.
 /// Returns `true` when the error was applied.
@@ -974,7 +930,6 @@ fn ingest_text<R: Runtime>(
     if text.trim().is_empty() {
         return Err(CommandError::internal("input.empty", vec![]));
     }
-    validate_input_length(&text, state.tts.kind())?;
 
     let entry = state
         .storage
@@ -1087,7 +1042,6 @@ pub async fn preview_normalize(
     state: State<'_, AppState>,
     text: String,
 ) -> CmdResult<PreviewNormalizeResult> {
-    validate_input_length(&text, state.tts.kind())?;
     let (normalized, _char_mapping) =
         preview_normalization(Arc::clone(&state.pipeline), text).await?;
     Ok(PreviewNormalizeResult { normalized })
@@ -1246,18 +1200,18 @@ pub async fn regenerate_entry<R: Runtime>(
 }
 
 /// Core of [`cancel_synthesis`] without Tauri handles: abort the entry's
-/// synthesis task (if registered) and flip the entry back to `pending`.
+/// synthesis task (if registered) and flip the entry to `cancelled`.
 /// Returns the updated entry plus whether the task had entered the TTS
 /// stage — the caller kills ttsd only in that case.
 ///
 /// Only a `processing` or `pending` entry may be cancelled: the spec
-/// sanctions just the `processing → pending` transition, and silently
-/// regressing a `ready` / `error` entry to `pending` would orphan its
+/// sanctions just the `processing → cancelled` transition, and silently
+/// regressing a `ready` / `error` entry to `cancelled` would orphan its
 /// audio from the state machine (playback requires `ready`). `pending`
-/// is allowed: cancellation is idempotent for a queued/idle entry, and a
-/// just-added entry briefly sits in `pending` with its synthesis task
-/// already registered — cancelling must still abort it. `ready`,
-/// `playing` and `error` fail with `synthesis_error` and change nothing.
+/// is allowed: a queued/idle entry can be cancelled, and a just-added
+/// entry briefly sits in `pending` with its synthesis task already
+/// registered — cancelling must still abort it. `ready`, `playing`,
+/// `error` and `cancelled` fail with `synthesis_error` and change nothing.
 fn cancel_entry(
     storage: &StorageService,
     synthesis_tasks: &Mutex<HashMap<EntryId, AbortHandle>>,
@@ -1277,7 +1231,7 @@ fn cancel_entry(
         .ok_or_else(|| CommandError::not_found("entry.not_found", vec![id.to_string()]))?;
     if matches!(
         live_status,
-        EntryStatus::Ready | EntryStatus::Error | EntryStatus::Playing
+        EntryStatus::Ready | EntryStatus::Error | EntryStatus::Playing | EntryStatus::Cancelled
     ) {
         return Err(CommandError::synthesis(
             "entry.cannot_cancel",
@@ -1285,14 +1239,14 @@ fn cancel_entry(
         ));
     }
 
-    // Atomic transition: flip to `pending` only if the entry is still
+    // Atomic transition: flip to `cancelled` only if the entry is still
     // `processing`/`pending` at apply time. A concurrent synthesis completion
-    // that already moved it out of these states wins, and the stale `pending`
-    // clone is NOT persisted.
+    // that already moved it out of these states wins, and the stale
+    // `cancelled` clone is NOT persisted.
     let applied = storage.update_entry_if(
         &uuid,
         |e| matches!(e.status, EntryStatus::Processing | EntryStatus::Pending),
-        |e| e.status = EntryStatus::Pending,
+        |e| e.status = EntryStatus::Cancelled,
     );
 
     if !applied {
@@ -1318,11 +1272,12 @@ fn cancel_entry(
 }
 
 /// Cancel an in-progress or queued synthesis job: abort the entry's
-/// synthesis task and flip the entry back to `pending`. If the task had
-/// already entered the TTS stage, the current ttsd subprocess is killed too
-/// (the supervisor transparently respawns it on the next request). A late
-/// completion belonging to the cancelled entry is discarded by the
-/// stale-completion guard in `apply_ready_if_current` /
+/// synthesis task and flip the entry to `cancelled`. If the task had
+/// already entered the TTS stage, the active engine's in-flight work is
+/// terminated too — the ttsd subprocess for Silero, the chunk-loop cancel
+/// flag for Piper (the supervisor transparently respawns ttsd on the next
+/// request). A late completion belonging to the cancelled entry is
+/// discarded by the stale-completion guard in `apply_ready_if_current` /
 /// `apply_error_if_current`.
 #[tauri::command]
 pub async fn cancel_synthesis<R: Runtime>(
@@ -1336,6 +1291,11 @@ pub async fn cancel_synthesis<R: Runtime>(
         &state.synthesize_entered,
         &id,
     )?;
+
+    info!(
+        "cancel_synthesis: id={id}, status={}, entered_tts={entered_tts}",
+        entry_status_str(entry.status)
+    );
 
     if entered_tts {
         state.engine_switcher.kill_current_ttsd().await;
@@ -2112,6 +2072,7 @@ mod synthesis_tests {
             EntryStatus::Ready,
             EntryStatus::Playing,
             EntryStatus::Error,
+            EntryStatus::Cancelled,
         ] {
             assert!(!completion_is_current(status), "{status:?} must be stale");
         }
@@ -2338,7 +2299,11 @@ mod synthesis_tests {
     /// same way.)
     #[tokio::test]
     async fn cancel_entry_rejects_terminal_statuses() {
-        for status in [EntryStatus::Ready, EntryStatus::Error] {
+        for status in [
+            EntryStatus::Ready,
+            EntryStatus::Error,
+            EntryStatus::Cancelled,
+        ] {
             let (storage, _dir) = make_service();
             let entry = storage.add_entry("текст".to_string()).unwrap();
             set_status(&storage, &entry, status);
@@ -2387,7 +2352,7 @@ mod synthesis_tests {
         let (updated, entered_tts) =
             cancel_entry(&storage, &tasks, &entered, &id.to_string()).unwrap();
 
-        assert_eq!(updated.status, EntryStatus::Pending);
+        assert_eq!(updated.status, EntryStatus::Cancelled);
         assert!(!entered_tts);
         assert!(tasks.lock().is_empty());
         let join_err = sleeper.await.unwrap_err();
@@ -2397,7 +2362,7 @@ mod synthesis_tests {
     /// Cancel flips the entry to `pending`, removes both registry keys, and
     /// the registered task is actually aborted.
     #[tokio::test]
-    async fn cancel_entry_aborts_registered_task_and_sets_pending() {
+    async fn cancel_entry_aborts_registered_task_and_sets_cancelled() {
         let (storage, _dir) = make_service();
         let entry = storage.add_entry("текст".to_string()).unwrap();
         set_status(&storage, &entry, EntryStatus::Processing);
@@ -2414,11 +2379,14 @@ mod synthesis_tests {
         let (updated, entered_tts) =
             cancel_entry(&storage, &tasks, &entered, &id.to_string()).unwrap();
 
-        assert_eq!(updated.status, EntryStatus::Pending);
+        assert_eq!(updated.status, EntryStatus::Cancelled);
         assert!(entered_tts, "entry was marked as inside the TTS stage");
         assert!(tasks.lock().is_empty());
         assert!(entered.lock().is_empty());
-        assert_eq!(storage.get_entry(&id).unwrap().status, EntryStatus::Pending);
+        assert_eq!(
+            storage.get_entry(&id).unwrap().status,
+            EntryStatus::Cancelled
+        );
 
         let join_err = sleeper.await.unwrap_err();
         assert!(join_err.is_cancelled());

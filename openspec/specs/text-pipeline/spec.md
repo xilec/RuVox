@@ -9,9 +9,7 @@ for Silero TTS, which cannot read English or special characters. The pipeline
 is the mandatory preprocessing step before every synthesis. Character-level
 position mapping produced alongside the normalized text is specified
 separately in the `position-mapping` capability.
-
 ## Requirements
-
 ### Requirement: Pipeline entry points and integration
 
 The system SHALL normalize all text through `TTSPipeline` before TTS
@@ -675,13 +673,12 @@ previously applied replacements.
 
 ### Requirement: Input length limit
 
-The pipeline is not required to accept unbounded input: text ingestion
-surfaces SHALL reject input longer than 100 000 codepoints before
-normalization starts (see the `ipc-commands` capability for the rejection
-surface) — but only when the active TTS engine is Piper, whose one-shot
-unchunked inference the limit protects. When the active engine is Silero,
-which synthesizes in bounded chunks, input of any length SHALL be accepted.
-Inputs at or below the limit SHALL be normalized in full without truncation.
+The pipeline SHALL NOT impose a length-based rejection: input of any length
+SHALL be accepted and normalized in full without truncation, regardless of the
+active TTS engine. Inference-side memory safety is owned by the TTS engines,
+which synthesize long text in bounded chunks (see the `silero-native-engine`
+and `piper-engine` capabilities); normalization itself scales near-linearly
+with input length.
 
 #### Scenario: Input at the limit is fully normalized
 
@@ -696,6 +693,14 @@ Inputs at or below the limit SHALL be normalized in full without truncation.
 - WHEN the pipeline processes it
 - THEN the whole input is normalized with no content dropped and no
   length-based rejection occurs
+
+#### Scenario: Oversized input is normalized when Piper is active
+
+- GIVEN the active TTS engine is Piper and an input longer than 100 000
+  codepoints
+- WHEN the pipeline processes it
+- THEN the whole input is normalized with no content dropped and no
+  length-based rejection occurs (Piper synthesis runs in bounded chunks)
 
 ### Requirement: Leading-dot decimals
 
@@ -727,3 +732,4 @@ version-path reading) and before operators and bare numbers.
 - WHEN the pipeline processes it
 - THEN the ".5" fragment is not read as a decimal (it belongs to a dotted
   label), and the digit is not expanded by the number phase either
+

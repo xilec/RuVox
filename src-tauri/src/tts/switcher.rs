@@ -197,12 +197,12 @@ impl EngineSwitcher {
         Arc::clone(&self.inner.read().await.engine)
     }
 
-    /// Terminate the current ttsd subprocess when Silero is the active
-    /// engine; no-op for Piper (in-process synthesis has no subprocess to
-    /// kill). Also terminates the most recently built Silero engine when it
-    /// is still alive: a synthesis started on Silero keeps that engine
-    /// running after a mid-synthesis engine switch, and its orphaned ttsd
-    /// would otherwise keep burning CPU on the cancelled request (#127).
+    /// Terminate the current engine's in-flight work: the ttsd subprocess for
+    /// Silero, the active chunk loop's cancel flag for Piper (`PiperEngine::
+    /// kill_current`). Also terminates the most recently built Silero engine
+    /// when it is still alive: a synthesis started on Silero keeps that
+    /// engine running after a mid-synthesis engine switch, and its orphaned
+    /// ttsd would otherwise keep burning CPU on the cancelled request (#127).
     /// When both references point at the same engine (Silero is active),
     /// only one kill is issued. Reaches [`TtsSupervisor::kill_current`]
     /// through the [`TtsEngine`] trait, so no concrete supervisor handle is
