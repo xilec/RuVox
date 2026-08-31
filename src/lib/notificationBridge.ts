@@ -154,6 +154,11 @@ export async function setupNotificationBridge(): Promise<() => void> {
           loading: true,
           autoClose: false,
         });
+      } else if (status === 'pending' && synthesisShown.has(id)) {
+        // Cancelled: the entry is back in the queue, the spinner toast would
+        // otherwise stay forever (autoClose is off).
+        synthesisShown.delete(id);
+        notifications.hide(toastId);
       } else if (status === 'ready' && synthesisShown.has(id)) {
         synthesisShown.delete(id);
         notifications.update({
