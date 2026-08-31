@@ -17,13 +17,17 @@ A bare Russian TTS engine cannot correctly pronounce:
 
 ## Features
 
-- **Add button** — copy text to the clipboard, press Add → the entry lands in the queue and gets synthesized.
-- **Preview dialog** — for long texts a separate floating window shows the original and normalized version side-by-side; you can edit the original before synthesis.
+- **Adding text** — paste, drag a `.txt`/`.md`/`.html` file or a link onto the window, or use the split Add button («Файл…», «Файл с кодировкой…», «По ссылке…»); encoding is auto-detected (BOM, UTF-8, CP1251/KOI8-R/CP866, …) with a manual override.
+- **Preview dialog** — a separate floating window shows the original and normalized version side-by-side before synthesis; the source format selector (auto / plain / Markdown / HTML) lives there, and the original can be edited before synthesis.
 - **Edit mode** — edit `original_text` directly in the viewer; changes are saved on the entry.
-- **Queue** — list of all entries with status badges (`pending` / `processing` / `ready` / `playing` / `error`).
+- **Queue** — all entries with status badges (`pending` / `processing` / `ready` / `playing` / `error`); the context menu regenerates audio, exports it («Сохранить аудио как…»: WAV / Ogg Opus) and shows the parameters each recording was made with (also on double-click).
 - **Word highlight** — synchronized highlighting of the word being read in markdown mode, via binary search over `WordTimestamp`.
+- **Code block modes** — «Кратко» (default) replaces fenced code blocks with a marker sentence; «Читать полностью» narrates them in full; switched in Settings, applies live.
 - **Mermaid** — diagrams render in the UI; for TTS they are replaced with the marker "тут мермэйд диаграмма".
+- **Playback** — mpv-based player with speed up to 3.0×, persisted across restarts.
+- **Localization** — Russian and English UI, selected in Settings.
 - **System tray** — close-to-tray, warm mpv re-init when the window is shown.
+- **Auto-updates** — the Windows installer and the Linux AppImage check GitHub Releases and self-update with signature verification.
 
 ## Stack
 
@@ -47,8 +51,9 @@ A bare Russian TTS engine cannot correctly pronounce:
 
 Current behavior is specified in [openspec/specs/](../openspec/specs/) — the single source of truth:
 
-- **Backend:** `text-pipeline`, `position-mapping`, `storage`, `ipc-commands`, `ttsd-protocol`, `silero-native-engine`
-- **Frontend / UX:** `ui`, `preview-dialog`, `queue-lifecycle`, `playback`, `text-display`, `word-highlight`, `tray`, `html-ingestion`, `viewer-copy-actions`
+- **Backend:** `text-pipeline`, `position-mapping`, `text-import`, `storage`, `ipc-commands`, `ttsd-protocol`, `silero-native-engine`, `logging`
+- **Frontend / UX:** `ui`, `preview-dialog`, `queue-lifecycle`, `playback`, `text-display`, `word-highlight`, `tray`, `html-ingestion`, `viewer-copy-actions`, `auto-update`
+- **Packaging / runtime:** `windows-installer`, `linux-runtime`, `windows-runtime`
 
 ### Development
 
