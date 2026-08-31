@@ -87,8 +87,7 @@ export const en: Record<MessageKey, string> = {
   'generation.app_version': 'App version',
   'generation.code_block': 'Code blocks',
   'generation.code_block.read': 'read',
-  'generation.code_block.skip': 'skip',
-  'generation.read_operators': 'Read operators',
+  'generation.code_block.brief': 'brief',
   'generation.normalized_sha': 'Text checksum',
   'generation.audio': 'Audio',
   'generation.duration': 'Duration',
@@ -143,7 +142,7 @@ export const en: Record<MessageKey, string> = {
     'Normalization prepares technical text for narration: English identifiers, abbreviations, numbers, URLs and symbols are rewritten so the speech engine can read them aloud in Russian. The left pane is the source text; the right pane is what will be spoken.',
   'preview.explain.help_aria': 'About normalization',
   'preview.explain.details':
-    'Everything the speech engine cannot read directly is rewritten: identifiers (getUserData → "get user data"), abbreviations (API → "ay pee eye"), numbers and dates, URLs and emails, operators and special symbols, and the contents of code blocks.\nThe source format (Auto / Plain / Markdown / HTML) controls how the text is prepared: readable text is extracted from HTML, Markdown code blocks are spoken out, and mermaid diagrams are replaced with a "here is a mermaid diagram" marker. The <!-- ruvox-code: brief --> directive switches code blocks to a short description instead of full reading.',
+    'Everything the speech engine cannot read directly is rewritten: identifiers (getUserData → "get user data"), abbreviations (API → "ay pee eye"), numbers and dates, URLs and emails, operators and special symbols, and the contents of code blocks.\nThe source format (Auto / Plain / Markdown / HTML) controls how the text is prepared: readable text is extracted from HTML, and mermaid diagrams are replaced with a "here is a mermaid diagram" marker. Code block narration follows the Settings option: "Brief" replaces each block with a short marker sentence, "Read fully" speaks the code out loud.',
   'preview.explain.readme_link': 'Read more in the README normalization section',
 
   // ── Silero bundle prompt (first run) ────────────────────────────────────
@@ -201,6 +200,11 @@ export const en: Record<MessageKey, string> = {
   'settings.speaker.random': 'Random',
   'settings.sample_rate.label': 'Sample rate',
   'settings.sample_rate.hz': '{0} Hz',
+  'settings.code_block.label': 'Code block narration',
+  'settings.code_block.brief': 'Brief',
+  'settings.code_block.read': 'Read fully',
+  'settings.code_block.description':
+    '"Brief" replaces a code block with a "here follows a code example in <language>" sentence, "Read fully" speaks the code out',
   'settings.notify_on_ready': 'Notify when audio is ready',
   'settings.notify_on_error': 'Notify about synthesis errors',
   'settings.preview_dialog_enabled': 'Show the preview dialog before synthesis',

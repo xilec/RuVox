@@ -558,17 +558,22 @@ impl StorageService {
                 return Ok(UIConfig::default());
             }
         };
-        match serde_json::from_str(&raw) {
-            Ok(config) => Ok(config),
+        let mut config: UIConfig = match serde_json::from_str(&raw) {
+            Ok(config) => config,
             Err(e) => {
                 tracing::warn!("config.json is corrupted ({e}), backing up and using defaults");
                 let bak = self.config_path.with_extension("json.bak");
                 if let Err(re) = fs::rename(&self.config_path, &bak) {
                     tracing::error!("failed to back up corrupted config.json: {re}");
                 }
-                Ok(UIConfig::default())
+                return Ok(UIConfig::default());
             }
-        }
+        };
+        // Canonicalize the code block mode so configs written by earlier
+        // builds (legacy "skip", unknown values) resolve to a value the
+        // pipeline and the Settings control understand.
+        config.code_block_mode = UIConfig::canonical_code_block_mode(&config.code_block_mode);
+        Ok(config)
     }
 
     pub fn save_config(&self, config: &UIConfig) -> Result<()> {
@@ -831,7 +836,6 @@ mod tests {
             model: None,
             app_version: "0.4.0".to_string(),
             code_block_mode: Some("read".to_string()),
-            read_operators: Some(true),
             normalized_text_sha256: None,
             audio_codec: Some("Ogg Opus".to_string()),
             audio_bytes: Some(1000),
@@ -905,6 +909,77 @@ mod tests {
         let cfg = svc.load_config().unwrap();
         assert_eq!(cfg.speaker, "aidar");
         assert_eq!(cfg.sample_rate, 24000);
+        assert_eq!(cfg.code_block_mode, "brief");
+    }
+
+    fn write_config_file(cache: &std::path::Path, json: &str) {
+        fs::write(cache.join("config.json"), json).unwrap();
+    }
+
+    #[test]
+    fn config_without_code_block_mode_key_defaults_to_brief() {
+        let dir = TempDir::new().unwrap();
+        let cache = dir.path().to_path_buf();
+        fs::create_dir_all(cache.join("audio")).unwrap();
+        write_config_file(&cache, r#"{"speaker": "xenia"}"#);
+
+        let svc = StorageService::with_cache_dir(cache).unwrap();
+        assert_eq!(svc.load_config().unwrap().code_block_mode, "brief");
+    }
+
+    #[test]
+    fn persisted_read_code_block_mode_stays_read() {
+        let dir = TempDir::new().unwrap();
+        let cache = dir.path().to_path_buf();
+        fs::create_dir_all(cache.join("audio")).unwrap();
+        write_config_file(&cache, r#"{"code_block_mode": "read"}"#);
+
+        let svc = StorageService::with_cache_dir(cache).unwrap();
+        let cfg = svc.load_config().unwrap();
+        assert_eq!(cfg.code_block_mode, "read");
+        svc.save_config(&cfg).unwrap();
+        assert_eq!(svc.load_config().unwrap().code_block_mode, "read");
+    }
+
+    #[test]
+    fn legacy_skip_code_block_mode_is_aliased_to_brief() {
+        let dir = TempDir::new().unwrap();
+        let cache = dir.path().to_path_buf();
+        fs::create_dir_all(cache.join("audio")).unwrap();
+        write_config_file(&cache, r#"{"code_block_mode": "skip"}"#);
+
+        let svc = StorageService::with_cache_dir(cache).unwrap();
+        assert_eq!(svc.load_config().unwrap().code_block_mode, "brief");
+    }
+
+    #[test]
+    fn unknown_code_block_mode_falls_back_to_brief() {
+        let dir = TempDir::new().unwrap();
+        let cache = dir.path().to_path_buf();
+        fs::create_dir_all(cache.join("audio")).unwrap();
+        write_config_file(&cache, r#"{"code_block_mode": "loud"}"#);
+
+        let svc = StorageService::with_cache_dir(cache).unwrap();
+        assert_eq!(svc.load_config().unwrap().code_block_mode, "brief");
+    }
+
+    #[test]
+    fn config_with_legacy_read_operators_key_parses_and_drops() {
+        let dir = TempDir::new().unwrap();
+        let cache = dir.path().to_path_buf();
+        fs::create_dir_all(cache.join("audio")).unwrap();
+        write_config_file(
+            &cache,
+            r#"{"speaker": "xenia", "read_operators": false, "code_block_mode": "read"}"#,
+        );
+
+        let svc = StorageService::with_cache_dir(cache.clone()).unwrap();
+        let cfg = svc.load_config().unwrap();
+        assert_eq!(cfg.speaker, "xenia");
+        assert_eq!(cfg.code_block_mode, "read");
+        svc.save_config(&cfg).unwrap();
+        let raw = fs::read_to_string(cache.join("config.json")).unwrap();
+        assert!(!raw.contains("read_operators"));
     }
 
     /// A corrupted `config.json` must behave like a corrupted history: the
@@ -994,11 +1069,57 @@ mod tests {
             model: None,
             app_version: "0.4.0".to_string(),
             code_block_mode: Some("read".to_string()),
-            read_operators: Some(true),
             normalized_text_sha256: None,
             audio_codec: Some("Ogg Opus".to_string()),
             audio_bytes: Some(1000),
         }
+    }
+
+    /// Snapshots written before `read_operators` was removed must keep
+    /// parsing; re-saving drops the unknown field.
+    #[test]
+    fn legacy_generation_snapshot_with_read_operators_parses_and_drops() {
+        let dir = TempDir::new().unwrap();
+        let cache = dir.path().to_path_buf();
+        fs::create_dir_all(cache.join("audio")).unwrap();
+        fs::write(
+            cache.join("history.json"),
+            r#"{
+                "version": 1,
+                "entries": [{
+                    "id": "550e8400-e29b-41d4-a716-446655440000",
+                    "original_text": "Тест",
+                    "normalized_text": "Тест",
+                    "status": "ready",
+                    "created_at": "2026-02-15T11:46:51.504055",
+                    "generation": {
+                        "engine": "silero_native",
+                        "voice": "xenia",
+                        "sample_rate": 24000,
+                        "app_version": "0.4.0",
+                        "code_block_mode": "read",
+                        "read_operators": true,
+                        "audio_codec": "Ogg Opus",
+                        "audio_bytes": 1000
+                    }
+                }]
+            }"#,
+        )
+        .unwrap();
+
+        let svc = StorageService::with_cache_dir(cache.clone()).unwrap();
+        let entries = svc.get_all_entries();
+        let snap = entries[0].generation.as_ref().expect("snapshot kept");
+        assert_eq!(snap.code_block_mode.as_deref(), Some("read"));
+        assert_eq!(snap.engine, "silero_native");
+
+        // Any entry rewrite persists the snapshot without the legacy field.
+        let mut entry = entries[0].clone();
+        entry.was_regenerated = true;
+        svc.update_entry(entry).unwrap();
+        let raw = fs::read_to_string(cache.join("history.json")).unwrap();
+        assert!(!raw.contains("read_operators"));
+        assert!(raw.contains("\"code_block_mode\": \"read\""));
     }
 
     #[test]

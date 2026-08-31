@@ -8,6 +8,7 @@
 /// Run with:
 ///   cargo test --manifest-path src-tauri/Cargo.toml --test golden
 use ruvox_tauri_lib::pipeline::TTSPipeline;
+use ruvox_tauri_lib::pipeline::normalizers::code_blocks::CodeBlockMode;
 use serde::Deserialize;
 use similar::{ChangeTag, TextDiff};
 use std::fs;
@@ -64,6 +65,18 @@ fn read_char_map_fixture(case: &str) -> CharMapFixture {
         .unwrap_or_else(|e| panic!("cannot read char_map fixture {}: {}", path.display(), e));
     serde_json::from_str(&json)
         .unwrap_or_else(|e| panic!("cannot parse char_map fixture {}: {}", path.display(), e))
+}
+
+/// Optional `<case>.mode.txt` sidecar pinning the code block narration mode
+/// for the case; absent = the pipeline's default (Brief).
+fn read_mode_sidecar(case: &str) -> Option<CodeBlockMode> {
+    let path = fixtures_dir().join(format!("{}.mode.txt", case));
+    let text = fs::read_to_string(&path).ok()?;
+    match text.trim() {
+        "brief" => Some(CodeBlockMode::Brief),
+        "read" => Some(CodeBlockMode::Full),
+        other => panic!("invalid mode sidecar {}: {:?}", path.display(), other),
+    }
 }
 
 // ── Diff helpers ───────────────────────────────────────────────────────────────
@@ -141,6 +154,9 @@ fn golden_fixtures() {
         let expected_map = read_char_map_fixture(case_name);
 
         let mut pipeline = TTSPipeline::new();
+        if let Some(mode) = read_mode_sidecar(case_name) {
+            pipeline.set_code_block_mode(mode);
+        }
         let (actual_text, actual_mapping) = pipeline.process_with_char_mapping(&input);
 
         let mut case_errors: Vec<String> = Vec::new();

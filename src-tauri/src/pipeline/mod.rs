@@ -9,7 +9,7 @@ use regex::Regex;
 use crate::pipeline::constants::{ARROW_SYMBOLS, GREEK_LETTERS, MATH_SYMBOLS};
 use crate::pipeline::normalizers::abbreviations::AbbreviationNormalizer;
 use crate::pipeline::normalizers::code::CodeIdentifierNormalizer;
-use crate::pipeline::normalizers::code_blocks::CodeBlockHandler;
+use crate::pipeline::normalizers::code_blocks::{CodeBlockHandler, CodeBlockMode};
 use crate::pipeline::normalizers::english::EnglishNormalizer;
 use crate::pipeline::normalizers::numbers::NumberNormalizer;
 use crate::pipeline::normalizers::symbols::SymbolNormalizer;
@@ -260,12 +260,24 @@ impl TTSPipeline {
             english_normalizer: EnglishNormalizer::new(),
             abbrev_normalizer: AbbreviationNormalizer::new(),
             symbol_normalizer: SymbolNormalizer::new(),
-            // Legacy default is "full" (read code content, not brief description).
-            code_block_handler: CodeBlockHandler::with_mode(
-                crate::pipeline::normalizers::code_blocks::CodeBlockMode::Full,
-            ),
+            // Implicit default matches the `code_block_mode` config default
+            // (brief); production code always sets the mode explicitly from
+            // config, so this default only shows up in tests.
+            code_block_handler: CodeBlockHandler::new(),
             code_normalizer: CodeIdentifierNormalizer::new(),
         }
+    }
+
+    /// Current code block narration mode (mirrors the `code_block_mode`
+    /// config value).
+    pub fn code_block_mode(&self) -> CodeBlockMode {
+        self.code_block_handler.mode()
+    }
+
+    /// Set the code block narration mode. Driven by config: at startup and
+    /// whenever `update_config` changes `code_block_mode`.
+    pub fn set_code_block_mode(&mut self, mode: CodeBlockMode) {
+        self.code_block_handler.set_mode(mode);
     }
 
     /// Process text for TTS. Returns normalized text without position mapping.
@@ -825,6 +837,24 @@ mod tests {
         let mut p = TTSPipeline::new();
         let input = "```mermaid\ngraph TD\nA-->B\n```";
         assert_eq!(p.process(input), "Тут мермэйд диаграмма");
+    }
+
+    #[test]
+    fn pipeline_code_block_mode_default_is_brief() {
+        let p = TTSPipeline::new();
+        assert_eq!(p.code_block_mode(), CodeBlockMode::Brief);
+    }
+
+    #[test]
+    fn pipeline_code_block_mode_switch_changes_narration() {
+        let mut p = TTSPipeline::new();
+        let input = "```python\nprint('hi')\n```";
+        assert_eq!(p.process(input), "далее следует пример кода на пайтон");
+        p.set_code_block_mode(CodeBlockMode::Full);
+        assert_eq!(
+            p.process(input),
+            "принт открывающая скобка хи закрывающая скобка"
+        );
     }
 
     #[test]

@@ -4,6 +4,21 @@ Notable changes in RuVox, in chronological order.
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **Code block narration is now a working setting** — the "Озвучка блоков
+  кода" selector in Settings («Кратко» / «Читать полностью») drives the
+  pipeline live: brief mode (new default) replaces fenced code blocks with a
+  short marker sentence, full mode reads the code out; the change applies
+  without restarting the app (#89).
+
+### Removed
+- **The inline `<!-- ruvox-code: … -->` directives** — code block narration
+  is controlled solely by the Settings option (#89).
+- **The dead `read_operators` config field** — it never affected synthesis;
+  old configs carrying it keep parsing (#89).
+
 ## [0.5.1] — 2026-08-30
 
 ### Added

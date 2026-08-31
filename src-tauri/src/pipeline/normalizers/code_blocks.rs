@@ -98,19 +98,37 @@ pub static SPECIAL_SYMBOLS: Lazy<HashMap<&'static str, &'static str>> = Lazy::ne
 static RE_FENCED_BLOCK: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(?s)```(\w*)\n(.*?)```").expect("valid regex"));
 
-/// Inline mode-switch directives embedded in the document.
-static RE_MODE_SWITCH: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"<!--\s*ruvox-code:\s*(full|brief)\s*-->").expect("valid regex"));
-
 // ── CodeBlockMode ──────────────────────────────────────────────────────────
 
 /// Controls how fenced code blocks are rendered into speakable text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CodeBlockMode {
-    /// Replace the block with a short description (language + line count).
+    /// Replace the block with a short description ("далее следует пример
+    /// кода на <язык>").
     Brief,
     /// Read the code line-by-line, normalising identifiers and symbols.
     Full,
+}
+
+impl CodeBlockMode {
+    /// Parse a `code_block_mode` config value. `"skip"` is the legacy alias
+    /// for Brief from before the setting was wired; unknown values fall
+    /// back to the product default.
+    pub fn from_config(value: &str) -> Self {
+        match value {
+            "read" => CodeBlockMode::Full,
+            "brief" | "skip" => CodeBlockMode::Brief,
+            _ => CodeBlockMode::Brief,
+        }
+    }
+
+    /// Canonical config string for this mode (never the legacy `"skip"`).
+    pub fn as_config_str(self) -> &'static str {
+        match self {
+            CodeBlockMode::Brief => "brief",
+            CodeBlockMode::Full => "read",
+        }
+    }
 }
 
 // ── CodeBlockHandler ───────────────────────────────────────────────────────
@@ -145,7 +163,7 @@ impl CodeBlockHandler {
         self.mode
     }
 
-    /// Switch mode at runtime (used by mode-switch directives).
+    /// Switch mode at runtime (driven by the `code_block_mode` config).
     pub fn set_mode(&mut self, mode: CodeBlockMode) {
         self.mode = mode;
     }
@@ -153,24 +171,17 @@ impl CodeBlockHandler {
     // ── Public processing entry points ─────────────────────────────────
 
     /// Process a single code block (code content + optional language tag)
-    /// under the handler's default mode.
+    /// under the handler's mode.
     ///
-    /// This is the low-level entry used in tests; `process()` calls
-    /// `process_block_with_mode()` directly to honor per-section directives.
+    /// This is the low-level entry used in tests; `process()` applies the
+    /// same mode to every block in the document.
     pub fn process_block(&self, code: &str, language: Option<&str>) -> String {
         self.process_block_with_mode(self.mode, code, language)
     }
 
-    /// In-place replacement of all fenced code blocks in `tracked`.
-    ///
-    /// Also handles `<!-- ruvox-code: full|brief -->` directives that appear
-    /// *before* a block, allowing per-section mode overrides.
+    /// In-place replacement of all fenced code blocks in `tracked`, each
+    /// under the handler's mode (owned by the `code_block_mode` config).
     pub fn process(&self, tracked: &mut TrackedText) {
-        // Collect positions of mode-switch directives so we can determine
-        // the effective mode for each code block.
-        let directives = self.collect_directives(tracked.text());
-
-        // Build a snapshot of block match positions with their effective modes.
         let snapshot = tracked.text().to_string();
         let blocks: Vec<(usize, usize, String)> = RE_FENCED_BLOCK
             .captures_iter(&snapshot)
@@ -183,21 +194,12 @@ impl CodeBlockHandler {
                     Some(language_raw)
                 };
                 let code = caps.get(2).map(|c| c.as_str()).unwrap_or("").trim();
-                let block_start = m.start();
-
-                // Effective mode: last directive whose byte position is before this block
-                let effective_mode = directives
-                    .iter()
-                    .rev()
-                    .find(|(pos, _)| *pos < block_start)
-                    .map(|(_, mode)| *mode)
-                    .unwrap_or(self.mode);
 
                 // Mermaid diagrams are never read aloud.
                 let replacement = if language.is_some_and(|l| l.eq_ignore_ascii_case("mermaid")) {
                     "Тут мермэйд диаграмма".to_string()
                 } else {
-                    self.process_block_with_mode(effective_mode, code, language)
+                    self.process_block_with_mode(self.mode, code, language)
                 };
 
                 (m.start(), m.end(), replacement)
@@ -205,18 +207,11 @@ impl CodeBlockHandler {
             .collect();
 
         tracked.replace_byte_ranges(blocks);
-
-        // Remove mode-switch directives from the output (they are control markers,
-        // not content that should be spoken).
-        let directive_pattern =
-            Regex::new(r"<!--\s*ruvox-code:\s*(?:full|brief)\s*-->").expect("valid regex");
-        tracked.sub(&directive_pattern, |_| String::new());
     }
 
     // ── Private helpers ────────────────────────────────────────────────
 
-    /// Process a block under an explicit mode (used by `process()` when a
-    /// per-section directive overrides the handler's default mode).
+    /// Process a block under an explicit mode.
     fn process_block_with_mode(
         &self,
         mode: CodeBlockMode,
@@ -227,22 +222,6 @@ impl CodeBlockHandler {
             CodeBlockMode::Brief => self.brief_description(language),
             CodeBlockMode::Full => self.full_normalize(code, language),
         }
-    }
-
-    fn collect_directives(&self, text: &str) -> Vec<(usize, CodeBlockMode)> {
-        RE_MODE_SWITCH
-            .captures_iter(text)
-            .map(|caps| {
-                let m = caps.get(0).unwrap();
-                let mode_str = caps.get(1).unwrap().as_str();
-                let mode = if mode_str == "full" {
-                    CodeBlockMode::Full
-                } else {
-                    CodeBlockMode::Brief
-                };
-                (m.start(), mode)
-            })
-            .collect()
     }
 
     fn brief_description(&self, language: Option<&str>) -> String {
@@ -535,17 +514,36 @@ mod tests {
 
     #[test]
     fn mode_switch_via_process() {
-        // A directive switches the effective mode for blocks that follow.
-        let text = "<!-- ruvox-code: full -->\n```python\nprint('hi')\n```";
+        // A legacy `ruvox-code` directive no longer changes the effective
+        // mode: the comment is ordinary text and the handler's mode wins.
+        let text = "<!-- ruvox-code: brief -->\n```python\nprint('hi')\n```";
         let mut tracked = TrackedText::new(text);
-        // Handler starts in Brief; directive should upgrade to Full for this block.
-        let h = CodeBlockHandler::with_mode(CodeBlockMode::Brief);
+        let h = CodeBlockHandler::with_mode(CodeBlockMode::Full);
         h.process(&mut tracked);
         let result = tracked.text();
-        // Brief would give "далее следует пример кода на пайтон"; the `full`
-        // directive upgrades the block to Full, so the code is read verbatim.
-        // Leading "\n" is where the removed directive line used to be.
-        assert_eq!(result, "\nпринт открывающая скобка хи закрывающая скобка");
+        // Full mode keeps reading the code; the comment survives as text for
+        // the symbol phases (no directive interpretation, no removal).
+        assert!(result.contains("принт открывающая скобка хи закрывающая скобка"));
+        assert!(result.contains("ruvox-code"));
+    }
+
+    // ── Config value conversions ───────────────────────────────────────
+
+    #[test_case("brief" => CodeBlockMode::Brief; "brief")]
+    #[test_case("skip" => CodeBlockMode::Brief; "legacy_skip_alias")]
+    #[test_case("read" => CodeBlockMode::Full; "read")]
+    #[test_case("loud" => CodeBlockMode::Brief; "unknown_falls_back")]
+    #[test_case("" => CodeBlockMode::Brief; "empty_falls_back")]
+    fn from_config_maps_values(value: &str) -> CodeBlockMode {
+        CodeBlockMode::from_config(value)
+    }
+
+    #[test]
+    fn as_config_str_is_canonical() {
+        assert_eq!(CodeBlockMode::Brief.as_config_str(), "brief");
+        assert_eq!(CodeBlockMode::Full.as_config_str(), "read");
+        // Round-trip never emits the legacy alias.
+        assert_eq!(CodeBlockMode::from_config("skip").as_config_str(), "brief");
     }
 
     // ── process() with TrackedText ──────────────────────────────────────
@@ -575,37 +573,14 @@ mod tests {
     }
 
     #[test]
-    fn process_mode_directive_switches_to_full() {
-        let text = "<!-- ruvox-code: full -->\n```python\nprint('world')\n```";
+    fn process_identical_blocks_each_replaced() {
+        // Regression (#84): two byte-identical blocks must each get their own
+        // replacement, even when the replacement strings are identical.
+        let text = "```python\nprint('world')\n```\n```python\nprint('world')\n```";
         let mut tracked = TrackedText::new(text);
-        let h = CodeBlockHandler::with_mode(CodeBlockMode::Brief);
+        let h = CodeBlockHandler::with_mode(CodeBlockMode::Full);
         h.process(&mut tracked);
-        let result = tracked.text();
-        // Full-mode reading of print('world'); the leading "\n" is where the
-        // removed directive line used to be.
-        assert_eq!(
-            result,
-            "\nпринт открывающая скобка ворлд закрывающая скобка"
-        );
-    }
-
-    #[test]
-    fn process_mode_directive_brief_after_full() {
-        let text = concat!(
-            "<!-- ruvox-code: full -->\n```python\nprint('world')\n```\n",
-            "<!-- ruvox-code: brief -->\n```python\nprint('world')\n```"
-        );
-        let mut tracked = TrackedText::new(text);
-        let h = CodeBlockHandler::with_mode(CodeBlockMode::Brief);
-        h.process(&mut tracked);
-        let result = tracked.text();
-        // Regression (#84): two byte-identical blocks with different effective
-        // modes must each get their own replacement — the first block is read
-        // in full, the second described briefly. Leading "\n"s are where the
-        // removed directive lines used to be.
-        assert_eq!(
-            result,
-            "\nпринт открывающая скобка ворлд закрывающая скобка\n\nдалее следует пример кода на пайтон"
-        );
+        let reading = "принт открывающая скобка ворлд закрывающая скобка";
+        assert_eq!(tracked.text(), format!("{reading}\n{reading}"));
     }
 }

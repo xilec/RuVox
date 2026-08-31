@@ -15,7 +15,6 @@ const SNAPSHOT: GenerationParams = {
   model: { name: 'silero_v5_ru', sha256: 'ab12'.repeat(8) },
   app_version: '0.5.0',
   code_block_mode: 'read',
-  read_operators: true,
   normalized_text_sha256: 'cd34'.repeat(8),
   audio_codec: 'Ogg Opus',
   audio_bytes: 1536 * 1024,
@@ -81,7 +80,6 @@ describe('GenerationParamsDialog', () => {
     expect(body).toContain('silero_v5_ru');
     expect(body).toContain('0.5.0');
     expect(body).toContain('читать');
-    expect(body).toContain('Да');
     // sha256 display is shortened to 12 chars with an ellipsis.
     expect(body).toContain('ab12ab12ab12…');
     expect(body).toContain('Ogg Opus, 1.5 МБ');
@@ -103,7 +101,6 @@ describe('GenerationParamsDialog', () => {
           sample_rate: null,
           audio_codec: null,
           audio_bytes: null,
-          read_operators: null,
           code_block_mode: null,
           normalized_text_sha256: null,
         },
@@ -113,8 +110,8 @@ describe('GenerationParamsDialog', () => {
     const body = document.body.textContent ?? '';
     expect(body).not.toContain('silero_v5_ru');
     // Every nulled row shows the placeholder: source, sample rate, model,
-    // code-block mode, operator reading, text checksum, and the audio row.
-    expect(body.split('—').length - 1).toBe(7);
+    // code-block mode, text checksum, and the audio row.
+    expect(body.split('—').length - 1).toBe(6);
   });
 
   it('shows the legacy line for an entry without a snapshot', () => {

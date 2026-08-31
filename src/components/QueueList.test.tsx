@@ -360,7 +360,6 @@ describe('QueueList context menu', () => {
         model: null,
         app_version: '0.5.0',
         code_block_mode: 'read',
-        read_operators: true,
         normalized_text_sha256: null,
         audio_codec: 'Ogg Opus',
         audio_bytes: 1024,
