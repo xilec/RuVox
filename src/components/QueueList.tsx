@@ -55,9 +55,10 @@ interface QueueItemProps {
   onSelect: (entry: TextEntry) => void;
   onPlay: (id: string) => void;
   onContextMenu: (entry: TextEntry, x: number, y: number) => void;
+  onOpenParams: (entry: TextEntry) => void;
 }
 
-function QueueItem({ entry, isSelected, isPlaying, onSelect, onPlay, onContextMenu }: QueueItemProps) {
+function QueueItem({ entry, isSelected, isPlaying, onSelect, onPlay, onContextMenu, onOpenParams }: QueueItemProps) {
   const tt = useT();
   const preview = entry.original_text.slice(0, 60);
   const isProcessing = entry.status === 'processing';
@@ -76,6 +77,7 @@ function QueueItem({ entry, isSelected, isPlaying, onSelect, onPlay, onContextMe
       className={itemClass}
       data-entry-id={entry.id}
       onClick={() => onSelect(entry)}
+      onDoubleClick={() => onOpenParams(entry)}
       onContextMenu={(e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -316,6 +318,13 @@ export function QueueList({ onRegenerate }: QueueListProps) {
   const menuHasGeneration =
     menuEntry !== null &&
     (menuEntry.generation !== null || menuEntry.audio_generated_at !== null);
+  // Double-click opens the same dialog under the same gate as the menu item;
+  // a dblclick always fires, so the gate lives here, not on the DOM.
+  const handleOpenParams = useCallback((entry: TextEntry) => {
+    if (entry.generation !== null || entry.audio_generated_at !== null) {
+      setParamsEntryId(entry.id);
+    }
+  }, []);
 
   const handleDelete = useCallback(
     (id: string) => {
@@ -362,6 +371,7 @@ export function QueueList({ onRegenerate }: QueueListProps) {
                 onSelect={setSelectedEntry}
                 onPlay={handlePlay}
                 onContextMenu={(e, x, y) => setMenu({ id: e.id, x, y })}
+                onOpenParams={handleOpenParams}
               />
             ))}
           </Stack>

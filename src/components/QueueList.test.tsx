@@ -412,4 +412,45 @@ describe('QueueList context menu', () => {
       );
     });
   });
+
+  describe('double-click opens the parameters dialog', () => {
+    function dblclickItem(): void {
+      const item = host.querySelector('[data-entry-id="entry-1"]');
+      expect(item).not.toBeNull();
+      act(() => {
+        item!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      });
+    }
+
+    it('opens the dialog for a synthesized entry', async () => {
+      const entry: TextEntry = {
+        ...makeEntry('ready'),
+        audio_generated_at: '2026-08-31T00:00:00Z',
+        generation: {
+          engine: 'silero_native',
+          voice: 'xenia',
+          sample_rate: 24000,
+          model: null,
+          app_version: '0.5.0',
+          code_block_mode: 'brief',
+          normalized_text_sha256: null,
+          audio_codec: 'Ogg Opus',
+          audio_bytes: 1024,
+        },
+      };
+      await renderWith(entry);
+      dblclickItem();
+
+      await vi.waitFor(() => {
+        expect(document.body.textContent).toContain('Параметры записи');
+      });
+    });
+
+    it('is a no-op for a never-synthesized entry', async () => {
+      await renderWith(makeEntry('pending'));
+      dblclickItem();
+
+      expect(document.body.textContent).not.toContain('Параметры записи');
+    });
+  });
 });

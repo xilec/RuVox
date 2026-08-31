@@ -55,7 +55,7 @@ The application title and window icon SHALL be set by `tauri.conf.json` (`window
 
 The system SHALL load entries on mount via `commands.getEntries()` sorted by `created_at` descending, and SHALL keep the list in sync by listening to `events.entryUpdated` (prepend new entries, replace existing ones in place) and `events.entryRemoved` (remove and clear the selection if the selected entry was deleted).
 
-Each queue item SHALL show a 60-character preview of `original_text`, a status badge (Ожидание/Обработка/Готово/Играет/Ошибка), the duration when available, and a Play action enabled only for `ready`/`playing` entries. Clicking an item SHALL store it as the selected entry in the Zustand `selectedEntry` store.
+Each queue item SHALL show a 60-character preview of `original_text`, a status badge (Ожидание/Обработка/Готово/Играет/Ошибка), the duration when available, and a Play action enabled only for `ready`/`playing` entries. Clicking an item SHALL store it as the selected entry in the Zustand `selectedEntry` store. Double-clicking an item SHALL open the recording parameters dialog under the same gate as the "Параметры записи…" menu item: only when the entry has a generation snapshot or a generation timestamp; otherwise the double-click SHALL be a no-op. Single-click selection, the context menu, and keyboard activation keep their existing behavior.
 
 Right-clicking an item SHALL open a context menu with "Воспроизвести", "Сохранить аудио как…", "Перегенерировать аудио" and "Удалить". The "Сохранить аудио как…" item SHALL be enabled under the same gate as Play (`ready`/`playing` entries). Activating it SHALL call `commands.pickExportAudioPath(entryId)`; a `null` result (cancelled dialog) SHALL be a silent no-op; a chosen path SHALL be handed to `commands.exportAudio(entryId, path)`, and on success a confirmation notification SHALL show the target path. Failures SHALL surface the localized red error notification. Deletion MUST be confirmed via `modals.openConfirmModal` before calling `commands.deleteEntry`.
 
@@ -103,6 +103,18 @@ The navbar search input SHALL filter entries case-insensitively by `original_tex
 - GIVEN an entry with status `pending` or `processing` or `error`
 - WHEN the item's context menu is open
 - THEN "Сохранить аудио как…" is disabled
+
+#### Scenario: Double-click opens the parameters dialog
+
+- GIVEN a ready entry with a generation snapshot
+- WHEN the user double-clicks the queue item
+- THEN the recording parameters dialog opens for that entry and the entry is selected
+
+#### Scenario: Double-click is a no-op for never-synthesized entries
+
+- GIVEN a pending entry with no generation snapshot and no generation timestamp
+- WHEN the user double-clicks the queue item
+- THEN the recording parameters dialog does not open
 
 ### Requirement: Player controls
 
@@ -382,7 +394,15 @@ swap the highlight styles without a reload.
 
 ### Requirement: Recording parameters dialog
 
-The queue context menu item "Параметры записи…" SHALL open a read-only dialog showing the entry's ingestion source ("Источник": буфер обмена / файл / ссылка) as the first row, followed by the generation snapshot: engine, voice, sample rate, model identity (name and checksum when available), app version, normalization settings used (code-block mode, operator reading), normalized-text checksum, audio codec and size, duration, generation timestamp, and the generation number (`generation_count`). The item SHALL be disabled for entries that have neither a snapshot nor a generation timestamp (never synthesized).
+The queue context menu item "Параметры записи…" — and a double-click on the
+queue item, gated the same way — SHALL open a read-only dialog showing the
+entry's ingestion source ("Источник": буфер обмена / файл / ссылка) as the
+first row, followed by the generation snapshot: engine, voice, sample rate,
+model identity (name and checksum when available), app version, the code-block
+narration mode used, normalized-text checksum, audio codec and size, duration,
+generation timestamp, and the generation number (`generation_count`). The item
+SHALL be disabled for entries that have neither a snapshot nor a generation
+timestamp (never synthesized).
 
 Values absent from the snapshot SHALL render as a placeholder dash rather than guessed values. For entries with audio but no snapshot (synthesized by older builds), the dialog SHALL show an explanatory line that parameters were not recorded. Engine and Piper voice names SHALL be shown with their localized display names; the dialog and menu item SHALL be localized in Russian and English.
 
