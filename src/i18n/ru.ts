@@ -53,6 +53,7 @@ export const ru = {
   'queue.status.ready': 'Готово',
   'queue.status.playing': 'Играет',
   'queue.status.error': 'Ошибка',
+  'queue.status.cancelled': 'Отменено',
   'queue.play': 'Воспроизвести',
   'queue.jump_to_playing': 'К читаемому',
   'queue.empty': 'Скопируйте текст и нажмите «Добавить»',
@@ -70,7 +71,7 @@ export const ru = {
   'queue.notify.regenerating.message': 'Запущена перегенерация аудио',
   'queue.notify.regenerate_failed': 'Не удалось запустить перегенерацию: {0}',
   'queue.notify.cancelled.title': 'Синтез отменён',
-  'queue.notify.cancelled.message': 'Запись возвращена в очередь ожидания',
+  'queue.notify.cancelled.message': 'Синтез записи остановлен',
   'queue.notify.cancel_failed': 'Не удалось отменить синтез: {0}',
 
   // ── Generation-params dialog (#243) ─────────────────────────────────────

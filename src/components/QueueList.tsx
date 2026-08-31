@@ -37,6 +37,8 @@ function statusBadgeColor(status: EntryStatus): string {
       return 'teal';
     case 'error':
       return 'red';
+    case 'cancelled':
+      return 'gray';
   }
 }
 
@@ -46,6 +48,7 @@ const STATUS_KEY: Record<EntryStatus, MessageKey> = {
   ready: 'queue.status.ready',
   playing: 'queue.status.playing',
   error: 'queue.status.error',
+  cancelled: 'queue.status.cancelled',
 };
 
 interface QueueItemProps {

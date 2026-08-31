@@ -196,7 +196,7 @@ describe('QueueList context menu', () => {
     expect(cancelSynthesis).toHaveBeenCalledWith('entry-1');
   });
 
-  it.each(['ready', 'playing', 'error'] as const)(
+  it.each(['ready', 'playing', 'error', 'cancelled'] as const)(
     '"Отменить синтез" is disabled for a %s entry',
     async (status) => {
       await renderWith(makeEntry(status));

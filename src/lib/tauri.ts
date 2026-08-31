@@ -7,7 +7,13 @@ export type { UnlistenFn };
 
 export type EntryId = string;
 
-export type EntryStatus = 'pending' | 'processing' | 'ready' | 'playing' | 'error';
+export type EntryStatus =
+  | 'pending'
+  | 'processing'
+  | 'ready'
+  | 'playing'
+  | 'error'
+  | 'cancelled';
 
 export type EntryFormat = 'plain' | 'markdown' | 'html';
 

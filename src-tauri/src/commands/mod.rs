@@ -195,6 +195,7 @@ fn entry_status_str(status: EntryStatus) -> &'static str {
         EntryStatus::Ready => "ready",
         EntryStatus::Playing => "playing",
         EntryStatus::Error => "error",
+        EntryStatus::Cancelled => "cancelled",
     }
 }
 
@@ -1199,18 +1200,18 @@ pub async fn regenerate_entry<R: Runtime>(
 }
 
 /// Core of [`cancel_synthesis`] without Tauri handles: abort the entry's
-/// synthesis task (if registered) and flip the entry back to `pending`.
+/// synthesis task (if registered) and flip the entry to `cancelled`.
 /// Returns the updated entry plus whether the task had entered the TTS
 /// stage — the caller kills ttsd only in that case.
 ///
 /// Only a `processing` or `pending` entry may be cancelled: the spec
-/// sanctions just the `processing → pending` transition, and silently
-/// regressing a `ready` / `error` entry to `pending` would orphan its
+/// sanctions just the `processing → cancelled` transition, and silently
+/// regressing a `ready` / `error` entry to `cancelled` would orphan its
 /// audio from the state machine (playback requires `ready`). `pending`
-/// is allowed: cancellation is idempotent for a queued/idle entry, and a
-/// just-added entry briefly sits in `pending` with its synthesis task
-/// already registered — cancelling must still abort it. `ready`,
-/// `playing` and `error` fail with `synthesis_error` and change nothing.
+/// is allowed: a queued/idle entry can be cancelled, and a just-added
+/// entry briefly sits in `pending` with its synthesis task already
+/// registered — cancelling must still abort it. `ready`, `playing`,
+/// `error` and `cancelled` fail with `synthesis_error` and change nothing.
 fn cancel_entry(
     storage: &StorageService,
     synthesis_tasks: &Mutex<HashMap<EntryId, AbortHandle>>,
@@ -1230,7 +1231,7 @@ fn cancel_entry(
         .ok_or_else(|| CommandError::not_found("entry.not_found", vec![id.to_string()]))?;
     if matches!(
         live_status,
-        EntryStatus::Ready | EntryStatus::Error | EntryStatus::Playing
+        EntryStatus::Ready | EntryStatus::Error | EntryStatus::Playing | EntryStatus::Cancelled
     ) {
         return Err(CommandError::synthesis(
             "entry.cannot_cancel",
@@ -1238,14 +1239,14 @@ fn cancel_entry(
         ));
     }
 
-    // Atomic transition: flip to `pending` only if the entry is still
+    // Atomic transition: flip to `cancelled` only if the entry is still
     // `processing`/`pending` at apply time. A concurrent synthesis completion
-    // that already moved it out of these states wins, and the stale `pending`
-    // clone is NOT persisted.
+    // that already moved it out of these states wins, and the stale
+    // `cancelled` clone is NOT persisted.
     let applied = storage.update_entry_if(
         &uuid,
         |e| matches!(e.status, EntryStatus::Processing | EntryStatus::Pending),
-        |e| e.status = EntryStatus::Pending,
+        |e| e.status = EntryStatus::Cancelled,
     );
 
     if !applied {
@@ -2345,7 +2346,7 @@ mod synthesis_tests {
         let (updated, entered_tts) =
             cancel_entry(&storage, &tasks, &entered, &id.to_string()).unwrap();
 
-        assert_eq!(updated.status, EntryStatus::Pending);
+        assert_eq!(updated.status, EntryStatus::Cancelled);
         assert!(!entered_tts);
         assert!(tasks.lock().is_empty());
         let join_err = sleeper.await.unwrap_err();
@@ -2372,11 +2373,14 @@ mod synthesis_tests {
         let (updated, entered_tts) =
             cancel_entry(&storage, &tasks, &entered, &id.to_string()).unwrap();
 
-        assert_eq!(updated.status, EntryStatus::Pending);
+        assert_eq!(updated.status, EntryStatus::Cancelled);
         assert!(entered_tts, "entry was marked as inside the TTS stage");
         assert!(tasks.lock().is_empty());
         assert!(entered.lock().is_empty());
-        assert_eq!(storage.get_entry(&id).unwrap().status, EntryStatus::Pending);
+        assert_eq!(
+            storage.get_entry(&id).unwrap().status,
+            EntryStatus::Cancelled
+        );
 
         let join_err = sleeper.await.unwrap_err();
         assert!(join_err.is_cancelled());

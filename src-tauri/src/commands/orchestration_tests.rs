@@ -246,11 +246,11 @@ async fn regenerate_entry_rejects_processing_entry_and_synthesis_continues() {
 // ── cancel_synthesis (new #129 semantics) ─────────────────────────────
 
 /// Cancelling an in-flight synthesis aborts the spawned task, flips the
-/// entry back to `pending` (emitting `entry_updated`), and clears both
+/// entry to `cancelled` (emitting `entry_updated`), and clears both
 /// registries. Nothing is resurrected afterwards: no `ready` event, no
 /// autoplay — even though the entry was added with `play_when_ready`.
 #[tokio::test(flavor = "multi_thread")]
-async fn cancel_synthesis_aborts_in_flight_task_and_keeps_entry_pending() {
+async fn cancel_synthesis_aborts_in_flight_task_and_marks_entry_cancelled() {
     let t = build_test_app();
     t.engine.block_synthesis();
     let events = record_events(&t.app, &["entry_updated"]);
@@ -278,16 +278,16 @@ async fn cancel_synthesis_aborts_in_flight_task_and_keeps_entry_pending() {
         .unwrap();
 
     let entry = t.state().storage.get_entry(&uuid).unwrap();
-    assert_eq!(entry.status, EntryStatus::Pending);
+    assert_eq!(entry.status, EntryStatus::Cancelled);
     assert!(t.state().synthesis_tasks.lock().is_empty());
     assert!(t.state().synthesize_entered.lock().is_empty());
 
-    // The last entry_updated is the reset to pending.
+    // The last entry_updated is the flip to cancelled.
     {
         let log = events.lock().unwrap();
         let payload = last_entry_updated(&log);
         assert_eq!(payload["entry"]["id"], id);
-        assert_eq!(payload["entry"]["status"], "pending");
+        assert_eq!(payload["entry"]["status"], "cancelled");
     }
 
     // The task was aborted at the blocked await: releasing the gate
@@ -299,10 +299,10 @@ async fn cancel_synthesis_aborts_in_flight_task_and_keeps_entry_pending() {
     assert!(t.player.calls().is_empty());
 }
 
-/// Cancelling an idle (pending, no synthesis task) entry succeeds and
-/// simply re-confirms `pending` with an `entry_updated` event.
+/// Cancelling an idle (pending, no synthesis task) entry succeeds and flips
+/// it to `cancelled` with an `entry_updated` event.
 #[tokio::test(flavor = "multi_thread")]
-async fn cancel_synthesis_on_idle_entry_succeeds_and_stays_pending() {
+async fn cancel_synthesis_on_idle_entry_succeeds_and_marks_cancelled() {
     let t = build_test_app();
     let entry = t.state().storage.add_entry("текст".to_string()).unwrap();
     let id = entry.id.to_string();
@@ -313,11 +313,11 @@ async fn cancel_synthesis_on_idle_entry_succeeds_and_stays_pending() {
         .unwrap();
 
     let stored = t.state().storage.get_entry(&entry.id).unwrap();
-    assert_eq!(stored.status, EntryStatus::Pending);
+    assert_eq!(stored.status, EntryStatus::Cancelled);
     let log = events.lock().unwrap();
     assert!(
         log.iter()
-            .any(|(_, p)| p["entry"]["id"] == id && p["entry"]["status"] == "pending")
+            .any(|(_, p)| p["entry"]["id"] == id && p["entry"]["status"] == "cancelled")
     );
 }
 
