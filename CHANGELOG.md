@@ -19,6 +19,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 - **The dead `read_operators` config field** — it never affected synthesis;
   old configs carrying it keep parsing (#89).
 
+### Fixed
+- **Normalization no longer crashes on `===` / `!==` in the text** — two
+  overlapping operator replacements queued for the same spot panicked the
+  pipeline ("ошибка нормализации: Внутренняя ошибка"); shorter operators now
+  skip occurrences already covered by a longer one.
+
 ## [0.5.1] — 2026-08-30
 
 ### Added
