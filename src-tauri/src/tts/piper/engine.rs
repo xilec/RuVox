@@ -58,6 +58,19 @@ use crate::tts::{CharMappingEntry, ModelInfo, SynthesizeOutput, TtsError};
 
 type LoadedSlot = Arc<RwLock<Option<LoadedVoice>>>;
 
+/// Sets the synthesis cancel flag when dropped. Lives in the async
+/// `synthesize` task, while the chunk loop runs in `spawn_blocking` — an
+/// aborted task drops the guard, and the orphaned blocking loop (which cannot
+/// be aborted) sees the flag before its next chunk and stops instead of
+/// synthesizing the whole text nobody is waiting for.
+struct CancelFlagGuard(Arc<AtomicBool>);
+
+impl Drop for CancelFlagGuard {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+}
+
 /// In-process Piper engine.
 pub struct PiperEngine {
     voices_dir: PathBuf,
@@ -272,9 +285,13 @@ impl TtsEngine for PiperEngine {
         // never leak into it (no shared state to reset). Concurrent
         // syntheses serialize on the model mutex; the slot registers the
         // flag only while this synthesis holds that mutex, so `kill_current`
-        // always targets the inference actually running.
+        // always targets the inference actually running. The guard covers
+        // the async side: if this task is aborted while its blocking loop
+        // still waits for the model mutex, the guard drop sets the flag and
+        // the orphaned loop stops before its first chunk.
         let cancelled = Arc::new(AtomicBool::new(false));
         let cancel_slot = Arc::clone(&self.cancel_current);
+        let _cancel_guard = CancelFlagGuard(Arc::clone(&cancelled));
 
         let out_path = PathBuf::from(&out_wav);
         if let Some(parent) = out_path.parent() {
@@ -357,7 +374,15 @@ impl TtsEngine for PiperEngine {
                 // it already created must be removed explicitly.
                 Err(e) => {
                     drop(writer);
-                    let _ = std::fs::remove_file(&out_wav_for_write);
+                    if let Err(remove_err) = std::fs::remove_file(&out_wav_for_write) {
+                        if remove_err.kind() != std::io::ErrorKind::NotFound {
+                            warn!(
+                                target: "tts::piper",
+                                "failed to remove partial WAV {}: {remove_err}",
+                                out_wav_for_write
+                            );
+                        }
+                    }
                     Err(e)
                 }
             }
@@ -469,6 +494,21 @@ fn map_hound_err(e: hound::Error) -> TtsError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The guard covers the async side of cancellation: when the synthesize
+    /// task is aborted (dropping the guard) while its blocking chunk loop is
+    /// still queued for the model mutex, the loop must observe the flag and
+    /// stop instead of synthesizing for nobody.
+    #[test]
+    fn cancel_flag_guard_sets_flag_on_drop() {
+        let flag = Arc::new(AtomicBool::new(false));
+        {
+            let guard = CancelFlagGuard(Arc::clone(&flag));
+            assert!(!flag.load(Ordering::Relaxed));
+            drop(guard);
+        }
+        assert!(flag.load(Ordering::Relaxed));
+    }
 
     /// `kill_current` must reach the chunk loop through the cancel flag —
     /// Piper has no subprocess to kill, the flag is the whole mechanism. The

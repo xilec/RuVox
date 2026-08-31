@@ -594,9 +594,9 @@ async fn finalize_audio_files(
 }
 
 /// Stale-completion guard: a synthesis completion or failure applies only
-/// while the entry is still `processing`. A cancelled entry is already back
-/// at `pending`, so its late result must be discarded instead of
-/// resurrecting it to `ready` / `error`.
+/// while the entry is still `processing`. A cancelled entry is `cancelled`
+/// (terminal until regenerated), so its late result must be discarded
+/// instead of resurrecting it to `ready` / `error`.
 fn completion_is_current(status: EntryStatus) -> bool {
     status == EntryStatus::Processing
 }
@@ -850,7 +850,7 @@ fn cleanup_finished_handle(tasks: &Mutex<HashMap<EntryId, AbortHandle>>, entry_i
 /// Core of [`set_entry_error`] without Tauri handles: flip the entry to
 /// `error`. With `require_processing` the stale-completion guard applies —
 /// a failure arriving for an entry that left `processing` (e.g. cancelled
-/// back to `pending`) is discarded together with the files the late request
+/// to `cancelled`) is discarded together with the files the late request
 /// may have written. Normalization-stage failures pass `false` because the
 /// entry is legitimately still `pending` before `mark_processing` runs.
 /// Returns `true` when the error was applied.
@@ -1272,11 +1272,12 @@ fn cancel_entry(
 }
 
 /// Cancel an in-progress or queued synthesis job: abort the entry's
-/// synthesis task and flip the entry back to `pending`. If the task had
-/// already entered the TTS stage, the current ttsd subprocess is killed too
-/// (the supervisor transparently respawns it on the next request). A late
-/// completion belonging to the cancelled entry is discarded by the
-/// stale-completion guard in `apply_ready_if_current` /
+/// synthesis task and flip the entry to `cancelled`. If the task had
+/// already entered the TTS stage, the active engine's in-flight work is
+/// terminated too — the ttsd subprocess for Silero, the chunk-loop cancel
+/// flag for Piper (the supervisor transparently respawns ttsd on the next
+/// request). A late completion belonging to the cancelled entry is
+/// discarded by the stale-completion guard in `apply_ready_if_current` /
 /// `apply_error_if_current`.
 #[tauri::command]
 pub async fn cancel_synthesis<R: Runtime>(
@@ -2071,6 +2072,7 @@ mod synthesis_tests {
             EntryStatus::Ready,
             EntryStatus::Playing,
             EntryStatus::Error,
+            EntryStatus::Cancelled,
         ] {
             assert!(!completion_is_current(status), "{status:?} must be stale");
         }
@@ -2297,7 +2299,11 @@ mod synthesis_tests {
     /// same way.)
     #[tokio::test]
     async fn cancel_entry_rejects_terminal_statuses() {
-        for status in [EntryStatus::Ready, EntryStatus::Error] {
+        for status in [
+            EntryStatus::Ready,
+            EntryStatus::Error,
+            EntryStatus::Cancelled,
+        ] {
             let (storage, _dir) = make_service();
             let entry = storage.add_entry("текст".to_string()).unwrap();
             set_status(&storage, &entry, status);
@@ -2356,7 +2362,7 @@ mod synthesis_tests {
     /// Cancel flips the entry to `pending`, removes both registry keys, and
     /// the registered task is actually aborted.
     #[tokio::test]
-    async fn cancel_entry_aborts_registered_task_and_sets_pending() {
+    async fn cancel_entry_aborts_registered_task_and_sets_cancelled() {
         let (storage, _dir) = make_service();
         let entry = storage.add_entry("текст".to_string()).unwrap();
         set_status(&storage, &entry, EntryStatus::Processing);

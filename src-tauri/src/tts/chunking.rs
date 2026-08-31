@@ -64,7 +64,9 @@ fn first_paragraph_break(window: &[char]) -> Option<usize> {
 /// (matching ttsd's Python string indices). Chunks are trimmed to their
 /// actual content, and `start` points at the first content codepoint — so a
 /// chunk always sits exactly at its declared position; whitespace between
-/// chunks is not synthesized.
+/// chunks is not synthesized. The single-chunk fast path is the exception:
+/// a text within the limit is returned verbatim from offset 0 (no leading
+/// whitespace in real pipeline output).
 pub fn split_with_limit(text: &str, limit: usize) -> Vec<(String, usize)> {
     let chars: Vec<char> = text.chars().collect();
     let len = chars.len();

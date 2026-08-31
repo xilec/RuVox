@@ -26,6 +26,6 @@
 
 - [x] 6.1 Run the full gates: `nix develop -c just lint && nix develop -c just test`. Verify: both green.
 - [x] 6.2 Add a 1–2-line `[Unreleased]` CHANGELOG note (user-visible: Piper now narrates long texts without freezing; long-input gate removed). Verify: note present in the task branch.
-- [ ] 6.3 Manual pass checklist for the user: synthesize a ~22 KB text (the issue's reproduction) with Piper, watch RSS stay bounded, listen to chunk boundaries for prosody breaks, and confirm cancellation stops synthesis promptly. Verify: user confirms the checklist.
-- [ ] 6.4 Run `ruvox-reviewer` over the branch diff vs merge base; fold accepted findings into the branch. Verify: review reported with findings addressed or deferred as issues.
-- [ ] 6.5 Archive the change with the repo-pinned CLI version: `nix develop -c pnpm dlx @fission-ai/openspec@1.6.0 archive chunk-piper-synthesis` (newer CLI rejects the scenario renames in the MODIFIED deltas; see design.md → Migration Plan). Verify: specs synced, change moved to `archive/`, pinned validate green.
+- [x] 6.3 Manual pass checklist for the user: synthesize a ~22 KB text (the issue's reproduction) with Piper, watch RSS stay bounded, listen to chunk boundaries for prosody breaks, and confirm cancellation stops synthesis promptly. Verify: user confirms the checklist.
+- [x] 6.4 Run `ruvox-reviewer` over the branch diff vs merge base; fold accepted findings into the branch. Verify: review reported with findings addressed or deferred as issues.
+- [x] 6.5 Archive the change with the repo-pinned CLI version: `nix develop -c pnpm dlx @fission-ai/openspec@1.6.0 archive chunk-piper-synthesis` (newer CLI rejects the scenario renames in the MODIFIED deltas; see design.md → Migration Plan). Verify: specs synced, change moved to `archive/`, pinned validate green.

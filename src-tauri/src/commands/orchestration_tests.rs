@@ -173,6 +173,29 @@ async fn regenerate_entry_replaces_audio_and_resynthesizes() {
     );
 }
 
+/// A `cancelled` entry is terminal until regenerated: `regenerate_entry`
+/// accepts it and restarts synthesis from scratch (back to `ready`).
+#[tokio::test(flavor = "multi_thread")]
+async fn regenerate_entry_restarts_a_cancelled_entry() {
+    let t = build_test_app();
+    let id = add_ready_entry(&t).await;
+    let uuid = entry_uuid(&id);
+
+    // Simulate an earlier cancellation.
+    let entry = t.state().storage.get_entry(&uuid).unwrap();
+    let mut cancelled = entry.clone();
+    cancelled.status = EntryStatus::Cancelled;
+    t.state().storage.update_entry(cancelled).unwrap();
+
+    regenerate_entry(t.app.handle().clone(), t.state(), id.clone(), false)
+        .await
+        .unwrap();
+
+    wait_entry_status(&t, &uuid, EntryStatus::Ready).await;
+    let entry = t.state().storage.get_entry(&uuid).unwrap();
+    assert!(entry.was_regenerated);
+}
+
 /// With `play_when_ready: true` the regenerated audio autoplays once the
 /// fresh synthesis reaches `ready` — the same autoplay rule as the initial
 /// synthesis.

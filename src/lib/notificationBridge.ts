@@ -158,9 +158,10 @@ export async function setupNotificationBridge(): Promise<() => void> {
         (status === 'pending' || status === 'cancelled') &&
         synthesisShown.has(id)
       ) {
-        // Cancelled: the entry is back in the queue, the spinner toast would
-        // otherwise stay forever (autoClose is off). A pending transition can
-        // also come from a regenerate flow clearing the old state.
+        // A cancelled entry is terminal until regenerated; either way the
+        // spinner toast would stay forever (autoClose is off). A pending
+        // transition can also come from a regenerate flow clearing the old
+        // state.
         synthesisShown.delete(id);
         notifications.hide(toastId);
       } else if (status === 'ready' && synthesisShown.has(id)) {
