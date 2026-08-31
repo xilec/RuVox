@@ -9,8 +9,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 ### Changed
 - **Piper narrates long texts without freezing the machine** — synthesis now
   runs in sentence-bounded chunks instead of one inference, so pasting long
-  documents no longer risks a system-wide freeze with the Piper engine
-  (#155).
+  documents no longer risks a system-wide freeze with the Piper engine;
+  paragraph breaks in the text now get a distinct silence pause (#155).
 - **Code block narration is now a working setting** — the "Озвучка блоков
   кода" selector in Settings («Кратко» / «Читать полностью») drives the
   pipeline live: brief mode (new default) replaces fenced code blocks with a

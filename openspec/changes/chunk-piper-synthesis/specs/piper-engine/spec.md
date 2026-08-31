@@ -15,10 +15,11 @@ The engine SHALL split the normalized text into chunks of at most a fixed per-ch
 point SHALL prefer, in order: sentence-ending punctuation (`.`, `!`, `?`) followed by
 whitespace, then clause punctuation (`,`, `;`, `:`) followed by whitespace, then any whitespace
 run; a hard split at the limit SHALL be used only when the window contains no whitespace at
-all. Whitespace between chunks SHALL not be synthesized. Each chunk SHALL be synthesized by a
-separate inference call and the audio samples SHALL be concatenated in chunk order into a
-single WAV at the synthesis output path. A chunk whose inference fails SHALL fail the whole
-synthesis with that error; chunks already synthesized SHALL be discarded.
+all. A paragraph break (blank line) SHALL always end the current chunk, even before the limit
+is reached. Whitespace between chunks SHALL not be synthesized. Each chunk SHALL be
+synthesized by a separate inference call and the audio SHALL be concatenated in chunk order
+into a single WAV at the synthesis output path. A chunk whose inference fails SHALL fail the
+whole synthesis with that error; chunks already synthesized SHALL be discarded.
 
 #### Scenario: long text is split on sentence boundaries
 
@@ -26,6 +27,13 @@ synthesis with that error; chunks already synthesized SHALL be discarded.
 - WHEN the engine synthesizes it
 - THEN the text is split into multiple chunks, each within the limit, every non-final chunk
   ends on a sentence boundary, and the concatenated audio is a single valid WAV
+
+#### Scenario: paragraph break always ends the chunk
+
+- GIVEN a normalized text shorter than the per-chunk limit containing a blank line between two
+  paragraphs
+- WHEN the engine synthesizes it
+- THEN the text is split at the paragraph break into separate chunks, one per paragraph
 
 #### Scenario: text without boundaries is hard-split
 
@@ -39,6 +47,28 @@ synthesis with that error; chunks already synthesized SHALL be discarded.
 - GIVEN a multi-chunk text where inference fails on some chunk
 - WHEN the engine synthesizes the text
 - THEN the synthesis fails with that chunk's error and no WAV is written
+
+### Requirement: Paragraph pauses
+
+The engine SHALL insert a fixed silence pause into the audio between two chunks separated by a
+paragraph break in the source text (espeak-ng reads blank lines as plain spaces, so the model
+alone produces no paragraph pause). The pause SHALL be reflected in the synthesis duration and
+in word timestamps, so the audio, the reported duration and the timestamps stay aligned. A
+sentence-boundary chunk separation SHALL NOT get an inserted pause.
+
+#### Scenario: paragraph break produces an audible pause
+
+- GIVEN a normalized text of two paragraphs separated by a blank line
+- WHEN the engine synthesizes it
+- THEN the audio contains a fixed silence between the paragraphs, the reported duration equals
+  the silence plus both paragraphs' audio, and the second paragraph's word timestamps start
+  after the silence
+
+#### Scenario: sentence boundary gets no inserted pause
+
+- GIVEN a multi-chunk text whose chunks are separated by single spaces
+- WHEN the engine synthesizes it
+- THEN no silence is inserted at those chunk boundaries
 
 ### Requirement: Chunked word timestamps
 

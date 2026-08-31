@@ -45,17 +45,30 @@ fn last_break_after(window: &[char], punct: &[char]) -> Option<usize> {
     best
 }
 
+/// Offset of the first blank line in `window` (two consecutive newline-ish
+/// characters, `\r` counting as a newline for Windows text) — a paragraph
+/// break. A paragraph break always ends the current chunk, so the engine can
+/// insert an audible pause between paragraphs (espeak-ng reads a blank line
+/// as a plain space).
+fn first_paragraph_break(window: &[char]) -> Option<usize> {
+    let is_nl = |c: char| c == '\n' || c == '\r';
+    window.windows(2).position(|w| is_nl(w[0]) && is_nl(w[1]))
+}
+
 /// Split `text` into chunks of at most `limit` codepoints, preferring breaks
 /// after sentence-ending punctuation, then clause punctuation, then any
-/// whitespace. Returns `(chunk_text, start)` pairs where `start` is the
-/// chunk's codepoint offset in `text` (matching ttsd's Python string
-/// indices). Chunks are trimmed to their actual content, and `start` points
-/// at the first content codepoint — so a chunk always sits exactly at its
-/// declared position; whitespace between chunks is not synthesized.
+/// whitespace. A paragraph break (blank line) always ends the current chunk
+/// even before the limit is reached, so each paragraph is synthesized on its
+/// own and the engine can pause between paragraphs. Returns `(chunk_text,
+/// start)` pairs where `start` is the chunk's codepoint offset in `text`
+/// (matching ttsd's Python string indices). Chunks are trimmed to their
+/// actual content, and `start` points at the first content codepoint — so a
+/// chunk always sits exactly at its declared position; whitespace between
+/// chunks is not synthesized.
 pub fn split_with_limit(text: &str, limit: usize) -> Vec<(String, usize)> {
     let chars: Vec<char> = text.chars().collect();
     let len = chars.len();
-    if len <= limit {
+    if len <= limit && first_paragraph_break(&chars).is_none() {
         return vec![(text.to_string(), 0)];
     }
 
@@ -63,6 +76,30 @@ pub fn split_with_limit(text: &str, limit: usize) -> Vec<(String, usize)> {
     let mut current_pos = 0;
     while current_pos < len {
         let chunk_end = (current_pos + limit).min(len);
+        let window = &chars[current_pos..chunk_end];
+
+        // A blank line inside the window always ends the chunk. Leading
+        // whitespace is skipped — it belongs to the previous gap (after a
+        // paragraph split the window opens with the blank line itself), and
+        // the search starts from the first content character.
+        let content_start = window
+            .iter()
+            .position(|c| !c.is_whitespace())
+            .unwrap_or(window.len());
+        if let Some(at) = first_paragraph_break(&window[content_start..])
+            .map(|p| p + content_start)
+            .filter(|&at| at > content_start)
+        {
+            let raw: String = chars[current_pos..current_pos + at].iter().collect();
+            let lead = raw.chars().count() - raw.trim_start().chars().count();
+            let trimmed = raw.trim();
+            if !trimmed.is_empty() {
+                chunks.push((trimmed.to_string(), current_pos + lead));
+            }
+            current_pos += at;
+            continue;
+        }
+
         if chunk_end >= len {
             let last: String = chars[current_pos..].iter().collect();
             let lead = last.chars().count() - last.trim_start().chars().count();
@@ -73,7 +110,6 @@ pub fn split_with_limit(text: &str, limit: usize) -> Vec<(String, usize)> {
             break;
         }
 
-        let window = &chars[current_pos..chunk_end];
         let best_split = last_break_after(window, &['.', '!', '?'])
             .or_else(|| last_break_after(window, &[',', ';', ':']))
             .or_else(|| last_break_after(window, &[]))
@@ -217,6 +253,40 @@ mod tests {
             );
         }
         assert_covers_source(text, 10, &chunks);
+    }
+
+    #[test]
+    fn paragraph_break_always_ends_the_chunk() {
+        // Even far below the limit, a blank line ends the chunk so the engine
+        // can pause between paragraphs.
+        let text = "Первая часть.\n\nВторая часть.\n\nТретья.";
+        let chunks = split_with_limit(text, 300);
+        assert_eq!(
+            chunks,
+            vec![
+                ("Первая часть.".to_string(), 0),
+                ("Вторая часть.".to_string(), 15),
+                ("Третья.".to_string(), 30),
+            ]
+        );
+        assert_covers_source(text, 300, &chunks);
+    }
+
+    #[test]
+    fn long_paragraph_still_splits_by_sentences() {
+        // A paragraph longer than the limit falls back to sentence splitting
+        // inside the paragraph, and the trailing blank line starts a fresh
+        // chunk for the last short paragraph.
+        let paragraph = format!(
+            "{}. {}. {}.\n\n{}",
+            "Слово".repeat(30),
+            "Ещё".repeat(30),
+            "И".repeat(30),
+            "Хвост."
+        );
+        let chunks = split_with_limit(&paragraph, 200);
+        assert!(chunks.len() >= 3, "long paragraph must split: {chunks:?}");
+        assert_covers_source(&paragraph, 200, &chunks);
     }
 
     #[test]

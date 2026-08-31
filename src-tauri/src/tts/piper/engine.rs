@@ -45,11 +45,12 @@ const PIPER_LENGTH_SCALE: f32 = 0.8;
 /// freeze the machine. Measured peak process RSS per single-chunk inference
 /// (`piper_chunk_limit_probe`, ruslan voice): 300 cp → ~0.5 GB, 600 cp →
 /// ~0.9 GB, 1800 cp → ~3 GB, while per-codepoint synthesis time is nearly
-/// flat across that range — so 300 (≈2-4 sentences, what official Piper
-/// synthesizes per chunk) bounds memory tightly at no speed cost.
-const PIPER_MAX_CHUNK_CHARS: usize = 300;
+/// flat across that range. 500 cp (≈3-5 sentences) sits safely below the
+/// 600-point ~0.9 GB peak while keeping chunks big enough for natural
+/// sentence grouping.
+const PIPER_MAX_CHUNK_CHARS: usize = 500;
 
-use super::chunked::synthesize_chunked;
+use super::chunked::{ChunkedTimeline, synthesize_chunked};
 use super::timestamps::estimate_timestamps_chunked;
 use crate::tts::engine::{EngineKind, TtsEngine};
 use crate::tts::supervisor::Emitter;
@@ -83,6 +84,9 @@ struct LoadedVoice {
     /// our own `PIPER_LENGTH_SCALE` override at synthesis time.
     noise_scale: f32,
     noise_w: f32,
+    /// Fixed per voice; the streaming WAV writer needs it before the first
+    /// chunk is synthesized.
+    sample_rate: u32,
 }
 
 /// Lightweight handle returned from `ensure_loaded` — keeps the model alive
@@ -91,6 +95,7 @@ struct LoadedHandle {
     piper: Arc<Mutex<Piper>>,
     noise_scale: f32,
     noise_w: f32,
+    sample_rate: u32,
 }
 
 impl PiperEngine {
@@ -125,6 +130,7 @@ impl PiperEngine {
                         piper: Arc::clone(&loaded.piper),
                         noise_scale: loaded.noise_scale,
                         noise_w: loaded.noise_w,
+                        sample_rate: loaded.sample_rate,
                     });
                 }
             }
@@ -158,12 +164,14 @@ impl PiperEngine {
             piper: Arc::clone(&piper),
             noise_scale,
             noise_w,
+            sample_rate,
         });
         info!(target: "tts::piper", "loaded voice \"{voice_id}\" (sr={sample_rate})");
         Ok(LoadedHandle {
             piper,
             noise_scale,
             noise_w,
+            sample_rate,
         })
     }
 }
@@ -222,6 +230,7 @@ impl TtsEngine for PiperEngine {
                         piper,
                         noise_scale,
                         noise_w,
+                        sample_rate,
                     });
                     info!(target: "tts::piper", "warmup complete (sr={sample_rate})");
                     (emitter)("model_loaded", json!({ "engine": "piper" }));
@@ -256,6 +265,7 @@ impl TtsEngine for PiperEngine {
         let piper = Arc::clone(&handle.piper);
         let noise_scale = handle.noise_scale;
         let noise_w = handle.noise_w;
+        let sample_rate = handle.sample_rate;
         let text_for_blocking = text.clone();
 
         // A fresh flag per synthesis: a cancel racing a new synthesize can
@@ -266,74 +276,101 @@ impl TtsEngine for PiperEngine {
         let cancelled = Arc::new(AtomicBool::new(false));
         let cancel_slot = Arc::clone(&self.cancel_current);
 
-        // The model mutex is held for the whole chunk loop: chunks must hit
-        // the same loaded voice, and piper-rs's session takes `&mut` anyway.
-        let (samples, sample_rate, chunk_durations) =
-            tokio::task::spawn_blocking(move || -> Result<_, TtsError> {
-                let mut piper = piper.lock();
-                *cancel_slot.lock() = Some(Arc::clone(&cancelled));
-                let result = synthesize_chunked(
-                    &text_for_blocking,
-                    PIPER_MAX_CHUNK_CHARS,
-                    &cancelled,
-                    |chunk| {
-                        piper
-                            .create(
-                                chunk,
-                                false,
-                                None,
-                                Some(PIPER_LENGTH_SCALE),
-                                Some(noise_scale),
-                                Some(noise_w),
-                            )
-                            .map_err(|e| TtsError::Ttsd {
-                                code: "piper_synthesis_failed".to_string(),
-                                message: format!("Piper::create failed: {e}"),
-                            })
-                    },
-                )
-                .map(|out| (out.samples, out.sample_rate, out.chunk_durations));
-                // Unregister only if we still own the slot — a successor may
-                // have installed its own flag while we released nothing (we
-                // hold the model mutex the whole time, but kill_current must
-                // never be left aiming at a stale flag).
-                if cancel_slot
-                    .lock()
-                    .as_ref()
-                    .is_some_and(|f| Arc::ptr_eq(f, &cancelled))
-                {
-                    *cancel_slot.lock() = None;
-                }
-                result
-            })
-            .await
-            .map_err(|e| TtsError::Ttsd {
-                code: "piper_synthesis_panic".to_string(),
-                message: format!("synthesis task panicked: {e}"),
-            })??;
-
-        let duration_sec: f64 = chunk_durations.iter().map(|(_, _, d)| d).sum();
-
         let out_path = PathBuf::from(&out_wav);
         if let Some(parent) = out_path.parent() {
             tokio::fs::create_dir_all(parent)
                 .await
                 .map_err(TtsError::Ipc)?;
         }
-        let samples_for_write = samples;
+
+        // The model mutex is held for the whole chunk loop: chunks must hit
+        // the same loaded voice, and piper-rs's session takes `&mut` anyway.
+        // Samples stream straight into the WAV as each chunk is synthesized —
+        // accumulating the full text's samples would make RSS grow linearly
+        // with input length (manual-pass finding on #155).
         let out_wav_for_write = out_wav.clone();
-        tokio::task::spawn_blocking(move || {
-            write_wav_f32(&out_wav_for_write, sample_rate, &samples_for_write)
+        let timeline = tokio::task::spawn_blocking(move || -> Result<ChunkedTimeline, TtsError> {
+            let mut piper = piper.lock();
+            *cancel_slot.lock() = Some(Arc::clone(&cancelled));
+            let mut writer = hound::WavWriter::create(&out_wav_for_write, wav_spec(sample_rate))
+                .map_err(map_hound_err)?;
+            let result = synthesize_chunked(
+                &text_for_blocking,
+                PIPER_MAX_CHUNK_CHARS,
+                &cancelled,
+                |chunk, pause_before| {
+                    if pause_before > 0.0 {
+                        let silence = (pause_before * f64::from(sample_rate)).round() as usize;
+                        for _ in 0..silence {
+                            writer.write_sample(0.0f32).map_err(map_hound_err)?;
+                        }
+                    }
+                    let (samples, chunk_sr) = piper
+                        .create(
+                            chunk,
+                            false,
+                            None,
+                            Some(PIPER_LENGTH_SCALE),
+                            Some(noise_scale),
+                            Some(noise_w),
+                        )
+                        .map_err(|e| TtsError::Ttsd {
+                            code: "piper_synthesis_failed".to_string(),
+                            message: format!("Piper::create failed: {e}"),
+                        })?;
+                    // Every chunk of one voice runs through the same
+                    // model config, so the rate is the configured one; a
+                    // mismatch would mean the model was swapped
+                    // mid-synthesis, which the lock prevents.
+                    debug_assert_eq!(sample_rate, chunk_sr);
+                    for &s in &samples {
+                        writer
+                            .write_sample(s.clamp(-1.0, 1.0))
+                            .map_err(map_hound_err)?;
+                    }
+                    let duration = if sample_rate == 0 {
+                        0.0
+                    } else {
+                        samples.len() as f64 / f64::from(sample_rate)
+                    };
+                    Ok(duration)
+                },
+            );
+            // Unregister only if we still own the slot — a successor may
+            // have installed its own flag after we released the model
+            // mutex, and kill_current must never aim at a stale flag.
+            if cancel_slot
+                .lock()
+                .as_ref()
+                .is_some_and(|f| Arc::ptr_eq(f, &cancelled))
+            {
+                *cancel_slot.lock() = None;
+            }
+            match result {
+                Ok(timeline) => {
+                    writer.finalize().map_err(map_hound_err)?;
+                    Ok(timeline)
+                }
+                // Leave no partial WAV behind: a failed or cancelled
+                // synthesis produces no audio at the output path. The
+                // writer is dropped without `finalize`, so the stub file
+                // it already created must be removed explicitly.
+                Err(e) => {
+                    drop(writer);
+                    let _ = std::fs::remove_file(&out_wav_for_write);
+                    Err(e)
+                }
+            }
         })
         .await
-        .map_err(|e| {
-            TtsError::Ipc(std::io::Error::other(format!(
-                "wav write task panicked: {e}"
-            )))
+        .map_err(|e| TtsError::Ttsd {
+            code: "piper_synthesis_panic".to_string(),
+            message: format!("synthesis task panicked: {e}"),
         })??;
 
+        let duration_sec = timeline.total_duration_sec();
         let timestamps =
-            estimate_timestamps_chunked(&text, &chunk_durations, char_mapping.as_deref());
+            estimate_timestamps_chunked(&text, &timeline.chunk_durations, char_mapping.as_deref());
 
         Ok(SynthesizeOutput {
             timestamps,
@@ -392,8 +429,8 @@ fn load_voice_blocking(config_path: &Path) -> Result<(Piper, f32, f32, u32), Tts
     ))
 }
 
-/// Write `samples` (f32 in -1.0..1.0) as a mono 32-bit-float WAV at
-/// `sample_rate`.
+/// WAV format for streamed chunk audio: mono 32-bit float at the voice's
+/// sample rate.
 ///
 /// The float format is what `crate::audio::encode_wav_to_opus` accepts, so a
 /// Piper clip transcodes straight to Opus (with any off-list sample rate
@@ -402,20 +439,13 @@ fn load_voice_blocking(config_path: &Path) -> Result<(Piper, f32, f32, u32), Tts
 /// float PCM`) and keep the much larger `.wav` — the #206 regression. Since
 /// Piper synthesizes f32 internally, writing float also skips a lossy i16
 /// quantization step.
-fn write_wav_f32(path: &str, sample_rate: u32, samples: &[f32]) -> Result<(), TtsError> {
-    let spec = hound::WavSpec {
+fn wav_spec(sample_rate: u32) -> hound::WavSpec {
+    hound::WavSpec {
         channels: 1,
         sample_rate,
         bits_per_sample: 32,
         sample_format: hound::SampleFormat::Float,
-    };
-    let mut writer = hound::WavWriter::create(path, spec).map_err(map_hound_err)?;
-    for s in samples {
-        writer
-            .write_sample(s.clamp(-1.0, 1.0))
-            .map_err(map_hound_err)?;
     }
-    writer.finalize().map_err(map_hound_err)
 }
 
 fn map_hound_err(e: hound::Error) -> TtsError {
@@ -450,18 +480,26 @@ mod tests {
         assert!(flag.load(Ordering::Relaxed));
     }
 
-    /// `write_wav_f32` must emit a mono 32-bit-float WAV — the exact format
+    /// `wav_spec` must produce a mono 32-bit-float WAV — the exact format
     /// `crate::audio::encode_wav_to_opus` accepts — so a Piper clip transcodes
     /// to Opus instead of being rejected (`expected 32-bit float PCM`) and
     /// kept as a large `.wav` (#206). The samples must round-trip without any
-    /// i16 quantization.
+    /// i16 quantization; this is the same write path the streaming chunk loop
+    /// uses.
     #[test]
-    fn write_wav_f32_produces_float_mono_wav() {
+    fn wav_spec_produces_float_mono_wav() {
         let dir = tempfile::tempdir().expect("tempdir");
         let wav_path = dir.path().join("out.wav");
         let samples: Vec<f32> = vec![-1.0, -0.5, 0.0, 0.25, 0.9, 1.5, -2.0];
 
-        write_wav_f32(wav_path.to_str().unwrap(), 22_050, &samples).expect("write wav");
+        let mut writer =
+            hound::WavWriter::create(&wav_path, wav_spec(22_050)).expect("create writer");
+        for &s in &samples {
+            writer
+                .write_sample(s.clamp(-1.0, 1.0))
+                .expect("write sample");
+        }
+        writer.finalize().expect("finalize");
 
         let mut reader = hound::WavReader::open(&wav_path).expect("open wav");
         let spec = reader.spec();

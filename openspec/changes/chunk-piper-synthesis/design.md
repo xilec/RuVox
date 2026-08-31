@@ -46,24 +46,40 @@ already the shared-helper layer for engines (`map_via_spans`, `CharMappingEntry`
   (code-quality.md → Duplication). A shared mini-crate is over-engineering at two Rust
   consumers; revisit if a third appears.
 
-### D2: Chunk limit chosen by measurement, starting point ~600 codepoints
+### D2: Chunk limit — measured, then set to 500 codepoints
 
 `PIPER_MAX_CHUNK_CHARS` in `src-tauri/src/tts/piper/engine.rs`. Memory is not the binding
-constraint at these sizes (issue data: 7.6 GB tensor at 22 KB input ⇒ ~1–3 MB tensors at a few
-hundred chars); the real constraints are VITS attention stability/prosody on long chunks and
-chunk latency. A small env-gated `#[ignore]` measurement test (pattern: `SILERO_NATIVE_BUNDLE`
-gating) runs `create` on 300/600/900/1200-char inputs with the real voice and prints peak RSS
-(`VmHWM` from `/proc/self/status`); the constant is set from its results. Not run in CI (needs
-the downloaded voice).
+constraint at these sizes; the real constraints are VITS attention stability/prosody on long
+chunks and chunk latency. A small env-gated `#[ignore]` measurement probe (pattern:
+`SILERO_NATIVE_BUNDLE` gating) runs `create` on 300/600/900/1200/1800-codepoint inputs with
+the real voice and prints peak RSS (`VmHWM` from `/proc/self/status`): 300 → ~0.5 GB,
+600 → ~0.9 GB, 1800 → ~3 GB, with per-codepoint synthesis time nearly flat across the range.
+The user picked 500 (~0.7–0.9 GB peak, ≈3-5 sentences) over the originally suggested 300 as
+the better prosody/memory balance. Not run in CI (needs the downloaded voice).
 
-### D3: Chunk loop inside one `spawn_blocking`, holding the model mutex for the whole loop
+### D3: Chunk loop inside one `spawn_blocking`, streaming samples into the WAV
 
 The existing `piper.lock()` guard extends over the loop instead of a single call. Extract the
-loop into a testable helper taking a `FnMut(&str) -> Result<(Vec<f32>, u32), TtsError>`
-synthesizer closure, so chunking/timestamps/cancel logic is unit-testable without a real Piper
-model. Samples accumulate in a `Vec<f32>` and the WAV is written once after the loop, so a
-failed or cancelled synthesis never leaves a partial audio file. `sample_rate` comes from the
-first chunk (constant per voice).
+loop into a testable helper taking a synthesis closure, so chunking/timestamps/cancel logic is
+unit-testable without a real Piper model. Samples are NOT accumulated: each chunk's audio
+streams straight into the WAV file as it is synthesized (the voice's fixed `sample_rate` comes
+from the loaded config, so the writer opens before the first chunk) — accumulating the whole
+text's samples in a `Vec<f32>` made RSS grow linearly with input length, which the manual pass
+caught. A failed or cancelled synthesis drops the writer without `finalize` and removes the
+stub file, so no partial audio is ever left at the output path.
+
+### D7: Paragraph breaks force a chunk split and earn a silence pause
+
+The manual pass reported paragraphs read back-to-back: espeak-ng (used by piper-rs for
+phonemization) collapses `\n\n` into a plain space, so the model produces no paragraph pause —
+and it cannot be inserted inside a chunk's audio anyway (Piper exposes no per-word timing).
+Therefore the chunker ends the current chunk at every blank line (regardless of the limit),
+and the engine writes a fixed 0.45 s silence between chunks separated by a paragraph break.
+The pause is folded into the preceding chunk's recorded duration, keeping the timeline, the
+WAV and the timestamp estimator aligned. Sentence-boundary chunk boundaries get no inserted
+silence — the model's own inter-sentence pause covers those, matching unchunked behavior.
+ ttsd/Silero do not do this (they hand the model a single space); Piper narrations read better
+with it, and it is engine-local.
 
 ### D4: Cancellation via a per-synthesis `Arc<AtomicBool>` registered in an engine slot
 
