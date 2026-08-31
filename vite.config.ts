@@ -1,6 +1,7 @@
 /// <reference types="vitest" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { configDefaults } from "vitest/config";
 
 const host = process.env.TAURI_DEV_HOST;
 
@@ -12,6 +13,11 @@ export default defineConfig(() => ({
   // must stay a no-op outside the jsdom environment.
   test: {
     setupFiles: ["src/test/setup.ts"],
+    // tmp/ holds git worktrees (tmp/wt/<task>/) and scratch data; their test
+    // files resolve against their own node_modules and fail with dual React.
+    // Spread the defaults — a bare exclude array REPLACES them and drags
+    // node_modules test files in (#259). Mirrors server.watch.ignored below.
+    exclude: [...configDefaults.exclude, "**/tmp/**"],
   },
 
   // react-rnd's Draggable reads `process.env.DRAGGABLE_DEBUG` at render
