@@ -116,10 +116,11 @@ fn memory_kb() -> (u64, u64) {
 }
 
 /// A/B memory probe over ~45 variable-length chunks (the real long-text
-/// synthesis shape). Session A is `Piper::new` — the production path, default
-/// ORT options; session B disables ORT's memory-pattern cache, which retains
-/// a pattern per distinct input shape and was suspected of the "RSS grows
-/// until synthesis ends" observation. Whichever curve plateaus names the fix.
+/// synthesis shape). Session A uses `Piper::new` — default ORT options;
+/// session B disables ORT's memory-pattern cache, which retains a pattern
+/// per distinct input shape. Measured (ruslan): the B curve plateaus ~200 MB
+/// lower, so the engine loader (`load_voice_blocking`) now always disables
+/// patterns; this probe stays as the measurement behind that decision.
 #[test]
 #[ignore = "manual probe: needs a downloaded Piper voice and RUVOX_PIPER_LIMIT_PROBE=1"]
 fn piper_variable_shape_memory_probe() {
