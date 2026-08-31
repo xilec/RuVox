@@ -513,7 +513,7 @@ mod tests {
     }
 
     #[test]
-    fn mode_switch_via_process() {
+    fn legacy_directive_does_not_switch_mode() {
         // A legacy `ruvox-code` directive no longer changes the effective
         // mode: the comment is ordinary text and the handler's mode wins.
         let text = "<!-- ruvox-code: brief -->\n```python\nprint('hi')\n```";

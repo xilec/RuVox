@@ -42,6 +42,9 @@ function displayCodeBlockMode(mode: string, tt: T): string {
   switch (mode) {
     case 'read':
       return tt('generation.code_block.read');
+    // Snapshots written before the rename may carry the legacy value; it
+    // meant the same as brief.
+    case 'skip':
     case 'brief':
       return tt('generation.code_block.brief');
     default:
