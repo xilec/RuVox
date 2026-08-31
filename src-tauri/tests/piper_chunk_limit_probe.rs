@@ -115,6 +115,89 @@ fn memory_kb() -> (u64, u64) {
     }
 }
 
+/// A/B memory probe over ~45 variable-length chunks (the real long-text
+/// synthesis shape). Session A is `Piper::new` — the production path, default
+/// ORT options; session B disables ORT's memory-pattern cache, which retains
+/// a pattern per distinct input shape and was suspected of the "RSS grows
+/// until synthesis ends" observation. Whichever curve plateaus names the fix.
+#[test]
+#[ignore = "manual probe: needs a downloaded Piper voice and RUVOX_PIPER_LIMIT_PROBE=1"]
+fn piper_variable_shape_memory_probe() {
+    if std::env::var("RUVOX_PIPER_LIMIT_PROBE").as_deref() != Ok("1") {
+        println!("skipped: set RUVOX_PIPER_LIMIT_PROBE=1 to run the probe");
+        return;
+    }
+
+    let voice = std::env::var("RUVOX_PIPER_PROBE_VOICE").unwrap_or_else(|_| "ruslan".to_string());
+    let Some(voices_root) = voices_root() else {
+        panic!("cannot resolve the voices root");
+    };
+    let config_path = voices_root
+        .join("piper")
+        .join(&voice)
+        .join(format!("ru_RU-{voice}-medium.onnx.json"));
+    assert!(
+        config_path.exists(),
+        "voice not installed: {}",
+        config_path.display()
+    );
+    let model_path = config_path.with_extension("");
+
+    let text = synthetic_text(22_000);
+    let chunks = split_with_limit(&text, 500);
+    println!(
+        "=== variable-shape memory probe: {} chunks, {} total cp ===",
+        chunks.len(),
+        text.chars().count()
+    );
+
+    println!("--- session A: Piper::new (default ORT options) ---");
+    let mut piper_a = new_piper(&config_path);
+    run_chunks(&mut piper_a, &chunks);
+    // Free session A (model + arena) so session B's RSS curve starts clean.
+    drop(piper_a);
+    let (rss, hwm) = memory_kb();
+    println!("after dropping session A: RSS {rss} kB, peak {hwm} kB");
+
+    println!("--- session B: memory pattern disabled ---");
+    let cfg: piper_rs::ModelConfig =
+        serde_json::from_str(&std::fs::read_to_string(&config_path).expect("read voice config"))
+            .expect("parse voice config");
+    let session = ort::session::Session::builder()
+        .expect("session builder")
+        .with_memory_pattern(false)
+        .expect("set memory pattern")
+        .commit_from_file(&model_path)
+        .expect("load model");
+    let mut piper_b = piper_rs::Piper::from_session(session, cfg);
+    run_chunks(&mut piper_b, &chunks);
+
+    println!("=== compare the two curves: plateau names the fix ===");
+}
+
+/// Run one `Piper::create` per chunk, printing RSS every 5 chunks so the
+/// growth (or plateau) shape is visible.
+fn run_chunks(piper: &mut piper_rs::Piper, chunks: &[(String, usize)]) {
+    let (start_rss, start_hwm) = memory_kb();
+    println!("start RSS {start_rss} kB, peak {start_hwm} kB");
+    for (i, (chunk, _)) in chunks.iter().enumerate() {
+        let (_samples, _sr) = piper
+            .create(chunk, false, None, Some(0.8), None, None)
+            .expect("probe inference must succeed");
+        if (i + 1) % 5 == 0 || i + 1 == chunks.len() {
+            let (rss, hwm) = memory_kb();
+            println!(
+                "chunk {:>3}/{} | len {:>3} cp | RSS {} kB | peak {} kB",
+                i + 1,
+                chunks.len(),
+                chunk.chars().count(),
+                rss,
+                hwm
+            );
+        }
+    }
+}
+
 #[cfg(target_os = "linux")]
 fn parse_kb(value: &str) -> Option<u64> {
     value.split_whitespace().next()?.parse().ok()
