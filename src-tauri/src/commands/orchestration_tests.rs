@@ -686,9 +686,10 @@ async fn add_text_entry_accepts_long_input_with_piper() {
     )
     .await
     .expect("long input must be accepted with Piper active");
+    // Pin the behavioral outcome: the entry synthesizes to Ready with no
+    // error. (The synthesis-task registry is drained by a detached reaper
+    // after the status flip, so it is not asserted here — no happens-before.)
     wait_entry_status(&t, &entry_uuid(&id), EntryStatus::Ready).await;
-
-    assert!(t.state().synthesis_tasks.lock().is_empty());
 }
 
 /// Long input is normalized by `preview_normalize` with Piper active — in

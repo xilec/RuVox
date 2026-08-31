@@ -310,8 +310,6 @@ export const en: Record<MessageKey, string> = {
   'errors.entry.not_ready': 'Entry {0} is not ready for playback (status: {1})',
   'errors.entry.cannot_cancel': 'Entry {0} cannot be cancelled (status: {1})',
   'errors.input.empty': 'There is no text to add',
-  'errors.input.too_long':
-    'The text is too long for the {0} engine (max {1} characters); shorten it or switch to Silero in Settings',
   'errors.clipboard.unavailable': 'Could not open the clipboard',
   'errors.clipboard.empty': 'The clipboard contains no text',
   'errors.clipboard.task_panicked': 'Internal error while reading the clipboard',

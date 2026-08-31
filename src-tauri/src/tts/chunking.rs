@@ -49,8 +49,9 @@ fn last_break_after(window: &[char], punct: &[char]) -> Option<usize> {
 /// after sentence-ending punctuation, then clause punctuation, then any
 /// whitespace. Returns `(chunk_text, start)` pairs where `start` is the
 /// chunk's codepoint offset in `text` (matching ttsd's Python string
-/// indices). Chunks are trimmed; whitespace between chunks is not
-/// synthesized.
+/// indices). Chunks are trimmed to their actual content, and `start` points
+/// at the first content codepoint — so a chunk always sits exactly at its
+/// declared position; whitespace between chunks is not synthesized.
 pub fn split_with_limit(text: &str, limit: usize) -> Vec<(String, usize)> {
     let chars: Vec<char> = text.chars().collect();
     let len = chars.len();
@@ -63,7 +64,12 @@ pub fn split_with_limit(text: &str, limit: usize) -> Vec<(String, usize)> {
     while current_pos < len {
         let chunk_end = (current_pos + limit).min(len);
         if chunk_end >= len {
-            chunks.push((chars[current_pos..].iter().collect(), current_pos));
+            let last: String = chars[current_pos..].iter().collect();
+            let lead = last.chars().count() - last.trim_start().chars().count();
+            let trimmed = last.trim();
+            if !trimmed.is_empty() {
+                chunks.push((trimmed.to_string(), current_pos + lead));
+            }
             break;
         }
 
@@ -74,13 +80,17 @@ pub fn split_with_limit(text: &str, limit: usize) -> Vec<(String, usize)> {
             .filter(|&split| split >= window.len() / 2)
             .unwrap_or(limit);
 
-        let actual: String = chars[current_pos..current_pos + best_split]
+        let raw: String = chars[current_pos..current_pos + best_split]
             .iter()
-            .collect::<String>()
-            .trim()
-            .to_string();
-        if !actual.is_empty() {
-            chunks.push((actual, current_pos));
+            .collect();
+        // `start` must point at the chunk's first content codepoint: a hard
+        // split can land right after a whitespace run (or the window can open
+        // with one), and the trimmed chunk then begins later than the raw
+        // window — consumers (timestamps) slice the source by this offset.
+        let lead = raw.chars().count() - raw.trim_start().chars().count();
+        let trimmed = raw.trim();
+        if !trimmed.is_empty() {
+            chunks.push((trimmed.to_string(), current_pos + lead));
         }
         current_pos += best_split;
     }
@@ -184,6 +194,29 @@ mod tests {
             assert_eq!(start % 300, 0);
         }
         assert_covers_source(&text, 300, &chunks);
+    }
+
+    #[test]
+    fn hard_split_after_whitespace_offsets_shift_with_trim() {
+        // A hard split landing right after a whitespace run: the next chunk's
+        // declared start must move to its first content codepoint, otherwise
+        // consumers slicing the source by the offset get off-by-one word
+        // positions (review finding on the #155 branch).
+        let text = "aa bbbbccc ddddddddddd eee";
+        let chunks = split_with_limit(text, 10);
+        assert!(chunks.len() > 1);
+        for (chunk_text, start) in &chunks {
+            let start_byte = text
+                .char_indices()
+                .nth(*start)
+                .map(|(b, _)| b)
+                .expect("start in range");
+            assert!(
+                text[start_byte..].starts_with(chunk_text.as_str()),
+                "chunk {chunk_text:?} must sit at its declared offset {start}"
+            );
+        }
+        assert_covers_source(text, 10, &chunks);
     }
 
     #[test]

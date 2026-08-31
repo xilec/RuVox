@@ -65,15 +65,24 @@ model. Samples accumulate in a `Vec<f32>` and the WAV is written once after the 
 failed or cancelled synthesis never leaves a partial audio file. `sample_rate` comes from the
 first chunk (constant per voice).
 
-### D4: Cancellation via `Arc<AtomicBool>` checked between chunks
+### D4: Cancellation via a per-synthesis `Arc<AtomicBool>` registered in an engine slot
 
-`PiperEngine` holds a cancel flag; `kill_current` (overridden, replacing the default no-op)
-sets it; the chunk loop checks it before each chunk and aborts with a typed
-`piper_cancelled` error; the flag resets at the start of each `synthesize`. This plugs into the
-existing supervisor → switcher → `kill_current` wiring unchanged. Worst-case races (one extra
-chunk after a cancel, a stale flag caught by the next synthesize's reset) are benign and
-documented at the flag. Alternative: tokio `CancellationToken` — rejected as unnecessary here;
-the check points are synchronous and single-consumer.
+Concurrent `synthesize` calls are real (each queue entry spawns its own task;
+the model mutex serializes only the blocking loops), so a single engine-wide
+flag was rejected in review — one synthesis's reset could erase another's
+cancel, and a cancel could kill a newcomer that never owned it. Instead:
+each `synthesize` creates a fresh `AtomicBool` and installs it in the
+engine's `Mutex<Option<Arc<AtomicBool>>>` slot *under the model mutex, right
+before its chunk loop* — so the slot always names the inference actually
+running, never one still waiting for the lock. `kill_current` (overridden,
+replacing the default no-op) sets the registered flag; the loop checks it
+before each chunk and once more after the last (so a cancel during a final
+single chunk still discards the audio); on completion the synthesis
+unregisters its flag only if it still owns the slot. Lock order is
+model-mutex → cancel-slot, `kill_current` takes only the cancel-slot, so no
+deadlock. With no synthesis registered, kill is a no-op. This matches the
+existing ttsd semantics, where killing the subprocess fails whatever work is
+in flight. A typed `piper_cancelled` error surfaces to the entry.
 
 ### D5: Chunked timestamps — direct port of `estimate_timestamps_chunked` from ttsd
 
@@ -101,9 +110,13 @@ with the code.
 - [Hard split can cut inside a word] → only reachable when a limit-sized window has no
   whitespace at all (a single token longer than the limit, e.g. a long URL); pinned by a unit
   test, and unchanged from the behavior the Silero engines already ship.
-- [Cancellation races] → a chunk in flight when `kill_current` fires finishes; the loop then
-  stops before the next chunk. A stale flag from a previous cancel is cleared at the start of
-  the next `synthesize`. Worst case is one extra chunk of wasted work, never corruption.
+- [Cancellation races] → the slot holds the flag of whichever synthesis holds
+  the model, so a cancel targets the inference actually running; a synthesis
+  that already released the model never receives a late cancel. A chunk in
+  flight when `kill_current` fires finishes; the loop then stops before the
+  next chunk and after the last one. Worst case is one extra chunk of wasted
+  work, never corruption. Cross-entry imprecision (a cancel failing whatever
+  synthesis holds the engine) matches the ttsd kill-the-subprocess semantics.
 - [Measured safe chunk limit turns out very small (<150)] → would mean revisiting the gate
   removal in a follow-up; unlikely, since tensor sizes scale with the square of chunk length
   and the 600-char start point is already two orders of magnitude below the freeze threshold.

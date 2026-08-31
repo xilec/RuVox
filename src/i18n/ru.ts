@@ -311,8 +311,6 @@ export const ru = {
   'errors.entry.not_ready': 'Запись {0} не готова к воспроизведению (статус: {1})',
   'errors.entry.cannot_cancel': 'Запись {0} не может быть отменена (статус: {1})',
   'errors.input.empty': 'Нет текста для добавления',
-  'errors.input.too_long':
-    'Текст слишком длинный для движка {0} (максимум {1} символов); сократите текст или переключитесь на Silero в настройках',
   'errors.clipboard.unavailable': 'Не удалось открыть буфер обмена',
   'errors.clipboard.empty': 'В буфере обмена нет текста',
   'errors.clipboard.task_panicked': 'Внутренняя ошибка при чтении буфера обмена',

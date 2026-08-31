@@ -66,9 +66,12 @@ pub struct PiperEngine {
     loaded: LoadedSlot,
     /// Default voice id, used by `warmup` and as a fallback.
     default_voice: String,
-    /// Set by `kill_current`; the chunked synthesis loop checks it between
-    /// chunks and aborts. Reset at the start of every `synthesize`.
-    cancel_current: Arc<AtomicBool>,
+    /// Cancel flag of the synthesis that currently holds the model. Each
+    /// `synthesize` creates a fresh flag and installs it (under the model
+    /// mutex, right before its chunk loop) — the slot always points at the
+    /// inference actually running, never at one waiting for the lock.
+    /// `kill_current` sets the flag; the chunk loop aborts on it.
+    cancel_current: Arc<Mutex<Option<Arc<AtomicBool>>>>,
     /// Frontend event emitter.
     emitter: Emitter,
 }
@@ -98,7 +101,7 @@ impl PiperEngine {
             voices_dir,
             loaded: Arc::new(RwLock::new(None)),
             default_voice,
-            cancel_current: Arc::new(AtomicBool::new(false)),
+            cancel_current: Arc::new(Mutex::new(None)),
             emitter,
         }
     }
@@ -255,18 +258,21 @@ impl TtsEngine for PiperEngine {
         let noise_w = handle.noise_w;
         let text_for_blocking = text.clone();
 
-        // A stale cancel from a previous synthesis must not kill this one;
-        // the worst case of resetting here is one extra chunk of wasted work
-        // for a cancel that raced a brand-new synthesize.
-        self.cancel_current.store(false, Ordering::Relaxed);
-        let cancelled = Arc::clone(&self.cancel_current);
+        // A fresh flag per synthesis: a cancel racing a new synthesize can
+        // never leak into it (no shared state to reset). Concurrent
+        // syntheses serialize on the model mutex; the slot registers the
+        // flag only while this synthesis holds that mutex, so `kill_current`
+        // always targets the inference actually running.
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let cancel_slot = Arc::clone(&self.cancel_current);
 
         // The model mutex is held for the whole chunk loop: chunks must hit
         // the same loaded voice, and piper-rs's session takes `&mut` anyway.
         let (samples, sample_rate, chunk_durations) =
             tokio::task::spawn_blocking(move || -> Result<_, TtsError> {
                 let mut piper = piper.lock();
-                synthesize_chunked(
+                *cancel_slot.lock() = Some(Arc::clone(&cancelled));
+                let result = synthesize_chunked(
                     &text_for_blocking,
                     PIPER_MAX_CHUNK_CHARS,
                     &cancelled,
@@ -286,7 +292,19 @@ impl TtsEngine for PiperEngine {
                             })
                     },
                 )
-                .map(|out| (out.samples, out.sample_rate, out.chunk_durations))
+                .map(|out| (out.samples, out.sample_rate, out.chunk_durations));
+                // Unregister only if we still own the slot — a successor may
+                // have installed its own flag while we released nothing (we
+                // hold the model mutex the whole time, but kill_current must
+                // never be left aiming at a stale flag).
+                if cancel_slot
+                    .lock()
+                    .as_ref()
+                    .is_some_and(|f| Arc::ptr_eq(f, &cancelled))
+                {
+                    *cancel_slot.lock() = None;
+                }
+                result
             })
             .await
             .map_err(|e| TtsError::Ttsd {
@@ -324,11 +342,14 @@ impl TtsEngine for PiperEngine {
     }
 
     /// Piper runs in-process, so "killing" the current work means asking the
-    /// chunked synthesis loop to stop before the next chunk inference; the
-    /// chunk in flight still finishes. A cancelled synthesis returns
-    /// `piper_cancelled`, discards all synthesized samples and writes no WAV.
+    /// chunked synthesis loop that holds the model to stop before the next
+    /// chunk inference; the chunk in flight still finishes. A cancelled
+    /// synthesis returns `piper_cancelled`, discards all synthesized samples
+    /// and writes no WAV.
     async fn kill_current(&self) {
-        self.cancel_current.store(true, Ordering::Relaxed);
+        if let Some(flag) = self.cancel_current.lock().as_ref() {
+            flag.store(true, Ordering::Relaxed);
+        }
     }
 
     async fn shutdown(&self) -> Result<(), TtsError> {
@@ -409,18 +430,24 @@ mod tests {
     use super::*;
 
     /// `kill_current` must reach the chunk loop through the cancel flag —
-    /// Piper has no subprocess to kill, the flag is the whole mechanism.
+    /// Piper has no subprocess to kill, the flag is the whole mechanism. The
+    /// flag belongs to whichever synthesis holds the model (registered in the
+    /// slot under the model mutex); with no synthesis running, kill is a
+    /// no-op.
     #[tokio::test]
-    async fn kill_current_sets_the_cancel_flag() {
+    async fn kill_current_sets_the_registered_cancel_flag() {
         let (emitter, _) = crate::tts::supervisor::test_helpers::recording_emitter();
         let engine = PiperEngine::new(
             tempfile::tempdir().expect("tempdir").path().to_path_buf(),
             "ruslan".to_string(),
             emitter,
         );
-        assert!(!engine.cancel_current.load(Ordering::Relaxed));
+        engine.kill_current().await; // no synthesis registered: must not panic
+
+        let flag = Arc::new(AtomicBool::new(false));
+        *engine.cancel_current.lock() = Some(Arc::clone(&flag));
         engine.kill_current().await;
-        assert!(engine.cancel_current.load(Ordering::Relaxed));
+        assert!(flag.load(Ordering::Relaxed));
     }
 
     /// `write_wav_f32` must emit a mono 32-bit-float WAV — the exact format

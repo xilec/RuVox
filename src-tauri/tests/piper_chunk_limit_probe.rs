@@ -21,9 +21,9 @@
 use ruvox_tauri_lib::paths::voices_root;
 use ruvox_tauri_lib::tts::chunking::split_with_limit;
 
-/// Chunk sizes to probe, in codepoints. Spans the current production constant
-/// (600) and the freeze threshold direction (the unchunked #155 reproduction
-/// was ~22 000 codepoints).
+/// Chunk sizes to probe, in codepoints. Spans the production constant (300)
+/// and the freeze threshold direction (the unchunked #155 reproduction was
+/// ~22 000 codepoints).
 const PROBE_SIZES: &[usize] = &[300, 600, 900, 1200, 1800];
 
 #[test]
