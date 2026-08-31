@@ -17,7 +17,7 @@
 //!
 //! ## Failure mapping
 //! - voice files missing → `TtsError::Ttsd { code: "voice_not_installed", … }`
-//! - config JSON parse / load failure → `TtsError::Ttsd { code: "piper_load_failed", … }`
+//! - voice load failure (config read/parse, ORT session build) → `TtsError::Ttsd { code: "piper_load_failed", … }`
 //! - phonemizer / ONNX inference failure → `TtsError::Ttsd { code: "piper_*_failed", … }`
 //! - cancelled between chunks → `TtsError::Ttsd { code: "piper_cancelled", … }`
 //! - WAV write failure → `TtsError::Ipc(io::Error)`
@@ -457,7 +457,7 @@ fn load_voice_blocking(config_path: &Path) -> Result<(Piper, f32, f32, u32), Tts
     // almost every call, so the cache grows to ~200 MB over a long synthesis
     // (`piper_variable_shape_memory_probe`: plateau ~1.0 GB with patterns vs
     // ~0.8 GB without). Patterns only pay off when the same shape recurs,
-    // which never happens across variable-length chunks.
+    // which rarely happens across variable-length chunks.
     let session = ort::session::Session::builder()
         .map_err(|e| TtsError::Ttsd {
             code: "piper_load_failed".to_string(),
