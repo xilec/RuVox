@@ -458,13 +458,16 @@ as specified elsewhere.
 
 The header SHALL also carry a small help affordance (an icon button) with a
 click-toggled popover containing the fuller explanation: what categories get
-rewritten, what the source-format selector (Авто / Обычный текст / Markdown / HTML) controls, and that fenced code blocks are narrated with identifiers and
-operators spoken out (Mermaid blocks become the «Тут мермэйд диаграмма»
-marker). The popover SHALL include a link that opens the README's
-normalization section in the system browser. The affordance MUST NOT
-intercept the header's drag behavior: dragging by the icon area is not
-required, but clicking it SHALL toggle the popover, not move or resize the
-window, and the icon SHALL expose an accessible name (aria-label).
+rewritten, what the source-format selector (Авто / Обычный текст / Markdown / HTML) controls, and that fenced code block narration follows the code
+block narration setting from Settings — «Кратко» replaces each block with a
+brief marker sentence («далее следует пример кода на <язык>»), «Читать
+полностью» reads identifiers and operators out loud; Mermaid blocks always
+become the «Тут мермэйд диаграмма» marker. The popover copy SHALL NOT
+mention any in-text directives. The popover SHALL include a link that opens
+the README's normalization section in the system browser. The affordance
+MUST NOT intercept the header's drag behavior: dragging by the icon area is
+not required, but clicking it SHALL toggle the popover, not move or resize
+the window, and the icon SHALL expose an accessible name (aria-label).
 
 Both the explainer line and the tooltip copy SHALL come from the i18n
 dictionaries (`preview.explain.*` keys), Russian and English.

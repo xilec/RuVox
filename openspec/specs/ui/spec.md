@@ -104,7 +104,6 @@ The navbar search input SHALL filter entries case-insensitively by `original_tex
 - WHEN the item's context menu is open
 - THEN "Сохранить аудио как…" is disabled
 
-
 ### Requirement: Player controls
 
 The system SHALL provide playback controls in `src/components/Player.tsx` as a wrapper over the player Tauri commands: Play/Pause, a position slider, a time display (`mm:ss / mm:ss`), a speed `NumberInput` (0.5x–2.0x, step 0.1), a volume slider, and — when the `onOpenSettings` prop is provided — a settings cog as the last element.
@@ -157,7 +156,7 @@ Editing the text of an existing entry in the UI MUST NOT be supported; correctio
 
 The system SHALL provide a modal Settings dialog (`src/dialogs/Settings.tsx`) built on `@mantine/form::useForm`, loading `commands.getConfig()` and `commands.getAvailableEngines()` whenever it opens, and submitting a `UIConfigPatch` (only the form fields) via `commands.updateConfig`.
 
-The form SHALL expose: TTS engine (Piper / Silero / «Silero (нативный)», with unavailable engines disabled and an alert when the saved engine was coerced to Piper), Piper voice or Silero speaker depending on the engine, sample rate, `notify_on_ready`, `notify_on_error`, `preview_dialog_enabled`, `max_cache_size_mb` (minimum 100 MB), theme (Светлая/Тёмная/Авто), and a language selector (Русский / English) bound to `UIConfig.language`. Applying a new theme SHALL push it into Mantine's color-scheme manager immediately. Choosing a language SHALL update the localization store immediately (the whole UI re-labels without reload) and include `language` in the submitted `UIConfigPatch`.
+The form SHALL expose: TTS engine (Piper / Silero / «Silero (нативный)», with unavailable engines disabled and an alert when the saved engine was coerced to Piper), Piper voice or Silero speaker depending on the engine, sample rate, `notify_on_ready`, `notify_on_error`, `preview_dialog_enabled`, `max_cache_size_mb` (minimum 100 MB), theme (Светлая/Тёмная/Авто), a language selector (Русский / English) bound to `UIConfig.language`, and a code block narration selector («Кратко» / «Читать полностью») bound to `UIConfig.code_block_mode` (`"brief"` / `"read"`), initialized from the loaded config and included in the submitted `UIConfigPatch` when changed. Applying a new theme SHALL push it into Mantine's color-scheme manager immediately. Choosing a language SHALL update the localization store immediately (the whole UI re-labels without reload) and include `language` in the submitted `UIConfigPatch`.
 
 When «Silero (нативный)» is unavailable because the model bundle is not downloaded, the form SHALL show a download action next to the engine option; triggering it calls `commands.downloadSileroNativeBundle()` and displays live progress from the `bundle_download_*` events.
 
@@ -169,6 +168,11 @@ A "Очистить кэш…" button SHALL open a nested `CleanupCacheModal` wi
 - **GIVEN** the Settings dialog is open with theme changed to "Тёмная"
 - **WHEN** the user clicks "Сохранить"
 - **THEN** `commands.updateConfig` receives the patch, the UI switches to the dark scheme without reload, and a success notification is shown
+
+#### Scenario: Save persists the code block narration mode
+- **GIVEN** the Settings dialog is open with the saved config `code_block_mode: "read"` and the user picks «Кратко»
+- **WHEN** the user clicks "Сохранить"
+- **THEN** the submitted `UIConfigPatch` contains `code_block_mode: "brief"`
 
 #### Scenario: Engine availability gates selection
 - **GIVEN** `getAvailableEngines` reports Silero as unavailable

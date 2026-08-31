@@ -34,4 +34,4 @@
 - [x] 6.2 Run `nix develop -c just lint` — fmt, clippy, deny, eslint, knip, typecheck, ruff clean
 - [x] 6.3 Run `nix develop -c pnpm dlx @fission-ai/openspec validate wire-code-block-mode --strict` — change artifacts valid
 - [x] 6.4 Sweep `grep -rn "ruvox-code"` outside `openspec/changes/archive/` and `CHANGELOG.md` — only deliberate references remain (the legacy-directive pinning test + fixture, the unrelated `--ruvox-code-bg` CSS token; main specs sync at archive)
-- [ ] 6.5 Manual pass: start the app (`nix develop -c pnpm tauri dev`), open Settings, confirm the «Кратко» / «Читать полностью» control reflects the saved config; switch it, save, add a markdown text with a fenced code block via the preview dialog and confirm the normalized pane follows the new mode without a restart
+- [x] 6.5 Manual pass: start the app (`nix develop -c pnpm tauri dev`), open Settings, confirm the «Кратко» / «Читать полностью» control reflects the saved config; switch it, save, add a markdown text with a fenced code block via the preview dialog and confirm the normalized pane follows the new mode without a restart
