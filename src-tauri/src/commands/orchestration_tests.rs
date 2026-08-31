@@ -933,8 +933,58 @@ async fn synthesis_records_generation_snapshot() {
     assert!(g.audio_bytes.is_some(), "size of the final audio file");
     assert!(g.normalized_text_sha256.is_some());
     assert!(!g.app_version.is_empty());
+    assert_eq!(g.code_block_mode.as_deref(), Some("brief"));
+}
+
+/// Switching the code block narration mode through `update_config` reaches
+/// the shared pipeline live: the next synthesis normalizes fenced blocks in
+/// the new mode, and its snapshot records the mode actually applied.
+#[tokio::test(flavor = "multi_thread")]
+async fn update_config_code_block_mode_applies_live_to_synthesis() {
+    let t = build_test_app();
+
+    // `update_config` routes through the engine switcher, which cannot
+    // activate the (absent) silero-native bundle in tests: pin the saved
+    // engine to the stub-active piper first (with the switcher's stub voice,
+    // so `apply_config` is a no-op and the stub engine stays in place).
+    let mut config = t.state().storage.load_config().unwrap();
+    config.engine = "piper".to_string();
+    config.piper_voice = "stub-voice".to_string();
+    t.state()
+        .storage
+        .save_config(&config)
+        .expect("engine pinned");
+
+    let patch = UIConfigPatch {
+        code_block_mode: Some("read".to_string()),
+        ..Default::default()
+    };
+    update_config(t.state(), patch)
+        .await
+        .expect("mode patch applied");
+
+    let id = add_text_entry(
+        t.app.handle().clone(),
+        t.state(),
+        "```python\nprint('hi')\n```".to_string(),
+        false,
+        None,
+        None,
+        None,
+    )
+    .await
+    .expect("entry accepted");
+    let uuid = entry_uuid(&id);
+    wait_entry_status(&t, &uuid, EntryStatus::Ready).await;
+
+    let entry = t.state().storage.get_entry(&uuid).unwrap();
+    assert_eq!(
+        entry.normalized_text.as_deref(),
+        Some("принт открывающая скобка хи закрывающая скобка"),
+        "fenced block read in full after the live mode switch"
+    );
+    let g = entry.generation.expect("snapshot recorded");
     assert_eq!(g.code_block_mode.as_deref(), Some("read"));
-    assert_eq!(g.read_operators, Some(true));
 }
 
 /// Regeneration re-runs the same spawn path: the snapshot is overwritten

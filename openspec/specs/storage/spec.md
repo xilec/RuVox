@@ -93,8 +93,7 @@ interface GenerationParams {
   sample_rate: number | null;            // Actual output sample rate of the rendered audio; null when unknown
   model: ModelParams | null;             // Model identity; null when the engine cannot report it cheaply
   app_version: string;                   // Application version at generation time
-  code_block_mode: string | null;        // Normalization input: "skip" | "read"
-  read_operators: boolean | null;        // Normalization input: read spoken operators
+  code_block_mode: string | null;        // Code block narration mode actually applied: "brief" | "read"
   normalized_text_sha256: string | null; // sha256 of the normalized text used for this audio
   audio_codec: string | null;            // Codec of the stored file ("Ogg Opus" | "WAV")
   audio_bytes: number | null;            // Size of the stored audio file in bytes
@@ -106,7 +105,7 @@ interface ModelParams {
 }
 ```
 
-Status and format values SHALL serialize as lowercase strings. `created_at` and `audio_generated_at` SHALL be stored as naive timestamps without a timezone suffix; both SHALL be generated from the UTC clock (`Utc::now().naive_utc()`), and readers treat the values as UTC. `audio_path` and `timestamps_path` SHALL store the filename only; the full path resolves as `<cache_root>/audio/{filename}`. All optional `TextEntry` fields SHALL default when absent from the JSON, so entries written by older builds keep parsing; a missing `format` SHALL default to `null`, meaning the viewer falls back to the `text_format` config default, a missing `html_source` SHALL default to `null`, a missing `generation` SHALL default to `null`, a missing `generation_count` SHALL default to `0`, and a missing `source` SHALL default to `null`. For HTML-ingested entries, `original_text` SHALL hold the extracted plain text (the TTS pipeline input) and `html_source` SHALL hold the sanitized markup.
+Status and format values SHALL serialize as lowercase strings. `created_at` and `audio_generated_at` SHALL be stored as naive timestamps without a timezone suffix; both SHALL be generated from the UTC clock (`Utc::now().naive_utc()`), and readers treat the values as UTC. `audio_path` and `timestamps_path` SHALL store the filename only; the full path resolves as `<cache_root>/audio/{filename}`. All optional `TextEntry` fields SHALL default when absent from the JSON, so entries written by older builds keep parsing; a missing `format` SHALL default to `null`, meaning the viewer falls back to the `text_format` config default, a missing `html_source` SHALL default to `null`, a missing `generation` SHALL default to `null`, a missing `generation_count` SHALL default to `0`, and a missing `source` SHALL default to `null`. Snapshots written by earlier builds may carry a `read_operators` field; readers MUST ignore it, and re-saving the entry drops it. For HTML-ingested entries, `original_text` SHALL hold the extracted plain text (the TTS pipeline input) and `html_source` SHALL hold the sanitized markup.
 
 #### Scenario: New entry is persisted
 - GIVEN an empty history
@@ -132,6 +131,11 @@ Status and format values SHALL serialize as lowercase strings. `created_at` and 
 - GIVEN a persisted entry whose `generation` snapshot is set
 - WHEN the storage service is re-initialized against the same cache directory
 - THEN the loaded entry has the same snapshot values, including engine, voice, sample rate, model identity, and audio facts
+
+#### Scenario: Legacy snapshot with read_operators parses
+- GIVEN a `history.json` written by an earlier build whose `generation` snapshot contains `read_operators: true`
+- WHEN the history is loaded
+- THEN the entry parses successfully, the snapshot keeps its `code_block_mode` and other fields, and `read_operators` is not surfaced; re-saving the entry persists the snapshot without `read_operators`
 
 #### Scenario: Ingestion source annotation round-trips
 - GIVEN an entry ingested from a file, persisted with `source: "file"`
@@ -314,6 +318,13 @@ The `UIConfig` field table SHALL gain:
 Every existing defaulting/unknown-key/partial-update rule SHALL apply to the
 new field unchanged.
 
+The `code_block_mode` field SHALL accept the values `"brief"` and `"read"`,
+with `"brief"` as the default for fresh and partial configs. The legacy value
+`"skip"` SHALL be accepted on load as an alias for `"brief"`; any other value
+SHALL fall back to `"brief"`. The `read_operators` field SHALL NOT be part of
+`UIConfig`; config files written by earlier builds that contain it MUST still
+parse (the unknown key is ignored and dropped on the next save).
+
 #### Scenario: Older config without language key
 - **GIVEN** a `config.json` written by a pre-localization build (no `language` key)
 - **WHEN** the configuration is loaded
@@ -327,7 +338,7 @@ new field unchanged.
 #### Scenario: Missing config returns defaults
 - **GIVEN** no `config.json` in the cache directory
 - **WHEN** the configuration is loaded
-- **THEN** the default configuration is returned (`speaker` `"aidar"`, `sample_rate` `24000`, `engine` `"silero_native"`, `piper_voice` `"ruslan"`)
+- **THEN** the default configuration is returned (`speaker` `"aidar"`, `sample_rate` `24000`, `engine` `"silero_native"`, `piper_voice` `"ruslan"`, `code_block_mode` `"brief"`)
 
 #### Scenario: Older config without engine keys
 - **GIVEN** a `config.json` that contains only `speaker`, `sample_rate`, and `speech_rate`
@@ -338,6 +349,31 @@ new field unchanged.
 - **GIVEN** a configuration with `speaker` `"xenia"` and `sample_rate` `48000`
 - **WHEN** the configuration is saved and loaded again
 - **THEN** the loaded values match the saved ones
+
+#### Scenario: Older config without code_block_mode key
+- **GIVEN** a `config.json` written by an earlier build with no `code_block_mode` key
+- **WHEN** the configuration is loaded
+- **THEN** it parses successfully with `code_block_mode` defaulted to `"brief"`
+
+#### Scenario: Persisted read value stays read
+- **GIVEN** a `config.json` with `code_block_mode: "read"`
+- **WHEN** the configuration is loaded and saved again
+- **THEN** the value stays `"read"` (no migration or coercion)
+
+#### Scenario: Legacy skip value is aliased to brief
+- **GIVEN** a `config.json` with `code_block_mode: "skip"`
+- **WHEN** the configuration is loaded
+- **THEN** `code_block_mode` resolves to `"brief"`
+
+#### Scenario: Unknown code_block_mode value falls back to brief
+- **GIVEN** a `config.json` with `code_block_mode: "loud"`
+- **WHEN** the configuration is loaded
+- **THEN** `code_block_mode` resolves to `"brief"`
+
+#### Scenario: Config with read_operators parses
+- **GIVEN** a `config.json` written by an earlier build containing `read_operators: false`
+- **WHEN** the configuration is loaded
+- **THEN** it parses successfully, all other fields keep their values, and saving drops the `read_operators` key
 
 ### Requirement: Entry CRUD
 

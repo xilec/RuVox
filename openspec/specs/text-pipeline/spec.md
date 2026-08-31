@@ -9,7 +9,9 @@ for Silero TTS, which cannot read English or special characters. The pipeline
 is the mandatory preprocessing step before every synthesis. Character-level
 position mapping produced alongside the normalized text is specified
 separately in the `position-mapping` capability.
+
 ## Requirements
+
 ### Requirement: Pipeline entry points and integration
 
 The system SHALL normalize all text through `TTSPipeline` before TTS
@@ -127,26 +129,48 @@ of spaces/tabs to a single space before any content phase runs.
 
 The system SHALL process fenced code blocks (` ```lang ... ``` `) before all
 other content phases. A block tagged `mermaid` SHALL be replaced with the
-exact marker string "Тут мермэйд диаграмма" and MUST NOT be read aloud. The
-pipeline SHALL be constructed with `CodeBlockHandler` in `Full` mode: block
-contents are tokenized and read aloud with identifiers, operators, brackets,
-and integer literals normalized to spoken Russian. `CodeBlockHandler` also
-supports a `Brief` mode in which a block is replaced with "далее следует
-пример кода на <язык>" (language looked up in `LANGUAGE_NAMES`) or "далее
-следует блок кода" when no language tag is present. An inline directive
-`<!-- ruvox-code: full -->` or `<!-- ruvox-code: brief -->` SHALL override
-the effective mode for the blocks that follow it in the same document, and
-the directive itself SHALL be removed from the output.
+exact marker string "Тут мермэйд диаграмма" and MUST NOT be read aloud. All
+other fenced blocks SHALL be narrated according to the pipeline's code block
+narration mode, which the application sets from the `code_block_mode` config
+value (`"brief"` default, `"read"` optional; the wiring lives in the
+`ipc-commands` capability):
+
+- **Brief** (`"brief"`): the block is replaced with "далее следует пример
+  кода на <язык>" (language looked up in `LANGUAGE_NAMES`) or "далее следует
+  блок кода" when no language tag is present.
+- **Full** (`"read"`): block contents are tokenized and read aloud with
+  identifiers, operators, brackets, and integer literals normalized to spoken
+  Russian.
+
+The pipeline's implicit default mode SHALL be Brief, matching the config
+default, so a freshly constructed pipeline never contradicts the product
+default. The former inline mode-switch directives (`<!-- ruvox-code: … -->`)
+SHALL no longer be interpreted: such comments are processed as ordinary text
+by the symbol phases exactly like any other punctuation, and the narration
+mode is owned solely by the setting.
 
 #### Scenario: Mermaid block replaced with marker
 
 - GIVEN the input "```mermaid\ngraph TD\nA-->B\n```"
-- WHEN the pipeline processes it
+- WHEN the pipeline processes it in any mode
 - THEN the entire block is replaced with "Тут мермэйд диаграмма"
+
+#### Scenario: Brief mode is the default
+
+- GIVEN a pipeline constructed without an explicit mode and the input
+  "```python\nprint('hi')\n```"
+- WHEN the pipeline processes it
+- THEN the block is replaced with "далее следует пример кода на пайтон"
+
+#### Scenario: Brief mode without a language tag
+
+- GIVEN the pipeline in Brief mode and the input "```\nx = 1\n```"
+- WHEN the pipeline processes it
+- THEN the block is replaced with "далее следует блок кода"
 
 #### Scenario: Code block read in full mode
 
-- GIVEN the pipeline in its default configuration and the input
+- GIVEN the pipeline configured in Full mode and the input
   "```python\nprint('hi')\n```"
 - WHEN the pipeline processes it
 - THEN the block content is read as "принт открывающая скобка хи
@@ -154,10 +178,12 @@ the directive itself SHALL be removed from the output.
 
 #### Scenario: Mode-switch directive
 
-- GIVEN the text "<!-- ruvox-code: brief -->\n```python\nprint('hi')\n```"
+- GIVEN the pipeline in Full mode and the text
+  "<!-- ruvox-code: brief -->\n```python\nprint('hi')\n```"
 - WHEN the pipeline processes it
-- THEN the block is replaced with "далее следует пример кода на пайтон" and
-  the directive does not appear in the output
+- THEN the block is still read in full (the directive comment does not change
+  the mode) and the comment is normalized as ordinary text; the exact output
+  is pinned by a golden fixture
 
 ### Requirement: Markdown constructs
 
@@ -611,8 +637,9 @@ the suite SHALL be executed by
 `cargo test --manifest-path src-tauri/Cargo.toml --test golden`. The fixtures
 SHALL cover numbers, sizes, durations, versions, dates, times, ranges,
 percentages, English words, abbreviations, code identifier styles,
-URLs/emails/IPs/paths, Markdown constructs, code blocks, mermaid, symbols,
-operators, whitespace handling, and mixed paragraphs.
+URLs/emails/IPs/paths, Markdown constructs, code blocks in both narration
+modes (brief by default and full via an explicitly set mode), mermaid,
+symbols, operators, whitespace handling, and mixed paragraphs.
 
 #### Scenario: Golden suite passes
 
@@ -700,4 +727,3 @@ version-path reading) and before operators and bare numbers.
 - WHEN the pipeline processes it
 - THEN the ".5" fragment is not read as a decimal (it belongs to a dotted
   label), and the digit is not expanded by the number phase either
-

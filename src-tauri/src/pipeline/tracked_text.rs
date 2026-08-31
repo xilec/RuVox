@@ -232,7 +232,15 @@ impl TrackedText {
             .match_indices(from)
             .map(|(i, s)| (i, i + s.len()))
             .collect();
-        for (start, end) in matches.into_iter().rev() {
+        for (start, end) in matches {
+            // The batch is applied in one flush, so every queued range refers
+            // to the same pre-flush text. Keys run longest-first ("===" before
+            // "=="), and a shorter key matches inside text already claimed by
+            // a queued longer key — skip such occurrences, mirroring the
+            // Python-parity overlap rule of [`Self::sub`] (#89 review pass).
+            if self.pending_overlaps(start, end) {
+                continue;
+            }
             self.replace_byte_range(start, end, to);
         }
     }
@@ -249,14 +257,32 @@ impl TrackedText {
     ///
     /// Application is batched (see the struct docs): the range must refer to
     /// the text as it stands before any other queued-but-unapplied
-    /// replacement. All callers compute ranges against a snapshot and queue
-    /// them in reverse document order, which satisfies this.
+    /// replacement, and must not overlap another queued range. Ranges are
+    /// kept sorted by `byte_start` so [`Self::replace`] can run its overlap
+    /// check in O(log k).
     pub fn replace_byte_range(&mut self, byte_start: usize, byte_end: usize, to: &str) {
-        self.pending.push(PendingReplace {
-            byte_start,
-            byte_end,
-            to: to.to_string(),
-        });
+        let at = self.pending.partition_point(|p| p.byte_start < byte_start);
+        self.pending.insert(
+            at,
+            PendingReplace {
+                byte_start,
+                byte_end,
+                to: to.to_string(),
+            },
+        );
+    }
+
+    /// Whether `[byte_start, byte_end)` intersects any queued-but-unapplied
+    /// replacement range. `pending` is sorted by `byte_start`, so a binary
+    /// search of the neighbours answers in O(log k).
+    fn pending_overlaps(&self, byte_start: usize, byte_end: usize) -> bool {
+        let at = self.pending.partition_point(|p| p.byte_start < byte_start);
+        if at > 0 && self.pending[at - 1].byte_end > byte_start {
+            return true;
+        }
+        self.pending
+            .get(at)
+            .is_some_and(|p| p.byte_start < byte_end)
     }
 
     /// Apply several pre-collected replacements by byte range, right-to-left.
@@ -368,9 +394,11 @@ impl TrackedText {
             return;
         }
         let mut batch = std::mem::take(&mut self.pending);
-        // Callers queue ranges in reverse document order; sort ascending for
-        // the splice pass. Ranges are disjoint by construction (regex matches
-        // never overlap; snapshot-based loops queue disjoint regions).
+        // Pending ranges are inserted sorted by byte_start and are disjoint
+        // by contract (regex matches never overlap; `replace` skips
+        // occurrences inside already-queued ranges). The sort is a no-op kept
+        // as a cheap guard for future writers; the assert pins the disjoint
+        // invariant loudly instead of splicing corrupt output.
         batch.sort_by_key(|p| p.byte_start);
         assert!(
             batch.windows(2).all(|w| w[0].byte_end <= w[1].byte_start),
@@ -589,6 +617,43 @@ mod tests {
         for i in 0..11 {
             assert_eq!(mapping.char_map[i], (i, i + 1));
         }
+    }
+
+    /// Batched literal replaces run longest-key-first over the same unflushed
+    /// text: a shorter key must skip occurrences swallowed by an already
+    /// queued longer key instead of queueing an overlapping range (the Habr
+    /// article panic: "===" queued, then "==" matched inside it).
+    #[test]
+    fn replace_skips_occurrences_inside_queued_longer_match() {
+        let mut tracked = TrackedText::new(" echo === init === done");
+        tracked.replace("===", " строго равно ");
+        tracked.replace("==", " равно равно ");
+        assert_eq!(
+            tracked.text(),
+            " echo  строго равно  init  строго равно  done"
+        );
+    }
+
+    /// Same overlap rule for the "==" inside a queued "!==".
+    #[test]
+    fn replace_skips_eqeq_inside_queued_strict_neq() {
+        let mut tracked = TrackedText::new("a !== b");
+        tracked.replace("!==", " строго не равно ");
+        tracked.replace("==", " равно равно ");
+        assert_eq!(tracked.text(), "a  строго не равно  b");
+    }
+
+    /// A longer key must not match across a boundary left by an already
+    /// queued shorter-range replacement of a previous phase batch (queued
+    /// ranges stay disjoint when the shorter match merely touches a queued
+    /// range's edge).
+    #[test]
+    fn replace_adjacent_nonoverlapping_ranges_are_kept() {
+        let mut tracked = TrackedText::new("== ===");
+        tracked.replace("===", " строго равно ");
+        // The leading "==" at [0..2) does not touch the queued [3..6).
+        tracked.replace("==", " равно равно ");
+        assert_eq!(tracked.text(), " равно равно   строго равно ");
     }
 
     /// Python: TestTrackedTextBasic::test_simple_replace

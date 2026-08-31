@@ -9,6 +9,7 @@ import {
   Modal,
   NumberInput,
   Progress,
+  SegmentedControl,
   Select,
   Stack,
   Switch,
@@ -48,6 +49,7 @@ interface SettingsFormValues {
   notify_on_error: boolean;
   preview_dialog_enabled: boolean;
   max_cache_size_mb: number;
+  code_block_mode: string;
   theme: string;
   language: string;
 }
@@ -281,6 +283,7 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
     notify_on_error: true,
     preview_dialog_enabled: true,
     max_cache_size_mb: 500,
+    code_block_mode: 'brief',
     theme: 'auto',
     language: 'ru',
   };
@@ -310,6 +313,7 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
           notify_on_error: config.notify_on_error,
           preview_dialog_enabled: config.preview_dialog_enabled,
           max_cache_size_mb: config.max_cache_size_mb,
+          code_block_mode: config.code_block_mode,
           theme: config.theme,
           language: config.language,
         };
@@ -483,6 +487,7 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
         notify_on_error: values.notify_on_error,
         preview_dialog_enabled: values.preview_dialog_enabled,
         max_cache_size_mb: values.max_cache_size_mb,
+        code_block_mode: values.code_block_mode,
         theme: values.theme as UIConfigPatch['theme'],
         language: values.language,
       },
@@ -633,6 +638,21 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
             }}
             error={form.errors.sample_rate}
           />
+
+          <Stack gap={4}>
+            <Text size="sm">{tt('settings.code_block.label')}</Text>
+            <SegmentedControl
+              value={form.values.code_block_mode}
+              onChange={(v) => form.setFieldValue('code_block_mode', v)}
+              data={[
+                { label: tt('settings.code_block.brief'), value: 'brief' },
+                { label: tt('settings.code_block.read'), value: 'read' },
+              ]}
+            />
+            <Text size="xs" c="dimmed">
+              {tt('settings.code_block.description')}
+            </Text>
+          </Stack>
 
           <Divider />
 

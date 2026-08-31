@@ -331,15 +331,21 @@ impl SynthesisError {
 }
 
 /// Shared core for [`run_normalization`] and [`preview_normalization`]: runs
-/// the CPU-bound pipeline on a blocking thread. The raw `JoinError` is
-/// returned so each caller maps a pipeline panic to its own error type.
+/// the CPU-bound pipeline on a blocking thread. Also returns the code block
+/// narration mode captured in the same critical section that produced the
+/// text, so the generation snapshot can record the mode actually applied
+/// (a config change racing a synthesis cannot falsify it). The raw
+/// `JoinError` is returned so each caller maps a pipeline panic to its own
+/// error type.
 async fn run_pipeline_normalization(
     pipeline: Arc<Mutex<TTSPipeline>>,
     text: String,
-) -> Result<(String, CharMapping), tokio::task::JoinError> {
+) -> Result<(String, CharMapping, String), tokio::task::JoinError> {
     tokio::task::spawn_blocking(move || {
         let mut p = pipeline.lock();
-        p.process_with_char_mapping(&text)
+        let (normalized, mapping) = p.process_with_char_mapping(&text);
+        let code_block_mode = p.code_block_mode().as_config_str().to_string();
+        (normalized, mapping, code_block_mode)
     })
     .await
 }
@@ -348,15 +354,16 @@ async fn run_pipeline_normalization(
 async fn run_normalization(
     pipeline: Arc<Mutex<TTSPipeline>>,
     original_text: String,
-) -> Result<(String, CharMapping), SynthesisError> {
-    let (normalized, mapping) = run_pipeline_normalization(pipeline, original_text)
-        .await
-        .map_err(|e| SynthesisError::PipelinePanic(e.to_string()))?;
+) -> Result<(String, CharMapping, String), SynthesisError> {
+    let (normalized, mapping, code_block_mode) =
+        run_pipeline_normalization(pipeline, original_text)
+            .await
+            .map_err(|e| SynthesisError::PipelinePanic(e.to_string()))?;
 
     if normalized.is_empty() {
         return Err(SynthesisError::EmptyText);
     }
-    Ok((normalized, mapping))
+    Ok((normalized, mapping, code_block_mode))
 }
 
 /// Phase 2: mark entry as `Processing` and emit `entry_updated`.
@@ -402,13 +409,12 @@ struct SynthOutcome {
     out_wav_path: PathBuf,
     wav_filename: String,
     voice: String,
-    config: UIConfig,
 }
 
 /// Phases 3–4: determine the WAV path / config / char-mapping inputs and
 /// call `tts.synthesize`. Returns the synthesize output along with the
 /// resolved WAV path / filename (so [`finalize_audio_files`] can transcode
-/// to Opus without rebuilding them) and the resolved voice / config (so
+/// to Opus without rebuilding them) and the resolved voice (so
 /// [`build_generation_snapshot`] records what was actually used).
 ///
 /// When the engine returns `voice_not_installed` and the active engine is
@@ -494,7 +500,6 @@ async fn synthesize_audio(
         out_wav_path,
         wav_filename,
         voice,
-        config,
     })
 }
 
@@ -540,7 +545,7 @@ async fn build_generation_snapshot(
     tts: &dyn TtsEngine,
     storage: &StorageService,
     voice: &str,
-    config: &UIConfig,
+    code_block_mode: &str,
     normalized: &str,
     sample_rate: Option<u32>,
     audio_filename: &str,
@@ -563,8 +568,7 @@ async fn build_generation_snapshot(
         sample_rate,
         model,
         app_version: env!("CARGO_PKG_VERSION").to_string(),
-        code_block_mode: Some(config.code_block_mode.clone()),
-        read_operators: Some(config.read_operators),
+        code_block_mode: Some(code_block_mode.to_string()),
         normalized_text_sha256: normalized_sha,
         audio_codec: audio_codec_for(audio_filename).map(str::to_string),
         audio_bytes,
@@ -773,7 +777,7 @@ pub fn spawn_synthesis<R: Runtime + 'static>(
                 if let Some(msg) = oversized_input_message(&entry.original_text, tts.kind()) {
                     return Err(SynthesisError::InputTooLong(msg));
                 }
-                let (normalized, mapping) =
+                let (normalized, mapping, applied_code_block_mode) =
                     run_normalization(Arc::clone(&pipeline), entry.original_text.clone()).await?;
                 mark_processing(&storage, &app, &entry_id, &normalized);
                 let normalized_for_snapshot = normalized.clone();
@@ -803,7 +807,7 @@ pub fn spawn_synthesis<R: Runtime + 'static>(
                     tts.as_ref(),
                     &storage,
                     &outcome.voice,
-                    &outcome.config,
+                    &applied_code_block_mode,
                     &normalized_for_snapshot,
                     sample_rate,
                     &audio_filename,
@@ -1066,11 +1070,12 @@ async fn preview_normalization(
     pipeline: Arc<Mutex<TTSPipeline>>,
     text: String,
 ) -> CmdResult<(String, CharMapping)> {
-    run_pipeline_normalization(pipeline, text)
+    let (normalized, mapping, _code_block_mode) = run_pipeline_normalization(pipeline, text)
         .await
         .map_err(|e| {
             CommandError::internal("pipeline.panicked", vec![]).with_message(e.to_string())
-        })
+        })?;
+    Ok((normalized, mapping))
 }
 
 /// Run the text normalization pipeline on `text` and return the normalized result.
@@ -1541,13 +1546,28 @@ pub async fn download_silero_native_bundle(state: State<'_, AppState>) -> CmdRes
         .map_err(CommandError::from)
 }
 
+/// Apply the persisted `code_block_mode` to the shared pipeline. Called at
+/// startup so the pipeline never narrates code blocks in a mode the config
+/// did not ask for; `update_config` pushes later changes itself.
+pub fn apply_configured_code_block_mode(pipeline: &Arc<Mutex<TTSPipeline>>, config: &UIConfig) {
+    let mode = crate::pipeline::normalizers::code_blocks::CodeBlockMode::from_config(
+        &config.code_block_mode,
+    );
+    pipeline.lock().set_code_block_mode(mode);
+}
+
 /// Merge a partial config patch into the current configuration, swap the
 /// active TTS engine if needed, and persist. The engine swap runs *before*
 /// the config is saved — if the user picked a Silero stack we cannot spawn,
 /// the call returns an error and the previous config stays on disk.
+///
+/// A `code_block_mode` change is pushed into the shared pipeline after the
+/// save, so subsequent synthesis/preview runs pick it up without a restart
+/// (synthesis already in flight finishes on the previous mode).
 #[tauri::command]
 pub async fn update_config(state: State<'_, AppState>, patch: UIConfigPatch) -> CmdResult<()> {
     let mut config = state.storage.load_config().unwrap_or_default();
+    let code_block_mode_patch = patch.code_block_mode.clone();
     apply_config_patch(&mut config, patch);
 
     state
@@ -1569,7 +1589,15 @@ pub async fn update_config(state: State<'_, AppState>, patch: UIConfigPatch) -> 
     state
         .storage
         .save_config(&config)
-        .map_err(CommandError::from)
+        .map_err(CommandError::from)?;
+
+    if code_block_mode_patch.is_some() {
+        let mode = crate::pipeline::normalizers::code_blocks::CodeBlockMode::from_config(
+            &config.code_block_mode,
+        );
+        state.pipeline.lock().set_code_block_mode(mode);
+    }
+    Ok(())
 }
 
 /// Shared implementation for [`get_timestamps`]: an entry that exists but has
@@ -1900,10 +1928,7 @@ fn apply_config_patch(config: &mut UIConfig, patch: UIConfigPatch) {
         config.max_cache_size_mb = v;
     }
     if let Some(v) = patch.code_block_mode {
-        config.code_block_mode = v;
-    }
-    if let Some(v) = patch.read_operators {
-        config.read_operators = v;
+        config.code_block_mode = UIConfig::canonical_code_block_mode(&v);
     }
     if let Some(v) = patch.theme {
         config.theme = v;
@@ -2019,7 +2044,7 @@ mod synthesis_tests {
     #[tokio::test]
     async fn run_normalization_returns_normalized_text_and_mapping() {
         let pipeline = Arc::new(Mutex::new(TTSPipeline::new()));
-        let (normalized, _mapping) = run_normalization(pipeline, "Привет мир".to_string())
+        let (normalized, _mapping, _mode) = run_normalization(pipeline, "Привет мир".to_string())
             .await
             .unwrap();
         assert!(!normalized.is_empty());
@@ -2107,7 +2132,6 @@ mod synthesis_tests {
             model: None,
             app_version: "test".to_string(),
             code_block_mode: Some("read".to_string()),
-            read_operators: Some(true),
             normalized_text_sha256: None,
             audio_codec: Some("Ogg Opus".to_string()),
             audio_bytes: None,
@@ -2461,6 +2485,27 @@ mod tests {
 
     // ── apply_config_patch ──────────────────────────────────────────────────
 
+    #[test]
+    fn apply_configured_code_block_mode_maps_config_values() {
+        use crate::pipeline::normalizers::code_blocks::CodeBlockMode;
+
+        let pipeline = Arc::new(Mutex::new(TTSPipeline::new()));
+        let config = UIConfig {
+            code_block_mode: "read".to_string(),
+            ..UIConfig::default()
+        };
+        apply_configured_code_block_mode(&pipeline, &config);
+        assert_eq!(pipeline.lock().code_block_mode(), CodeBlockMode::Full);
+
+        // The legacy alias and unknown values resolve to the default mode.
+        let config = UIConfig {
+            code_block_mode: "skip".to_string(),
+            ..UIConfig::default()
+        };
+        apply_configured_code_block_mode(&pipeline, &config);
+        assert_eq!(pipeline.lock().code_block_mode(), CodeBlockMode::Brief);
+    }
+
     /// Every `UIConfigPatch` field, in isolation: set to a value distinct
     /// from `UIConfig::default()` and confirm it lands, and nothing else
     /// changes as a side effect. Table-driven so adding a 16th field later
@@ -2479,7 +2524,6 @@ mod tests {
             text_format: _,
             max_cache_size_mb: _,
             code_block_mode: _,
-            read_operators: _,
             theme: _,
             player_hotkeys: _,
             window_geometry: _,
@@ -2550,14 +2594,7 @@ mod tests {
             Case {
                 field: "code_block_mode",
                 patch: UIConfigPatch {
-                    code_block_mode: Some("skip".to_string()),
-                    ..Default::default()
-                },
-            },
-            Case {
-                field: "read_operators",
-                patch: UIConfigPatch {
-                    read_operators: Some(false),
+                    code_block_mode: Some("read".to_string()),
                     ..Default::default()
                 },
             },
@@ -2680,7 +2717,6 @@ mod tests {
             text_format: "markdown".to_string(),
             max_cache_size_mb: 1000,
             code_block_mode: "skip".to_string(),
-            read_operators: false,
             theme: "dark".to_string(),
             player_hotkeys: custom_hotkeys,
             window_geometry: Some([1, 2, 3, 4]),

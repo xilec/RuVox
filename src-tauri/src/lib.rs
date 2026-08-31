@@ -892,6 +892,12 @@ pub fn run() {
             }
 
             let pipeline = Arc::new(Mutex::new(TTSPipeline::new()));
+            // The pipeline's code block narration mode follows the config:
+            // apply the persisted value right after construction (later
+            // changes arrive via `update_config`).
+            if let Ok(config) = storage.load_config() {
+                apply_configured_code_block_mode(&pipeline, &config);
+            }
             let synthesis_tasks = Arc::new(Mutex::new(HashMap::new()));
             let synthesize_entered = Arc::new(Mutex::new(HashSet::new()));
             let tray_tx = spawn_tray_handler(

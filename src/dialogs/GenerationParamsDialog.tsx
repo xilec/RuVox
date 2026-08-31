@@ -42,8 +42,11 @@ function displayCodeBlockMode(mode: string, tt: T): string {
   switch (mode) {
     case 'read':
       return tt('generation.code_block.read');
+    // Snapshots written before the rename may carry the legacy value; it
+    // meant the same as brief.
     case 'skip':
-      return tt('generation.code_block.skip');
+    case 'brief':
+      return tt('generation.code_block.brief');
     default:
       return mode;
   }
@@ -120,10 +123,6 @@ export function GenerationParamsDialog({ entry, opened, onClose }: GenerationPar
     [
       tt('generation.code_block'),
       g?.code_block_mode != null ? displayCodeBlockMode(g.code_block_mode, tt) : ABSENT,
-    ],
-    [
-      tt('generation.read_operators'),
-      g?.read_operators != null ? (g.read_operators ? tt('common.yes') : tt('common.no')) : ABSENT,
     ],
     [
       tt('generation.normalized_sha'),

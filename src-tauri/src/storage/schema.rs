@@ -113,9 +113,9 @@ pub struct GenerationParams {
     #[serde(default)]
     pub model: Option<ModelParams>,
     pub app_version: String,
-    /// Normalization settings in effect at synthesis time.
+    /// Code block narration mode actually applied to this synthesis:
+    /// `"brief"` | `"read"`.
     pub code_block_mode: Option<String>,
-    pub read_operators: Option<bool>,
     /// sha256 of the normalized text used for this audio.
     pub normalized_text_sha256: Option<String>,
     /// Codec of the stored file: `"Ogg Opus"`, or `"WAV"` (encode fallback).
@@ -173,11 +173,11 @@ pub struct UIConfig {
     pub text_format: String,
     #[serde(default = "UIConfig::default_max_cache_size_mb")]
     pub max_cache_size_mb: u32,
-    /// How to handle Markdown code blocks: `"skip"` | `"read"`. Defaults to `"read"`.
+    /// Code block narration: `"brief"` (default) | `"read"`. The legacy
+    /// `"skip"` value and unknown strings canonicalize to `"brief"` on load
+    /// and patch (see [`UIConfig::canonical_code_block_mode`]).
     #[serde(default = "UIConfig::default_code_block_mode")]
     pub code_block_mode: String,
-    #[serde(default = "UIConfig::default_true")]
-    pub read_operators: bool,
     #[serde(default = "UIConfig::default_theme")]
     pub theme: String,
     #[serde(default = "UIConfig::default_player_hotkeys")]
@@ -224,13 +224,22 @@ impl UIConfig {
         500
     }
     fn default_code_block_mode() -> String {
-        "read".to_string()
+        "brief".to_string()
     }
     fn default_theme() -> String {
         "auto".to_string()
     }
     fn default_language() -> String {
         "ru".to_string()
+    }
+
+    /// Canonicalize a raw `code_block_mode` value: the legacy `"skip"` alias
+    /// and unknown strings resolve to the default. The `CodeBlockMode` enum
+    /// owns this mapping so config and pipeline cannot drift apart.
+    pub fn canonical_code_block_mode(raw: &str) -> String {
+        crate::pipeline::normalizers::code_blocks::CodeBlockMode::from_config(raw)
+            .as_config_str()
+            .to_string()
     }
 
     fn default_player_hotkeys() -> std::collections::HashMap<String, String> {
@@ -260,7 +269,6 @@ impl Default for UIConfig {
             text_format: Self::default_text_format(),
             max_cache_size_mb: Self::default_max_cache_size_mb(),
             code_block_mode: Self::default_code_block_mode(),
-            read_operators: true,
             theme: Self::default_theme(),
             player_hotkeys: Self::default_player_hotkeys(),
             window_geometry: None,
@@ -284,7 +292,6 @@ pub struct UIConfigPatch {
     pub text_format: Option<String>,
     pub max_cache_size_mb: Option<u32>,
     pub code_block_mode: Option<String>,
-    pub read_operators: Option<bool>,
     pub theme: Option<String>,
     pub player_hotkeys: Option<std::collections::HashMap<String, String>>,
     pub window_geometry: Option<Option<[i32; 4]>>,
@@ -451,7 +458,6 @@ mod tests {
             }),
             app_version: "0.4.0".to_string(),
             code_block_mode: Some("read".to_string()),
-            read_operators: Some(true),
             normalized_text_sha256: Some("cd34".repeat(32)),
             audio_codec: Some("Ogg Opus".to_string()),
             audio_bytes: Some(54321),

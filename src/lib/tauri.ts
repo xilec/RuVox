@@ -54,7 +54,6 @@ export interface GenerationParams {
   model: ModelParams | null;
   app_version: string;
   code_block_mode: string | null;
-  read_operators: boolean | null;
   normalized_text_sha256: string | null;
   audio_codec: string | null;
   audio_bytes: number | null;
@@ -106,8 +105,8 @@ export interface UIConfig {
   notify_on_error: boolean;
   text_format: string;
   max_cache_size_mb: number;
+  /** Code block narration: "brief" (default) | "read". */
   code_block_mode: string;
-  read_operators: boolean;
   theme: Theme;
   /** UI language: "ru" (default) | "en". Mirrors UIConfig.language on the
    *  backend; narrowed to a Locale via toLocale() before use. */
