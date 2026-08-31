@@ -39,11 +39,12 @@ the Synthesis Cancellation Command requirement in `ipc-commands`).
 - WHEN the entry reaches status `ready`
 - THEN playback of the entry's audio starts automatically
 
-#### Scenario: Cancellation marks the entry cancelled
+#### Scenario: Cancellation returns the entry to pending
 
 - GIVEN an entry in status `processing`
 - WHEN `cancel_synthesis` runs
-- THEN the entry status becomes `cancelled` and the entry can be regenerated
+- THEN the entry status becomes `cancelled` (the pre-chunking `pending`
+  outcome is replaced by this change) and the entry can be regenerated
   later, which restarts its synthesis from scratch
 
 #### Scenario: Stale completion does not change status

@@ -36,12 +36,12 @@ synthesis.
 - WHEN `add_text_entry` is invoked with whitespace-only text
 - THEN the command fails with `type: "internal"` and no entry is persisted
 
-#### Scenario: long text is accepted with Piper active
+#### Scenario: oversized text is rejected before normalization when Piper is active
 - GIVEN the active TTS engine is Piper
 - WHEN `add_text_entry` or `add_clipboard_entry` is invoked with text longer than 100 000 codepoints
-- THEN the entry is created and synthesized exactly as with shorter text (Piper synthesizes in bounded chunks)
+- THEN no length-based rejection happens: the entry is created and synthesized exactly as with shorter text (Piper synthesizes in bounded chunks; the former rejection is removed by this change)
 
-#### Scenario: long text is accepted with Silero active
+#### Scenario: oversized text is accepted when Silero is active
 - GIVEN the active TTS engine is Silero
 - WHEN `add_text_entry` or `add_clipboard_entry` is invoked with text longer than 100 000 codepoints
 - THEN the entry is created and synthesized exactly as with shorter text
@@ -70,10 +70,10 @@ TTS engine.
 - WHEN the frontend invokes `preview_normalize`
 - THEN the response is `{ normalized: "<pipeline output>" }` and no new entry appears in `get_entries`
 
-#### Scenario: oversized preview input is normalized with Piper active
+#### Scenario: oversized preview input is rejected when Piper is active
 - GIVEN the active TTS engine is Piper
 - WHEN the frontend invokes `preview_normalize` with text longer than 100 000 codepoints
-- THEN the response is `{ normalized: "<pipeline output>" }` for the whole input
+- THEN the response is `{ normalized: "<pipeline output>" }` for the whole input (no length-based rejection; the former gate is removed by this change)
 
 #### Scenario: oversized preview input is normalized when Silero is active
 - GIVEN the active TTS engine is Silero

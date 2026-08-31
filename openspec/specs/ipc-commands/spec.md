@@ -9,9 +9,7 @@ Tauri events the backend emits to the frontend via `listen("event_name", handler
 This covers command signatures, typed error format, shared data types, and event
 payloads as currently implemented. The backend-to-Python protocol is specified
 separately in `ttsd-protocol`.
-
 ## Requirements
-
 ### Requirement: Command Error Format
 
 All fallible Tauri commands SHALL return errors as a typed JSON object
@@ -132,13 +130,10 @@ entry behaves exactly as a plain entry (`format: null`, `html_source: null`).
 `add_clipboard_entry(play_when_ready)` reads the system clipboard in Rust via
 `arboard` on a blocking thread and exists for the system tray menu, where no
 webview clipboard API is available. Both share one implementation (`ingest_text`):
-blank/whitespace-only text is rejected with `internal`; when the active TTS
-engine is Piper, text longer than 100 000 codepoints SHALL be rejected with
-`internal` and a Russian message naming the limit, the Piper engine, and the
-option to switch to Silero, before any normalization or persistence happens
-(with Silero active, no length limit applies — it synthesizes in bounded
-chunks); the entry is persisted
-with status `pending`; `entry_updated` is emitted; synthesis runs in a
+blank/whitespace-only text is rejected with `internal`; no length-based
+rejection applies — input of any length is accepted regardless of the active
+TTS engine (each engine bounds its own inference by chunking); the entry is
+persisted with status `pending`; `entry_updated` is emitted; synthesis runs in a
 background task; the command returns the new `EntryId` without waiting for
 synthesis.
 
@@ -160,12 +155,12 @@ synthesis.
 #### Scenario: oversized text is rejected before normalization when Piper is active
 - GIVEN the active TTS engine is Piper
 - WHEN `add_text_entry` or `add_clipboard_entry` is invoked with text longer than 100 000 codepoints
-- THEN the command fails with `type: "internal"` and a Russian message naming the limit and the Piper engine, no entry is persisted, and no synthesis is started
+- THEN no length-based rejection happens: the entry is created and synthesized exactly as with shorter text (Piper synthesizes in bounded chunks; the former rejection is removed by this change)
 
 #### Scenario: oversized text is accepted when Silero is active
 - GIVEN the active TTS engine is Silero
 - WHEN `add_text_entry` or `add_clipboard_entry` is invoked with text longer than 100 000 codepoints
-- THEN the entry is created and synthesized exactly as with an under-limit text
+- THEN the entry is created and synthesized exactly as with shorter text
 
 #### Scenario: add_clipboard_entry reads the system clipboard
 - GIVEN the tray menu triggered a read-now action
@@ -182,11 +177,9 @@ synthesis.
 The system SHALL provide `preview_normalize(text)` returning
 `{ normalized: string }` — the output of the Rust normalization pipeline
 (char-mapping discarded) without persisting any entry or touching storage.
-A pipeline task panic is reported as `type: "internal"`. When the active TTS
-engine is Piper, text longer than 100 000 codepoints SHALL be rejected with
-`internal` and a Russian message naming the limit, the Piper engine, and the
-option to switch to Silero, before normalization starts; with Silero active,
-no length limit applies.
+A pipeline task panic is reported as `type: "internal"`. No length-based
+rejection applies: input of any length is normalized regardless of the active
+TTS engine.
 
 #### Scenario: preview returns normalized text without side effects
 - GIVEN raw text containing English identifiers
@@ -196,7 +189,7 @@ no length limit applies.
 #### Scenario: oversized preview input is rejected when Piper is active
 - GIVEN the active TTS engine is Piper
 - WHEN the frontend invokes `preview_normalize` with text longer than 100 000 codepoints
-- THEN the command fails with `type: "internal"` and a Russian message naming the limit and the Piper engine, and normalization does not run
+- THEN the response is `{ normalized: "<pipeline output>" }` for the whole input (no length-based rejection; the former gate is removed by this change)
 
 #### Scenario: oversized preview input is normalized when Silero is active
 - GIVEN the active TTS engine is Silero
@@ -243,27 +236,6 @@ emit `entry_updated` with the reset entry. A missing entry fails with
 - GIVEN an entry with status `ready`
 - WHEN `delete_audio` is invoked
 - THEN audio and timestamps files are deleted, status becomes `pending`, and `entry_updated` is emitted
-
-### Requirement: Synthesis-time input length guard
-
-Background synthesis SHALL re-check the input length guard at synthesis time:
-when the engine active at synthesis start is Piper and the entry text is
-longer than 100 000 codepoints, the synthesis task SHALL fail the entry with
-the same Russian message as the ingestion-time rejection instead of running
-unchunked Piper inference. This covers entries accepted while Silero was
-active whose synthesis runs after the user switched to Piper (queued
-synthesis or `regenerate_entry`). With Silero active at synthesis time, no
-length limit applies.
-
-#### Scenario: oversized entry accepted under Silero fails synthesis under Piper
-- GIVEN an entry with text longer than 100 000 codepoints (accepted while Silero was active)
-- WHEN background synthesis for it starts with Piper as the active engine
-- THEN the entry transitions to `error` with the Russian message naming the limit and the Piper engine, and no Piper inference is started
-
-#### Scenario: oversized entry synthesizes under Silero
-- GIVEN an entry with text longer than 100 000 codepoints
-- WHEN background synthesis for it starts with Silero as the active engine
-- THEN synthesis proceeds in bounded chunks with no length-based rejection
 
 ### Requirement: Entry Regeneration Command
 
@@ -334,33 +306,36 @@ SHALL be rejected with a typed `not_found`-style `CommandError`.
 ### Requirement: Synthesis Cancellation Command
 
 The system SHALL provide `cancel_synthesis(id)` which actually stops the
-entry's synthesis work and sets the entry status back to `pending`, emitting
+entry's synthesis work and sets the entry status to `cancelled`, emitting
 `entry_updated`. Cancellation SHALL abort the entry's spawned synthesis task
 via a per-entry abort registry. If the cancelled entry had already entered
-the TTS stage, the system SHALL additionally terminate the current ttsd
-subprocess; recovery then follows the ttsd-protocol auto-restart procedure,
-and requests belonging to other entries are retried transparently. If the
-active engine was switched while the cancelled entry's synthesis was in
-flight, cancellation SHALL also terminate the previous engine's ttsd
-subprocess — the engine that is actually running the entry's request — so
-the orphaned process does not keep consuming CPU. A late
-completion or failure belonging to a cancelled entry SHALL be discarded: the
-entry MUST NOT flip to `ready` or `error`, any audio/timestamp files written
-by the late completion SHALL be removed, no further `entry_updated` for that
-completion is emitted, and no autoplay starts. A missing entry fails with
-`not_found`. Cancelling a `pending` entry SHALL succeed idempotently (the
-entry is queued or idle; a just-added entry may already have its synthesis
-task registered while still in `pending`, and cancellation must abort it).
-An entry whose status is `ready`, `playing`, or `error` SHALL be rejected
-with `synthesis_error` without changing its status or touching the
-synthesis registries.
+the TTS stage, the system SHALL additionally terminate the active engine's
+in-flight work — the ttsd subprocess for the Silero sidecar, the synthesis
+cancellation flag for the in-process engines — so nothing keeps synthesizing
+a cancelled request; recovery then follows the ttsd-protocol auto-restart
+procedure, and requests belonging to other entries are retried transparently.
+If the active engine was switched while the cancelled entry's synthesis was
+in flight, cancellation SHALL also terminate the previous engine's in-flight
+work — the engine that is actually running the entry's request — so the
+orphaned process does not keep consuming CPU. A late completion or failure
+belonging to a cancelled entry SHALL be discarded: the entry MUST NOT flip to
+`ready` or `error`, any audio/timestamp files written by the late completion
+SHALL be removed, no further `entry_updated` for that completion is emitted,
+and no autoplay starts. A missing entry fails with `not_found`. Cancelling a
+`pending` entry SHALL succeed (the entry is queued or idle; a just-added
+entry may already have its synthesis task registered while still in
+`pending`, and cancellation must abort it). An entry whose status is `ready`,
+`playing`, `error`, or `cancelled` SHALL be rejected with `synthesis_error`
+without changing its status or touching the synthesis registries. A
+`cancelled` entry can return to the pipeline only through
+`regenerate_entry`, which restarts synthesis from scratch.
 
 #### Scenario: cancel a queued synthesis
 
 - GIVEN an entry with status `processing` whose request has not yet reached
   ttsd
 - WHEN `cancel_synthesis` is invoked
-- THEN the synthesis task is aborted, the entry status becomes `pending`,
+- THEN the synthesis task is aborted, the entry status becomes `cancelled`,
   `entry_updated` is emitted, and the ttsd subprocess keeps running (no
   restart)
 
@@ -371,7 +346,16 @@ synthesis registries.
 - WHEN `cancel_synthesis` is invoked
 - THEN the synthesis task is aborted, the ttsd subprocess is terminated, the
   supervisor restarts it per the auto-restart procedure, and the entry
-  status becomes `pending`
+  status becomes `cancelled`
+
+#### Scenario: cancel an in-flight synthesis on an in-process engine
+
+- GIVEN an entry with status `processing` whose request is being synthesized
+  by the in-process Piper engine
+- WHEN `cancel_synthesis` is invoked
+- THEN the chunked synthesis loop stops before the next chunk, any partial
+  audio at the output path is removed, and the entry status becomes
+  `cancelled`
 
 #### Scenario: cancel after an engine switch
 
@@ -379,15 +363,14 @@ synthesis registries.
   by ttsd on the Silero engine
 - WHEN the active engine is switched to Piper and `cancel_synthesis` is then
   invoked for that entry
-- THEN the synthesis task is aborted, the entry status becomes `pending`,
+- THEN the synthesis task is aborted, the entry status becomes `cancelled`,
   and the swapped-out Silero engine's ttsd subprocess is terminated
 
 #### Scenario: late completion is discarded
 
-- GIVEN an entry that was cancelled back to `pending` while its request was
-  in flight
+- GIVEN an entry that was cancelled while its request was in flight
 - WHEN the orphaned request completes
-- THEN the entry remains `pending`, the generated audio/timestamp files are
+- THEN the entry remains `cancelled`, the generated audio/timestamp files are
   removed, no `entry_updated` with `ready` is emitted, and no autoplay
   starts
 
@@ -401,12 +384,12 @@ synthesis registries.
 
 - GIVEN an entry with status `pending` and no synthesis in flight
 - WHEN `cancel_synthesis` is invoked
-- THEN the command succeeds, the entry remains `pending`, and
+- THEN the command succeeds, the entry becomes `cancelled`, and
   `entry_updated` is emitted
 
 #### Scenario: cancel a terminal entry
 
-- GIVEN an entry with status `ready`, `playing`, or `error`
+- GIVEN an entry with status `ready`, `playing`, `error`, or `cancelled`
 - WHEN `cancel_synthesis` is invoked
 - THEN the command fails with `synthesis_error`, the entry status is left
   unchanged, and no `entry_updated` is emitted
@@ -996,3 +979,4 @@ The frontend wrappers SHALL be `commands.pickExportAudioPath(entryId)` and
 - WHEN `export_audio` is invoked
 - THEN the command rejects with `export.copy_failed` and the localized error
   is shown by the frontend
+
