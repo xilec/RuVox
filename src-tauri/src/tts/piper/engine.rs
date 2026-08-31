@@ -384,8 +384,19 @@ impl TtsEngine for PiperEngine {
     /// synthesis returns `piper_cancelled`, discards all synthesized samples
     /// and writes no WAV.
     async fn kill_current(&self) {
-        if let Some(flag) = self.cancel_current.lock().as_ref() {
-            flag.store(true, Ordering::Relaxed);
+        let registered = self
+            .cancel_current
+            .lock()
+            .as_ref()
+            .map(|flag| {
+                flag.store(true, Ordering::Relaxed);
+                true
+            })
+            .unwrap_or(false);
+        if registered {
+            info!(target: "tts::piper", "kill_current: cancel flag set for the active synthesis");
+        } else {
+            warn!(target: "tts::piper", "kill_current: no synthesis holds the model, nothing to cancel");
         }
     }
 

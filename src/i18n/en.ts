@@ -68,6 +68,8 @@ export const en: Record<MessageKey, string> = {
   'queue.notify.regenerating.title': 'Regeneration',
   'queue.notify.regenerating.message': 'Audio regeneration started',
   'queue.notify.regenerate_failed': 'Failed to start regeneration: {0}',
+  'queue.notify.cancelled.title': 'Synthesis cancelled',
+  'queue.notify.cancelled.message': 'The entry is back in the queue',
   'queue.notify.cancel_failed': 'Failed to cancel synthesis: {0}',
 
   // ── Generation-params dialog (#243) ─────────────────────────────────────

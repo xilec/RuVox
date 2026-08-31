@@ -1290,6 +1290,11 @@ pub async fn cancel_synthesis<R: Runtime>(
         &id,
     )?;
 
+    info!(
+        "cancel_synthesis: id={id}, status={}, entered_tts={entered_tts}",
+        entry_status_str(entry.status)
+    );
+
     if entered_tts {
         state.engine_switcher.kill_current_ttsd().await;
     }

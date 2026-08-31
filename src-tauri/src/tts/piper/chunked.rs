@@ -70,8 +70,16 @@ pub fn synthesize_chunked(
 ) -> Result<ChunkedTimeline, TtsError> {
     let mut out = ChunkedTimeline::default();
     let mut prev_content_end: Option<usize> = None;
-    for (chunk_text, chunk_start) in split_with_limit(text, limit) {
+    let chunks = split_with_limit(text, limit);
+    let total_chunks = chunks.len();
+    for (chunk_index, (chunk_text, chunk_start)) in chunks.into_iter().enumerate() {
         if cancelled.load(Ordering::Relaxed) {
+            tracing::warn!(
+                target: "tts::piper",
+                "cancel observed before chunk {} of {}",
+                chunk_index + 1,
+                total_chunks
+            );
             return Err(cancelled_error());
         }
         let pause = match prev_content_end {
