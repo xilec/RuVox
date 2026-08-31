@@ -17,7 +17,7 @@
 //!
 //! ## Failure mapping
 //! - voice files missing → `TtsError::Ttsd { code: "voice_not_installed", … }`
-//! - config JSON parse / load failure → `TtsError::Ttsd { code: "piper_load_failed", … }`
+//! - voice load failure (config read/parse, ORT session build) → `TtsError::Ttsd { code: "piper_load_failed", … }`
 //! - phonemizer / ONNX inference failure → `TtsError::Ttsd { code: "piper_*_failed", … }`
 //! - cancelled between chunks → `TtsError::Ttsd { code: "piper_cancelled", … }`
 //! - WAV write failure → `TtsError::Ipc(io::Error)`
@@ -438,9 +438,8 @@ impl TtsEngine for PiperEngine {
 /// per-voice tuning (`noise_scale`, `noise_w`, `sample_rate`) from the
 /// `.onnx.json` config that ships alongside the `.onnx` model.
 fn load_voice_blocking(config_path: &Path) -> Result<(Piper, f32, f32, u32), TtsError> {
-    // `Piper::new` wants the `.onnx` model path and the `.onnx.json` config
-    // path separately; rhasspy's naming convention is the config path with
-    // its trailing `.json` extension stripped.
+    // The `.onnx` model path is the `.onnx.json` config path with its
+    // trailing `.json` extension stripped (rhasspy's file naming convention).
     let model_path = config_path.with_extension("");
 
     let cfg_text = std::fs::read_to_string(config_path).map_err(|e| TtsError::Ttsd {
@@ -452,17 +451,35 @@ fn load_voice_blocking(config_path: &Path) -> Result<(Piper, f32, f32, u32), Tts
         message: format!("failed to parse piper config: {e}"),
     })?;
 
-    let piper = Piper::new(&model_path, config_path).map_err(|e| TtsError::Ttsd {
-        code: "piper_load_failed".to_string(),
-        message: format!("piper-rs Piper::new failed: {e}"),
-    })?;
+    // The session is built by hand instead of `Piper::new` to disable ORT's
+    // memory-pattern cache. ORT keeps one pattern per distinct input shape,
+    // and chunked synthesis feeds the model a different (chunk-length) shape
+    // almost every call, so the cache grows to ~200 MB over a long synthesis
+    // (`piper_variable_shape_memory_probe`: plateau ~1.0 GB with patterns vs
+    // ~0.8 GB without). Patterns only pay off when the same shape recurs,
+    // which rarely happens across variable-length chunks.
+    let session = ort::session::Session::builder()
+        .map_err(|e| TtsError::Ttsd {
+            code: "piper_load_failed".to_string(),
+            message: format!("failed to create ORT session builder: {e}"),
+        })?
+        .with_memory_pattern(false)
+        .map_err(|e| TtsError::Ttsd {
+            code: "piper_load_failed".to_string(),
+            message: format!("failed to configure ORT session: {e}"),
+        })?
+        .commit_from_file(&model_path)
+        .map_err(|e| TtsError::Ttsd {
+            code: "piper_load_failed".to_string(),
+            message: format!("failed to load piper model {}: {e}", model_path.display()),
+        })?;
 
-    Ok((
-        piper,
-        cfg.inference.noise_scale,
-        cfg.inference.noise_w,
-        cfg.audio.sample_rate,
-    ))
+    let noise_scale = cfg.inference.noise_scale;
+    let noise_w = cfg.inference.noise_w;
+    let sample_rate = cfg.audio.sample_rate;
+    let piper = Piper::from_session(session, cfg);
+
+    Ok((piper, noise_scale, noise_w, sample_rate))
 }
 
 /// WAV format for streamed chunk audio: mono 32-bit float at the voice's
