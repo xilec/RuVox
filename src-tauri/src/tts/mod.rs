@@ -10,6 +10,7 @@
 //! [`TtsError::Died`]. Crash recovery is layered on top in [`supervisor`].
 
 pub mod availability;
+pub mod chunking;
 pub mod engine;
 pub mod piper;
 pub mod silero_native;

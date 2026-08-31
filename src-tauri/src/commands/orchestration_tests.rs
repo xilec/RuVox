@@ -665,58 +665,46 @@ async fn preview_normalize_returns_text_without_history_or_audio_side_effects() 
     assert!(t.state().synthesis_tasks.lock().is_empty());
 }
 
-// ── input length limit (MAX_INPUT_CHARS = 100 000 codepoints, Piper only) ──
+// ── long input acceptance (no length limit; engines bound their own inference) ──
 
-/// Oversized text is rejected by `add_text_entry` before persistence when the
-/// active engine is Piper (the default test-app kind): typed `internal` error
-/// naming the engine and the limit, no entry, no synthesis task.
+/// Long text is accepted by `add_text_entry` with the Piper engine active
+/// (the default test-app kind): Piper synthesizes in bounded chunks, so
+/// there is no length-based rejection and the entry synthesizes normally.
 #[tokio::test(flavor = "multi_thread")]
-async fn add_text_entry_rejects_oversized_input_before_persistence() {
+async fn add_text_entry_accepts_long_input_with_piper() {
     let t = build_test_app();
     assert_eq!(t.state().tts.kind(), EngineKind::Piper);
 
-    let err = add_text_entry(
+    let id = add_text_entry(
         t.app.handle().clone(),
         t.state(),
-        "а".repeat(MAX_INPUT_CHARS + 1),
+        "а".repeat(100_001),
         false,
         None,
         None,
         None,
     )
     .await
-    .expect_err("oversized input must be rejected");
-    match err {
-        CommandError::Internal { code, params, .. } => {
-            assert_eq!(code, "input.too_long");
-            assert_eq!(params, vec!["piper".to_string(), "100000".to_string()]);
-        }
-        other => panic!("expected internal error, got {other:?}"),
-    }
+    .expect("long input must be accepted with Piper active");
+    wait_entry_status(&t, &entry_uuid(&id), EntryStatus::Ready).await;
 
-    assert!(get_entries(t.state()).await.unwrap().is_empty());
     assert!(t.state().synthesis_tasks.lock().is_empty());
 }
 
-/// Oversized text is rejected by `preview_normalize` before normalization
-/// when the active engine is Piper.
+/// Long input is normalized by `preview_normalize` with Piper active — in
+/// full, with no content dropped.
 #[tokio::test(flavor = "multi_thread")]
-async fn preview_normalize_rejects_oversized_input() {
+async fn preview_normalize_accepts_long_input_with_piper() {
     let t = build_test_app();
+    assert_eq!(t.state().tts.kind(), EngineKind::Piper);
 
-    let err = preview_normalize(t.state(), "а".repeat(MAX_INPUT_CHARS + 1))
+    let result = preview_normalize(t.state(), "а".repeat(100_001))
         .await
-        .expect_err("oversized input must be rejected");
-    match err {
-        CommandError::Internal { code, params, .. } => {
-            assert_eq!(code, "input.too_long");
-            assert_eq!(params, vec!["piper".to_string(), "100000".to_string()]);
-        }
-        other => panic!("expected internal error, got {other:?}"),
-    }
+        .expect("long input must be normalized with Piper active");
+    assert_eq!(result.normalized.chars().count(), 100_001);
 }
 
-/// Text of exactly `MAX_INPUT_CHARS` codepoints is accepted and synthesized.
+/// Text of exactly 100 000 codepoints is accepted and synthesized.
 #[tokio::test(flavor = "multi_thread")]
 async fn add_text_entry_accepts_input_at_limit() {
     let t = build_test_app();
@@ -724,7 +712,7 @@ async fn add_text_entry_accepts_input_at_limit() {
     let id = add_text_entry(
         t.app.handle().clone(),
         t.state(),
-        "а".repeat(MAX_INPUT_CHARS),
+        "а".repeat(100_000),
         false,
         None,
         None,
@@ -735,68 +723,36 @@ async fn add_text_entry_accepts_input_at_limit() {
     wait_entry_status(&t, &entry_uuid(&id), EntryStatus::Ready).await;
 }
 
-/// With Silero active the length limit does not apply: Silero synthesizes in
-/// bounded chunks, so oversized input is ingested and synthesized.
+/// With Silero active long input is ingested and synthesized (Silero has
+/// always synthesized in bounded chunks).
 #[tokio::test(flavor = "multi_thread")]
-async fn add_text_entry_accepts_oversized_input_with_silero() {
+async fn add_text_entry_accepts_long_input_with_silero() {
     let t = build_test_app_with_kind(EngineKind::Silero);
     assert_eq!(t.state().tts.kind(), EngineKind::Silero);
 
     let id = add_text_entry(
         t.app.handle().clone(),
         t.state(),
-        "а".repeat(MAX_INPUT_CHARS + 1),
+        "а".repeat(100_001),
         false,
         None,
         None,
         None,
     )
     .await
-    .expect("oversized input must be accepted when Silero is active");
+    .expect("long input must be accepted when Silero is active");
     wait_entry_status(&t, &entry_uuid(&id), EntryStatus::Ready).await;
 }
 
-/// With Silero active `preview_normalize` normalizes oversized input instead
-/// of rejecting it — in full, with no content dropped.
+/// With Silero active `preview_normalize` normalizes long input in full.
 #[tokio::test(flavor = "multi_thread")]
-async fn preview_normalize_accepts_oversized_input_with_silero() {
+async fn preview_normalize_accepts_long_input_with_silero() {
     let t = build_test_app_with_kind(EngineKind::Silero);
 
-    let result = preview_normalize(t.state(), "а".repeat(MAX_INPUT_CHARS + 1))
+    let result = preview_normalize(t.state(), "а".repeat(100_001))
         .await
-        .expect("oversized input must be normalized when Silero is active");
-    assert_eq!(result.normalized.chars().count(), MAX_INPUT_CHARS + 1);
-}
-
-/// The length guard is re-checked at synthesis time: an oversized entry that
-/// was accepted while Silero was active (simulated here by inserting it
-/// directly into storage) must fail with the limit message when synthesis
-/// runs under Piper, instead of feeding Piper an unchunked oversized run.
-#[tokio::test(flavor = "multi_thread")]
-async fn synthesis_under_piper_fails_oversized_entry_accepted_under_silero() {
-    let t = build_test_app();
-    assert_eq!(t.state().tts.kind(), EngineKind::Piper);
-
-    let entry = t
-        .state()
-        .storage
-        .add_entry_with_source("а".repeat(MAX_INPUT_CHARS + 1), None, None, None)
-        .unwrap();
-    let uuid = entry.id;
-
-    spawn_synthesis(
-        SynthesisDeps::from_state(t.app.handle(), &t.state()),
-        uuid,
-        false,
-    );
-
-    wait_entry_status(&t, &uuid, EntryStatus::Error).await;
-    let entry = t.state().storage.get_entry(&uuid).unwrap();
-    let message = entry.error_message.expect("error entry carries a message");
-    assert!(
-        message.contains("Piper"),
-        "message names the engine: {message}"
-    );
+        .expect("long input must be normalized when Silero is active");
+    assert_eq!(result.normalized.chars().count(), 100_001);
 }
 
 // ── set_speed / set_volume range guards ──────────────────────────────

@@ -164,6 +164,9 @@ test-case = "3.3.1"
 # get_ipc_response) used by the command test harness (`src/test_support.rs`).
 # Dev-only: feature unification adds it to test builds, never to release.
 tauri = { version = "2", features = ["test"] }
+# The chunk-limit measurement probe (`tests/piper_chunk_limit_probe.rs`)
+# drives piper-rs directly — the lib itself does not expose a raw `create`.
+piper-rs = "0.2.0"
 
 [profile.release]
 codegen-units = 1

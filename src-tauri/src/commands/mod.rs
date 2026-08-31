@@ -198,41 +198,6 @@ fn entry_status_str(status: EntryStatus) -> &'static str {
     }
 }
 
-/// Maximum accepted input length in Unicode codepoints when the active engine
-/// is Piper. Piper still synthesizes the whole text in one unchunked ONNX run,
-/// so unbounded input risks both a CPU wedge and an OOM (see openspec change
-/// `fix-pipeline-quadratic` and issue #155). Silero synthesizes in bounded
-/// chunks (`ttsd/ttsd/chunking.py`), so no limit applies while it is active.
-const MAX_INPUT_CHARS: usize = 100_000;
-
-/// The rejection message for input longer than `MAX_INPUT_CHARS` codepoints
-/// when the active engine is Piper; `None` for Silero (it synthesizes in
-/// bounded chunks and accepts any length).
-fn oversized_input_message(text: &str, engine: EngineKind) -> Option<String> {
-    if engine == EngineKind::Piper && text.chars().count() > MAX_INPUT_CHARS {
-        // Keep the space-grouped literal in sync with MAX_INPUT_CHARS.
-        return Some(
-            "текст слишком длинный для движка Piper (максимум 100 000 символов); \
-             сократите текст или переключитесь на Silero в настройках"
-                .to_string(),
-        );
-    }
-    None
-}
-
-/// Reject input longer than `MAX_INPUT_CHARS` codepoints when the active
-/// engine is Piper; Silero chunks the text and accepts any length.
-fn validate_input_length(text: &str, engine: EngineKind) -> CmdResult<()> {
-    if oversized_input_message(text, engine).is_some() {
-        // Params order matches the localized sentence: engine first, limit second.
-        return Err(CommandError::internal(
-            "input.too_long",
-            vec![engine.as_str().to_string(), MAX_INPUT_CHARS.to_string()],
-        ));
-    }
-    Ok(())
-}
-
 // ── Helper: emit entry_updated ─────────────────────────────────────────────────
 
 fn emit_entry_updated<R: Runtime>(app: &AppHandle<R>, entry: &TextEntry) {
@@ -315,7 +280,6 @@ impl<R: Runtime> SynthesisDeps<R> {
 enum SynthesisError {
     PipelinePanic(String),
     EmptyText,
-    InputTooLong(String),
     TtsFailed(String),
 }
 
@@ -324,7 +288,6 @@ impl SynthesisError {
         match self {
             Self::PipelinePanic(msg) => format!("pipeline task panicked: {msg}"),
             Self::EmptyText => "нормализация вернула пустой текст".to_string(),
-            Self::InputTooLong(msg) => msg.clone(),
             Self::TtsFailed(msg) => msg.clone(),
         }
     }
@@ -769,14 +732,6 @@ pub fn spawn_synthesis<R: Runtime + 'static>(
             };
 
             let result: Result<(), SynthesisError> = async {
-                // Re-check the length guard at synthesis time: the engine may
-                // have been switched to Piper after the entry was ingested
-                // under Silero (queued synthesis or regenerate_entry), and an
-                // unchunked oversized run is exactly what the limit guards
-                // against.
-                if let Some(msg) = oversized_input_message(&entry.original_text, tts.kind()) {
-                    return Err(SynthesisError::InputTooLong(msg));
-                }
                 let (normalized, mapping, applied_code_block_mode) =
                     run_normalization(Arc::clone(&pipeline), entry.original_text.clone()).await?;
                 mark_processing(&storage, &app, &entry_id, &normalized);
@@ -974,7 +929,6 @@ fn ingest_text<R: Runtime>(
     if text.trim().is_empty() {
         return Err(CommandError::internal("input.empty", vec![]));
     }
-    validate_input_length(&text, state.tts.kind())?;
 
     let entry = state
         .storage
@@ -1087,7 +1041,6 @@ pub async fn preview_normalize(
     state: State<'_, AppState>,
     text: String,
 ) -> CmdResult<PreviewNormalizeResult> {
-    validate_input_length(&text, state.tts.kind())?;
     let (normalized, _char_mapping) =
         preview_normalization(Arc::clone(&state.pipeline), text).await?;
     Ok(PreviewNormalizeResult { normalized })

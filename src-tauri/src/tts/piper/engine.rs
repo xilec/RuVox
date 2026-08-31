@@ -2,7 +2,9 @@
 //!
 //! Loads a `.onnx` voice + `.onnx.json` config from
 //! `<voices_dir>/<voice_id>/`. Inference runs in `spawn_blocking` because
-//! piper-rs's synthesis is synchronous CPU work.
+//! piper-rs's synthesis is synchronous CPU work. Long text is synthesized in
+//! bounded chunks (`super::chunked`) — a single unchunked VITS inference
+//! grows activation memory quadratically and froze machines (#155).
 //!
 //! ## Why a `Mutex<Piper>` instead of a shared read-only handle
 //!
@@ -17,10 +19,12 @@
 //! - voice files missing → `TtsError::Ttsd { code: "voice_not_installed", … }`
 //! - config JSON parse / load failure → `TtsError::Ttsd { code: "piper_load_failed", … }`
 //! - phonemizer / ONNX inference failure → `TtsError::Ttsd { code: "piper_*_failed", … }`
+//! - cancelled between chunks → `TtsError::Ttsd { code: "piper_cancelled", … }`
 //! - WAV write failure → `TtsError::Ipc(io::Error)`
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use async_trait::async_trait;
 use parking_lot::Mutex;
@@ -35,7 +39,18 @@ use tracing::{info, warn};
 /// model's own duration prediction, not a post-process resample).
 const PIPER_LENGTH_SCALE: f32 = 0.8;
 
-use super::timestamps::estimate_timestamps_single_chunk;
+/// Maximum codepoints per synthesis chunk. Piper's VITS encoder grows
+/// activation memory quadratically with input length (#155): a single
+/// unchunked inference over ~22 KB of text requests multi-GB tensors and can
+/// freeze the machine. Measured peak process RSS per single-chunk inference
+/// (`piper_chunk_limit_probe`, ruslan voice): 300 cp → ~0.5 GB, 600 cp →
+/// ~0.9 GB, 1800 cp → ~3 GB, while per-codepoint synthesis time is nearly
+/// flat across that range — so 300 (≈2-4 sentences, what official Piper
+/// synthesizes per chunk) bounds memory tightly at no speed cost.
+const PIPER_MAX_CHUNK_CHARS: usize = 300;
+
+use super::chunked::synthesize_chunked;
+use super::timestamps::estimate_timestamps_chunked;
 use crate::tts::engine::{EngineKind, TtsEngine};
 use crate::tts::supervisor::Emitter;
 use crate::tts::{CharMappingEntry, ModelInfo, SynthesizeOutput, TtsError};
@@ -51,6 +66,9 @@ pub struct PiperEngine {
     loaded: LoadedSlot,
     /// Default voice id, used by `warmup` and as a fallback.
     default_voice: String,
+    /// Set by `kill_current`; the chunked synthesis loop checks it between
+    /// chunks and aborts. Reset at the start of every `synthesize`.
+    cancel_current: Arc<AtomicBool>,
     /// Frontend event emitter.
     emitter: Emitter,
 }
@@ -80,6 +98,7 @@ impl PiperEngine {
             voices_dir,
             loaded: Arc::new(RwLock::new(None)),
             default_voice,
+            cancel_current: Arc::new(AtomicBool::new(false)),
             emitter,
         }
     }
@@ -236,22 +255,38 @@ impl TtsEngine for PiperEngine {
         let noise_w = handle.noise_w;
         let text_for_blocking = text.clone();
 
-        let (samples, sample_rate) =
-            tokio::task::spawn_blocking(move || -> Result<(Vec<f32>, u32), TtsError> {
-                piper
-                    .lock()
-                    .create(
-                        &text_for_blocking,
-                        false,
-                        None,
-                        Some(PIPER_LENGTH_SCALE),
-                        Some(noise_scale),
-                        Some(noise_w),
-                    )
-                    .map_err(|e| TtsError::Ttsd {
-                        code: "piper_synthesis_failed".to_string(),
-                        message: format!("Piper::create failed: {e}"),
-                    })
+        // A stale cancel from a previous synthesis must not kill this one;
+        // the worst case of resetting here is one extra chunk of wasted work
+        // for a cancel that raced a brand-new synthesize.
+        self.cancel_current.store(false, Ordering::Relaxed);
+        let cancelled = Arc::clone(&self.cancel_current);
+
+        // The model mutex is held for the whole chunk loop: chunks must hit
+        // the same loaded voice, and piper-rs's session takes `&mut` anyway.
+        let (samples, sample_rate, chunk_durations) =
+            tokio::task::spawn_blocking(move || -> Result<_, TtsError> {
+                let mut piper = piper.lock();
+                synthesize_chunked(
+                    &text_for_blocking,
+                    PIPER_MAX_CHUNK_CHARS,
+                    &cancelled,
+                    |chunk| {
+                        piper
+                            .create(
+                                chunk,
+                                false,
+                                None,
+                                Some(PIPER_LENGTH_SCALE),
+                                Some(noise_scale),
+                                Some(noise_w),
+                            )
+                            .map_err(|e| TtsError::Ttsd {
+                                code: "piper_synthesis_failed".to_string(),
+                                message: format!("Piper::create failed: {e}"),
+                            })
+                    },
+                )
+                .map(|out| (out.samples, out.sample_rate, out.chunk_durations))
             })
             .await
             .map_err(|e| TtsError::Ttsd {
@@ -259,11 +294,7 @@ impl TtsEngine for PiperEngine {
                 message: format!("synthesis task panicked: {e}"),
             })??;
 
-        let duration_sec = if sample_rate == 0 {
-            0.0
-        } else {
-            samples.len() as f64 / sample_rate as f64
-        };
+        let duration_sec: f64 = chunk_durations.iter().map(|(_, _, d)| d).sum();
 
         let out_path = PathBuf::from(&out_wav);
         if let Some(parent) = out_path.parent() {
@@ -284,12 +315,20 @@ impl TtsEngine for PiperEngine {
         })??;
 
         let timestamps =
-            estimate_timestamps_single_chunk(&text, duration_sec, char_mapping.as_deref());
+            estimate_timestamps_chunked(&text, &chunk_durations, char_mapping.as_deref());
 
         Ok(SynthesizeOutput {
             timestamps,
             duration_sec,
         })
+    }
+
+    /// Piper runs in-process, so "killing" the current work means asking the
+    /// chunked synthesis loop to stop before the next chunk inference; the
+    /// chunk in flight still finishes. A cancelled synthesis returns
+    /// `piper_cancelled`, discards all synthesized samples and writes no WAV.
+    async fn kill_current(&self) {
+        self.cancel_current.store(true, Ordering::Relaxed);
     }
 
     async fn shutdown(&self) -> Result<(), TtsError> {
@@ -368,6 +407,21 @@ fn map_hound_err(e: hound::Error) -> TtsError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `kill_current` must reach the chunk loop through the cancel flag —
+    /// Piper has no subprocess to kill, the flag is the whole mechanism.
+    #[tokio::test]
+    async fn kill_current_sets_the_cancel_flag() {
+        let (emitter, _) = crate::tts::supervisor::test_helpers::recording_emitter();
+        let engine = PiperEngine::new(
+            tempfile::tempdir().expect("tempdir").path().to_path_buf(),
+            "ruslan".to_string(),
+            emitter,
+        );
+        assert!(!engine.cancel_current.load(Ordering::Relaxed));
+        engine.kill_current().await;
+        assert!(engine.cancel_current.load(Ordering::Relaxed));
+    }
 
     /// `write_wav_f32` must emit a mono 32-bit-float WAV — the exact format
     /// `crate::audio::encode_wav_to_opus` accepts — so a Piper clip transcodes
