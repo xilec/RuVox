@@ -1,15 +1,17 @@
 # RuVox
 
-**RuVox** is a desktop application for voicing technical Russian texts with local TTS engines: native Silero v5 on ONNX Runtime (the `silero-native` crate, default), Piper (fallback), or Silero via the Python `ttsd` sidecar (fallback). It normalizes English terms, abbreviations, code, numbers, and URLs before passing them to the TTS engine, so the synthesizer can correctly read material it wasn't designed for.
+**RuVox** is a desktop application for fast narration of Russian-language texts and articles with local TTS engines: native Silero v5 on ONNX Runtime (the `silero-native` crate, default), Piper (fallback), or Silero via the Python `ttsd` sidecar (fallback). The goal is quick comprehension: the listener takes the load off eyes strained by a day of reading and consumes medium-to-large texts by ear, where understanding the content matters more than the beauty of the generated speech (technical articles are a typical example). To get there with fast lightweight engines — which cannot read English terms, code, numbers, or URLs — the normalization pipeline rewrites those fragments into sounding Russian before synthesis, imitating a competent reading instead of skipping them.
 
 ## Problem → Solution
 
-A bare Russian TTS engine cannot correctly pronounce:
+Modern heavy TTS models read this material natively but need a powerful GPU and synthesize noticeably slower. Fast lightweight engines — RuVox's domain — cannot correctly pronounce:
 - English words and IT terms (`feature` → silence or distortion)
 - Abbreviations (`API`, `HTTP`, `JSON`)
 - URLs, emails, IP addresses, paths
 - Code identifiers (`getUserData`, `my_variable`)
 - Special characters and operators (`->`, `>=`, `!=`)
+
+Skipping such fragments drops information, so the pipeline imitates a competent reading instead:
 
 ```
 "Вызови getUserData() через API" → "Вызови гет юзер дата через эй пи ай"

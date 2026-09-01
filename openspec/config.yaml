@@ -2,7 +2,13 @@ schema: spec-driven
 
 # Project context — shown to AI when creating artifacts.
 context: |
-  Project: RuVox 2.0 — desktop app for narrating technical Russian-language texts.
+  Project: RuVox 2.0 — desktop app for fast narration of Russian-language texts
+  and articles where quickly understanding the content comes first and speech
+  beauty is secondary (technical articles are a typical example). The listener
+  takes the load off eyes strained by a day of reading. Positioning: fast
+  lightweight engines + normalization as a compensating layer (imitate a
+  competent reading of unreadable fragments instead of skipping them) + in-app
+  text with per-word highlighting as the fallback for unclear spots.
   Stack: Tauri 2 shell (Rust + native webview), React 18 + TypeScript 5 + Mantine 8
   frontend, Rust backend (normalization pipeline, storage, ttsd subprocess manager,
   mpv player wrapper), Python 3.12 `ttsd` sidecar wrapping Silero TTS (uv-managed).

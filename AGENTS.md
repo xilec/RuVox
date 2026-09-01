@@ -5,7 +5,7 @@
 
 ## Project overview
 
-**RuVox 2.0** is a desktop application for narrating technical Russian-language texts.
+**RuVox 2.0** is a desktop application for fast narration of Russian-language texts and articles.
 
 **Stack:**
 - **Shell:** Tauri 2 (Rust-based desktop shell with native webview)
@@ -13,7 +13,7 @@
 - **Backend:** Rust (text normalization pipeline, storage, TTS subprocess manager, player wrapper)
 - **TTS engines:** Silero v5 in-process on ONNX Runtime (`silero-native` crate, default), Piper (native Rust via `piper-rs`, zero-dependency fallback), optional Python subprocess `ttsd` wrapping Silero TTS (fallback)
 
-**Goal** unchanged: normalize technical text (API, URLs, code identifiers, numbers) before passing it to Silero TTS, which cannot read English or special characters.
+**Goal:** fast, lightweight, fully local narration of Russian-language texts and articles where quickly understanding the content comes first and the beauty of the generated speech is secondary — technical articles are a typical example. The job to be done: give the eyes a partial break from a day of heavy reading (work texts, social feeds, news). Normalization is the enabling layer, not the product: fast lightweight engines (Silero, Piper) cannot read English terms, code, numbers, or URLs, so the pipeline rewrites those fragments into sounding Russian — imitating a competent reading instead of skipping, because skipping drops information. The in-app text with per-word highlighting is the fallback for unclear spots.
 
 ### Problem → Solution
 
