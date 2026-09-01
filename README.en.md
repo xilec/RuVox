@@ -5,9 +5,18 @@
 [![CI](https://github.com/xilec/RuVox/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/xilec/RuVox/actions/workflows/ci.yml)
 ![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-green)
 
-A desktop application for narrating technical Russian-language texts.
+A desktop application for fast narration of Russian-language texts and articles — locally, with no GPU and no cloud. For cases where quickly understanding the content matters more than the beauty of the generated speech — technical articles being a typical example.
 
-Normalizes English terms, abbreviations, code, numbers, and URLs, then pipes the result into one of three TTS engines: Silero TTS v5 in-process on ONNX Runtime (the [`silero-native`](silero-native/) crate, default; model bundle downloaded on demand), [Piper](https://github.com/rhasspy/piper) (in-process via `piper-rs`, zero-dependency fallback), or, optionally, [Silero TTS](https://github.com/snakers4/silero-models) out-of-process via the `ttsd` Python sidecar (kept as a fallback). Unlike a bare TTS, RuVox knows how to read `getUserData()` as «гет юзер дата», `API` as «эй пи ай», and `/api/v2/users` as a path rather than letter by letter.
+The job to be done: temporarily and partially take the load off the eyes. Over a workday — and after it — they are already strained by reading: work texts, social feeds, news. RuVox lets you listen to long texts and articles instead of reading them — fast, in full, locally; and when something is hard to catch by ear, the original is right there with the current word highlighted.
+
+Modern heavy TTS models natively read numbers, links, and English text properly, but they require a powerful GPU and synthesize noticeably slower. Fast lightweight engines (Silero, Piper) are the opposite: instant and undemanding, but they cannot read `getUserData()` or `/api/v2/users`. When a lightweight engine meets such a fragment, the options are obvious:
+
+- just skip it — but important information may be lost along with it;
+- imitate the pronunciation — voice the fragment approximately, the way it would sound in a competent reading.
+
+RuVox takes the second path: normalization is a compensating layer that rewrites English terms, abbreviations, code, numbers, and URLs into a sounding Russian form, so the lightweight engine reads the text in full. `getUserData()` → «гет юзер дата», `API` → «эй пи ай», `/api/v2/users` — as a path, not letter by letter.
+
+Narration is performed by one of three TTS engines: Silero TTS v5 in-process on ONNX Runtime (the [`silero-native`](silero-native/) crate, default; model bundle downloaded on demand), [Piper](https://github.com/rhasspy/piper) (in-process via `piper-rs`, zero-dependency fallback), or, optionally, [Silero TTS](https://github.com/snakers4/silero-models) out-of-process via the `ttsd` Python sidecar (kept as a fallback).
 
 All synthesis runs locally on your machine — no cloud TTS, nothing is sent anywhere. The network is only used to download voice models on demand, check for app updates, and import text by URL.
 
@@ -37,11 +46,11 @@ The engine's voice model is downloaded on demand at first use (the Silero Native
 
 ## Features
 
+- **Cross-checking with the text** — synchronous highlighting of the word being read: a fragment that is hard to catch by ear can be instantly verified against the original.
 - **[Normalization](#normalization)** — English (camelCase / snake_case), abbreviations, numbers, dates, URLs, email, code.
 - **Markdown + HTML** — rendered and narrated while preserving meaning; the source format is detected automatically.
 - **Import from files and URLs** — «Файл…» / File, «Файл с кодировкой…» / File with encoding, «По ссылке…» / From URL, plus drag-and-drop of `.txt`/`.md`/`.html` files and links onto the window; the encoding (UTF-8, CP1251, KOI8-R, and others) is auto-detected with a manual override.
 - **Mermaid diagrams** — visualized in the UI; replaced with a «Тут мермэйд диаграмма» marker for TTS.
-- **Word highlight** — synchronous highlighting of the currently narrated word during playback.
 - **Preview dialog** — preview the normalized text before synthesis.
 - **Audio export** — «Сохранить аудио как…» / Save audio as… in the queue context menu: WAV or Ogg Opus.
 - **Recording parameters** — in the queue context menu and on double-click: which engine, voice, and settings produced a recording.
@@ -53,7 +62,7 @@ The engine's voice model is downloaded on demand at first use (the Silero Native
 
 ## Normalization
 
-TTS engines can only read plain Russian text: English words, code and special symbols cannot be pronounced as-is. Before narration, RuVox rewrites the text so that it sounds natural:
+Fast lightweight engines can only read plain Russian text: English words, code, and special symbols cannot be pronounced as-is — and skipping fragments means losing meaning. So before narration, RuVox rewrites the text to sound natural:
 
 - code identifiers: `getUserData` → «гет юзер дата», `user_id` → «юзер ай ди»;
 - abbreviations: `HTTP` → «эйч ти ти пи», `API` → «эй пи ай»;
