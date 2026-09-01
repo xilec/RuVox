@@ -9,12 +9,12 @@ A desktop application for fast narration of Russian-language texts and articles 
 
 The job to be done: temporarily and partially take the load off the eyes. Over a workday — and after it — they are already strained by reading: work texts, social feeds, news. RuVox lets you listen to long texts and articles instead of reading them — fast, in full, locally; and when something is hard to catch by ear, the original is right there with the current word highlighted.
 
-Modern heavy TTS models natively read numbers, links, and English text properly, but they require a powerful GPU and synthesize noticeably slower. Fast lightweight engines (Silero, Piper) are the opposite: instant and undemanding, but they cannot read `getUserData()` or `/api/v2/users`. When a lightweight engine meets such a fragment, the options are obvious:
+Modern heavy TTS models, as a rule, natively read numbers, links, and English text properly, but they require a powerful GPU and synthesize noticeably slower. Fast lightweight engines (Silero, Piper) are the opposite: instant and undemanding, but they cannot read `getUserData()` or `/api/v2/users`. When a lightweight engine meets such a fragment, the options are obvious:
 
 - just skip it — but important information may be lost along with it;
 - imitate the pronunciation — voice the fragment approximately, the way it would sound in a competent reading.
 
-RuVox takes the second path: normalization is a compensating layer that rewrites English terms, abbreviations, code, numbers, and URLs into a sounding Russian form, so the lightweight engine reads the text in full. `getUserData()` → «гет юзер дата», `API` → «эй пи ай», `/api/v2/users` — as a path, not letter by letter.
+RuVox takes the second path: normalization is a compensating layer that rewrites English terms, abbreviations, code, numbers, and URLs into a sounding Russian form, so the lightweight engine reads the text in full. `getUserData()` → «гет юзер дата», `API` → «эй пи ай», `/api/v2/users` — as a path, not letter by letter. The pronunciation remains approximate — a deliberate trade-off: instead of beautiful speech and powerful hardware, RuVox gives you speed of comprehension and a light resource footprint.
 
 Narration is performed by one of three TTS engines: Silero TTS v5 in-process on ONNX Runtime (the [`silero-native`](silero-native/) crate, default; model bundle downloaded on demand), [Piper](https://github.com/rhasspy/piper) (in-process via `piper-rs`, zero-dependency fallback), or, optionally, [Silero TTS](https://github.com/snakers4/silero-models) out-of-process via the `ttsd` Python sidecar (kept as a fallback).
 
