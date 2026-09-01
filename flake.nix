@@ -1,5 +1,5 @@
 {
-  description = "RuVox — desktop app for reading technical texts aloud";
+  description = "RuVox — desktop app for fast TTS for Russian texts and articles";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -215,8 +215,8 @@
           meta = {
             description =
               if withSilero
-              then "RuVox — desktop app for reading technical texts aloud (with Silero/Python ttsd)"
-              else "RuVox — desktop app for reading technical texts aloud";
+              then "RuVox — desktop app for fast TTS for Russian texts and articles (with Silero/Python ttsd)"
+              else "RuVox — desktop app for fast TTS for Russian texts and articles";
             mainProgram = "ruvox-tauri";
             platforms = lib.platforms.linux;
           };
