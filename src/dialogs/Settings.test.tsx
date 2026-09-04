@@ -27,6 +27,12 @@ vi.mock('../lib/tauri', () => ({
     downloadSileroNativeBundle: vi.fn(),
     downloadPiperVoice: vi.fn(),
     clearCache: vi.fn(),
+    getUserDictionary: vi.fn().mockResolvedValue([]),
+    saveUserDictionary: vi.fn().mockResolvedValue(undefined),
+    importUserDictionary: vi.fn(),
+    exportUserDictionary: vi.fn().mockResolvedValue(undefined),
+    pickDictionaryImportPath: vi.fn().mockResolvedValue(null),
+    pickDictionaryExportPath: vi.fn().mockResolvedValue(null),
   },
   events: {
     bundleDownloadStarted: () => Promise.resolve(() => {}),

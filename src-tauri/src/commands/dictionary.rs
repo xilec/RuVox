@@ -134,6 +134,38 @@ fn apply_import(
     }
 }
 
+/// Native open dialog filtered to TOML dictionaries; null = cancelled.
+/// Same rfd-on-blocking-pool pattern as `pick_import_file`.
+#[tauri::command]
+pub async fn pick_dictionary_import_path() -> CmdResult<Option<String>> {
+    tokio::task::spawn_blocking(|| {
+        rfd::FileDialog::new()
+            .add_filter("Словарь RuVox", &["toml"])
+            .pick_file()
+            .map(|p| p.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|e| {
+        CommandError::internal("dictionary.task_panicked", vec![]).with_message(e.to_string())
+    })
+}
+
+/// Native save dialog suggesting `user_dictionary.toml`; null = cancelled.
+#[tauri::command]
+pub async fn pick_dictionary_export_path() -> CmdResult<Option<String>> {
+    tokio::task::spawn_blocking(|| {
+        rfd::FileDialog::new()
+            .set_file_name("user_dictionary.toml")
+            .add_filter("Словарь RuVox", &["toml"])
+            .save_file()
+            .map(|p| p.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|e| {
+        CommandError::internal("dictionary.task_panicked", vec![]).with_message(e.to_string())
+    })
+}
+
 /// Read a dictionary TOML file and apply it in the chosen mode, persist, and
 /// refresh the active pipeline. An unreadable or unparsable file rejects with
 /// a typed error and changes nothing; invalid entries never abort a merge.

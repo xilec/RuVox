@@ -42,29 +42,29 @@
       ("SQL"), alnum token ("IPv6"), lone-letter override ("x"), and an
       empty-dictionary fixture identical to an existing one's output —
       verify with the cargo test command above
-- [ ] 2.3 Apply the dictionary to code-identifier parts: consult the map
+- [x] 2.3 Apply the dictionary to code-identifier parts: consult the map
       before `CODE_WORDS` in `CodeIdentifierNormalizer` (pass
       `&UserDictionary` through the existing call chain from the pipeline);
       fixture: entry "kubectl" inside `kubectl_apply` — same verification
-- [ ] 2.4 Apply the dictionary in URLs: `URLPathNormalizer::transliterate_word`
+- [x] 2.4 Apply the dictionary in URLs: `URLPathNormalizer::transliterate_word`
       consults the map before `IT_TERMS` (add the ref to `new`); fixture:
       entry "github" changes the reading of `https://github.com/ruvox` —
       same verification
-- [ ] 2.5 Prove code-block coverage: add a fixture with `code_block_mode`
+- [x] 2.5 Prove code-block coverage: add a fixture with `code_block_mode`
       full where an entry ("user") applies inside a fenced block; if it
       fails, wire the map into the code-block identifier path exactly as in
       2.3 — same verification
-- [ ] 2.6 Remove the superseded `EnglishNormalizer::custom_terms` /
+- [x] 2.6 Remove the superseded `EnglishNormalizer::custom_terms` /
       `add_custom_terms` hook and its test (coverage replaced by the
       pre-pass tests in 2.2); verify clippy is clean:
       `nix develop -c cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings`
 
 ## 3. Commands and app wiring
 
-- [ ] 3.1 Load the dictionary at startup in `src-tauri/src/lib.rs` (next to
+- [x] 3.1 Load the dictionary at startup in `src-tauri/src/lib.rs` (next to
       pipeline construction) and inject it; verify the app compiles and all
       tests pass
-- [ ] 3.2 Create `src-tauri/src/commands/dictionary.rs` with
+- [x] 3.2 Create `src-tauri/src/commands/dictionary.rs` with
       `get_user_dictionary` (sorted list + `overrides_builtin` flag computed
       against `IT_TERMS`, the abbreviation `as_word` map, and `CODE_WORDS`),
       `save_user_dictionary` (validate all-or-nothing → atomic save →
@@ -75,33 +75,33 @@
       register all four in `lib.rs::invoke_handler`; tests with temp dirs
       for save-rejection, merge counts, replace — verify with the cargo
       test command
-- [ ] 3.3 Add typed wrappers + types (`DictionaryEntry`, `ImportReport`) to
+- [x] 3.3 Add typed wrappers + types (`DictionaryEntry`, `ImportReport`) to
       `src/lib/tauri.ts`; verify `nix develop -c pnpm typecheck`
 
 ## 4. Frontend editor
 
-- [ ] 4.1 Create `src/dialogs/DictionaryModal.tsx` skeleton: loads entries
+- [x] 4.1 Create `src/dialogs/DictionaryModal.tsx` skeleton: loads entries
       on open, Mantine table (from as typed, to, "переопределяет встроенное"
       badge), case-insensitive substring search with alphabetical order,
       CSS Modules + `--mantine-*`/`--ruvox-*` tokens, Russian strings;
       extract the search filter as a pure helper in `src/lib/` with a unit
       test — verify `nix develop -c pnpm test:unit && nix develop -c pnpm typecheck`
-- [ ] 4.2 Add CRUD: add/edit form (`@mantine/form`, validation messages per
+- [x] 4.2 Add CRUD: add/edit form (`@mantine/form`, validation messages per
       the user-dictionary spec, duplicate `from` casefolded → open the
       existing entry for edit, soft warning on Latin/digits in `to`), delete
       via `openConfirmModal`; every action saves immediately and drives the
       footer status line ("Все изменения сохранены" / "Сохранение…" /
       "Не сохранено — повторить" with retry); no success toasts; unit tests
       for the form-validation helper — same verification
-- [ ] 4.3 Add import/export: footer buttons with the standard file dialogs
+- [x] 4.3 Add import/export: footer buttons with the standard file dialogs
       (follow the existing `pick_import_file` pattern), a drop zone using
       Tauri drag-drop events, a mode-choice modal ("Объединить" /
       "Заменить список") before import applies, and a result notification
       with added/updated/skipped counts — same verification
-- [ ] 4.4 Add the "Словарь" section to `src/dialogs/Settings.tsx` (entry
+- [x] 4.4 Add the "Словарь" section to `src/dialogs/Settings.tsx` (entry
       count + "Открыть…" button opening `DictionaryModal`, nested-modal
       pattern of `CleanupCacheModal`) — verify `nix develop -c pnpm typecheck`
-- [ ] 4.5 Add quick-add to `src/dialogs/PreviewDialog.tsx`: track text
+- [x] 4.5 Add quick-add to `src/dialogs/PreviewDialog.tsx`: track text
       selection in both panes, "В словарь" footer action enabled only for a
       single valid token (same regex as backend; Cyrillic/multi-word/punctuated
       stays disabled with a hint), opens the editor prefilled (from =

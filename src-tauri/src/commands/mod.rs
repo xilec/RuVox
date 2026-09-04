@@ -1782,7 +1782,8 @@ pub use export::{export_audio, pick_export_audio_path};
 // User dictionary commands live in commands/dictionary.rs (same seam split).
 mod dictionary;
 pub use dictionary::{
-    export_user_dictionary, get_user_dictionary, import_user_dictionary, save_user_dictionary,
+    export_user_dictionary, get_user_dictionary, import_user_dictionary,
+    pick_dictionary_export_path, pick_dictionary_import_path, save_user_dictionary,
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────────

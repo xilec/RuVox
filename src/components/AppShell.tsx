@@ -33,6 +33,7 @@ import { useSelectedEntry } from '../stores/selectedEntry';
 import { useSearchQuery } from '../stores/searchQuery';
 import { PreviewDialog } from '../dialogs/PreviewDialog';
 import { SettingsModal } from '../dialogs/Settings';
+import { DictionaryModal } from '../dialogs/DictionaryModal';
 import { SileroBundlePrompt } from '../dialogs/SileroBundlePrompt';
 import { EncodingDialog } from '../dialogs/EncodingDialog';
 import { UrlImportDialog } from '../dialogs/UrlImportDialog';
@@ -57,6 +58,8 @@ export function AppShell() {
   const { setColorScheme } = useMantineColorScheme();
   const [pending, setPending] = useState(false);
   const [settingsOpened, setSettingsOpened] = useState(false);
+  const [dictModalOpened, setDictModalOpened] = useState(false);
+  const [dictInitialFrom, setDictInitialFrom] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewText, setPreviewText] = useState('');
   // Format preselected in the dialog for imported sources (text-import spec,
@@ -647,6 +650,18 @@ export function AppShell() {
         }}
       />
 
+      {/* Quick-add target for the preview's «В словарь» action; the Settings
+          dialog opens its own instance. */}
+      <DictionaryModal
+        opened={dictModalOpened}
+        initialFrom={dictInitialFrom}
+        onInitialFromConsumed={() => setDictInitialFrom(null)}
+        onClose={() => {
+          setDictModalOpened(false);
+          setDictInitialFrom(null);
+        }}
+      />
+
       <SileroBundlePrompt
         opened={bundlePromptOpen}
         onClose={() => setBundlePromptOpen(false)}
@@ -793,6 +808,10 @@ export function AppShell() {
         initialFormat={previewFormat ?? undefined}
         onSynthesize={handlePreviewSynthesize}
         onCancel={handlePreviewCancel}
+        onAddToDictionary={(word) => {
+          setDictInitialFrom(word);
+          setDictModalOpened(true);
+        }}
       />
 
       {/* Regeneration instance (preview-dialog spec, "Regeneration preview"):

@@ -425,6 +425,8 @@ pub(crate) fn invoke_handler<R: Runtime>()
         save_user_dictionary,
         import_user_dictionary,
         export_user_dictionary,
+        pick_dictionary_import_path,
+        pick_dictionary_export_path,
         get_available_engines,
         download_piper_voice,
         download_silero_native_bundle,

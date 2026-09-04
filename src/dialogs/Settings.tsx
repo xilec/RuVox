@@ -32,6 +32,7 @@ import { setLocale, toLocale } from '../stores/locale';
 import { bundleDownloadPercent } from '../lib/bundleDownload';
 import { PIPER_VOICES } from '../lib/piperVoices';
 import { checkForUpdatesManual, updaterSupported } from '../lib/updater';
+import { DictionaryModal } from './DictionaryModal';
 import {
   applyEngineChange,
   buildSettingsPatch,
@@ -249,6 +250,8 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
   const tt = useT();
   const { setColorScheme } = useMantineColorScheme();
   const [cleanupOpen, setCleanupOpen] = useState(false);
+  const [dictionaryOpen, setDictionaryOpen] = useState(false);
+  const [dictionaryCount, setDictionaryCount] = useState<number | null>(null);
   const [cacheDir, setCacheDir] = useState<string>('');
   const [appVersion, setAppVersion] = useState<string>('');
   const [logDir, setLogDir] = useState<string>('');
@@ -335,6 +338,12 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
     // reports can quote it on every platform.
     getVersion().then(setAppVersion).catch(() => setAppVersion(''));
     commands.getLogDir().then(setLogDir).catch(() => setLogDir(''));
+    // Dictionary entry count for the section summary; re-read when the
+    // dictionary editor closes (see its onClose).
+    commands
+      .getUserDictionary()
+      .then((entries) => setDictionaryCount(entries.length))
+      .catch(() => setDictionaryCount(null));
     // Update section only on installs the updater can serve (#226): Windows
     // and Linux AppImage; a failed probe hides it like .deb/nix do.
     updaterSupported().then(setUpdaterEnabled).catch(() => setUpdaterEnabled(false));
@@ -657,6 +666,21 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
           <Divider />
 
           <Text size="sm" fw={500} c="dimmed">
+            {tt('settings.section.dictionary')}
+          </Text>
+
+          <Group justify="flex-start">
+            <Text size="xs" c="dimmed">
+              {tt('settings.dictionary.entries_count', [dictionaryCount ?? 0])}
+            </Text>
+            <Button variant="default" onClick={() => setDictionaryOpen(true)}>
+              {tt('settings.dictionary.open')}
+            </Button>
+          </Group>
+
+          <Divider />
+
+          <Text size="sm" fw={500} c="dimmed">
             {tt('settings.section.notifications')}
           </Text>
 
@@ -817,6 +841,17 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
         opened={cleanupOpen}
         defaultTargetMb={form.values.max_cache_size_mb}
         onClose={() => setCleanupOpen(false)}
+      />
+
+      <DictionaryModal
+        opened={dictionaryOpen}
+        onClose={() => {
+          setDictionaryOpen(false);
+          commands
+            .getUserDictionary()
+            .then((entries) => setDictionaryCount(entries.length))
+            .catch(() => setDictionaryCount(null));
+        }}
       />
     </Modal>
   );

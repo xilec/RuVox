@@ -316,6 +316,14 @@ export const commands = {
   exportUserDictionary: (path: string): Promise<void> =>
     tauriInvoke('export_user_dictionary', { path }),
 
+  /** Native open dialog filtered to dictionary TOML files; null = cancelled. */
+  pickDictionaryImportPath: (): Promise<string | null> =>
+    tauriInvoke('pick_dictionary_import_path'),
+
+  /** Native save dialog suggesting user_dictionary.toml; null = cancelled. */
+  pickDictionaryExportPath: (): Promise<string | null> =>
+    tauriInvoke('pick_dictionary_export_path'),
+
   getAvailableEngines: (): Promise<AvailableEngines> =>
     tauriInvoke('get_available_engines'),
 
