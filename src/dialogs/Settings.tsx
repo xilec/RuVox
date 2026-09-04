@@ -671,7 +671,7 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
 
           <Group justify="flex-start">
             <Text size="xs" c="dimmed">
-              {tt('settings.dictionary.entries_count', [dictionaryCount ?? 0])}
+              {tt('settings.dictionary.entries_count', [dictionaryCount ?? '—'])}
             </Text>
             <Button variant="default" onClick={() => setDictionaryOpen(true)}>
               {tt('settings.dictionary.open')}

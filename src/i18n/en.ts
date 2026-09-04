@@ -379,6 +379,9 @@ export const en: Record<MessageKey, string> = {
   'errors.native.bundle_missing': 'The Silero model bundle is not downloaded yet. Use the button below to download it.',
   'errors.native.bundle_manifest_corrupt': 'The Silero bundle manifest is corrupted. Download the bundle again.',
   'errors.native.bundle_incomplete': 'The Silero model bundle is incomplete ({0}). Download it again.',
+  'errors.dictionary.error': 'Dictionary: {0}',
+  'errors.dictionary.import_failed': 'Failed to read the dictionary file: {0}',
+  'errors.dictionary.task_panicked': 'Internal error during a dictionary operation',
 
   'settings.section.dictionary': 'Dictionary',
   'settings.dictionary.open': 'Open…',

@@ -382,6 +382,9 @@ export const ru = {
   'errors.native.bundle_missing': 'Бандл моделей Silero не скачан. Скачайте его кнопкой ниже.',
   'errors.native.bundle_manifest_corrupt': 'Манифест бандла Silero повреждён. Скачайте бандл заново.',
   'errors.native.bundle_incomplete': 'Бандл моделей Silero установлен не полностью ({0}). Скачайте его заново.',
+  'errors.dictionary.error': 'Словарь: {0}',
+  'errors.dictionary.import_failed': 'Не удалось прочитать файл словаря: {0}',
+  'errors.dictionary.task_panicked': 'Внутренняя ошибка при операции со словарём',
 
   // ── User dictionary (change `user-dictionary`) ──────────────────────────
   'settings.section.dictionary': 'Словарь',

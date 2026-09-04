@@ -827,6 +827,10 @@ export function AppShell() {
           handleRegenConfirm(playWhenReady)
         }
         onCancel={() => setRegenEntry(null)}
+        onAddToDictionary={(word) => {
+          setDictInitialFrom(word);
+          setDictModalOpened(true);
+        }}
       />
 
       <UrlImportDialog

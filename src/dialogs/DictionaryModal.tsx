@@ -116,17 +116,23 @@ export function DictionaryModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opened]);
 
-  /** Persist the full list (immediate save, no save button); on success the
-   *  entries are re-read so override badges stay backend-truthful. */
+  /** Persist the full list (immediate save, no save button). The optimistic
+   *  update lands before the request so consecutive actions always read the
+   *  fresh list — a save-in-flight must never overwrite a newer edit. On
+   *  success the entries are re-read only to refresh override badges; a
+   *  failed re-read must not fake a save failure (the file is written). */
   const persist = useCallback(
     async (next: DictionaryEntryDto[]) => {
+      setEntries(next);
       setStatusSafe('saving');
       try {
         await commands.saveUserDictionary(next.map(({ from, to }) => ({ from, to })));
         setStatusSafe('saved');
-        await refreshEntries();
+        commands
+          .getUserDictionary()
+          .then((fresh) => setEntries(fresh))
+          .catch(() => {});
       } catch (e) {
-        setEntries(next); // keep the optimistic edit visible for a retry
         setStatusSafe('error');
         notifications.show({
           title: tt('dictionary.save.failed.title'),
@@ -135,7 +141,7 @@ export function DictionaryModal({
         });
       }
     },
-    [refreshEntries, setStatusSafe, tt],
+    [setStatusSafe, tt],
   );
 
   const retrySave = useCallback(() => {
@@ -147,9 +153,9 @@ export function DictionaryModal({
     const input = { from: editor.from.trim(), to: editor.to.trim() };
 
     // A case-insensitive duplicate opens the existing entry for editing
-    // instead of creating a second one (one entry per word).
+    // instead of creating a second one (one entry per word) — including a
+    // rename in edit mode onto another entry's key.
     if (
-      editor.mode === 'add' &&
       isDuplicateFrom(entries, input.from) &&
       entryKey(input.from) !== editor.originalKey
     ) {
@@ -287,7 +293,7 @@ export function DictionaryModal({
             placeholder={tt('dictionary.search.placeholder')}
             value={search}
             onChange={(e) => setSearch(e.currentTarget.value)}
-            style={{ flexGrow: 1 }}
+            flex={1}
           />
           <Button variant="default" onClick={() => setEditor({ mode: 'add', from: '', to: '' })}>
             {tt('dictionary.add')}
@@ -295,7 +301,7 @@ export function DictionaryModal({
         </Group>
 
         {editor !== null && (
-          <Stack gap="xs" p="sm" style={{ borderRadius: 8, border: '1px solid var(--mantine-color-default-border)' }}>
+          <Stack gap="xs" p="sm" bd="1px solid var(--mantine-color-default-border)">
             <TextInput
               label={tt('dictionary.form.from')}
               placeholder={tt('dictionary.form.from.placeholder')}

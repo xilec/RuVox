@@ -110,13 +110,13 @@
 
 ## 5. Validation and wrap-up
 
-- [ ] 5.1 Run the full test gate: `nix develop -c just test` (Rust incl.
+- [x] 5.1 Run the full test gate: `nix develop -c just test` (Rust incl.
       golden fixtures, TS unit, Python) — all green
-- [ ] 5.2 Run the full lint gate: `nix develop -c just lint` (fmt, clippy
+- [x] 5.2 Run the full lint gate: `nix develop -c just lint` (fmt, clippy
       -D warnings, cargo deny, eslint, knip, tsc, ruff) — all green
-- [ ] 5.3 Validate the change: `nix develop -c pnpm dlx @fission-ai/openspec@1.6.0
+- [x] 5.3 Validate the change: `nix develop -c pnpm dlx @fission-ai/openspec@1.6.0
       validate user-dictionary --strict` passes
-- [ ] 5.4 Add the `[Unreleased]` entry to `CHANGELOG.md` (user dictionary
+- [x] 5.4 Add the `[Unreleased]` entry to `CHANGELOG.md` (user dictionary
       with editor and import/export; English, 1–2 lines per the changelog
       conventions)
 - [ ] 5.5 Manual pass (run `nix develop -c pnpm tauri dev`): add an entry

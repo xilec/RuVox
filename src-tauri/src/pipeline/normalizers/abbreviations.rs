@@ -123,6 +123,10 @@ pub fn as_word() -> &'static HashMap<&'static str, &'static str> {
     &AS_WORD
 }
 
+pub fn special_cases() -> &'static HashMap<&'static str, &'static str> {
+    &SPECIAL_CASES
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

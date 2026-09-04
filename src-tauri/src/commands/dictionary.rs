@@ -3,6 +3,7 @@
 //! modes (merge / replace) chosen by the user; save is all-or-nothing.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -43,7 +44,9 @@ pub enum ImportMode {
 }
 
 fn to_command_error(e: DictionaryError) -> CommandError {
-    CommandError::config("dictionary.error", vec![]).with_message(e.to_string())
+    // Detail rides in params so the frontend catalog renders it after the
+    // localized prefix (ipc-commands wire format).
+    CommandError::config("dictionary.error", vec![e.to_string()])
 }
 
 fn dto_list(pipeline: &TTSPipeline) -> Vec<DictionaryEntryDto> {
@@ -67,7 +70,10 @@ pub async fn get_user_dictionary(state: State<'_, AppState>) -> CmdResult<Vec<Di
 
 /// Validate every entry, atomically replace the whole dictionary, persist,
 /// and refresh the active pipeline. All-or-nothing: any invalid entry rejects
-/// the save and leaves the file unchanged.
+/// the save and leaves the file unchanged. The pipeline lock is held across
+/// compute + file write + refresh so concurrent commands can never leave the
+/// file and the active map diverging (the lock is sync and never crosses an
+/// await; the file is tiny).
 #[tauri::command]
 pub async fn save_user_dictionary(
     state: State<'_, AppState>,
@@ -82,12 +88,19 @@ pub async fn save_user_dictionary(
         dict.insert(entry);
     }
 
-    state
-        .dictionary_store
-        .save(&dict)
-        .map_err(to_command_error)?;
-    state.pipeline.lock().set_user_dictionary(dict);
-    Ok(())
+    let store = Arc::clone(&state.dictionary_store);
+    let pipeline = Arc::clone(&state.pipeline);
+    tokio::task::spawn_blocking(move || {
+        // File I/O is blocking by nature — keep the async runtime free
+        // (same pattern as read_text_file in commands/import.rs).
+        store.save(&dict).map_err(to_command_error)?;
+        pipeline.lock().set_user_dictionary(dict);
+        Ok(())
+    })
+    .await
+    .map_err(|e| {
+        CommandError::internal("dictionary.task_panicked", vec![]).with_message(e.to_string())
+    })?
 }
 
 /// Apply imported entries onto a current dictionary per the import mode.
@@ -168,33 +181,44 @@ pub async fn pick_dictionary_export_path() -> CmdResult<Option<String>> {
 /// Read a dictionary TOML file and apply it in the chosen mode, persist, and
 /// refresh the active pipeline. An unreadable or unparsable file rejects with
 /// a typed error and changes nothing; invalid entries never abort a merge.
+/// Like `save_user_dictionary`, the pipeline lock spans compute + write +
+/// refresh so concurrent commands cannot interleave.
 #[tauri::command]
 pub async fn import_user_dictionary(
     state: State<'_, AppState>,
     path: PathBuf,
     mode: ImportMode,
 ) -> CmdResult<ImportReport> {
-    let raw = std::fs::read_to_string(&path).map_err(|e| {
-        CommandError::config("dictionary.import_failed", vec![]).with_message(e.to_string())
-    })?;
-    let imported = dictionary::parse_import(&raw).map_err(to_command_error)?;
+    let store = Arc::clone(&state.dictionary_store);
+    let pipeline = Arc::clone(&state.pipeline);
+    tokio::task::spawn_blocking(move || {
+        let raw = std::fs::read_to_string(&path)
+            .map_err(|e| CommandError::config("dictionary.import_failed", vec![e.to_string()]))?;
+        let imported = dictionary::parse_import(&raw).map_err(to_command_error)?;
 
-    let current = state.pipeline.lock().user_dictionary().clone();
-    let (dict, report) = apply_import(&current, imported, mode);
-
-    state
-        .dictionary_store
-        .save(&dict)
-        .map_err(to_command_error)?;
-    state.pipeline.lock().set_user_dictionary(dict);
-    Ok(report)
+        let mut guard = pipeline.lock();
+        let (dict, report) = apply_import(guard.user_dictionary(), imported, mode);
+        store.save(&dict).map_err(to_command_error)?;
+        guard.set_user_dictionary(dict);
+        Ok(report)
+    })
+    .await
+    .map_err(|e| {
+        CommandError::internal("dictionary.task_panicked", vec![]).with_message(e.to_string())
+    })?
 }
 
 /// Write the current entries as valid dictionary TOML to a user-chosen path.
 #[tauri::command]
 pub async fn export_user_dictionary(state: State<'_, AppState>, path: PathBuf) -> CmdResult<()> {
     let dict = state.pipeline.lock().user_dictionary().clone();
-    dictionary::export_to(&dict, &path).map_err(to_command_error)
+    tokio::task::spawn_blocking(move || {
+        dictionary::export_to(&dict, &path).map_err(to_command_error)
+    })
+    .await
+    .map_err(|e| {
+        CommandError::internal("dictionary.task_panicked", vec![]).with_message(e.to_string())
+    })?
 }
 
 #[cfg(test)]
@@ -266,16 +290,19 @@ mod tests {
         let pipeline = TTSPipeline::new();
         let mut dict = UserDictionary::default();
         dict.insert(entry("docker", "докка")); // docker ∈ IT_TERMS
+        dict.insert(entry("ios", "ай ос")); // ios ∈ abbreviation SPECIAL_CASES
         // Not in IT_TERMS / abbreviation maps / CODE_WORDS.
         dict.insert(entry("zabbix", "заббикс"));
         let mut pipeline = pipeline;
         pipeline.set_user_dictionary(dict);
 
         let dtos = dto_list(&pipeline);
-        assert_eq!(dtos.len(), 2);
+        assert_eq!(dtos.len(), 3);
         let docker = dtos.iter().find(|d| d.from == "docker").expect("docker");
+        let ios = dtos.iter().find(|d| d.from == "ios").expect("ios");
         let zabbix = dtos.iter().find(|d| d.from == "zabbix").expect("zabbix");
         assert!(docker.overrides_builtin);
+        assert!(ios.overrides_builtin);
         assert!(!zabbix.overrides_builtin);
     }
 }
