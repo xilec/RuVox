@@ -183,6 +183,9 @@ export function DictionaryModal({
         children: <Text size="sm">{tt('dictionary.delete.message', [target.from])}</Text>,
         labels: { confirm: tt('common.delete'), cancel: tt('common.cancel') },
         confirmProps: { color: 'red' },
+        // Above the dictionary editor (400): the ModalsProvider default
+        // (200) renders the confirmation behind it.
+        zIndex: 500,
         onConfirm: () => {
           const next = entries.filter((e) => entryKey(e.from) !== entryKey(target.from));
           void persist(next);
