@@ -18,6 +18,7 @@ context: |
   Code and comments in English; user-facing UI strings in Russian. No emoji.
   Commit format: `<type>(<module>): <desc>`, English.
   Hard rules: ai/rules/conventions.md; craft standard: ai/rules/code-quality.md.
+  Domain glossary: CONTEXT.md — canonical terms and avoid-lists.
   Package manager: pnpm (chosen over bun for Nix build reproducibility:
   `pnpm.fetchDeps` fixed-output derivation in flake.nix, diffable text lockfile,
   mature nixpkgs packaging, no Node runtime replacement; bun's install speed
