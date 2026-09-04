@@ -9,8 +9,8 @@ an alphabetical, case-insensitive-substring searchable table of entries
 (`from` as typed, `to`, a "переопределяет встроенное" badge on entries
 flagged by the backend); add / edit / delete with delete confirmed via the
 standard confirm modal; form validation per the user-dictionary spec, where
-submitting a `from` that already exists opens that entry for editing instead
-of creating a duplicate. Every completed action saves immediately (no save
+submitting a `from` that already exists updates that entry's spoken form
+with the typed value instead of creating a duplicate. Every completed action saves immediately (no save
 button); the modal footer SHALL carry a quiet status line — "Все изменения
 сохранены" / "Сохранение…" / "Не сохранено — повторить" (with a retry
 action) — and CRUD success SHALL NOT raise toast notifications. Import and
@@ -32,12 +32,13 @@ strings are Russian.
 - WHEN the user types "ku" in the search field
 - THEN only the "kubectl" row remains
 
-#### Scenario: Duplicate from opens the existing entry
+#### Scenario: Duplicate from updates the existing entry
 
 - GIVEN the entry "docker → докер" exists
-- WHEN the user submits a new entry with from "Docker"
-- THEN the editor opens the existing entry for editing instead of creating a
-  second one
+- WHEN the user submits a new entry with from "Docker" and spoken form
+  "докка"
+- THEN the existing entry becomes "docker → докка" and no second entry is
+  created
 
 #### Scenario: Delete requires confirmation
 

@@ -651,7 +651,8 @@ export function AppShell() {
         onSaved={() => {
           commands.getConfig().then(setConfig).catch(() => {});
         }}
-        onDictionaryChanged={() => setDictRevision((n) => n + 1)}
+        onOpenDictionary={() => setDictModalOpened(true)}
+        dictionaryRevision={dictRevision}
       />
 
       {/* Quick-add target for the preview's «В словарь» action; the Settings

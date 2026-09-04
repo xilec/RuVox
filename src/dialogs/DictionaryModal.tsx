@@ -21,7 +21,6 @@ import { formatError } from '../lib/errors';
 import { useT } from '../lib/i18n';
 import {
   entryKey,
-  isDuplicateFrom,
   sortAndFilterEntries,
   validateEntryInput,
   type DictionaryValidationReason,
@@ -152,18 +151,17 @@ export function DictionaryModal({
     if (!editor) return;
     const input = { from: editor.from.trim(), to: editor.to.trim() };
 
-    // A case-insensitive duplicate opens the existing entry for editing
-    // instead of creating a second one (one entry per word) — including a
-    // rename in edit mode onto another entry's key.
-    if (
-      isDuplicateFrom(entries, input.from) &&
-      entryKey(input.from) !== editor.originalKey
-    ) {
-      const existing = entries.find((e) => entryKey(e.from) === entryKey(input.from));
-      if (existing) {
-        setEditor({ mode: 'edit', originalKey: entryKey(existing.from), ...existing });
-        return;
-      }
+    // One entry per word: submitting a from that collides with an existing
+    // entry (a re-add, or a rename in edit mode) updates that entry's spoken
+    // form with what the user typed instead of creating a second entry.
+    const collision = entries.find(
+      (e) => entryKey(e.from) === entryKey(input.from) && entryKey(e.from) !== editor.originalKey,
+    );
+    if (collision) {
+      const next = entries.map((e) => (e === collision ? { ...e, to: input.to } : e));
+      setEditor(null);
+      void persist(next);
+      return;
     }
 
     const next =

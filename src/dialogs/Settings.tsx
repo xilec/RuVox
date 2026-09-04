@@ -32,7 +32,6 @@ import { setLocale, toLocale } from '../stores/locale';
 import { bundleDownloadPercent } from '../lib/bundleDownload';
 import { PIPER_VOICES } from '../lib/piperVoices';
 import { checkForUpdatesManual, updaterSupported } from '../lib/updater';
-import { DictionaryModal } from './DictionaryModal';
 import {
   applyEngineChange,
   buildSettingsPatch,
@@ -83,8 +82,13 @@ interface SettingsModalProps {
   /** Called after the user saves successfully, so the caller can refresh its
    * local copy of UIConfig without re-invoking getConfig on every render. */
   onSaved?: () => void;
-  /** Called when the dictionary editor closes — entries may have changed. */
-  onDictionaryChanged?: () => void;
+  /** Opens the dictionary editor. The editor lives at the AppShell level
+   *  (one top-level instance, above every dialog), so Settings only asks
+   *  the owner to open it. */
+  onOpenDictionary?: () => void;
+  /** Bumped by the owner whenever the dictionary editor closes; re-reads
+   *  the entry count for the section summary. */
+  dictionaryRevision?: number;
 }
 
 type Translator = ReturnType<typeof useT>;
@@ -248,11 +252,16 @@ function CleanupCacheModal({
   );
 }
 
-export function SettingsModal({ opened, onClose, onSaved, onDictionaryChanged }: SettingsModalProps) {
+export function SettingsModal({
+  opened,
+  onClose,
+  onSaved,
+  onOpenDictionary,
+  dictionaryRevision,
+}: SettingsModalProps) {
   const tt = useT();
   const { setColorScheme } = useMantineColorScheme();
   const [cleanupOpen, setCleanupOpen] = useState(false);
-  const [dictionaryOpen, setDictionaryOpen] = useState(false);
   const [dictionaryCount, setDictionaryCount] = useState<number | null>(null);
   const [cacheDir, setCacheDir] = useState<string>('');
   const [appVersion, setAppVersion] = useState<string>('');
@@ -302,6 +311,16 @@ export function SettingsModal({ opened, onClose, onSaved, onDictionaryChanged }:
     },
   });
 
+  // Dictionary entry count for the section summary; re-read when the owner
+  // reports the dictionary editor closed (dictionaryRevision bump).
+  useEffect(() => {
+    if (!opened) return;
+    commands
+      .getUserDictionary()
+      .then((entries) => setDictionaryCount(entries.length))
+      .catch(() => setDictionaryCount(null));
+  }, [opened, dictionaryRevision]);
+
   useEffect(() => {
     if (!opened) return;
     sampleRateTouchedRef.current = false;
@@ -340,12 +359,6 @@ export function SettingsModal({ opened, onClose, onSaved, onDictionaryChanged }:
     // reports can quote it on every platform.
     getVersion().then(setAppVersion).catch(() => setAppVersion(''));
     commands.getLogDir().then(setLogDir).catch(() => setLogDir(''));
-    // Dictionary entry count for the section summary; re-read when the
-    // dictionary editor closes (see its onClose).
-    commands
-      .getUserDictionary()
-      .then((entries) => setDictionaryCount(entries.length))
-      .catch(() => setDictionaryCount(null));
     // Update section only on installs the updater can serve (#226): Windows
     // and Linux AppImage; a failed probe hides it like .deb/nix do.
     updaterSupported().then(setUpdaterEnabled).catch(() => setUpdaterEnabled(false));
@@ -675,7 +688,7 @@ export function SettingsModal({ opened, onClose, onSaved, onDictionaryChanged }:
             <Text size="xs" c="dimmed">
               {tt('settings.dictionary.entries_count', [dictionaryCount ?? '—'])}
             </Text>
-            <Button variant="default" onClick={() => setDictionaryOpen(true)}>
+            <Button variant="default" onClick={() => onOpenDictionary?.()}>
               {tt('settings.dictionary.open')}
             </Button>
           </Group>
@@ -843,18 +856,6 @@ export function SettingsModal({ opened, onClose, onSaved, onDictionaryChanged }:
         opened={cleanupOpen}
         defaultTargetMb={form.values.max_cache_size_mb}
         onClose={() => setCleanupOpen(false)}
-      />
-
-      <DictionaryModal
-        opened={dictionaryOpen}
-        onClose={() => {
-          setDictionaryOpen(false);
-          onDictionaryChanged?.();
-          commands
-            .getUserDictionary()
-            .then((entries) => setDictionaryCount(entries.length))
-            .catch(() => setDictionaryCount(null));
-        }}
       />
     </Modal>
   );
