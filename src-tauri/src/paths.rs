@@ -79,6 +79,13 @@ pub fn voices_root() -> Option<PathBuf> {
     }
 }
 
+/// User dictionary file (change `user-dictionary`): config root, alongside
+/// `config.json` — user-authored knowledge, not generated data, so it must
+/// survive cache cleanup and ride along with config backups.
+pub fn dictionary_path() -> Option<PathBuf> {
+    Some(config_root()?.join("user_dictionary.toml"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -127,5 +134,12 @@ mod tests {
                 .expect("legacy cache root resolvable on linux")
                 .ends_with("ruvox")
         );
+    }
+
+    #[test]
+    fn dictionary_lives_in_config_root_under_its_own_name() {
+        let dict = dictionary_path().expect("dictionary path resolvable");
+        assert_eq!(dict.file_name().unwrap(), "user_dictionary.toml");
+        assert_eq!(dict.parent(), config_root().as_deref());
     }
 }

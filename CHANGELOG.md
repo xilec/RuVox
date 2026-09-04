@@ -6,6 +6,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 
 ## [Unreleased]
 
+### Added
+- **User pronunciation dictionary** — a Settings «Словарь» editor (and a
+  «В словарь» quick-add in the preview dialog) lets you teach RuVox any
+  Latin word or token like `IPv6`: it is spoken as you write it in prose,
+  code identifiers, URLs, and code blocks, overriding the built-in tables.
+  The dictionary persists as a hand-editable TOML file in the config folder
+  and imports/exports (merge or replace) via dialogs or drag-and-drop (#10).
+
 ### Changed
 - **Piper narrates long texts without freezing the machine** — synthesis now
   runs in sentence-bounded chunks instead of one inference, so pasting long

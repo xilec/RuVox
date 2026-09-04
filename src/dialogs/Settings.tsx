@@ -82,6 +82,13 @@ interface SettingsModalProps {
   /** Called after the user saves successfully, so the caller can refresh its
    * local copy of UIConfig without re-invoking getConfig on every render. */
   onSaved?: () => void;
+  /** Opens the dictionary editor. The editor lives at the AppShell level
+   *  (one top-level instance, above every dialog), so Settings only asks
+   *  the owner to open it. */
+  onOpenDictionary?: () => void;
+  /** Bumped by the owner whenever the dictionary editor closes; re-reads
+   *  the entry count for the section summary. */
+  dictionaryRevision?: number;
 }
 
 type Translator = ReturnType<typeof useT>;
@@ -245,10 +252,17 @@ function CleanupCacheModal({
   );
 }
 
-export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) {
+export function SettingsModal({
+  opened,
+  onClose,
+  onSaved,
+  onOpenDictionary,
+  dictionaryRevision,
+}: SettingsModalProps) {
   const tt = useT();
   const { setColorScheme } = useMantineColorScheme();
   const [cleanupOpen, setCleanupOpen] = useState(false);
+  const [dictionaryCount, setDictionaryCount] = useState<number | null>(null);
   const [cacheDir, setCacheDir] = useState<string>('');
   const [appVersion, setAppVersion] = useState<string>('');
   const [logDir, setLogDir] = useState<string>('');
@@ -296,6 +310,16 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
         v < 100 ? t('settings.max_cache_size.min_error') : null,
     },
   });
+
+  // Dictionary entry count for the section summary; re-read when the owner
+  // reports the dictionary editor closed (dictionaryRevision bump).
+  useEffect(() => {
+    if (!opened) return;
+    commands
+      .getUserDictionary()
+      .then((entries) => setDictionaryCount(entries.length))
+      .catch(() => setDictionaryCount(null));
+  }, [opened, dictionaryRevision]);
 
   useEffect(() => {
     if (!opened) return;
@@ -653,6 +677,21 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
               {tt('settings.code_block.description')}
             </Text>
           </Stack>
+
+          <Divider />
+
+          <Text size="sm" fw={500} c="dimmed">
+            {tt('settings.section.dictionary')}
+          </Text>
+
+          <Group justify="flex-start">
+            <Text size="xs" c="dimmed">
+              {tt('settings.dictionary.entries_count', [dictionaryCount ?? '—'])}
+            </Text>
+            <Button variant="default" onClick={() => onOpenDictionary?.()}>
+              {tt('settings.dictionary.open')}
+            </Button>
+          </Group>
 
           <Divider />
 

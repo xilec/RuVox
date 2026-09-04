@@ -33,6 +33,7 @@ use tauri::test::{MockRuntime, mock_builder, mock_context, noop_assets};
 use tauri::{App, Listener, Manager};
 use tempfile::TempDir;
 
+use crate::dictionary::DictionaryStore;
 use crate::pipeline::TTSPipeline;
 use crate::player::{PlayerBackend, Result as PlayerResult};
 use crate::state::AppState;
@@ -391,6 +392,9 @@ pub fn build_test_app_with_kind(kind: EngineKind) -> TestApp {
         emitter,
         player: player.clone(),
         pipeline: Arc::new(ParkingMutex::new(TTSPipeline::new())),
+        dictionary_store: Arc::new(DictionaryStore::new(
+            storage_dir.path().join("user_dictionary.toml"),
+        )),
         tray_cmd_tx: None,
         user_quit: Arc::new(AtomicBool::new(false)),
         synthesis_tasks: Arc::new(ParkingMutex::new(std::collections::HashMap::new())),

@@ -386,11 +386,14 @@ static TRANSLIT_AC: Lazy<(AhoCorasick, Vec<&'static str>)> = Lazy::new(|| {
 ///
 /// Lookup order:
 /// 1. Multi-word phrases (exact, case-insensitive, longest match).
-/// 2. Custom user-supplied terms.
-/// 3. Built-in `IT_TERMS` dictionary.
-/// 4. Simple character-by-character transliteration via `TRANSLIT_AC`.
+/// 2. Built-in `IT_TERMS` dictionary.
+/// 3. Simple character-by-character transliteration via `TRANSLIT_AC`.
+///
+/// User-supplied overrides do not live here: the user dictionary is applied
+/// by the pipeline's dedicated pre-pass phase before English-word resolution
+/// (change `user-dictionary`), which supersedes the former `custom_terms`
+/// hook.
 pub struct EnglishNormalizer {
-    custom_terms: HashMap<String, String>,
     unknown_words: HashMap<String, String>,
 }
 
@@ -403,15 +406,7 @@ impl Default for EnglishNormalizer {
 impl EnglishNormalizer {
     pub fn new() -> Self {
         Self {
-            custom_terms: HashMap::new(),
             unknown_words: HashMap::new(),
-        }
-    }
-
-    /// Add user-supplied term overrides (merged with existing).
-    pub fn add_custom_terms(&mut self, terms: &HashMap<String, String>) {
-        for (k, v) in terms {
-            self.custom_terms.insert(k.to_lowercase(), v.clone());
         }
     }
 
@@ -433,12 +428,7 @@ impl EnglishNormalizer {
             }
         }
 
-        // 2. Custom terms
-        if let Some(v) = self.custom_terms.get(text_lower.as_str()) {
-            return v.clone();
-        }
-
-        // 3. Built-in IT_TERMS
+        // 2. Built-in IT_TERMS
         if let Some(v) = IT_TERMS.get(text_lower.as_str()) {
             return v.to_string();
         }
@@ -752,21 +742,6 @@ mod tests {
     fn translit_fallback_matches_normalize(word: &str, expected: &str) {
         assert_eq!(transliterate_simple(word), expected);
         assert_eq!(normalizer().normalize(word, false), expected);
-    }
-
-    // ── Custom terms ──────────────────────────────────────────────────────────
-
-    #[test_case("api", "апи", &["api", "API"]; "override_it_terms")]
-    #[test_case("foobar", "фубар", &["foobar"]; "new_word")]
-    #[test_case("MyTerm", "майтёрм", &["myterm", "MYTERM"]; "case_insensitive_key")]
-    fn custom_terms(key: &str, value: &str, queries: &[&str]) {
-        let mut en = normalizer();
-        let mut custom = HashMap::new();
-        custom.insert(key.to_string(), value.to_string());
-        en.add_custom_terms(&custom);
-        for q in queries {
-            assert_eq!(en.normalize(q, false), value);
-        }
     }
 
     // ── Unknown word tracking ─────────────────────────────────────────────────

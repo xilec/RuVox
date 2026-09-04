@@ -1,5 +1,6 @@
 pub mod audio;
 pub mod commands;
+pub mod dictionary;
 pub mod import;
 pub mod paths;
 pub mod pipeline;
@@ -22,6 +23,7 @@ use tauri::{AppHandle, Emitter, Manager, RunEvent, Runtime};
 use tauri_plugin_mpv::MpvExt;
 
 use commands::*;
+use dictionary::DictionaryStore;
 use pipeline::TTSPipeline;
 use player::{Player, PlayerBackend};
 use state::AppState;
@@ -419,6 +421,12 @@ pub(crate) fn invoke_handler<R: Runtime>()
         set_volume,
         get_config,
         update_config,
+        get_user_dictionary,
+        save_user_dictionary,
+        import_user_dictionary,
+        export_user_dictionary,
+        pick_dictionary_import_path,
+        pick_dictionary_export_path,
         get_available_engines,
         download_piper_voice,
         download_silero_native_bundle,
@@ -898,6 +906,12 @@ pub fn run() {
             if let Ok(config) = storage.load_config() {
                 apply_configured_code_block_mode(&pipeline, &config);
             }
+            // The user dictionary file lives next to config.json; storage
+            // opening it proves the config root is resolvable.
+            let dictionary_store = Arc::new(DictionaryStore::new(
+                paths::dictionary_path().expect("config root resolvable once storage is open"),
+            ));
+            pipeline.lock().set_user_dictionary(dictionary_store.load());
             let synthesis_tasks = Arc::new(Mutex::new(HashMap::new()));
             let synthesize_entered = Arc::new(Mutex::new(HashSet::new()));
             let tray_tx = spawn_tray_handler(
@@ -922,6 +936,7 @@ pub fn run() {
                 emitter,
                 player,
                 pipeline,
+                dictionary_store,
                 tray_cmd_tx: Some(tray_tx),
                 user_quit: Arc::new(AtomicBool::new(false)),
                 synthesis_tasks,

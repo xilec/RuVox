@@ -12,6 +12,7 @@ import {
   Switch,
   Text,
   Textarea,
+  Tooltip,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { openUrl } from '@tauri-apps/plugin-opener';
@@ -21,6 +22,7 @@ import { commands } from '../lib/tauri';
 import type { EntryFormat } from '../lib/tauri';
 import { formatError } from '../lib/errors';
 import { useT } from '../lib/i18n';
+import { isSingleSourceToken } from '../lib/userDictionary';
 import { useLocaleStore } from '../stores/locale';
 import { previewTextFor } from '../lib/html';
 import { detectFormat } from '../lib/detectFormat';
@@ -60,6 +62,18 @@ export interface PreviewDialogProps {
   ) => void;
   /** Called when the user cancels the dialog. */
   onCancel: () => void;
+  /** Quick-add to the user dictionary: called with the current single-token
+   *  selection from either pane (user-dictionary spec, "Quick-add"). */
+  onAddToDictionary?: (word: string) => void;
+  /** Bumped by the owner whenever the user dictionary may have changed;
+   *  re-runs normalization so the right pane reflects new entries without
+   *  touching the text. */
+  dictionaryRevision?: number;
+  /** Temporarily hide the window without unmounting its state (the user
+   *  dictionary editor opens at a top-level z-index; the webview composites
+   *  the preview's scrollable through it). Unlike `opened`, flipping this
+   *  does not reset text, geometry, or mode. */
+  suppressed?: boolean;
 }
 
 const INITIAL_W = 900;
@@ -126,6 +140,9 @@ export function PreviewDialog({
   initialFormat,
   onSynthesize,
   onCancel,
+  onAddToDictionary,
+  dictionaryRevision,
+  suppressed = false,
 }: PreviewDialogProps) {
   const tt = useT();
   const isRegen = mode === 'regenerate';
@@ -143,6 +160,9 @@ export function PreviewDialog({
   const [editMode, setEditMode] = useState(false);
   const [syncScroll, setSyncScroll] = useState(false);
   const [helpOpened, setHelpOpened] = useState(false);
+  // Text selected in either pane; gates the quick-add dictionary action
+  // (single valid Latin token only — user-dictionary spec).
+  const [selection, setSelection] = useState('');
   const locale = useLocaleStore((s) => s.locale);
   const [position, setPosition] = useState<{ x: number; y: number }>(() =>
     centeredPosition(INITIAL_W, INITIAL_H),
@@ -227,14 +247,17 @@ export function PreviewDialog({
       stale = true;
       window.clearTimeout(timer);
     };
-  }, [opened, editedText, effectiveFormat, tt]);
+    // dictionaryRevision re-runs normalization after user-dictionary changes
+    // (quick-add + editor close) — the text itself is unchanged, but entries
+    // now rewrite it differently.
+  }, [opened, editedText, effectiveFormat, tt, dictionaryRevision]);
 
   // ESC closes the floating window (mantine Modal used to handle this; non-modal
   // react-rnd has no built-in handler, so we bind one manually while opened).
   // With the help popover open, ESC closes it first and only a second ESC
   // cancels the dialog.
   useEffect(() => {
-    if (!opened) return;
+    if (!opened || suppressed) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (helpOpened) {
@@ -288,7 +311,9 @@ export function PreviewDialog({
     [syncScroll],
   );
 
-  if (!opened) return null;
+  // Suppressed renders nothing but keeps every hook's state — the reset
+  // effect above keys on `opened`, so the session survives the hide.
+  if (!opened || suppressed) return null;
 
   return (
     <Portal>
@@ -391,6 +416,7 @@ export function PreviewDialog({
                     ref={leftPaneRef}
                     className={classes.textPane}
                     onScroll={() => handlePaneScroll('left')}
+                    onMouseUp={() => setSelection(window.getSelection()?.toString() ?? '')}
                   >
                     {text}
                   </pre>
@@ -408,6 +434,7 @@ export function PreviewDialog({
                     ref={rightPaneRef}
                     className={classes.textPane}
                     onScroll={() => handlePaneScroll('right')}
+                    onMouseUp={() => setSelection(window.getSelection()?.toString() ?? '')}
                   >
                     {normalized}
                   </pre>
@@ -422,6 +449,21 @@ export function PreviewDialog({
               wrap="wrap"
             >
               <Group gap="md" wrap="wrap">
+                <Tooltip label={isSingleSourceToken(selection) ? '' : tt('dictionary.quickadd.hint')} disabled={isSingleSourceToken(selection)}>
+                  <Button
+                    variant="default"
+                    size="xs"
+                    data-quick-add-dictionary
+                    disabled={!isSingleSourceToken(selection)}
+                    onClick={() => {
+                      const word = selection.trim();
+                      setSelection('');
+                      onAddToDictionary?.(word);
+                    }}
+                  >
+                    {tt('dictionary.quickadd.button')}
+                  </Button>
+                </Tooltip>
                 {!isRegen && (
                   <Select
                     size="xs"

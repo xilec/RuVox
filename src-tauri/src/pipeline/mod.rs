@@ -6,6 +6,7 @@ use std::sync::OnceLock;
 
 use regex::Regex;
 
+use crate::dictionary::UserDictionary;
 use crate::pipeline::constants::{ARROW_SYMBOLS, GREEK_LETTERS, MATH_SYMBOLS};
 use crate::pipeline::normalizers::abbreviations::AbbreviationNormalizer;
 use crate::pipeline::normalizers::code::CodeIdentifierNormalizer;
@@ -183,6 +184,15 @@ fn re_english_words() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"\b([A-Za-z]+)\b").expect("valid regex"))
 }
 
+fn re_user_dict_token() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    // Letters+digits with at least one letter: pure numbers stay with the
+    // number phase, while alnum tokens like "IPv6"/"mp3" — captured by no
+    // other prose phase — become user-dictionary candidates. At least one
+    // letter is required, so a non-hit flows into later phases unchanged.
+    RE.get_or_init(|| Regex::new(r"\b[A-Za-z0-9]*[A-Za-z][A-Za-z0-9]*\b").expect("valid regex"))
+}
+
 fn re_number() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     // Match standalone integers: must be at a word boundary and not preceded/followed
@@ -250,6 +260,9 @@ pub struct TTSPipeline {
     symbol_normalizer: SymbolNormalizer,
     code_block_handler: CodeBlockHandler,
     code_normalizer: CodeIdentifierNormalizer,
+    /// User-authored pronunciation overrides (change `user-dictionary`).
+    /// Single home for the map; lookup sites receive it by reference.
+    user_dictionary: UserDictionary,
 }
 
 impl TTSPipeline {
@@ -265,6 +278,7 @@ impl TTSPipeline {
             // config, so this default only shows up in tests.
             code_block_handler: CodeBlockHandler::new(),
             code_normalizer: CodeIdentifierNormalizer::new(),
+            user_dictionary: UserDictionary::default(),
         }
     }
 
@@ -278,6 +292,32 @@ impl TTSPipeline {
     /// whenever `update_config` changes `code_block_mode`.
     pub fn set_code_block_mode(&mut self, mode: CodeBlockMode) {
         self.code_block_handler.set_mode(mode);
+    }
+
+    /// Replace the user dictionary. Driven by the dictionary commands after
+    /// every persisted change (save/import), same refresh pattern as
+    /// `set_code_block_mode`.
+    pub fn set_user_dictionary(&mut self, dict: UserDictionary) {
+        self.user_dictionary = dict;
+    }
+
+    /// Read-only access for the commands layer (override-marker computation).
+    pub fn user_dictionary(&self) -> &UserDictionary {
+        &self.user_dictionary
+    }
+
+    /// Whether `word_lower` has a built-in reading at any dictionary lookup
+    /// site (`IT_TERMS`, the abbreviation maps including their special
+    /// cases, `CODE_WORDS`). Used by the commands layer to flag user entries
+    /// that override built-ins.
+    pub fn builtin_contains(&self, word_lower: &str) -> bool {
+        use crate::pipeline::normalizers::abbreviations;
+        use crate::pipeline::normalizers::english::IT_TERMS;
+
+        IT_TERMS.contains_key(word_lower)
+            || abbreviations::special_cases().contains_key(word_lower)
+            || abbreviations::as_word().contains_key(word_lower)
+            || self.code_normalizer.contains_builtin(word_lower)
     }
 
     /// Process text for TTS. Returns normalized text without position mapping.
@@ -309,7 +349,8 @@ impl TTSPipeline {
         }
 
         // ── Phase 1: Code blocks (must run before space/dash normalization) ───
-        self.code_block_handler.process(&mut tracked);
+        let user_dict = &self.user_dictionary;
+        self.code_block_handler.process(&mut tracked, user_dict);
 
         // ── Phase 2: Quote normalization ─────────────────────────────────────
         tracked.replace("\u{ab}", "\""); // «
@@ -348,7 +389,8 @@ impl TTSPipeline {
         {
             let num = &self.number_normalizer;
             let eng = &self.english_normalizer;
-            let url_norm = URLPathNormalizer::new(eng, num);
+            let url_norm =
+                URLPathNormalizer::new(eng, num).with_user_dictionary(&self.user_dictionary);
             tracked.sub(re_url(), |caps| {
                 let url = caps.get(0).unwrap().as_str();
                 let (core, suffix) = split_trailing_punct(url);
@@ -529,19 +571,27 @@ impl TTSPipeline {
         // ── Phase 15: Code identifiers ────────────────────────────────────────
         {
             let code = &self.code_normalizer;
+            let user_dict = &self.user_dictionary;
             tracked.sub(re_camel_lower(), |caps| {
-                code.normalize_camel_case(caps.get(0).unwrap().as_str())
+                code.normalize_camel_case(caps.get(0).unwrap().as_str(), user_dict)
             });
             tracked.sub(re_pascal(), |caps| {
-                code.normalize_camel_case(caps.get(0).unwrap().as_str())
+                code.normalize_camel_case(caps.get(0).unwrap().as_str(), user_dict)
             });
             tracked.sub(re_snake(), |caps| {
-                code.normalize_snake_case(caps.get(0).unwrap().as_str())
+                code.normalize_snake_case(caps.get(0).unwrap().as_str(), user_dict)
             });
             tracked.sub(re_kebab(), |caps| {
-                code.normalize_kebab_case(caps.get(0).unwrap().as_str())
+                code.normalize_kebab_case(caps.get(0).unwrap().as_str(), user_dict)
             });
         }
+
+        // ── Phase 15.5: User dictionary pre-pass ─────────────────────────────
+        // After code-identifier splitting (entries apply to identifier parts,
+        // never whole identifiers) and before English-word resolution (user
+        // entries win over every built-in table). No-op for an empty
+        // dictionary — output stays byte-identical.
+        self.process_user_dictionary_tracked(&mut tracked);
 
         // ── Phase 16: English words ───────────────────────────────────────────
         self.process_english_tracked(&mut tracked);
@@ -617,14 +667,18 @@ impl TTSPipeline {
                 return self.normalize_code_words(&processed);
             }
 
+            let user_dict = &self.user_dictionary;
             if processed.contains('_') {
-                self.code_normalizer.normalize_snake_case(&processed)
+                self.code_normalizer
+                    .normalize_snake_case(&processed, user_dict)
             } else if processed.contains('-') && !processed.starts_with('-') {
-                self.code_normalizer.normalize_kebab_case(&processed)
+                self.code_normalizer
+                    .normalize_kebab_case(&processed, user_dict)
             } else if processed.chars().skip(1).any(|c| c.is_uppercase())
                 && processed.chars().any(|c| c.is_lowercase())
             {
-                self.code_normalizer.normalize_camel_case(&processed)
+                self.code_normalizer
+                    .normalize_camel_case(&processed, user_dict)
             } else {
                 self.normalize_code_words(&processed)
             }
@@ -636,8 +690,10 @@ impl TTSPipeline {
             .map(|word| {
                 let lower = word.to_lowercase();
                 // CodeIdentifierNormalizer.normalize_snake_case handles single words
-                // (no underscores) correctly: it looks up CODE_WORDS dict then transliterates.
-                self.code_normalizer.normalize_snake_case(&lower)
+                // (no underscores) correctly: it looks up the user dictionary,
+                // then the CODE_WORDS dict, then transliterates.
+                self.code_normalizer
+                    .normalize_snake_case(&lower, &self.user_dictionary)
             })
             .collect::<Vec<_>>()
             .join(" ")
@@ -699,6 +755,29 @@ impl TTSPipeline {
             };
             format!("{}:", ordinal)
         });
+    }
+
+    /// User-dictionary pre-pass (change `user-dictionary`): replace tokens
+    /// that exactly match an entry key, case-insensitively, with the entry's
+    /// spoken form. Only exact hits are replaced — non-hits flow into the
+    /// English-word phase unchanged, so built-in behavior and golden fixtures
+    /// are unaffected.
+    fn process_user_dictionary_tracked(&mut self, tracked: &mut TrackedText) {
+        if self.user_dictionary.is_empty() {
+            return;
+        }
+        let snapshot = tracked.text().to_string();
+        let matches: Vec<(usize, usize, String)> = re_user_dict_token()
+            .captures_iter(&snapshot)
+            .filter_map(|caps| {
+                let m = caps.get(0)?;
+                let word_lower = m.as_str().to_lowercase();
+                self.user_dictionary
+                    .get(&word_lower)
+                    .map(|to| (m.start(), m.end(), to.to_string()))
+            })
+            .collect();
+        tracked.replace_byte_ranges(matches);
     }
 
     fn process_english_tracked(&mut self, tracked: &mut TrackedText) {

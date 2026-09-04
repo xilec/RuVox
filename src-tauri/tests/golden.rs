@@ -7,6 +7,7 @@
 ///
 /// Run with:
 ///   cargo test --manifest-path src-tauri/Cargo.toml --test golden
+use ruvox_tauri_lib::dictionary::{UserDictionary, parse_import, validate_entry};
 use ruvox_tauri_lib::pipeline::TTSPipeline;
 use ruvox_tauri_lib::pipeline::normalizers::code_blocks::CodeBlockMode;
 use serde::Deserialize;
@@ -77,6 +78,22 @@ fn read_mode_sidecar(case: &str) -> Option<CodeBlockMode> {
         "read" => Some(CodeBlockMode::Full),
         other => panic!("invalid mode sidecar {}: {:?}", path.display(), other),
     }
+}
+
+/// Optional `<case>.dict.toml` sidecar loading user-dictionary entries for
+/// the case (same TOML shape as the shipped file); absent = empty dictionary.
+fn read_dict_sidecar(case: &str) -> UserDictionary {
+    let path = fixtures_dir().join(format!("{}.dict.toml", case));
+    let text = match fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(_) => return UserDictionary::default(),
+    };
+    let mut dict = UserDictionary::default();
+    for entry in parse_import(&text).expect("valid dict sidecar TOML") {
+        validate_entry(&entry.from, &entry.to).expect("valid dict sidecar entry");
+        dict.insert(entry);
+    }
+    dict
 }
 
 // ── Diff helpers ───────────────────────────────────────────────────────────────
@@ -157,6 +174,7 @@ fn golden_fixtures() {
         if let Some(mode) = read_mode_sidecar(case_name) {
             pipeline.set_code_block_mode(mode);
         }
+        pipeline.set_user_dictionary(read_dict_sidecar(case_name));
         let (actual_text, actual_mapping) = pipeline.process_with_char_mapping(&input);
 
         let mut case_errors: Vec<String> = Vec::new();
