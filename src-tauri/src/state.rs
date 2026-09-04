@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicBool;
 use parking_lot::Mutex;
 use tokio::task::AbortHandle;
 
+use crate::dictionary::DictionaryStore;
 use crate::pipeline::TTSPipeline;
 use crate::player::PlayerBackend;
 use crate::storage::schema::EntryId;
@@ -47,6 +48,10 @@ pub struct AppState {
     /// fake (no mpv subprocess / window). Production holds `Player<Wry>`.
     pub player: Arc<dyn PlayerBackend>,
     pub pipeline: Arc<Mutex<TTSPipeline>>,
+    /// Owns the user dictionary file (config root). Commands layer reads it
+    /// for save/import/export; the loaded dictionary itself lives in
+    /// `pipeline` (single home for the active map).
+    pub dictionary_store: Arc<DictionaryStore>,
     /// Sender for tray menu commands (read_now / read_later).
     /// `None` before the background loop is started in `setup()`.
     pub tray_cmd_tx: Option<tokio::sync::mpsc::Sender<TrayCmd>>,

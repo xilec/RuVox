@@ -192,6 +192,31 @@ export interface ClearCacheResult {
   freed_bytes: number;
 }
 
+/** User dictionary entry as the editor sees it (change `user-dictionary`):
+ * the mapping plus the backend-computed marker for entries shadowing a
+ * built-in table. */
+export interface DictionaryEntryDto {
+  from: string;
+  to: string;
+  overridesBuiltin: boolean;
+}
+
+/** Entry payload for save — `from` as typed, keyed case-insensitively. */
+export interface DictionaryEntryInput {
+  from: string;
+  to: string;
+}
+
+/** Import outcome counts. */
+export interface ImportReport {
+  added: number;
+  updated: number;
+  skipped: number;
+}
+
+/** How an import interacts with the current dictionary. */
+export type DictionaryImportMode = 'merge' | 'replace';
+
 // --- Commands (frontend → backend) ---
 
 export const commands = {
@@ -272,6 +297,24 @@ export const commands = {
 
   updateConfig: (patch: UIConfigPatch): Promise<void> =>
     tauriInvoke('update_config', { patch }),
+
+  /** Sorted user dictionary entries for the editor. */
+  getUserDictionary: (): Promise<DictionaryEntryDto[]> =>
+    tauriInvoke('get_user_dictionary'),
+
+  /** Validate-all + atomically replace the dictionary, then refresh the
+   * pipeline; any invalid entry rejects and the file stays unchanged. */
+  saveUserDictionary: (entries: DictionaryEntryInput[]): Promise<void> =>
+    tauriInvoke('save_user_dictionary', { entries }),
+
+  /** Import a dictionary TOML file in the chosen mode; returns the
+   * added/updated/skipped counts. */
+  importUserDictionary: (path: string, mode: DictionaryImportMode): Promise<ImportReport> =>
+    tauriInvoke('import_user_dictionary', { path, mode }),
+
+  /** Write the current entries as dictionary TOML to the chosen path. */
+  exportUserDictionary: (path: string): Promise<void> =>
+    tauriInvoke('export_user_dictionary', { path }),
 
   getAvailableEngines: (): Promise<AvailableEngines> =>
     tauriInvoke('get_available_engines'),

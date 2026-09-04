@@ -306,6 +306,18 @@ impl TTSPipeline {
         &self.user_dictionary
     }
 
+    /// Whether `word_lower` has a built-in reading at any dictionary lookup
+    /// site (`IT_TERMS`, the abbreviation maps, `CODE_WORDS`). Used by the
+    /// commands layer to flag user entries that override built-ins.
+    pub fn builtin_contains(&self, word_lower: &str) -> bool {
+        use crate::pipeline::normalizers::abbreviations;
+        use crate::pipeline::normalizers::english::IT_TERMS;
+
+        IT_TERMS.contains_key(word_lower)
+            || abbreviations::as_word().contains_key(word_lower)
+            || self.code_normalizer.contains_builtin(word_lower)
+    }
+
     /// Process text for TTS. Returns normalized text without position mapping.
     pub fn process(&mut self, input: &str) -> String {
         let (result, _) = self.process_with_char_mapping(input);

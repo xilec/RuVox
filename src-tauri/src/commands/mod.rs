@@ -1779,6 +1779,12 @@ pub use import::{fetch_url_text, pick_import_file, read_text_file};
 mod export;
 pub use export::{export_audio, pick_export_audio_path};
 
+// User dictionary commands live in commands/dictionary.rs (same seam split).
+mod dictionary;
+pub use dictionary::{
+    export_user_dictionary, get_user_dictionary, import_user_dictionary, save_user_dictionary,
+};
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 /// Shared HTTP client for [`fetch_image_bytes`] and [`fetch_url_text`].

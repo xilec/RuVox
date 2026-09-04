@@ -598,6 +598,11 @@ impl CodeIdentifierNormalizer {
         result.join(" ")
     }
 
+    /// Look up a lowercased word in the built-in `CODE_WORDS` table.
+    pub fn contains_builtin(&self, part_lower: &str) -> bool {
+        self.code_words.contains_key(part_lower)
+    }
+
     /// Spell abbreviation letter-by-letter using English letter names.
     ///
     /// Also used by the pipeline's English phase for lone single letters in
