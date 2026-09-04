@@ -69,6 +69,11 @@ export interface PreviewDialogProps {
    *  re-runs normalization so the right pane reflects new entries without
    *  touching the text. */
   dictionaryRevision?: number;
+  /** Temporarily hide the window without unmounting its state (the user
+   *  dictionary editor opens at a top-level z-index; the webview composites
+   *  the preview's scrollable through it). Unlike `opened`, flipping this
+   *  does not reset text, geometry, or mode. */
+  suppressed?: boolean;
 }
 
 const INITIAL_W = 900;
@@ -137,6 +142,7 @@ export function PreviewDialog({
   onCancel,
   onAddToDictionary,
   dictionaryRevision,
+  suppressed = false,
 }: PreviewDialogProps) {
   const tt = useT();
   const isRegen = mode === 'regenerate';
@@ -251,7 +257,7 @@ export function PreviewDialog({
   // With the help popover open, ESC closes it first and only a second ESC
   // cancels the dialog.
   useEffect(() => {
-    if (!opened) return;
+    if (!opened || suppressed) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (helpOpened) {
@@ -305,7 +311,9 @@ export function PreviewDialog({
     [syncScroll],
   );
 
-  if (!opened) return null;
+  // Suppressed renders nothing but keeps every hook's state — the reset
+  // effect above keys on `opened`, so the session survives the hide.
+  if (!opened || suppressed) return null;
 
   return (
     <Portal>

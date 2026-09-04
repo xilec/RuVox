@@ -825,6 +825,7 @@ export function AppShell() {
 
       <PreviewDialog
         opened={previewOpen}
+        suppressed={dictModalOpened}
         text={previewText}
         initialFormat={previewFormat ?? undefined}
         onSynthesize={handlePreviewSynthesize}
@@ -843,6 +844,7 @@ export function AppShell() {
           text and format are the entry's own immutable values. */}
       <PreviewDialog
         opened={regenEntry !== null}
+        suppressed={dictModalOpened}
         mode="regenerate"
         text={regenEntry?.original_text ?? ''}
         onSynthesize={(_finalText, _skipShortTexts, playWhenReady) =>
