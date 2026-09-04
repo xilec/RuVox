@@ -63,6 +63,11 @@ tauri-plugin-log = { version = "2" }
 log = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# User dictionary file (config root): the one RuVox file meant for hand
+# editing — map keys keep the typed case, duplicate keys are a parse error.
+# `preserve_order` keeps document order on parse so case-differing duplicate
+# keys dedupe deterministically (last one in file order wins).
+toml = { version = "0.8", features = ["preserve_order"] }
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["serde", "v4"] }
 regex = "1"

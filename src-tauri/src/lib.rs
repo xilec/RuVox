@@ -1,5 +1,6 @@
 pub mod audio;
 pub mod commands;
+pub mod dictionary;
 pub mod import;
 pub mod paths;
 pub mod pipeline;
