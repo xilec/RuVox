@@ -60,6 +60,9 @@ export function AppShell() {
   const [settingsOpened, setSettingsOpened] = useState(false);
   const [dictModalOpened, setDictModalOpened] = useState(false);
   const [dictInitialFrom, setDictInitialFrom] = useState<string | null>(null);
+  // Bumped when the dictionary editor closes; preview dialogs re-run
+  // normalization so new entries show up without touching the text.
+  const [dictRevision, setDictRevision] = useState(0);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewText, setPreviewText] = useState('');
   // Format preselected in the dialog for imported sources (text-import spec,
@@ -648,6 +651,7 @@ export function AppShell() {
         onSaved={() => {
           commands.getConfig().then(setConfig).catch(() => {});
         }}
+        onDictionaryChanged={() => setDictRevision((n) => n + 1)}
       />
 
       {/* Quick-add target for the preview's «В словарь» action; the Settings
@@ -659,6 +663,7 @@ export function AppShell() {
         onClose={() => {
           setDictModalOpened(false);
           setDictInitialFrom(null);
+          setDictRevision((n) => n + 1);
         }}
       />
 
@@ -808,6 +813,7 @@ export function AppShell() {
         initialFormat={previewFormat ?? undefined}
         onSynthesize={handlePreviewSynthesize}
         onCancel={handlePreviewCancel}
+        dictionaryRevision={dictRevision}
         onAddToDictionary={(word) => {
           setDictInitialFrom(word);
           setDictModalOpened(true);
@@ -827,6 +833,7 @@ export function AppShell() {
           handleRegenConfirm(playWhenReady)
         }
         onCancel={() => setRegenEntry(null)}
+        dictionaryRevision={dictRevision}
         onAddToDictionary={(word) => {
           setDictInitialFrom(word);
           setDictModalOpened(true);

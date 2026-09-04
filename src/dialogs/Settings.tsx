@@ -83,6 +83,8 @@ interface SettingsModalProps {
   /** Called after the user saves successfully, so the caller can refresh its
    * local copy of UIConfig without re-invoking getConfig on every render. */
   onSaved?: () => void;
+  /** Called when the dictionary editor closes — entries may have changed. */
+  onDictionaryChanged?: () => void;
 }
 
 type Translator = ReturnType<typeof useT>;
@@ -246,7 +248,7 @@ function CleanupCacheModal({
   );
 }
 
-export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) {
+export function SettingsModal({ opened, onClose, onSaved, onDictionaryChanged }: SettingsModalProps) {
   const tt = useT();
   const { setColorScheme } = useMantineColorScheme();
   const [cleanupOpen, setCleanupOpen] = useState(false);
@@ -847,6 +849,7 @@ export function SettingsModal({ opened, onClose, onSaved }: SettingsModalProps) 
         opened={dictionaryOpen}
         onClose={() => {
           setDictionaryOpen(false);
+          onDictionaryChanged?.();
           commands
             .getUserDictionary()
             .then((entries) => setDictionaryCount(entries.length))

@@ -286,6 +286,9 @@ export function DictionaryModal({
       title={tt('dictionary.title')}
       size="lg"
       withinPortal
+      /* Above the Settings modal (z 200) and the floating preview window
+       * (--ruvox-preview-z: 300): the editor is opened from both. */
+      zIndex={400}
     >
       <Stack gap="sm">
         <Group justify="space-between" wrap="nowrap">
@@ -439,6 +442,7 @@ export function DictionaryModal({
         title={tt('dictionary.import.choose.title')}
         size="md"
         withinPortal
+        zIndex={500}
       >
         <Stack gap="sm">
           <Text size="sm">{tt('dictionary.import.choose.message', [pendingImport ?? ''])}</Text>

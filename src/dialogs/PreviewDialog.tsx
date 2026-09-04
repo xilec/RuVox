@@ -65,6 +65,10 @@ export interface PreviewDialogProps {
   /** Quick-add to the user dictionary: called with the current single-token
    *  selection from either pane (user-dictionary spec, "Quick-add"). */
   onAddToDictionary?: (word: string) => void;
+  /** Bumped by the owner whenever the user dictionary may have changed;
+   *  re-runs normalization so the right pane reflects new entries without
+   *  touching the text. */
+  dictionaryRevision?: number;
 }
 
 const INITIAL_W = 900;
@@ -132,6 +136,7 @@ export function PreviewDialog({
   onSynthesize,
   onCancel,
   onAddToDictionary,
+  dictionaryRevision,
 }: PreviewDialogProps) {
   const tt = useT();
   const isRegen = mode === 'regenerate';
@@ -236,7 +241,10 @@ export function PreviewDialog({
       stale = true;
       window.clearTimeout(timer);
     };
-  }, [opened, editedText, effectiveFormat, tt]);
+    // dictionaryRevision re-runs normalization after user-dictionary changes
+    // (quick-add + editor close) — the text itself is unchanged, but entries
+    // now rewrite it differently.
+  }, [opened, editedText, effectiveFormat, tt, dictionaryRevision]);
 
   // ESC closes the floating window (mantine Modal used to handle this; non-modal
   // react-rnd has no built-in handler, so we bind one manually while opened).
