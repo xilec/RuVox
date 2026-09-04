@@ -60,6 +60,9 @@ export function AppShell() {
   const [settingsOpened, setSettingsOpened] = useState(false);
   const [dictModalOpened, setDictModalOpened] = useState(false);
   const [dictInitialFrom, setDictInitialFrom] = useState<string | null>(null);
+  // Whether the dictionary editor was opened from Settings — Settings hides
+  // itself for the editing session and is restored on close.
+  const [dictReturnToSettings, setDictReturnToSettings] = useState(false);
   // Bumped when the dictionary editor closes; preview dialogs re-run
   // normalization so new entries show up without touching the text.
   const [dictRevision, setDictRevision] = useState(0);
@@ -651,12 +654,20 @@ export function AppShell() {
         onSaved={() => {
           commands.getConfig().then(setConfig).catch(() => {});
         }}
-        onOpenDictionary={() => setDictModalOpened(true)}
+        onOpenDictionary={() => {
+          // Never keep both modals open: the dictionary editor opens at a
+          // top-level z-index, but the webview still composites the Settings
+          // scrollable (and its scrollbar) through the overlay. Close
+          // Settings for the editing session and bring it back afterwards.
+          setDictReturnToSettings(settingsOpened);
+          setSettingsOpened(false);
+          setDictModalOpened(true);
+        }}
         dictionaryRevision={dictRevision}
       />
 
-      {/* Quick-add target for the preview's «В словарь» action; the Settings
-          dialog opens its own instance. */}
+      {/* Quick-add target for the preview's «В словарь» action; also opened
+          from Settings (which hides itself for the editing session). */}
       <DictionaryModal
         opened={dictModalOpened}
         initialFrom={dictInitialFrom}
@@ -665,6 +676,10 @@ export function AppShell() {
           setDictModalOpened(false);
           setDictInitialFrom(null);
           setDictRevision((n) => n + 1);
+          if (dictReturnToSettings) {
+            setDictReturnToSettings(false);
+            setSettingsOpened(true);
+          }
         }}
       />
 
