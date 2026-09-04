@@ -28,11 +28,11 @@
 
 ## 2. Pipeline integration (one lookup site per task)
 
-- [ ] 2.1 Give `TTSPipeline` a `user_dictionary: UserDictionary` field
+- [x] 2.1 Give `TTSPipeline` a `user_dictionary: UserDictionary` field
       (default empty) and `set_user_dictionary(&mut self, dict)`; verify ALL
       existing tests stay green (proves the empty-dictionary no-op):
       `nix develop -c cargo test --manifest-path src-tauri/Cargo.toml`
-- [ ] 2.2 Add the pre-pass phase in `src-tauri/src/pipeline/mod.rs`: regex
+- [x] 2.2 Add the pre-pass phase in `src-tauri/src/pipeline/mod.rs`: regex
       `\b[A-Za-z0-9]*[A-Za-z][A-Za-z0-9]*\b`, a `process_user_dictionary`
       step called between code-identifier splitting and
       `process_english_tracked`, skipped when the map is empty, replacing
