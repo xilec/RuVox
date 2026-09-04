@@ -1,5 +1,6 @@
 use super::english::EnglishNormalizer;
 use super::numbers::NumberNormalizer;
+use crate::dictionary::UserDictionary;
 
 // Protocol pronunciations
 const PROTOCOLS: &[(&str, &str)] = &[
@@ -176,6 +177,7 @@ fn percent_decode(input: &str, plus_as_space: bool) -> String {
 pub struct URLPathNormalizer<'a> {
     pub numbers: &'a NumberNormalizer,
     english: Option<&'a EnglishNormalizer>,
+    user_dictionary: Option<&'a UserDictionary>,
 }
 
 impl<'a> URLPathNormalizer<'a> {
@@ -183,7 +185,15 @@ impl<'a> URLPathNormalizer<'a> {
         Self {
             numbers,
             english: Some(english),
+            user_dictionary: None,
         }
+    }
+
+    /// Attach the user dictionary so URL word reading honors user entries
+    /// before `IT_TERMS` (change `user-dictionary`).
+    pub fn with_user_dictionary(mut self, dict: &'a UserDictionary) -> Self {
+        self.user_dictionary = Some(dict);
+        self
     }
 
     /// Create a normalizer that passes word segments through verbatim (no transliteration).
@@ -194,6 +204,7 @@ impl<'a> URLPathNormalizer<'a> {
         Self {
             numbers,
             english: None,
+            user_dictionary: None,
         }
     }
 
@@ -232,6 +243,11 @@ impl<'a> URLPathNormalizer<'a> {
                     return word.to_string();
                 }
                 let lower = word.to_lowercase();
+                // User dictionary entries win over built-in IT_TERMS
+                // (change `user-dictionary`).
+                if let Some(to) = self.user_dictionary.and_then(|d| d.get(&lower)) {
+                    return to.to_string();
+                }
                 // Check IT_TERMS first (e.g. "github" → "гитхаб").
                 if let Some(v) = super::english::IT_TERMS.get(lower.as_str()) {
                     return v.to_string();
@@ -894,6 +910,38 @@ mod tests {
     fn url_non_cyrillic_dropped(input: &str) -> String {
         let (en, nn) = mk_normalizer();
         norm(&en, &nn).normalize_url(input)
+    }
+
+    // ---- User dictionary (change `user-dictionary`) ----
+
+    #[test]
+    fn user_entry_wins_over_it_terms_in_url_host() {
+        // "github" is a built-in IT_TERMS entry ("гитхаб"); the user entry
+        // must override it when the URL word is read.
+        let (en, nn) = mk_normalizer();
+        let mut dict = crate::dictionary::UserDictionary::default();
+        dict.insert(crate::dictionary::DictionaryEntry {
+            from: "github".to_string(),
+            to: "хаб".to_string(),
+        });
+        let n = URLPathNormalizer::new(&en, &nn).with_user_dictionary(&dict);
+        let spoken = n.normalize_url("https://github.com/ruvox");
+        assert!(
+            spoken.contains("хаб"),
+            "host reads the user entry: {spoken}"
+        );
+        assert!(
+            !spoken.contains("гитхаб"),
+            "built-in must not leak: {spoken}"
+        );
+    }
+
+    #[test]
+    fn without_user_dictionary_host_keeps_builtin_reading() {
+        let (en, nn) = mk_normalizer();
+        let n = URLPathNormalizer::new(&en, &nn);
+        let spoken = n.normalize_url("https://github.com/ruvox");
+        assert!(spoken.contains("гитхаб"), "built-in reading: {spoken}");
     }
 
     #[test]

@@ -335,7 +335,8 @@ impl TTSPipeline {
         }
 
         // ── Phase 1: Code blocks (must run before space/dash normalization) ───
-        self.code_block_handler.process(&mut tracked);
+        let user_dict = &self.user_dictionary;
+        self.code_block_handler.process(&mut tracked, user_dict);
 
         // ── Phase 2: Quote normalization ─────────────────────────────────────
         tracked.replace("\u{ab}", "\""); // «
@@ -374,7 +375,8 @@ impl TTSPipeline {
         {
             let num = &self.number_normalizer;
             let eng = &self.english_normalizer;
-            let url_norm = URLPathNormalizer::new(eng, num);
+            let url_norm =
+                URLPathNormalizer::new(eng, num).with_user_dictionary(&self.user_dictionary);
             tracked.sub(re_url(), |caps| {
                 let url = caps.get(0).unwrap().as_str();
                 let (core, suffix) = split_trailing_punct(url);
@@ -555,17 +557,18 @@ impl TTSPipeline {
         // ── Phase 15: Code identifiers ────────────────────────────────────────
         {
             let code = &self.code_normalizer;
+            let user_dict = &self.user_dictionary;
             tracked.sub(re_camel_lower(), |caps| {
-                code.normalize_camel_case(caps.get(0).unwrap().as_str())
+                code.normalize_camel_case(caps.get(0).unwrap().as_str(), user_dict)
             });
             tracked.sub(re_pascal(), |caps| {
-                code.normalize_camel_case(caps.get(0).unwrap().as_str())
+                code.normalize_camel_case(caps.get(0).unwrap().as_str(), user_dict)
             });
             tracked.sub(re_snake(), |caps| {
-                code.normalize_snake_case(caps.get(0).unwrap().as_str())
+                code.normalize_snake_case(caps.get(0).unwrap().as_str(), user_dict)
             });
             tracked.sub(re_kebab(), |caps| {
-                code.normalize_kebab_case(caps.get(0).unwrap().as_str())
+                code.normalize_kebab_case(caps.get(0).unwrap().as_str(), user_dict)
             });
         }
 
@@ -650,14 +653,18 @@ impl TTSPipeline {
                 return self.normalize_code_words(&processed);
             }
 
+            let user_dict = &self.user_dictionary;
             if processed.contains('_') {
-                self.code_normalizer.normalize_snake_case(&processed)
+                self.code_normalizer
+                    .normalize_snake_case(&processed, user_dict)
             } else if processed.contains('-') && !processed.starts_with('-') {
-                self.code_normalizer.normalize_kebab_case(&processed)
+                self.code_normalizer
+                    .normalize_kebab_case(&processed, user_dict)
             } else if processed.chars().skip(1).any(|c| c.is_uppercase())
                 && processed.chars().any(|c| c.is_lowercase())
             {
-                self.code_normalizer.normalize_camel_case(&processed)
+                self.code_normalizer
+                    .normalize_camel_case(&processed, user_dict)
             } else {
                 self.normalize_code_words(&processed)
             }
@@ -669,8 +676,10 @@ impl TTSPipeline {
             .map(|word| {
                 let lower = word.to_lowercase();
                 // CodeIdentifierNormalizer.normalize_snake_case handles single words
-                // (no underscores) correctly: it looks up CODE_WORDS dict then transliterates.
-                self.code_normalizer.normalize_snake_case(&lower)
+                // (no underscores) correctly: it looks up the user dictionary,
+                // then the CODE_WORDS dict, then transliterates.
+                self.code_normalizer
+                    .normalize_snake_case(&lower, &self.user_dictionary)
             })
             .collect::<Vec<_>>()
             .join(" ")
