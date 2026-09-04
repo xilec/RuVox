@@ -119,7 +119,7 @@
 - [x] 5.4 Add the `[Unreleased]` entry to `CHANGELOG.md` (user dictionary
       with editor and import/export; English, 1–2 lines per the changelog
       conventions)
-- [ ] 5.5 Manual pass (run `nix develop -c pnpm tauri dev`): add an entry
+- [x] 5.5 Manual pass (run `nix develop -c pnpm tauri dev`): add an entry
       via the editor and see the preview change without restart; add from
       the preview selection; import a file by drop in both modes and read
       the counts notification; hand-edit the TOML file and restart; corrupt

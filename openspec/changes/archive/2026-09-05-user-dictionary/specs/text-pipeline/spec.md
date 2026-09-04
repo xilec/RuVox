@@ -60,58 +60,6 @@ operators MUST be processed longest-first.
 - THEN the output is byte-identical to the output without the dictionary
   feature
 
-## ADDED Requirements
-
-### Requirement: User dictionary application in normalization
-
-User dictionary entries SHALL win over every built-in table at every lookup
-site: the prose pre-pass (before English-word resolution), code-identifier
-parts (before `CODE_WORDS`), URL word reading (before `IT_TERMS`), and code
-blocks read aloud (through the identifier path). The pre-pass SHALL match
-tokens of Latin letters and digits containing at least one letter —
-including alnum tokens no other phase captures, such as "IPv6" or "mp3" —
-and replace only exact case-insensitive key hits; non-hits SHALL flow into
-the English-word phase unchanged. Lookups in identifiers and URLs SHALL use
-the split parts/words those phases already produce.
-
-#### Scenario: Entry overrides an IT term in prose
-
-- GIVEN the entry `docker → докер` ("docker" normally transliterates)
-- WHEN the input "запусти docker" is processed
-- THEN the output reads "докер"
-
-#### Scenario: Entry overrides letter spelling of an abbreviation
-
-- GIVEN the entry `SQL → эс ку эль`
-- WHEN the input "запрос к SQL" is processed
-- THEN the output reads "эс ку эль" instead of the built-in letter-by-letter
-  reading
-
-#### Scenario: Alnum token is normalized via the dictionary
-
-- GIVEN the entry `IPv6 → айпи ви шесть` and the input "сеть IPv6 работает"
-- WHEN the pipeline processes it
-- THEN the output reads "айпи ви шесть" — before this feature no phase
-  captured alnum tokens and raw Latin reached the TTS engine
-
-#### Scenario: Entry applies to a part of a code identifier
-
-- GIVEN the entry `kubectl → куб контрол`
-- WHEN the input "команда kubectl_apply" is processed
-- THEN the identifier is split and the "kubectl" part reads "куб контрол"
-
-#### Scenario: Entry applies inside a URL
-
-- GIVEN the entry `github → хаб`
-- WHEN the input "см. https://github.com/ruvox" is processed
-- THEN the host component reads "хаб" instead of the built-in "гитхаб"
-
-#### Scenario: Entry applies to code read aloud
-
-- GIVEN the entry `user → юзер` and code block narration mode "full"
-- WHEN a fenced code block containing `user_id = 1` is processed
-- THEN the "user" part reads "юзер"
-
 ### Requirement: English words, abbreviations, and transliteration
 
 The system SHALL replace every remaining English word with speakable
@@ -177,3 +125,55 @@ abbreviation and a lone letter sound the same ("x" and "X" both → "икс").
 - GIVEN the input "пункты a и I"
 - WHEN the pipeline processes it
 - THEN the letters are read as "эй" and "ай" ("пункты эй и ай")
+
+## ADDED Requirements
+
+### Requirement: User dictionary application in normalization
+
+User dictionary entries SHALL win over every built-in table at every lookup
+site: the prose pre-pass (before English-word resolution), code-identifier
+parts (before `CODE_WORDS`), URL word reading (before `IT_TERMS`), and code
+blocks read aloud (through the identifier path). The pre-pass SHALL match
+tokens of Latin letters and digits containing at least one letter —
+including alnum tokens no other phase captures, such as "IPv6" or "mp3" —
+and replace only exact case-insensitive key hits; non-hits SHALL flow into
+the English-word phase unchanged. Lookups in identifiers and URLs SHALL use
+the split parts/words those phases already produce.
+
+#### Scenario: Entry overrides an IT term in prose
+
+- GIVEN the entry `docker → докер` ("docker" normally transliterates)
+- WHEN the input "запусти docker" is processed
+- THEN the output reads "докер"
+
+#### Scenario: Entry overrides letter spelling of an abbreviation
+
+- GIVEN the entry `SQL → эс ку эль`
+- WHEN the input "запрос к SQL" is processed
+- THEN the output reads "эс ку эль" instead of the built-in letter-by-letter
+  reading
+
+#### Scenario: Alnum token is normalized via the dictionary
+
+- GIVEN the entry `IPv6 → айпи ви шесть` and the input "сеть IPv6 работает"
+- WHEN the pipeline processes it
+- THEN the output reads "айпи ви шесть" — before this feature no phase
+  captured alnum tokens and raw Latin reached the TTS engine
+
+#### Scenario: Entry applies to a part of a code identifier
+
+- GIVEN the entry `kubectl → куб контрол`
+- WHEN the input "команда kubectl_apply" is processed
+- THEN the identifier is split and the "kubectl" part reads "куб контрол"
+
+#### Scenario: Entry applies inside a URL
+
+- GIVEN the entry `github → хаб`
+- WHEN the input "см. https://github.com/ruvox" is processed
+- THEN the host component reads "хаб" instead of the built-in "гитхаб"
+
+#### Scenario: Entry applies to code read aloud
+
+- GIVEN the entry `user → юзер` and code block narration mode "full"
+- WHEN a fenced code block containing `user_id = 1` is processed
+- THEN the "user" part reads "юзер"

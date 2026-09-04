@@ -9,7 +9,9 @@ for Silero TTS, which cannot read English or special characters. The pipeline
 is the mandatory preprocessing step before every synthesis. Character-level
 position mapping produced alongside the normalized text is specified
 separately in the `position-mapping` capability.
+
 ## Requirements
+
 ### Requirement: Pipeline entry points and integration
 
 The system SHALL normalize all text through `TTSPipeline` before TTS
@@ -59,8 +61,8 @@ The system SHALL execute normalization phases in a strictly fixed order
 fenced code blocks; quote normalization; dash normalization; whitespace
 normalization; inline code; Markdown structure; URLs/emails/IPs/paths; sizes;
 dates and times; percentage ranges; percentages; ranges; versions; leading-dot decimals;
-operators; special symbols; code identifiers; English words; numbers;
-whitespace post-processing. The
+operators; special symbols; code identifiers; user-dictionary pre-pass;
+English words; numbers; whitespace post-processing. The
 order is load-bearing: URLs MUST be consumed before the number phase so an IP
 is not torn into four numbers, percentage ranges MUST be consumed before
 percentages so the trailing "%" is not read separately from its range,
@@ -69,7 +71,10 @@ so a decimal percentage is not torn apart by the version phase, versions MUST
 precede bare numbers, leading-dot decimals MUST follow versions so "1.5"
 keeps its version reading and MUST precede bare numbers so the fraction
 digits are consumed before the number phase runs,
-code identifiers MUST be split before English words,
+code identifiers MUST be split before English words, the user-dictionary
+pre-pass MUST run after code-identifier splitting (so dictionary entries
+apply to split parts of identifiers, never to whole identifiers) and before
+English-word resolution (so user entries win over every built-in table),
 abbreviations MUST be resolved before transliteration, and multi-character
 operators MUST be processed longest-first.
 
@@ -100,6 +105,14 @@ operators MUST be processed longest-first.
 - WHEN the pipeline processes it
 - THEN the identifier is split by the code-identifier phase into "гет юзер
   дата" instead of being transliterated as one opaque word
+
+#### Scenario: Empty user dictionary leaves output unchanged
+
+- GIVEN an empty user dictionary and any input from the existing golden
+  fixtures
+- WHEN the pipeline processes it
+- THEN the output is byte-identical to the output without the dictionary
+  feature
 
 ### Requirement: Input pre-normalization
 
@@ -506,11 +519,12 @@ length ≥ 2 via `AbbreviationNormalizer` (special cases like "ios" →
 "ай оу эс", `AS_WORD` entries like "json" → "джейсон", otherwise
 letter-by-letter via the same shared letter-name table); `AS_WORD`
 dictionary for mixed-case entries; and finally digraph-first
-transliteration (`sh` → "ш", `tion` → "шн", longest match first). Custom
-terms registered via `EnglishNormalizer::add_custom_terms` SHALL override
-`IT_TERMS`. Words resolved by transliteration SHALL be recorded in the
-unknown-words map, which SHALL be cleared at the start of every
-`process_with_char_mapping` call.
+transliteration (`sh` → "ш", `tion` → "шн", longest match first). Words
+resolved by transliteration SHALL be recorded in the unknown-words map,
+which SHALL be cleared at the start of every `process_with_char_mapping`
+call. The former `EnglishNormalizer::add_custom_terms` hook is removed —
+user overrides are owned by the user-dictionary pre-pass, which runs before
+this phase (see "User dictionary application in normalization").
 
 The letter-name table SHALL have a single home shared by the abbreviation
 spelling, code-identifier spelling, and lone-letter reading paths; its
@@ -733,3 +747,52 @@ version-path reading) and before operators and bare numbers.
 - THEN the ".5" fragment is not read as a decimal (it belongs to a dotted
   label), and the digit is not expanded by the number phase either
 
+### Requirement: User dictionary application in normalization
+
+User dictionary entries SHALL win over every built-in table at every lookup
+site: the prose pre-pass (before English-word resolution), code-identifier
+parts (before `CODE_WORDS`), URL word reading (before `IT_TERMS`), and code
+blocks read aloud (through the identifier path). The pre-pass SHALL match
+tokens of Latin letters and digits containing at least one letter —
+including alnum tokens no other phase captures, such as "IPv6" or "mp3" —
+and replace only exact case-insensitive key hits; non-hits SHALL flow into
+the English-word phase unchanged. Lookups in identifiers and URLs SHALL use
+the split parts/words those phases already produce.
+
+#### Scenario: Entry overrides an IT term in prose
+
+- GIVEN the entry `docker → докер` ("docker" normally transliterates)
+- WHEN the input "запусти docker" is processed
+- THEN the output reads "докер"
+
+#### Scenario: Entry overrides letter spelling of an abbreviation
+
+- GIVEN the entry `SQL → эс ку эль`
+- WHEN the input "запрос к SQL" is processed
+- THEN the output reads "эс ку эль" instead of the built-in letter-by-letter
+  reading
+
+#### Scenario: Alnum token is normalized via the dictionary
+
+- GIVEN the entry `IPv6 → айпи ви шесть` and the input "сеть IPv6 работает"
+- WHEN the pipeline processes it
+- THEN the output reads "айпи ви шесть" — before this feature no phase
+  captured alnum tokens and raw Latin reached the TTS engine
+
+#### Scenario: Entry applies to a part of a code identifier
+
+- GIVEN the entry `kubectl → куб контрол`
+- WHEN the input "команда kubectl_apply" is processed
+- THEN the identifier is split and the "kubectl" part reads "куб контрол"
+
+#### Scenario: Entry applies inside a URL
+
+- GIVEN the entry `github → хаб`
+- WHEN the input "см. https://github.com/ruvox" is processed
+- THEN the host component reads "хаб" instead of the built-in "гитхаб"
+
+#### Scenario: Entry applies to code read aloud
+
+- GIVEN the entry `user → юзер` and code block narration mode "full"
+- WHEN a fenced code block containing `user_id = 1` is processed
+- THEN the "user" part reads "юзер"
