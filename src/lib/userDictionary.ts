@@ -6,12 +6,12 @@
  * source of truth — these checks exist to give the form instant feedback.
  */
 
-export const MAX_FROM_LEN = 64;
-export const MAX_TO_LEN = 256;
+const MAX_FROM_LEN = 64;
+const MAX_TO_LEN = 256;
 
 /** A single valid source token: Latin letters and digits, ≥1 letter — the
  *  same token shape the dictionary pre-pass regex matches in text. */
-export const SOURCE_TOKEN_RE = /^(?=.*[A-Za-z])[A-Za-z0-9]+$/;
+const SOURCE_TOKEN_RE = /^(?=.*[A-Za-z])[A-Za-z0-9]+$/;
 
 export interface EntryInput {
   from: string;

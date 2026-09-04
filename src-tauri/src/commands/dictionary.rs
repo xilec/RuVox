@@ -3,7 +3,6 @@
 //! modes (merge / replace) chosen by the user; save is all-or-nothing.
 
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
