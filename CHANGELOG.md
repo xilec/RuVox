@@ -4,7 +4,7 @@ Notable changes in RuVox, in chronological order.
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [0.6.0] — 2026-09-05
 
 ### Added
 - **User pronunciation dictionary** — a Settings «Словарь» editor (and a

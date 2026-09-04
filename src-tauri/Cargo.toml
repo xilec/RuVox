@@ -1,6 +1,6 @@
 [package]
 name = "ruvox-tauri"
-version = "0.5.1"
+version = "0.6.0"
 description = "RuVox — desktop app for fast and local TTS for Russian texts and articles"
 authors = []
 license = "GPL-3.0-only"
