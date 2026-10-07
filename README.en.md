@@ -50,6 +50,7 @@ The engine's voice model is downloaded on demand at first use (the Silero Native
 
 - **Cross-checking with the text** — synchronous highlighting of the word being read: a fragment that is hard to catch by ear can be instantly verified against the original.
 - **[Normalization](#normalization)** — English (camelCase / snake_case), abbreviations, numbers, dates, URLs, email, code.
+- **Pronunciation dictionary** — a replacement for words the engine reads wrong: `IPv6` → «айпи ви шесть». Edited in Settings or added with the «В словарь» / Add to dictionary button in the preview dialog; case-insensitive, applies to prose, code, URLs, and code blocks, and is stored in a hand-editable TOML file.
 - **Markdown + HTML** — rendered and narrated while preserving meaning; the source format is detected automatically.
 - **Import from files and URLs** — «Файл…» / File, «Файл с кодировкой…» / File with encoding, «По ссылке…» / From URL, plus drag-and-drop of `.txt`/`.md`/`.html` files and links onto the window; the encoding (UTF-8, CP1251, KOI8-R, and others) is auto-detected with a manual override.
 - **Mermaid diagrams** — visualized in the UI; replaced with a «Тут мермэйд диаграмма» marker for TTS.
