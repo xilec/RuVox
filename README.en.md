@@ -22,6 +22,8 @@ All synthesis runs locally on your machine — no cloud TTS, nothing is sent any
 
 ![RuVox screenshot](docs/images/screenshot.png)
 
+Voice samples of all three engines reading the same text are on the [project page](https://xilec.github.io/RuVox/).
+
 ## Installation
 
 Ready-made builds are published on [Releases](https://github.com/xilec/RuVox/releases):

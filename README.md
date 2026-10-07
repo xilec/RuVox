@@ -22,6 +22,8 @@ RuVox идёт по второму пути: нормализация — ком
 
 ![Скриншот RuVox](docs/images/screenshot.png)
 
+Примеры озвучки всех трёх движков на одном тексте — на [странице проекта](https://xilec.github.io/RuVox/).
+
 ## Установка
 
 Готовые сборки публикуются в [Releases](https://github.com/xilec/RuVox/releases):
