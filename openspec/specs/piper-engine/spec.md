@@ -1,7 +1,12 @@
 # piper-engine Specification
 
 ## Purpose
-TBD - created by archiving change chunk-piper-synthesis. Update Purpose after archive.
+Covers the native in-process Piper engine (`piper-rs`, the zero-dependency
+fallback when Silero is unavailable): bounded chunking of the normalized text
+before inference so long text never requests an unbounded ONNX allocation,
+paragraph pauses, word timestamps estimated per chunk over the concatenated
+audio, and cancellation between chunks.
+
 ## Requirements
 ### Requirement: Bounded chunking before synthesis
 
