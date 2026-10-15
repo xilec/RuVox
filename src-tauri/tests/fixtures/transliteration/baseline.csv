@@ -44,7 +44,7 @@ actual,актуал
 act,акт
 adapt,адапт
 additional,аддишнал
-addition,аддишн
+addition,эдишн
 address,аддресс
 add,адд
 adequately,адекватели
@@ -82,7 +82,7 @@ agency,агенки
 agent,агент
 age,аге
 aggressive,аггрессиве
-agile,агиле
+agile,эджайл
 ago,аго
 agreement,агримент
 agree,агри
@@ -92,7 +92,7 @@ aim,эйм
 aircraft,эйркрафт
 airport,эйрпорт
 air,эйр
-ajax,аджакс
+ajax,эйджакс
 alarmed,алармед
 alarming,аларминг
 alarm,аларм
@@ -137,7 +137,7 @@ anger,ангер
 angle,англе
 angrily,ангрили
 angry,ангри
-angular,ангулар
+angular,ангуляр
 animal,анимал
 ankle,анкле
 anniversary,анниверсари
@@ -161,7 +161,7 @@ anywhere,анивере
 any,ани
 apartment,апартмент
 apart,апарт
-api,апи
+api,эй пи ай
 apologize,апологизе
 apparently,аппарентли
 apparent,аппарент
@@ -194,7 +194,7 @@ arm,арм
 around,араунд
 arrangement,аррангемент
 arrange,арранге
-array,аррэй
+array,массив
 arrest,аррест
 arrival,арривал
 arrive,арриве
@@ -247,7 +247,7 @@ autumn,отумн
 available,авэйлабле
 average,авераге
 avoid,авойд
-await,оэйт
+await,эвейт
 awake,оаке
 award,оард
 aware,оаре
@@ -259,7 +259,7 @@ awkward,оквард
 a,а
 baby,баби
 background,бакграунд
-backup,бакуп
+backup,бэкап
 backwards,баквардс
 backward,баквард
 back,бак
@@ -320,7 +320,7 @@ beneath,бенис
 benefit,бенефит
 bent,бент
 beside,бесиде
-best practice,бест практике
+best practice,бест практис
 best,бест
 better,беттер
 betting,беттинг
@@ -360,7 +360,7 @@ boil,бойл
 bomb,бомб
 bone,боне
 book,бук
-boolean,булин
+boolean,булеан
 boot,бут
 border,бордер
 bored,боред
@@ -407,12 +407,12 @@ brown,броун
 brush,бруш
 bubble,буббле
 budget,будгет
-bug,буг
+bug,баг
 building,буилдинг
-build,буилд
+build,билд
 bullet,буллет
 bunch,бунч
-bundle,бундле
+bundle,бандл
 burnt,бурнт
 burn,бурн
 burst,бурст
@@ -428,15 +428,15 @@ but,бут
 buyer,буиер
 buy,буи
 bye,бие
-byte,бите
+byte,байт
 by,би
 cabinet,кабинет
 cable,кабле
-cache,каче
+cache,кэш
 cake,каке
 calculate,калкулате
 calculation,калкулашн
-callback,каллбак
+callback,коллбэк
 called,каллед
 call,калл
 calmly,калмли
@@ -468,7 +468,7 @@ carpet,карпет
 carrot,каррот
 carry,карри
 car,кар
-case,касе
+case,кейс
 cash,каш
 castle,кастле
 cast,каст
@@ -476,7 +476,7 @@ catch,катч
 category,категори
 cat,кат
 cause,косе
-cd,кд
+cd,си ди
 cease,кисе
 ceiling,кэйлинг
 celebrate,келебрате
@@ -498,7 +498,7 @@ chair,чэйр
 challenge,чалленге
 chamber,чамбер
 chance,чанке
-change,чанге
+change,чейндж
 channel,чаннел
 chapter,чаптер
 characteristic,чарактеристик
@@ -551,12 +551,12 @@ clear,клир
 clerk,клерк
 clever,клевер
 click,клик
-client,клинт
+client,клиент
 climate,климате
 climbing,климбинг
 climb,климб
 clock,клок
-clojure,клоджуре
+clojure,кложур
 closed,клосед
 closely,клосели
 closet,клосет
@@ -565,15 +565,15 @@ clothing,клосинг
 cloth,клос
 cloud,клауд
 club,клуб
-cluster,клустер
+cluster,кластер
 coach,коуч
 coal,коул
 coast,коуст
 coat,коут
 cobol,кобол
-code review,коде ревив
-code smell,коде смелл
-code,коде
+code review,код ревью
+code smell,код смелл
+code,код
 coffee,коффи
 coin,койн
 coldly,колдли
@@ -611,7 +611,7 @@ comparison,компарисон
 compete,компете
 competition,компетишн
 competitive,компетитиве
-compile,компиле
+compile,компайл
 complaint,комплэйнт
 complain,комплэйн
 completely,комплетели
@@ -668,7 +668,7 @@ const,конст
 consult,консулт
 consumer,консумер
 contact,контакт
-container,контэйнер
+container,контейнер
 contain,контэйн
 contemporary,контемпорари
 contest,контест
@@ -747,12 +747,12 @@ crowded,кроудед
 crowd,кроуд
 crown,кроун
 crucial,крукиал
-crud,круд
+crud,крад
 cruel,круел
 crush,круш
 cry,кри
-css,ксс
-csv,ксв
+css,си эс эс
+csv,си эс ви
 cultural,културал
 culture,културе
 cupboard,купбоурд
@@ -774,11 +774,11 @@ custom,кустом
 cut,кут
 cycle,кикле
 cycling,киклинг
-c#,к#
-c++,к++
+c#,си шарп
+c++,си плюс плюс
 dad,дад
-daily standup,дэйли стандуп
-daily,дэйли
+daily standup,дейли стендап
+daily,дейли
 damage,дамаге
 damp,дамп
 dancer,данкер
@@ -798,8 +798,8 @@ deal,дил
 dear,дир
 death,дис
 debate,дебате
-debt,дебт
-debug,дебуг
+debt,дет
+debug,дебаг
 decade,декаде
 decay,декэй
 december,декембер
@@ -865,7 +865,7 @@ determined,детерминед
 determine,детермине
 development,девелопмент
 develop,девелоп
-device,девике
+device,девайс
 devops,девопс
 devoted,девотед
 devote,девоте
@@ -932,7 +932,7 @@ divide,дивиде
 division,дивижн
 divorced,диворкед
 divorce,диворке
-django,дджанго
+django,джанго
 docker,докер
 docs,докс
 doctor,доктор
@@ -946,9 +946,9 @@ dominate,доминате
 dom,дом
 door,дур
 dot,дот
-double,даубле
+double,дабл
 doubt,даубт
-download,доунлоуд
+download,даунлоад
 downstairs,доунстэйрс
 downwards,доунвардс
 downward,доунвард
@@ -967,14 +967,14 @@ dressed,дрессед
 dress,дресс
 drink,дринк
 driver,дривер
-drive,дриве
+drive,драйв
 driving,дривинг
 drop,дроп
 drugstore,другсторе
 drug,друг
 drum,друм
 drunk,друнк
-dry run,дри рун
+dry run,драй ран
 dry,дри
 due,дуе
 dull,дулл
@@ -997,7 +997,7 @@ easy,иси
 eat,ит
 economic,економик
 economy,економи
-edge case,едге касе
+edge case,эдж кейс
 edge,едге
 edition,едишн
 editor,едитор
@@ -1030,8 +1030,8 @@ elegant,елегант
 element,елемент
 elevator,елеватор
 eleventh,елевенс
-eleven,елевен
-elixir,еликсир
+eleven,илэвен
+elixir,эликсир
 elsewhere,елсьюхере
 else,елсе
 email,емэйл
@@ -1057,7 +1057,7 @@ encounter,енкаунтер
 encouragement,енкаурагемент
 encourage,енкаураге
 ending,ендинг
-endpoint,ендпойнт
+endpoint,эндпоинт
 end,енд
 enemy,енеми
 energy,енерги
@@ -1092,7 +1092,7 @@ equally,еквалли
 equal,еквал
 equipment,еквипмент
 equivalent,еквивалент
-erlang,ерланг
+erlang,эрланг
 error,еррор
 escape,ескапе
 especially,еспекиалли
@@ -1102,9 +1102,9 @@ essential,ессентиал
 establish,естаблиш
 estate,естате
 estimate,естимате
-etc,етк
+etc,етс
 euro,еуро
-eval,евал
+eval,эвал
 evening,евенинг
 eventually,евентуалли
 event,евент
@@ -1123,7 +1123,7 @@ exaggerated,ексаггератед
 exaggerate,ексаггерате
 examination,ексаминашн
 examine,ексамине
-example,ексампле
+example,экзампл
 exam,ексам
 excellent,екскеллент
 exception,екскепшн
@@ -1161,7 +1161,7 @@ explosion,експложн
 export,експорт
 expose,експосе
 expression,експресжн
-express,експресс
+express,экспресс
 extend,екстенд
 extension,екстенжн
 extensive,екстенсиве
@@ -1186,7 +1186,7 @@ faithfully,фэйсфулли
 faithful,фэйсфул
 faith,фэйс
 fall,фалл
-false,фалсе
+false,фолс
 fame,фаме
 familiar,фамилиар
 family,фамили
@@ -1201,7 +1201,7 @@ farthest,фарсест
 far,фар
 fashionable,фашионабле
 fashion,фашион
-fastapi,фастапи
+fastapi,фаст эй пи ай
 fasten,фастен
 fast,фаст
 father,фасер
@@ -1212,8 +1212,8 @@ favourite,фаваурите
 favour,фаваур
 fear,фир
 feather,фисер
-feature branch,фитуре бранч
-feature,фитуре
+feature branch,фича бранч
+feature,фича
 february,фебруари
 federal,федерал
 feed,фид
@@ -1236,8 +1236,8 @@ fifty,фифти
 fighting,фигтинг
 fight,фигт
 figure,фигуре
-files,филес
-file,филе
+files,файлс
+file,файл
 fill,филл
 film,филм
 finally,финалли
@@ -1268,7 +1268,7 @@ flat,флат
 flavour,флаваур
 flesh,флеш
 flight,флигт
-float,флоут
+float,флоат
 flooded,флудед
 flooding,флудинг
 flood,флуд
@@ -1313,7 +1313,7 @@ fourteenth,фауртинс
 fourteen,фауртин
 fourth,фаурс
 four,фаур
-framework,фрамьюорк
+framework,фреймворк
 frame,фраме
 freedom,фридом
 freely,фрили
@@ -1339,7 +1339,7 @@ fry,фри
 fuel,фуел
 fully,фулли
 full,фулл
-function,функшн
+function,функция
 fundamental,фундаментал
 fund,фунд
 funeral,фунерал
@@ -1349,7 +1349,7 @@ furniture,фурнитуре
 further,фурсер
 fur,фур
 future,футуре
-f#,ф#
+f#,эф шарп
 gain,гэйн
 gallon,галлон
 gamble,гамбле
@@ -1368,7 +1368,7 @@ generally,генералли
 general,генерал
 generate,генерате
 generation,генерашн
-generic,генерик
+generic,дженерик
 generously,генераусли
 generous,генераус
 gentleman,гентлеман
@@ -1383,7 +1383,7 @@ gift,гифт
 gif,гиф
 girlfriend,гирлфринд
 girl,гирл
-github,гисуб
+github,гитхаб
 give,гиве
 glad,глад
 glass,гласс
@@ -1416,7 +1416,7 @@ grandparent,грандпарент
 grandson,грандсон
 grand,гранд
 grant,грант
-graphql,графкл
+graphql,граф кью эл
 grass,грасс
 grateful,гратефул
 gravely,гравели
@@ -1433,7 +1433,7 @@ guarantee,гуаранти
 guard,гуард
 guess,гуесс
 guest,гуест
-guide,гуиде
+guide,гайд
 guilty,гуилти
 gui,гуи
 gun,гун
@@ -1444,7 +1444,7 @@ hair,хэйр
 half,халф
 hall,халл
 hammer,хаммер
-handler,хандлер
+handler,хендлер
 handle,хандле
 hand,ханд
 hang,ханг
@@ -1477,7 +1477,7 @@ heavily,хивили
 heavy,хиви
 heel,хил
 height,хэйгт
-hello,хелло
+hello,хеллоу
 hell,хелл
 helpful,хелпфул
 help,хелп
@@ -1511,7 +1511,7 @@ holiday,холидэй
 hollow,холлоу
 holy,холи
 homework,хомьюорк
-home,хоме
+home,хоум
 honestly,хонестли
 honest,хонест
 honour,хонаур
@@ -1533,7 +1533,7 @@ house,хаусе
 housing,хаусинг
 however,хоуевер
 how,хоу
-html,хтмл
+html,эйч ти эм эль
 huge,хуге
 human,хуман
 humorous,хумораус
@@ -1558,11 +1558,11 @@ illegal,иллегал
 illness,иллнесс
 illustrate,иллустрате
 ill,илл
-image,имаге
+image,имидж
 imaginary,имагинари
 imagination,имагинашн
 imagine,имагине
-imap,имап
+imap,ай мап
 immediately,иммедиатели
 immediate,иммедиате
 immoral,имморал
@@ -1647,7 +1647,7 @@ intention,интеншн
 interested,интерестед
 interesting,интерестинг
 interest,интерест
-interface,интерфаке
+interface,интерфейс
 interior,интериор
 internal,интернал
 international,интернашнал
@@ -1673,14 +1673,14 @@ involved,инволвед
 involvement,инволвемент
 involve,инволве
 in,ин
-ios,иос
-iot,иот
+ios,ай оу эс
+iot,ай о ти
 iron,ирон
 irritated,ирритатед
 irritate,ирритате
 irritating,ирритатинг
 island,исланд
-issue,иссуе
+issue,ишью
 item,итем
 itself,итселф
 its,итс
@@ -1702,10 +1702,10 @@ joke,джоке
 journalist,джаурналист
 journey,джаурнэй
 joy,джой
-jpeg,джпег
-jpg,джпг
-json,джсон
-js,джс
+jpeg,джейпег
+jpg,джэйпег
+json,джейсон
+js,джи эс
 judgement,джудгемент
 judge,джудге
 juice,джуике
@@ -1743,7 +1743,7 @@ knot,кнот
 knowledge,кноуледге
 know,кноу
 kotlin,котлин
-kubernetes,кубернетес
+kubernetes,кубернетис
 label,лабел
 laboratory,лаборатори
 labour,лабаур
@@ -1793,7 +1793,7 @@ less,лесс
 letter,леттер
 let,лет
 level,левел
-library,либрари
+library,лайбрари
 licence,ликенке
 license,ликенсе
 lid,лид
@@ -1805,7 +1805,7 @@ likely,ликели
 like,лике
 limited,лимитед
 limit,лимит
-line,лине
+line,лайн
 link,линк
 lip,лип
 liquid,ликвид
@@ -1816,7 +1816,7 @@ literature,литературе
 litre,литре
 little,литтле
 lively,ливели
-live reload,ливе релоуд
+live reload,лайв релоуд
 living,ливинг
 load,лоуд
 loan,лоун
@@ -1855,7 +1855,7 @@ lunch,лунч
 lung,лунг
 machinery,мачинери
 machine,мачине
-macos,макос
+macos,мак оу эс
 mad,мад
 magazine,магазине
 magic,магик
@@ -1922,16 +1922,16 @@ mention,меншн
 menu,мену
 merely,мерели
 mere,мере
-merge request,мерге реквест
-merge,мерге
+merge request,мёрдж реквест
+merge,мёрдж
 message,мессаге
 mess,месс
 metal,метал
-method,месод
+method,метод
 metre,метре
 me,ме
 midday,миддэй
-middleware,миддльюаре
+middleware,мидлвэр
 middle,миддле
 midnight,миднигт
 might,мигт
@@ -1943,7 +1943,7 @@ milligram,миллиграм
 millimetre,миллиметре
 millionth,миллионс
 million,миллион
-mime,миме
+mime,майм
 mind,минд
 mineral,минерал
 mine,мине
@@ -1964,8 +1964,8 @@ mobile,мобиле
 mock,мок
 model,модел
 modern,модерн
-mode,моде
-module,модуле
+mode,мод
+module,модуль
 moment,момент
 mom,мом
 monday,мондэй
@@ -1995,8 +1995,8 @@ movement,мовемент
 move,мове
 movie,мови
 moving,мовинг
-mp3,мп3
-mp4,мп4
+mp3,эм пэ три
+mp4,эм пэ четыре
 mrs,мрс
 mr,мр
 ms,мс
@@ -2054,7 +2054,7 @@ newspaper,ньюспапер
 news,ньюс
 new,нью
 next,некст
-nginx,нгинкс
+nginx,энджинкс
 nicely,никели
 nice,нике
 niece,нике
@@ -2066,7 +2066,7 @@ ninety,нинети
 nine,нине
 ninth,нинс
 nobody,нободи
-node,ноде
+node,нода
 noise,нойсе
 noisily,нойсили
 noisy,нойси
@@ -2089,14 +2089,14 @@ nowhere,ноухере
 now,ноу
 no,но
 nuclear,нуклир
-null,нулл
+null,налл
 number,нумбер
 nurse,нурсе
 nut,нут
-oauth,оуус
+oauth,о ауз
 obey,обэй
 objective,обджективе
-object,обджект
+object,объект
 observation,обсервашн
 observe,обсерве
 obtain,обтэйн
@@ -2177,16 +2177,16 @@ out,аут
 oven,овен
 overall,овералл
 overcome,оверкоме
-override,оверриде
+override,оверрайд
 over,овер
 owe,оуе
 owner,оунер
 own,оун
-package,пакаге
+package,пакет
 packaging,пакагинг
 packet,пакет
 pack,пак
-page,паге
+page,пейдж
 painful,пэйнфул
 painter,пэйнтер
 painting,пэйнтинг
@@ -2209,7 +2209,7 @@ partnership,партнершип
 partner,партнер
 party,парти
 part,парт
-pascal,паскал
+pascal,паскаль
 passage,пассаге
 passenger,пассенгер
 passing,пассинг
@@ -2223,7 +2223,7 @@ pattern,паттерн
 pause,посе
 payment,пэймент
 pay,пэй
-pdf,пдф
+pdf,пэ дэ эф
 peaceful,пикефул
 peace,пике
 peak,пик
@@ -2259,7 +2259,7 @@ photographer,фотографер
 photography,фотографи
 photograph,фотограф
 photo,фото
-php,фп
+php,пи эйч пи
 phrase,фрасе
 physically,фисикалли
 physical,фисикал
@@ -2275,7 +2275,7 @@ pilot,пилот
 pink,пинк
 pint,пинт
 pin,пин
-pipe,пипе
+pipe,пайп
 pitch,питч
 pity,пити
 place,плаке
@@ -2299,7 +2299,7 @@ pleasure,плисуре
 plenty,пленти
 plot,плот
 plug,плуг
-plus,плус
+plus,плас
 png,пнг
 pocket,покет
 pod,под
@@ -2348,7 +2348,7 @@ powerful,поуерфул
 power,поуер
 practically,практикалли
 practical,практикал
-practice,практике
+practice,практис
 practise,практисе
 praise,прэйсе
 prayer,прэйер
@@ -2392,7 +2392,7 @@ prior,приор
 prisoner,присонер
 prison,присон
 privately,приватели
-private,привате
+private,прайвит
 prize,призе
 probable,пробабле
 probably,пробабли
@@ -2412,7 +2412,7 @@ program,програм
 progress,прогресс
 project,проджект
 prolog,пролог
-promise,промисе
+promise,промис
 promote,промоте
 promotion,промошн
 promptly,промптли
@@ -2458,7 +2458,7 @@ purpose,пурпосе
 pursue,пурсуе
 push,пуш
 put,пут
-python,писон
+python,пайтон
 qualification,квалификашн
 qualified,квалифид
 qualify,квалифи
@@ -2468,7 +2468,7 @@ quarter,квартер
 queen,квин
 query,квери
 question,квесшн
-queue,квеуе
+queue,кью
 quickly,квикли
 quick,квик
 quietly,квитли
@@ -2496,7 +2496,7 @@ rather,расер
 raw,ро
 reach,рич
 reaction,рикшн
-react,рикт
+react,риакт
 reader,ридер
 reading,ридинг
 ready,риди
@@ -2510,7 +2510,7 @@ rear,рир
 reasonable,рисонабле
 reasonably,рисонабли
 reason,рисон
-rebase,ребасе
+rebase,рибейз
 recall,рекалл
 receipt,рекэйпт
 receive,рекэйве
@@ -2528,7 +2528,7 @@ redis,редис
 reduce,редуке
 reduction,редукшн
 red,ред
-refactor,рефактор
+refactor,рефакторинг
 reference,референке
 refer,рефер
 reflect,рефлект
@@ -2554,7 +2554,7 @@ relative,релативе
 relaxed,релаксед
 relaxing,релаксинг
 relax,релакс
-release,релисе
+release,релиз
 relevant,релевант
 relief,релиф
 religion,религион
@@ -2581,7 +2581,7 @@ repeat,репит
 replace,реплаке
 reply,репли
 report,репорт
-repository,репоситори
+repository,репозиторий
 repo,репо
 representative,репресентативе
 represent,репресент
@@ -2619,7 +2619,7 @@ retire,ретире
 return,ретурн
 reveal,ревил
 reverse,реверсе
-review,ревив
+review,ревью
 revise,ревисе
 revision,ревижн
 revolution,револушн
@@ -2653,7 +2653,7 @@ roughly,раугли
 rough,рауг
 rounded,раундед
 round,раунд
-router,раутер
+router,роутер
 route,рауте
 routine,раутине
 royal,ройал
@@ -2672,7 +2672,7 @@ running,руннинг
 run,рун
 rural,рурал
 rush,руш
-rust,руст
+rust,раст
 sack,сак
 sadly,садли
 sadness,саднесс
@@ -2716,7 +2716,7 @@ scratch,скратч
 scream,скрим
 screen,скрин
 screw,скрью
-scrum,скрум
+scrum,скрам
 seal,сил
 search,сирч
 season,сисон
@@ -2756,15 +2756,15 @@ seriously,сериаусли
 serious,сериаус
 servant,сервант
 serve,серве
-service,сервике
+service,сервис
 session,сесжн
 settle,сеттле
 set,сет
-seventeen,севентин
+seventeen,сэвентин
 seventh,севенс
 seventieth,севентис
 seventy,севенти
-seven,севен
+seven,сэвен
 several,северал
 severely,северели
 severe,севере
@@ -2842,7 +2842,7 @@ sing,синг
 sink,синк
 sir,сир
 sister,систер
-site,сите
+site,сайт
 situation,ситуашн
 sit,сит
 sixteen,сикстин
@@ -2850,7 +2850,7 @@ sixth,сиксс
 sixtieth,сикстис
 sixty,сиксти
 six,сикс
-size,сизе
+size,сайз
 skilfully,скилфулли
 skilful,скилфул
 skilled,скиллед
@@ -2858,7 +2858,7 @@ skill,скилл
 skin,скин
 skirt,скирт
 sky,ски
-slack,слак
+slack,слэк
 sleep,слип
 sleeve,сливе
 slice,слике
@@ -2910,7 +2910,7 @@ sort,сорт
 soul,саул
 sound,саунд
 soup,сауп
-source,саурке
+source,сорс
 sour,саур
 southern,саусерн
 south,саус
@@ -2947,23 +2947,23 @@ spot,спот
 spray,спрэй
 spread,сприд
 spring,спринг
-sql,скл
+sql,эс кью эль
 square,скваре
 squeeze,сквизе
-src,срк
+src,сорс
 stable,стабле
-stack trace,стак траке
+stack trace,стэк трейс
 staff,стафф
-stage,стаге
+stage,стейдж
 stair,стэйр
 stamp,стамп
 standard,стандард
-standup,стандуп
+standup,стендап
 stand,станд
 stare,старе
 start,старт
 star,стар
-stash,сташ
+stash,стэш
 statement,статемент
 state,стате
 static,статик
@@ -3011,7 +3011,7 @@ strictly,стриктли
 strict,стрикт
 strike,стрике
 striking,стрикинг
-string,стринг
+string,строка
 striped,стрипед
 stripe,стрипе
 strip,стрип
@@ -3020,7 +3020,7 @@ strongly,стронгли
 strong,стронг
 structure,структуре
 struggle,струггле
-stub,стуб
+stub,стаб
 student,студент
 studio,студио
 study,студи
@@ -3036,7 +3036,7 @@ succeed,суккид
 successfully,суккессфулли
 successful,суккессфул
 success,суккесс
-succ,сукк
+succ,сакс
 such,суч
 suck,сук
 suddenly,судденли
@@ -3061,7 +3061,7 @@ superior,супериор
 supermarket,супермаркет
 supply,суппли
 supporter,суппортер
-support,суппорт
+support,саппорт
 suppose,суппосе
 surely,сурели
 sure,суре
@@ -3079,8 +3079,8 @@ survive,сурвиве
 suspect,суспект
 suspicion,суспикион
 suspicious,суспикиаус
-svelte,свелте
-svg,свг
+svelte,свелт
+svg,эс ви джи
 swallow,сваллоу
 swearing,свиринг
 swear,свир
@@ -3098,7 +3098,7 @@ swollen,своллен
 symbol,симбол
 sympathetic,симпасетик
 sympathy,симпаси
-synthesize,синсесизе
+synthesize,синтесайз
 system,систем
 tablet,таблет
 table,табле
@@ -3120,16 +3120,16 @@ teaching,тичинг
 teach,тич
 team,тим
 tea,ти
-tech debt,теч дебт
+tech debt,тек дет
 technical,течникал
 technique,течникве
 technology,течнологи
-tech,теч
+tech,тек
 telephone,телефоне
 television,телевижн
 tell,телл
 temperature,температуре
-template,темплате
+template,темплейт
 temporarily,темпорарили
 temporary,темпорари
 tendency,тенденки
@@ -3170,7 +3170,7 @@ thin,син
 third,сирд
 thirsty,сирсти
 thirteenth,сиртинс
-thirteen,сиртин
+thirteen,сёртин
 thirtieth,сиртис
 thirty,сирти
 this,сис
@@ -3207,7 +3207,7 @@ tired,тиред
 tire,тире
 tiring,тиринг
 title,титле
-tmp,тмп
+tmp,темп
 today,тодэй
 toe,тое
 together,тогесер
@@ -3237,7 +3237,7 @@ tower,тоуер
 town,тоун
 toy,той
 to,то
-trace,траке
+trace,трейс
 track,трак
 trade,траде
 trading,традинг
@@ -3247,8 +3247,8 @@ tradition,традишн
 traffic,траффик
 training,трэйнинг
 train,трэйн
-traits,трэйтс
-trait,трэйт
+traits,трейтс
+trait,трейт
 transfer,трансфер
 transform,трансформ
 translate,транслате
@@ -3271,21 +3271,21 @@ tropical,тропикал
 trouble,траубле
 trousers,траусерс
 truck,трук
-true,труе
+true,тру
 truly,трули
 trust,труст
 truth,трус
 try,три
-ts,тс
+ts,ти эс
 tube,тубе
 tuesday,туесдэй
 tune,туне
 tunnel,туннел
 turn,турн
-tutorial,туториал
+tutorial,тьюториал
 tv,тв
 twelfth,твелфс
-twelve,твелве
+twelve,твелв
 twentieth,твентис
 twenty,твенти
 twice,твике
@@ -3293,14 +3293,14 @@ twin,твин
 twisted,твистед
 twist,твист
 two,тво
-txt,ткст
-typescript,типескрипт
-type,типе
+txt,тэкст
+typescript,тайпскрипт
+type,тайп
 typically,типикалли
 typical,типикал
 tyre,тире
 ugly,угли
-uint,уинт
+uint,юинт
 ultimately,ултиматели
 ultimate,ултимате
 umbrella,умбрелла
@@ -3311,7 +3311,7 @@ uncle,ункле
 uncomfortable,ункомфортабле
 unconscious,унконскиаус
 uncontrolled,унконтроллед
-undefined,ундефинед
+undefined,андефайнд
 underground,ундерграунд
 underneath,ундернис
 understanding,ундерстандинг
@@ -3357,7 +3357,7 @@ unusually,унусуалли
 unusual,унусуал
 unwillingly,унвиллингли
 unwilling,унвиллинг
-upload,уплоуд
+upload,аплоад
 upon,упон
 upper,уппер
 upsetting,упсеттинг
@@ -3369,12 +3369,12 @@ up,уп
 urban,урбан
 urgent,ургент
 urge,урге
-use case,усе касе
+use case,юз кейс
 useful,усефул
 useless,уселесс
-users,усерс
-user,усер
-use,усе
+users,юзерс
+user,юзер
+use,юз
 usually,усуалли
 usual,усуал
 us,ус
@@ -3417,7 +3417,7 @@ vocabulary,вокабулари
 voice,войке
 volume,волуме
 vote,воте
-vue,вуе
+vue,вью
 wage,ваге
 waist,вэйст
 waiter,вэйтер
@@ -3538,8 +3538,8 @@ writing,вритинг
 written,вриттен
 wrongly,вронгли
 wrong,вронг
-xml,ксмл
-yaml,иамл
+xml,икс эм эль
+yaml,ямл
 yard,иард
 yawn,ион
 yeah,иих
@@ -3554,5 +3554,5 @@ yours,иаурс
 your,иаур
 youth,иаус
 you,иау
-zero,зеро
+zero,зиро
 zone,зоне
