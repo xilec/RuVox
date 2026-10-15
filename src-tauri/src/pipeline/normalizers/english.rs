@@ -275,6 +275,17 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     m.insert("size", "сайз");
     m.insert("source", "сорс");
     m.insert("stage", "стейдж");
+    // Extra IT terms formerly backed only by exception fallback
+    m.insert("ajax", "эйджакс");
+    m.insert("cd", "си ди");
+    m.insert("crud", "крад");
+    m.insert("graphql", "граф кью эль");
+    m.insert("imap", "ай мап");
+    m.insert("ios", "ай оу эс");
+    m.insert("iot", "ай о ти");
+    m.insert("jpeg", "джейпег");
+    m.insert("macos", "мак оу эс");
+    m.insert("oauth", "о ауз");
     m.insert("true", "тру");
     m.insert("type", "тайп");
     m
@@ -458,182 +469,8 @@ impl EnglishNormalizer {
 /// Transliterate an ASCII lowercase string to Russian using digraph-first rules.
 ///
 /// Non-ASCII / non-alpha characters (digits, punctuation) are passed through as-is.
-static TRANSLITERATION_EXCEPTIONS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
-    let mut m = HashMap::new();
-    m.insert("addition", "эдишн");
-    m.insert("agile", "эджайл");
-    m.insert("ajax", "эйджакс");
-    m.insert("angular", "ангуляр");
-    m.insert("api", "эй пи ай");
-    m.insert("array", "массив");
-    m.insert("await", "эвейт");
-    m.insert("backup", "бэкап");
-    m.insert("best practice", "бест практис");
-    m.insert("boolean", "булеан");
-    m.insert("bug", "баг");
-    m.insert("build", "билд");
-    m.insert("bundle", "бандл");
-    m.insert("byte", "байт");
-    m.insert("cache", "кэш");
-    m.insert("callback", "коллбэк");
-    m.insert("case", "кейс");
-    m.insert("cd", "си ди");
-    m.insert("change", "чейндж");
-    m.insert("client", "клиент");
-    m.insert("clojure", "кложур");
-    m.insert("cluster", "кластер");
-    m.insert("code review", "код ревью");
-    m.insert("code smell", "код смелл");
-    m.insert("code", "код");
-    m.insert("compile", "компайл");
-    m.insert("container", "контейнер");
-    m.insert("crud", "крад");
-    m.insert("css", "си эс эс");
-    m.insert("csv", "си эс ви");
-    m.insert("c#", "си шарп");
-    m.insert("c++", "си плюс плюс");
-    m.insert("daily standup", "дейли стендап");
-    m.insert("daily", "дейли");
-    m.insert("debt", "дет");
-    m.insert("debug", "дебаг");
-    m.insert("device", "девайс");
-    m.insert("django", "джанго");
-    m.insert("double", "дабл");
-    m.insert("download", "даунлоад");
-    m.insert("drive", "драйв");
-    m.insert("dry run", "драй ран");
-    m.insert("edge case", "эдж кейс");
-    m.insert("eleven", "илэвен");
-    m.insert("elixir", "эликсир");
-    m.insert("endpoint", "эндпоинт");
-    m.insert("erlang", "эрланг");
-    m.insert("etc", "етс");
-    m.insert("eval", "эвал");
-    m.insert("example", "экзампл");
-    m.insert("express", "экспресс");
-    m.insert("false", "фолс");
-    m.insert("fastapi", "фаст эй пи ай");
-    m.insert("feature branch", "фича бранч");
-    m.insert("feature", "фича");
-    m.insert("files", "файлс");
-    m.insert("file", "файл");
-    m.insert("float", "флоат");
-    m.insert("framework", "фреймворк");
-    m.insert("function", "функция");
-    m.insert("f#", "эф шарп");
-    m.insert("generic", "дженерик");
-    m.insert("github", "гитхаб");
-    m.insert("graphql", "граф кью эл");
-    m.insert("guide", "гайд");
-    m.insert("handler", "хендлер");
-    m.insert("hello", "хеллоу");
-    m.insert("home", "хоум");
-    m.insert("html", "эйч ти эм эль");
-    m.insert("image", "имидж");
-    m.insert("imap", "ай мап");
-    m.insert("interface", "интерфейс");
-    m.insert("ios", "ай оу эс");
-    m.insert("iot", "ай о ти");
-    m.insert("issue", "ишью");
-    m.insert("jpeg", "джейпег");
-    m.insert("jpg", "джэйпег");
-    m.insert("json", "джейсон");
-    m.insert("js", "джи эс");
-    m.insert("kubernetes", "кубернетис");
-    m.insert("library", "лайбрари");
-    m.insert("line", "лайн");
-    m.insert("live reload", "лайв релоуд");
-    m.insert("macos", "мак оу эс");
-    m.insert("merge request", "мёрдж реквест");
-    m.insert("merge", "мёрдж");
-    m.insert("method", "метод");
-    m.insert("middleware", "мидлвэр");
-    m.insert("mime", "майм");
-    m.insert("mode", "мод");
-    m.insert("module", "модуль");
-    m.insert("mp3", "эм пэ три");
-    m.insert("mp4", "эм пэ четыре");
-    m.insert("nginx", "энджинкс");
-    m.insert("node", "нода");
-    m.insert("null", "налл");
-    m.insert("oauth", "о ауз");
-    m.insert("object", "объект");
-    m.insert("override", "оверрайд");
-    m.insert("package", "пакет");
-    m.insert("page", "пейдж");
-    m.insert("pascal", "паскаль");
-    m.insert("pdf", "пэ дэ эф");
-    m.insert("php", "пи эйч пи");
-    m.insert("pipe", "пайп");
-    m.insert("plus", "плас");
-    m.insert("practice", "практис");
-    m.insert("private", "прайвит");
-    m.insert("promise", "промис");
-    m.insert("python", "пайтон");
-    m.insert("queue", "кью");
-    m.insert("react", "риакт");
-    m.insert("rebase", "рибейз");
-    m.insert("refactor", "рефакторинг");
-    m.insert("release", "релиз");
-    m.insert("repository", "репозиторий");
-    m.insert("review", "ревью");
-    m.insert("router", "роутер");
-    m.insert("rust", "раст");
-    m.insert("scrum", "скрам");
-    m.insert("service", "сервис");
-    m.insert("seventeen", "сэвентин");
-    m.insert("seven", "сэвен");
-    m.insert("site", "сайт");
-    m.insert("size", "сайз");
-    m.insert("slack", "слэк");
-    m.insert("source", "сорс");
-    m.insert("sql", "эс кью эль");
-    m.insert("src", "сорс");
-    m.insert("stack trace", "стэк трейс");
-    m.insert("stage", "стейдж");
-    m.insert("standup", "стендап");
-    m.insert("stash", "стэш");
-    m.insert("string", "строка");
-    m.insert("stub", "стаб");
-    m.insert("succ", "сакс");
-    m.insert("support", "саппорт");
-    m.insert("svelte", "свелт");
-    m.insert("svg", "эс ви джи");
-    m.insert("synthesize", "синтесайз");
-    m.insert("tech debt", "тек дет");
-    m.insert("tech", "тек");
-    m.insert("template", "темплейт");
-    m.insert("thirteen", "сёртин");
-    m.insert("tmp", "темп");
-    m.insert("trace", "трейс");
-    m.insert("traits", "трейтс");
-    m.insert("trait", "трейт");
-    m.insert("true", "тру");
-    m.insert("ts", "ти эс");
-    m.insert("tutorial", "тьюториал");
-    m.insert("twelve", "твелв");
-    m.insert("txt", "тэкст");
-    m.insert("typescript", "тайпскрипт");
-    m.insert("type", "тайп");
-    m.insert("uint", "юинт");
-    m.insert("undefined", "андефайнд");
-    m.insert("upload", "аплоад");
-    m.insert("use case", "юз кейс");
-    m.insert("users", "юзерс");
-    m.insert("user", "юзер");
-    m.insert("use", "юз");
-    m.insert("vue", "вью");
-    m.insert("xml", "икс эм эль");
-    m.insert("yaml", "ямл");
-    m.insert("zero", "зиро");
-    m
-});
 
 pub fn transliterate_simple(input: &str) -> String {
-    let input_lower = input.to_lowercase();
-    if let Some(value) = TRANSLITERATION_EXCEPTIONS.get(input_lower.as_str()) {
-        return value.to_string();
-    }
     let (ac, repls) = &*TRANSLIT_AC;
 
     // Process only the ASCII-alphabetic prefix; preserve other chars verbatim.
@@ -887,7 +724,7 @@ mod tests {
     #[test_case("moon" => "мун"; "moon")]
     #[test_case("rain" => "рэйн"; "rain")]
     #[test_case("boy" => "бой"; "boy")]
-    #[test_case("mp3" => "эм пэ три"; "preserves_digits_mp3")]
+    #[test_case("mp3" => "мп3"; "preserves_digits_mp3")]
     #[test_case("v8" => "в8"; "preserves_digits_v8")]
     #[test_case("" => ""; "empty")]
     fn translit_only(word: &str) -> String {
