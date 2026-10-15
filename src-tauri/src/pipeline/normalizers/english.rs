@@ -885,7 +885,7 @@ mod tests {
     #[test_case("moon" => "мун"; "moon")]
     #[test_case("rain" => "рэйн"; "rain")]
     #[test_case("boy" => "бой"; "boy")]
-    #[test_case("mp3" => "мп3"; "preserves_digits_mp3")]
+    #[test_case("mp3" => "эм пэ три"; "preserves_digits_mp3")]
     #[test_case("v8" => "в8"; "preserves_digits_v8")]
     #[test_case("" => ""; "empty")]
     fn translit_only(word: &str) -> String {
