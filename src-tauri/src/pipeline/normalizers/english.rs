@@ -654,7 +654,6 @@ pub fn transliterate_simple(input: &str) -> String {
             for (old, new) in [("ce", "се"), ("ci", "си"), ("cy", "си")] {
                 segment = segment.replace(old, new);
             }
-
             // Replace using aho-corasick (leftmost-longest)
             let mut last = 0usize;
             for m in ac.find_iter(&segment) {
