@@ -650,11 +650,14 @@ pub fn transliterate_simple(input: &str) -> String {
             while i < bytes.len() && bytes[i].is_ascii_alphabetic() {
                 i += 1;
             }
-            let segment = &input_lower[start..i];
+            let mut segment = input_lower[start..i].to_string();
+            for (old, new) in [("ce", "се"), ("ci", "си"), ("cy", "си")] {
+                segment = segment.replace(old, new);
+            }
 
             // Replace using aho-corasick (leftmost-longest)
             let mut last = 0usize;
-            for m in ac.find_iter(segment) {
+            for m in ac.find_iter(&segment) {
                 // Pass through any gap before this match (should not happen for
                 // pure alpha input, but be defensive)
                 result.push_str(&segment[last..m.start()]);
