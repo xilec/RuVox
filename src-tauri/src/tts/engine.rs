@@ -43,6 +43,7 @@ impl EngineKind {
 /// All methods are async and return [`TtsError`]. Implementations must be
 /// `Send + Sync` so the engine can be shared via `Arc<dyn TtsEngine>` across
 /// the Tokio runtime.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait TtsEngine: Send + Sync {
     /// Identifies the concrete engine. Cheap. Called for logs/events and for

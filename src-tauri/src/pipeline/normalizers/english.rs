@@ -275,6 +275,17 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     m.insert("size", "сайз");
     m.insert("source", "сорс");
     m.insert("stage", "стейдж");
+    // Extra IT terms formerly backed only by exception fallback
+    m.insert("ajax", "эйджакс");
+    m.insert("cd", "си ди");
+    m.insert("crud", "крад");
+    m.insert("graphql", "граф кью эль");
+    m.insert("imap", "ай мап");
+    m.insert("ios", "ай оу эс");
+    m.insert("iot", "ай о ти");
+    m.insert("jpeg", "джейпег");
+    m.insert("macos", "мак оу эс");
+    m.insert("oauth", "о ауз");
     m.insert("true", "тру");
     m.insert("type", "тайп");
     m
@@ -475,11 +486,13 @@ pub fn transliterate_simple(input: &str) -> String {
             while i < bytes.len() && bytes[i].is_ascii_alphabetic() {
                 i += 1;
             }
-            let segment = &input_lower[start..i];
-
+            let mut segment = input_lower[start..i].to_string();
+            for (old, new) in [("ce", "се"), ("ci", "си"), ("cy", "си")] {
+                segment = segment.replace(old, new);
+            }
             // Replace using aho-corasick (leftmost-longest)
             let mut last = 0usize;
-            for m in ac.find_iter(segment) {
+            for m in ac.find_iter(&segment) {
                 // Pass through any gap before this match (should not happen for
                 // pure alpha input, but be defensive)
                 result.push_str(&segment[last..m.start()]);
