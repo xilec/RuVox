@@ -1,0 +1,5 @@
+- [x] Add bounded morphology handling to `EnglishNormalizer::normalize`.
+- [x] Add the `sync` term and keep exact readings first.
+- [x] Add unit coverage for representative inflected forms.
+- [x] Regenerate and validate canonical baseline and golden fixtures.
+- [x] Add the OpenSpec change artifacts and changelog note.
