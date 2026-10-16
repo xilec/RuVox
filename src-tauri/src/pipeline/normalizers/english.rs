@@ -469,7 +469,6 @@ impl EnglishNormalizer {
 /// Transliterate an ASCII lowercase string to Russian using digraph-first rules.
 ///
 /// Non-ASCII / non-alpha characters (digits, punctuation) are passed through as-is.
-
 pub fn transliterate_simple(input: &str) -> String {
     let (ac, repls) = &*TRANSLIT_AC;
 
