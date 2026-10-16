@@ -514,17 +514,23 @@ replaced first ("си плюс плюс", "си шарп", "эф шарп"). Sin
 letter-name table ("a" → "эй", "I" → "ай", "x" → "икс"),
 case-insensitively; they SHALL NOT be recorded in the unknown-words map.
 For remaining multi-letter words the resolution order SHALL be: `IT_TERMS`
-dictionary ("api" → "эй пи ай", "github" → "гитхаб"); all-uppercase words of
-length ≥ 2 via `AbbreviationNormalizer` (special cases like "ios" →
-"ай оу эс", `AS_WORD` entries like "json" → "джейсон", otherwise
+dictionary ("api" → "эй пи ай", "github" → "гитхаб"); when an exact
+`IT_TERMS` entry does not exist but the word ends in a recognized English
+inflection suffix (`s`, `es`, `ies`, `ed`, `ing`, `er`, `ers`, `able`,
+`ally`, `ment`, `ments`, `ation`) and its stem is an `IT_TERMS` entry,
+compose the curated stem reading with the digraph transliteration of the
+suffix ("supporting" → "саппорт" + "инг" = "саппортинг"); all-uppercase
+words of length ≥ 2 via `AbbreviationNormalizer` (special cases like
+"ios" → "ай оу эс", `AS_WORD` entries like "json" → "джейсон", otherwise
 letter-by-letter via the same shared letter-name table); `AS_WORD`
 dictionary for mixed-case entries; and finally digraph-first
 transliteration (`sh` → "ш", `tion` → "шн", longest match first). Words
 resolved by transliteration SHALL be recorded in the unknown-words map,
 which SHALL be cleared at the start of every `process_with_char_mapping`
-call. The former `EnglishNormalizer::add_custom_terms` hook is removed —
-user overrides are owned by the user-dictionary pre-pass, which runs before
-this phase (see "User dictionary application in normalization").
+call. Derived forms from known `IT_TERMS` stems SHALL NOT be recorded as
+unknown words. The former `EnglishNormalizer::add_custom_terms` hook is
+removed — user overrides are owned by the user-dictionary pre-pass, which
+runs before this phase (see "User dictionary application in normalization").
 
 The letter-name table SHALL have a single home shared by the abbreviation
 spelling, code-identifier spelling, and lone-letter reading paths; its
@@ -570,6 +576,14 @@ abbreviation and a lone letter sound the same ("x" and "X" both → "икс").
 - GIVEN the input "пункты a и I"
 - WHEN the pipeline processes it
 - THEN the letters are read as "эй" and "ай" ("пункты эй и ай")
+
+#### Scenario: Inflected IT-term form composed
+
+- GIVEN the input "supporting"
+- WHEN the pipeline processes it
+- THEN the word is read as "саппортинг", using the curated `support` reading
+  instead of the raw transliteration, and is not recorded in the
+  unknown-words map
 
 ### Requirement: Numbers
 
