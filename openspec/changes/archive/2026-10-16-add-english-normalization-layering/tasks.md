@@ -1,0 +1,2 @@
+- [x] Document the layered English-word resolution and soft-c fallback.
+- [x] Archive the reviewed specs.

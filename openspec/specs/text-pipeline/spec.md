@@ -513,7 +513,7 @@ replaced first ("си плюс плюс", "си шарп", "эф шарп"). Sin
 (length-1 runs) SHALL be read by their English letter names via the shared
 letter-name table ("a" → "эй", "I" → "ай", "x" → "икс"),
 case-insensitively; they SHALL NOT be recorded in the unknown-words map.
-For remaining multi-letter words the resolution order SHALL be: `IT_TERMS`
+For remaining multi-letter words the resolution order SHALL be: exact matches from `MULTI_WORD_PHRASES`; then `IT_TERMS`
 dictionary ("api" → "эй пи ай", "github" → "гитхаб"); when an exact
 `IT_TERMS` entry does not exist but the word ends in a recognized English
 inflection suffix (`s`, `es`, `ies`, `ed`, `ing`, `er`, `ers`, `able`,
@@ -524,7 +524,9 @@ words of length ≥ 2 via `AbbreviationNormalizer` (special cases like
 "ios" → "ай оу эс", `AS_WORD` entries like "json" → "джейсон", otherwise
 letter-by-letter via the same shared letter-name table); `AS_WORD`
 dictionary for mixed-case entries; and finally digraph-first
-transliteration (`sh` → "ш", `tion` → "шн", longest match first). Words
+transliteration (`sh` → "ш", `tion` → "шн", longest match first), after
+the soft-c pre-pass (`ce` → "се", `ci` → "си", `cy` → "си") in alphabetic
+runs. Words
 resolved by transliteration SHALL be recorded in the unknown-words map,
 which SHALL be cleared at the start of every `process_with_char_mapping`
 call. Derived forms from known `IT_TERMS` stems SHALL NOT be recorded as
@@ -577,6 +579,19 @@ abbreviation and a lone letter sound the same ("x" and "X" both → "икс").
 - WHEN the pipeline processes it
 - THEN the letters are read as "эй" and "ай" ("пункты эй и ай")
 
+#### Scenario: Multi-word phrase resolved before single words
+
+- GIVEN the input "поддерживает get user data"
+- WHEN the pipeline processes it
+- THEN the phrase is resolved through its curated multi-word reading before
+  the single-word English phases process the same text
+
+#### Scenario: Soft-c transliteration fallback
+
+- GIVEN the input "city events"
+- WHEN the pipeline processes it
+- THEN the unknown alphabetic components are read with the soft-c pre-pass
+  before digraph transliteration
 #### Scenario: Inflected IT-term form composed
 
 - GIVEN the input "supporting"
