@@ -86,7 +86,9 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     // Common code terms
     m.insert("eval", "эвал");
     m.insert("plus", "плас");
+    m.insert("sync", "синк");
     m.insert("succ", "сакс");
+
     m.insert("synthesize", "синтесайз");
     m.insert("addition", "эдишн");
     // Common type/term names
@@ -442,6 +444,22 @@ impl EnglishNormalizer {
         // 2. Built-in IT_TERMS
         if let Some(v) = IT_TERMS.get(text_lower.as_str()) {
             return v.to_string();
+        }
+
+        // 3. Bounded morphology for known IT stems (base reading + suffix reading)
+        const SUFFIXES: [&str; 12] = [
+            "ation", "able", "ally", "ment", "ments", "ing", "ers", "er", "ies", "es", "ed", "s",
+        ];
+        for suffix in SUFFIXES {
+            if text_lower.len() > suffix.len() {
+                if let Some(stem) = text_lower.strip_suffix(suffix) {
+                    if stem.len() >= 3 {
+                        if let Some(base) = IT_TERMS.get(stem) {
+                            return format!("{}{}", base, transliterate_simple(suffix));
+                        }
+                    }
+                }
+            }
         }
 
         // 4. Transliteration fallback
@@ -806,7 +824,25 @@ mod tests {
 
     #[test]
     fn test_empty_string() {
-        let mut en = normalizer();
+        let mut en = EnglishNormalizer::new();
         assert_eq!(en.normalize("", false), "");
+    }
+
+    // ── English morphological variants ───────────────────────────────────────
+
+    #[test_case("support" => "саппорт"; "support")]
+    #[test_case("supports" => "саппортс"; "supports")]
+    #[test_case("supported" => "саппортед"; "supported")]
+    #[test_case("supporting" => "саппортинг"; "supporting")]
+    #[test_case("supporter" => "саппортер"; "supporter")]
+    #[test_case("feature" => "фича"; "feature")]
+    #[test_case("features" => "фичас"; "features")]
+    #[test_case("null" => "налл"; "null")]
+    #[test_case("nullable" => "наллабле"; "nullable")]
+    #[test_case("build" => "билд"; "build")]
+    #[test_case("building" => "билдинг"; "building")]
+    #[test_case("builds" => "билдс"; "builds")]
+    fn english_morphological_forms(word: &str) -> String {
+        EnglishNormalizer::new().normalize(word, false)
     }
 }
