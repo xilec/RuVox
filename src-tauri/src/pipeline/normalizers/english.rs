@@ -519,7 +519,13 @@ impl EnglishNormalizer {
             }
 
             // The stem may have dropped a silent "e" before this suffix
-            // ("us" → "use", "cach" → "cache").
+            // ("us" → "use", "cach" → "cache"). "-ally" is excluded: it
+            // attaches to an "-al" base ("practical" → "practically"), so a
+            // restored silent "e" would compose the wrong base ("practice" →
+            // "практисалли").
+            if suffix == "ally" {
+                continue;
+            }
             let restored = format!("{stem}e");
             let Some(base) = IT_TERMS.get(restored.as_str()) else {
                 continue;
@@ -528,7 +534,7 @@ impl EnglishNormalizer {
             // ("uses" → "юзес", "caches" → "кэшес"); a non-sibilant stem takes
             // the plain "s" plural ("features" → "фичас"), which a shorter
             // suffix composes.
-            if suffix == "es" && !es_reading_is_syllabic(&restored) {
+            if suffix == "es" && !es_reading_is_syllabic(stem) {
                 continue;
             }
             return Some(format!("{}{}", base, transliterate_simple(suffix)));
@@ -547,16 +553,15 @@ impl EnglishNormalizer {
     }
 }
 
-/// Whether the English "-es" plural of `restored_stem` (a curated base ending
-/// in a silent "e") is spelled with a syllabic "ес".
+/// Whether the English "-es" plural of a curated base that dropped a silent "e"
+/// (`stem`, without that "e") is spelled with a syllabic "ес".
 ///
 /// The plural is syllabic only after a sibilant ("uses" → "юзес", "caches" →
 /// "кэшес"); any other stem takes a plain "s" ("features" → "фичас").
-fn es_reading_is_syllabic(restored_stem: &str) -> bool {
-    let core = restored_stem.strip_suffix('e').unwrap_or(restored_stem);
+fn es_reading_is_syllabic(stem: &str) -> bool {
     ["ch", "sh", "s", "z", "x", "c", "g"]
         .iter()
-        .any(|ending| core.ends_with(ending))
+        .any(|ending| stem.ends_with(ending))
 }
 
 /// Transliterate an ASCII lowercase string to Russian using digraph-first rules.
@@ -931,6 +936,8 @@ mod tests {
     #[test_case("caches" => "кэшес"; "caches")]
     #[test_case("cached" => "кэшед"; "cached")]
     #[test_case("repositories" => "репозиторис"; "repositories")]
+    #[test_case("compilation" => "компайлашн"; "compilation")]
+    #[test_case("practically" => "практикалли"; "practically")]
     #[test_case("null" => "налл"; "null")]
     #[test_case("nullable" => "наллабле"; "nullable")]
     #[test_case("build" => "билд"; "build")]
@@ -967,6 +974,11 @@ mod tests {
             en.compose_inflection("SUPPORTING").as_deref(),
             Some("саппортинг")
         );
+        assert_eq!(en.compose_inflection("USES").as_deref(), Some("юзес"));
+        assert_eq!(
+            en.compose_inflection("REPOSITORIES").as_deref(),
+            Some("репозиторис")
+        );
     }
 
     #[test]
@@ -991,6 +1003,15 @@ mod tests {
             en.compose_inflection("supports").as_deref(),
             Some("саппортс")
         );
+    }
+
+    #[test]
+    fn compose_inflection_does_not_restore_silent_e_for_ally() {
+        // "-ally" attaches to an "-al" base ("practical" → "practically"), so a
+        // restored silent "e" would compose the wrong base; the helper must not
+        // compose "practice" + "ally" ("практисалли").
+        let en = EnglishNormalizer::new();
+        assert_eq!(en.compose_inflection("practically"), None);
     }
 
     #[test]

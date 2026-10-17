@@ -5,9 +5,11 @@
 - [x] In `EnglishNormalizer::compose_inflection`, after the direct `IT_TERMS`
       stem hit, retry with the stem plus a restored silent "e" (`us` → `use`,
       `cach` → `cache`) and compose from that base.
-- [x] Gate the syllabic "-es" reading on a sibilant ending of the restored stem
-      so `uses` → "юзес" and `caches` → "кэшес" while non-sibilant bases keep
-      the plain "-s" path (`features` → "фичас").
+- [x] Gate the syllabic "-es" reading on a sibilant ending of the stem before
+      the restored "e" so `uses` → "юзес" and `caches` → "кэшес" while
+      non-sibilant bases keep the plain "-s" path (`features` → "фичас").
+- [x] Exclude "-ally" from restoration (`practical` + "ly", not `practice`) so
+      `practically` keeps "практикалли"; lock it with a unit test.
 
 ## 2. "-ies" from "-y"
 
@@ -26,8 +28,11 @@
       pure abbreviations (`html`, `API`, `json`) and for `species`.
 - [x] Confirm unknown-words tracking still records only raw-fallback words
       (composed forms are not recorded).
-- [x] Update the four intended `baseline.csv` rows (`driver`, `driving`,
-      `packaging`, `practically`) and record the drift in `design.md`.
+- [x] Update the three intended `baseline.csv` rows (`driver`, `driving`,
+      `packaging`) and record the drift in `design.md`.
+- [x] Pin the behavior end to end with an `english_inflected_silent_e` golden
+      pipeline fixture (mixed-case `using`/`uses`/`used`/`caches`/`cached`/
+      `repositories`, plus `FEATURES` and `species` negatives).
 
 ## 4. Spec + docs
 

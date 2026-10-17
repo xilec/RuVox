@@ -19,9 +19,11 @@ compose the curated stem reading with the digraph transliteration of the
 suffix ("supporting" → "саппорт" + "инг" = "саппортинг"). When the stripped stem
 is not itself an `IT_TERMS` entry, the composition SHALL retry with the silent
 "e" the stem dropped restored ("uses" → `use` + "es" = "юзес", "cached" →
-`cache` + "ed" = "кэшед"), reading "-es" as the syllabic "ес" only when the
-restored stem ends in a sibilant and otherwise leaving the plain "-s"
-composition to win ("features" → "фичас", not "фичаес"). The "-ies" suffix
+`cache` + "ed" = "кэшед"), except for the "-ally" suffix, which attaches to an
+"-al" base ("practical" → "practically") and SHALL keep the plain reading. The
+retry SHALL read "-es" as the syllabic "ес" only when the stem that dropped the
+"e" ends in a sibilant and otherwise SHALL leave the plain "-s" composition to
+win ("features" → "фичас", not "фичаес"). The "-ies" suffix
 SHALL compose only when `stem + "y"` is an `IT_TERMS` entry, dropping a trailing
 "й" from the base reading ("repositories" → `repository` → "репозитори" + "с" =
 "репозиторис"), so a stem that is not a "-y" base does not compose through it
@@ -132,6 +134,13 @@ abbreviation and a lone letter sound the same ("x" and "X" both → "икс").
 - WHEN the pipeline processes them
 - THEN they are read as "фичас" and "саппортс" — the plain "-s" reading, not a
   syllabic "ес" reading of a restored stem
+
+#### Scenario: "-ally" is not a silent-e suffix
+
+- GIVEN the input "practically"
+- WHEN the pipeline processes it
+- THEN it is read as "практикалли" — the plain transliteration, not a
+  composition from a restored `practice` base ("практисалли")
 
 #### Scenario: "-ies" composed only from a "-y" base
 

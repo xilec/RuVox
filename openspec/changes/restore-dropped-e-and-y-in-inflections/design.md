@@ -7,7 +7,8 @@ first) and composes `IT_TERMS[stem] + transliterate(suffix)` as soon as the
 stripped stem is a curated entry. English inflections often modify the base
 itself, so the stripped stem is not what the dictionary stores:
 
-- silent "e" is dropped before "-s"/"-ed"/"-ing" (`use` → `us`+`es`)
+- silent "e" is dropped before a vowel- or elision-taking suffix
+  (`use` → `us`+`es`, `drive` → `driv`+`er`)
 - "-y" becomes "-ies" (`repository` → `repositor`+`ies`)
 
 The helper is shared by `normalize` and the pipeline's all-uppercase path, so a
@@ -34,6 +35,12 @@ single fix covers both.
   composing from `spec` (since `specy` is not an entry). The base reading drops
   a trailing "й" because the Russian plural adds only "с" (`репозиторий` →
   `репозитори` + `с`), not "ис".
+- **Silent-e restoration skips "-ally".** English elides a base-final silent
+  "e" before `-s`/`-es`/`-ed`/`-ing`/`-er(s)`/`-able`/`-ation`/`-ment(s)`
+  (`use` → `uses`, `achieve` → `achievement`), but "-ally" attaches to an "-al"
+  base (`practical` → `practically`). Restoring there would read `practice` +
+  "ally" = "практисалли" for a word whose base is `practical`, so the suffix is
+  excluded from restoration and `practically` keeps its previous reading.
 - **Keep the minimum stem length for direct hits.** The direct path keeps its
   `>= 3` guard unchanged; the restoration path only needs `>= 2` so that
   `us` → `use` composes. This keeps two-letter entries (`cd`, `js`, `ts`) out of
@@ -54,7 +61,7 @@ single fix covers both.
 ## Intended baseline drift
 
 `baseline.csv` snapshots canonical readings, so the fix necessarily moves rows
-whose stem is a curated entry ending in a silent "e". All four were reviewed
+whose stem is a curated entry ending in a silent "e". All three were reviewed
 individually and follow from the restoration rule:
 
 | row | before | after | base |
@@ -62,11 +69,14 @@ individually and follow from the restoration rule:
 | `driver` | дривер | драйвер | `drive` + "-er" |
 | `driving` | дривинг | драйвинг | `drive` + "-ing" |
 | `packaging` | пакагинг | пакетинг | `package` + "-ing" |
-| `practically` | практикалли | практисалли | `practice` + "-ally" |
 
-The last row is the suffix-agnostic edge of the rule: the restored base is the
-curated `practice` reading, so "-ally" composes from it rather than from the
-transliterated whole word. Restricting restoration to some suffixes would make
-the rule arbitrary, so the drift is recorded here instead. No golden pipeline
-fixture changes.
+Readings outside `baseline.csv` also move in the intended direction — a
+sibilant `-es` now composes the syllabic "ес" (`cases` "кейсс" → "кейсес",
+`packages` "пакетс" → "пакетес", `services` "сервисс" → "сервисес") — but none
+of them appears in the baseline word list, so they are not rows here. The same
+rule moves `compilation` from "компилашн" to "компайлашн" (restored base
+`compile`), which follows the elision rule.
+
+The end-to-end behavior is pinned by a new `english_inflected_silent_e` golden
+fixture (using/uses/used/caches/cached/repositories/FEATURES/species).
 
