@@ -20,6 +20,9 @@
 - [x] Pipeline test: `SUPPORTING` → "саппортинг", `BUILDING` → "билдинг",
       `FEATURES` → "фичас"; `API`/`CPU`/`JSON` readings unchanged; the composed
       all-caps form is not recorded in the unknown-words map.
+- [x] Golden fixture `english_inflected_all_caps` in
+      `src-tauri/tests/fixtures/pipeline/` reproduces the bug (before the fix
+      the all-caps forms were spelled out) and pins the composed reading.
 
 ## 4. Spec + docs
 

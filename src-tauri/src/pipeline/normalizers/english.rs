@@ -294,8 +294,9 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
 });
 
 /// Recognized English inflection suffixes for bounded morphology on known IT
-/// stems. Ordered longest-first so a longer suffix wins over a shorter one at
-/// the same end position.
+/// stems. A suffix that merely ends in a shorter one is listed first (`ments`
+/// and `ers` before `s`, `ies` before `es`) so the full suffix wins and the
+/// stem is not truncated.
 const INFLECTION_SUFFIXES: [&str; 12] = [
     "ation", "able", "ally", "ment", "ments", "ing", "ers", "er", "ies", "es", "ed", "s",
 ];
@@ -407,7 +408,8 @@ static TRANSLIT_AC: Lazy<(AhoCorasick, Vec<&'static str>)> = Lazy::new(|| {
 /// Lookup order:
 /// 1. Multi-word phrases (exact, case-insensitive, longest match).
 /// 2. Built-in `IT_TERMS` dictionary.
-/// 3. Simple character-by-character transliteration via `TRANSLIT_AC`.
+/// 3. Bounded inflection composition for known `IT_TERMS` stems.
+/// 4. Simple character-by-character transliteration via `TRANSLIT_AC`.
 ///
 /// User-supplied overrides do not live here: the user dictionary is applied
 /// by the pipeline's dedicated pre-pass phase before English-word resolution

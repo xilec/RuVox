@@ -1145,6 +1145,9 @@ mod tests {
         assert_eq!(p.process("SUPPORTING"), "саппортинг");
         assert_eq!(p.process("BUILDING"), "билдинг");
         assert_eq!(p.process("FEATURES"), "фичас");
+        // Composition is a curated lookup, not the transliteration fallback,
+        // so the composed form must not enter the unknown-words map.
+        assert!(p.english_normalizer.get_unknown_words().is_empty());
     }
 
     #[test]
@@ -1156,6 +1159,9 @@ mod tests {
         assert_eq!(p.process("API"), "эй пи ай");
         assert_eq!(p.process("CPU"), "си пи ю");
         assert_eq!(p.process("JSON"), "джейсон");
+        assert_eq!(p.process("HTML"), "эйч ти эм эль");
+        assert_eq!(p.process("SQL"), "эс кью эль");
+        assert_eq!(p.process("XYZ"), "икс вай зет");
         assert!(p.english_normalizer.get_unknown_words().is_empty());
     }
 
