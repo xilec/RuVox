@@ -14,6 +14,17 @@ ignore = [
   # here. The runtime XML user in the tree already has the patched 0.41.0.
   { id = "RUSTSEC-2026-0194", reason = "build-time-only use over vendored Wayland protocol XML (wayland-scanner); not reachable with untrusted input" },
   { id = "RUSTSEC-2026-0195", reason = "build-time-only use over vendored Wayland protocol XML (wayland-scanner); not reachable with untrusted input" },
+  # zip 4.6.1 enters via tauri-plugin-updater, which requires zip ^4 (the
+  # latest 2.x still does; only the 3.0.0 prerelease moves to zip 9). Its
+  # vulnerable surface is ZipArchive::extract, and the plugin only reaches it
+  # in extract_zip(), on the Windows installer path, after download() has
+  # verified the archive against the app's minisign public key — so no
+  # attacker-controlled archive reaches extraction without the update signing
+  # key. Linux/macOS installs unpack tar.gz instead. Drop these ignores once
+  # tauri-plugin-updater accepts zip >= 9.
+  { id = "RUSTSEC-2026-0367", reason = "zip extraction under tauri-plugin-updater is Windows-only and runs after minisign verification of the archive; not reachable with untrusted input" },
+  { id = "RUSTSEC-2026-0368", reason = "zip extraction under tauri-plugin-updater is Windows-only and runs after minisign verification of the archive; not reachable with untrusted input" },
+  { id = "RUSTSEC-2026-0369", reason = "zip extraction under tauri-plugin-updater is Windows-only and runs after minisign verification of the archive; not reachable with untrusted input" },
 ]
 
 [licenses]
