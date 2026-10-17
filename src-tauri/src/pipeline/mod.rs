@@ -804,8 +804,8 @@ impl TTSPipeline {
                 let word = m.as_str();
                 let word_lower = word.to_lowercase();
 
-                // Priority: single letter by name → IT_TERMS → custom terms →
-                // abbreviations → transliterate
+                // Priority: single letter by name → IT_TERMS →
+                // composed inflection → abbreviations → transliterate
                 use crate::pipeline::normalizers::english::IT_TERMS;
                 let replacement = if word.len() == 1 {
                     // Lone letters are read by English letter name via the same
@@ -814,6 +814,15 @@ impl TTSPipeline {
                     CodeIdentifierNormalizer::spell_abbreviation(word)
                 } else if let Some(v) = IT_TERMS.get(word_lower.as_str()) {
                     v.to_string()
+                } else if let Some(composed) = self.english_normalizer.compose_inflection(word) {
+                    // Bounded inflection composition is attempted before the
+                    // all-uppercase abbreviation rule, so an all-caps inflected
+                    // form ("SUPPORTING") composes the curated stem reading
+                    // instead of being spelled letter by letter. The helper
+                    // fires only for a recognized suffix on a curated stem and
+                    // never records unknown words, so pure abbreviations
+                    // ("API", "HTML", "SQL", "JSON") keep their readings.
+                    composed
                 } else if word.chars().all(|c| c.is_ascii_uppercase()) && word.len() >= 2 {
                     self.abbrev_normalizer.normalize(word)
                 } else if crate::pipeline::normalizers::abbreviations::as_word()
@@ -1123,6 +1132,30 @@ mod tests {
         // fallback — it must not enter the unknown-words map.
         let mut p = TTSPipeline::new();
         p.process("Переменная x равна 5");
+        assert!(p.english_normalizer.get_unknown_words().is_empty());
+    }
+
+    #[test]
+    fn pipeline_all_caps_inflected_it_terms_composed() {
+        // Regression (#288): the all-uppercase abbreviation branch used to run
+        // before inflection composition, so an all-caps inflected form of a
+        // known IT term was spelled letter by letter. Composition now runs
+        // first and is case-independent, matching the mixed-case path.
+        let mut p = TTSPipeline::new();
+        assert_eq!(p.process("SUPPORTING"), "саппортинг");
+        assert_eq!(p.process("BUILDING"), "билдинг");
+        assert_eq!(p.process("FEATURES"), "фичас");
+    }
+
+    #[test]
+    fn pipeline_pure_abbreviations_keep_letter_readings() {
+        // The composition helper fires only on a recognized suffix over a
+        // curated stem: pure abbreviations still read letter by letter (or via
+        // their `AS_WORD` entry) and are never recorded as unknown words.
+        let mut p = TTSPipeline::new();
+        assert_eq!(p.process("API"), "эй пи ай");
+        assert_eq!(p.process("CPU"), "си пи ю");
+        assert_eq!(p.process("JSON"), "джейсон");
         assert!(p.english_normalizer.get_unknown_words().is_empty());
     }
 
