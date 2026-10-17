@@ -9,9 +9,7 @@ for Silero TTS, which cannot read English or special characters. The pipeline
 is the mandatory preprocessing step before every synthesis. Character-level
 position mapping produced alongside the normalized text is specified
 separately in the `position-mapping` capability.
-
 ## Requirements
-
 ### Requirement: Pipeline entry points and integration
 
 The system SHALL normalize all text through `TTSPipeline` before TTS
@@ -519,7 +517,10 @@ dictionary ("api" → "эй пи ай", "github" → "гитхаб"); when an ex
 inflection suffix (`s`, `es`, `ies`, `ed`, `ing`, `er`, `ers`, `able`,
 `ally`, `ment`, `ments`, `ation`) and its stem is an `IT_TERMS` entry,
 compose the curated stem reading with the digraph transliteration of the
-suffix ("supporting" → "саппорт" + "инг" = "саппортинг"); all-uppercase
+suffix ("supporting" → "саппорт" + "инг" = "саппортинг"); this composition
+SHALL apply regardless of the word's letter case — including an
+all-uppercase word — and SHALL be attempted before the all-uppercase
+abbreviation rule; all-uppercase
 words of length ≥ 2 via `AbbreviationNormalizer` (special cases like
 "ios" → "ай оу эс", `AS_WORD` entries like "json" → "джейсон", otherwise
 letter-by-letter via the same shared letter-name table); `AS_WORD`
@@ -592,12 +593,21 @@ abbreviation and a lone letter sound the same ("x" and "X" both → "икс").
 - WHEN the pipeline processes it
 - THEN the unknown alphabetic components are read with the soft-c pre-pass
   before digraph transliteration
+
 #### Scenario: Inflected IT-term form composed
 
 - GIVEN the input "supporting"
 - WHEN the pipeline processes it
 - THEN the word is read as "саппортинг", using the curated `support` reading
   instead of the raw transliteration, and is not recorded in the
+  unknown-words map
+
+#### Scenario: All-caps inflected IT-term form composed
+
+- GIVEN the input "SUPPORTING"
+- WHEN the pipeline processes it
+- THEN the word is read as "саппортинг", composing the curated `support`
+  reading instead of spelling the letters out, and is not recorded in the
   unknown-words map
 
 ### Requirement: Numbers
@@ -825,3 +835,4 @@ the split parts/words those phases already produce.
 - GIVEN the entry `user → юзер` and code block narration mode "full"
 - WHEN a fenced code block containing `user_id = 1` is processed
 - THEN the "user" part reads "юзер"
+

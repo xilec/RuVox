@@ -293,6 +293,14 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     m
 });
 
+/// Recognized English inflection suffixes for bounded morphology on known IT
+/// stems. A suffix that merely ends in a shorter one is listed first (`ments`
+/// and `ers` before `s`, `ies` before `es`) so the full suffix wins and the
+/// stem is not truncated.
+const INFLECTION_SUFFIXES: [&str; 12] = [
+    "ation", "able", "ally", "ment", "ments", "ing", "ers", "er", "ies", "es", "ed", "s",
+];
+
 /// Multi-word IT phrases checked before single words.
 static MULTI_WORD_PHRASES: Lazy<Vec<(&'static str, &'static str)>> = Lazy::new(|| {
     let mut phrases = vec![
@@ -400,7 +408,8 @@ static TRANSLIT_AC: Lazy<(AhoCorasick, Vec<&'static str>)> = Lazy::new(|| {
 /// Lookup order:
 /// 1. Multi-word phrases (exact, case-insensitive, longest match).
 /// 2. Built-in `IT_TERMS` dictionary.
-/// 3. Simple character-by-character transliteration via `TRANSLIT_AC`.
+/// 3. Bounded inflection composition for known `IT_TERMS` stems.
+/// 4. Simple character-by-character transliteration via `TRANSLIT_AC`.
 ///
 /// User-supplied overrides do not live here: the user dictionary is applied
 /// by the pipeline's dedicated pre-pass phase before English-word resolution
@@ -447,19 +456,8 @@ impl EnglishNormalizer {
         }
 
         // 3. Bounded morphology for known IT stems (base reading + suffix reading)
-        const SUFFIXES: [&str; 12] = [
-            "ation", "able", "ally", "ment", "ments", "ing", "ers", "er", "ies", "es", "ed", "s",
-        ];
-        for suffix in SUFFIXES {
-            if text_lower.len() > suffix.len() {
-                if let Some(stem) = text_lower.strip_suffix(suffix) {
-                    if stem.len() >= 3 {
-                        if let Some(base) = IT_TERMS.get(stem) {
-                            return format!("{}{}", base, transliterate_simple(suffix));
-                        }
-                    }
-                }
-            }
+        if let Some(composed) = self.compose_inflection(text) {
+            return composed;
         }
 
         // 4. Transliteration fallback
@@ -471,6 +469,30 @@ impl EnglishNormalizer {
         }
 
         result
+    }
+
+    /// Compose a curated `IT_TERMS` stem reading with the transliterated
+    /// inflection suffix, e.g. "supporting" → "саппортинг".
+    ///
+    /// Fires only when the (case-insensitive) word ends in a recognized English
+    /// inflection suffix (`INFLECTION_SUFFIXES`) and its stem is a curated
+    /// `IT_TERMS` entry. Returns `None` for every other word — in particular for
+    /// pure abbreviations such as "html" — so callers never get an arbitrary
+    /// word transliterated through this path.
+    pub fn compose_inflection(&self, word: &str) -> Option<String> {
+        let word_lower = word.to_lowercase();
+        for suffix in INFLECTION_SUFFIXES {
+            if word_lower.len() > suffix.len() {
+                if let Some(stem) = word_lower.strip_suffix(suffix) {
+                    if stem.len() >= 3 {
+                        if let Some(base) = IT_TERMS.get(stem) {
+                            return Some(format!("{}{}", base, transliterate_simple(suffix)));
+                        }
+                    }
+                }
+            }
+        }
+        None
     }
 
     /// Returns a snapshot of words resolved via transliteration fallback.
@@ -844,5 +866,45 @@ mod tests {
     #[test_case("builds" => "билдс"; "builds")]
     fn english_morphological_forms(word: &str) -> String {
         EnglishNormalizer::new().normalize(word, false)
+    }
+
+    // ── Inflection composition helper (#288) ─────────────────────────────────
+
+    #[test]
+    fn compose_inflection_composes_known_stems() {
+        // The helper is the single source of truth for inflection phonetics,
+        // shared by `normalize` and the pipeline's all-caps path.
+        let en = EnglishNormalizer::new();
+        assert_eq!(
+            en.compose_inflection("supporting").as_deref(),
+            Some("саппортинг")
+        );
+        assert_eq!(
+            en.compose_inflection("building").as_deref(),
+            Some("билдинг")
+        );
+        assert_eq!(en.compose_inflection("features").as_deref(), Some("фичас"));
+    }
+
+    #[test]
+    fn compose_inflection_is_case_insensitive() {
+        // Composition does not depend on the word's letter case, so an
+        // all-uppercase inflected form composes the curated stem reading too.
+        let en = EnglishNormalizer::new();
+        assert_eq!(
+            en.compose_inflection("SUPPORTING").as_deref(),
+            Some("саппортинг")
+        );
+    }
+
+    #[test]
+    fn compose_inflection_returns_none_for_abbreviations() {
+        // A pure abbreviation has no recognized suffix with a curated stem, so
+        // the helper must not transliterate it — otherwise letter-by-letter
+        // readings would regress.
+        let en = EnglishNormalizer::new();
+        assert_eq!(en.compose_inflection("html"), None);
+        assert_eq!(en.compose_inflection("API"), None);
+        assert_eq!(en.compose_inflection("json"), None);
     }
 }

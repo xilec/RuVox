@@ -8,6 +8,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 
 ### Changed
 - **English normalization handles common inflected forms** — known IT terms now compose a curated base reading with a phonetic suffix (e.g. `support` + `ing`), while raw transliteration remains the fallback for unknown forms.
+- **All-caps inflected IT terms are composed, not spelled out** — an uppercase form such as `SUPPORTING` or `FEATURES` now reads by its curated stem (`саппортинг`, `фичас`) instead of letter by letter (#288).
 
 ## [0.6.0] — 2026-09-05
 
