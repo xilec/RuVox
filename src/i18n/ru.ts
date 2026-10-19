@@ -212,6 +212,9 @@ export const ru = {
   'settings.notify_on_ready': 'Уведомлять о готовности аудио',
   'settings.notify_on_error': 'Уведомлять об ошибках синтеза',
   'settings.preview_dialog_enabled': 'Показывать диалог предпросмотра перед синтезом',
+  'settings.hide_to_tray_on_close': 'Сворачивать в трей при закрытии окна',
+  'settings.hide_to_tray_on_close.description':
+    'Если включено, окно скрывается в трей и приложение продолжает работать. Если выключено, закрытие окна завершает приложение.',
   'settings.max_cache_size.label': 'Максимальный размер кэша (МБ)',
   'settings.max_cache_size.description':
     'При запуске и при ручной очистке самые старые записи удаляются, пока кэш не уложится в этот лимит.',

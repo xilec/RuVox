@@ -1,0 +1,41 @@
+# Tasks: optional-tray-on-close
+
+## 1. Config field
+
+- [x] Add `hide_to_tray_on_close: bool` to `UIConfig` with
+      `#[serde(default)]` (off for fresh and pre-existing configs) and `false`
+      to `Default`.
+- [x] Add `hide_to_tray_on_close: Option<bool>` to `UIConfigPatch` and apply it
+      in `apply_config_patch`; extend the exhaustive patch-field table and the
+      all-`None` touch test.
+- [x] Schema tests: default is off; a config without the key parses to `false`.
+
+## 2. Close behavior
+
+- [x] Add `should_hide_to_tray` in `src-tauri/src/lib.rs`, reading the persisted
+      config through `AppState.storage` on every close (read errors → `false`).
+- [x] Gate `CloseRequested` (prevent + hide) and `ExitRequested`
+      (prevent exit) on the helper, keeping the `user_quit` bypass.
+- [x] Unit-test the gate: default off, and on after persisting the enabled flag.
+
+## 3. Settings UI
+
+- [x] Add `hide_to_tray_on_close` to the `UIConfig` TS type.
+- [x] Add the form field, loaded value, submitted patch entry, and a Switch in
+      the interface section; factory Reset restores `false`.
+- [x] Add RU/EN label and description strings.
+- [x] Update the Settings test fixture and add a toggle-submits-patch test.
+
+## 4. Spec + docs
+
+- [x] Apply the `tray`, `ui`, and `ipc-commands` deltas.
+- [x] Add a `CHANGELOG.md` `[Unreleased]` note.
+
+## 5. Validation
+
+- [ ] `nix develop -c cargo test --manifest-path src-tauri/Cargo.toml`
+- [ ] `nix develop -c pnpm typecheck`
+- [ ] `nix develop -c pnpm test:unit`
+- [ ] `nix develop -c just lint`
+- [ ] `nix develop -c pnpm dlx @fission-ai/openspec@1.6.0 validate optional-tray-on-close --strict`
+- [ ] Archive the change (`openspec archive`) before the PR.

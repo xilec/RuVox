@@ -1909,6 +1909,9 @@ fn apply_config_patch(config: &mut UIConfig, patch: UIConfigPatch) {
     if let Some(v) = patch.preview_dialog_enabled {
         config.preview_dialog_enabled = v;
     }
+    if let Some(v) = patch.hide_to_tray_on_close {
+        config.hide_to_tray_on_close = v;
+    }
     if let Some(v) = patch.engine {
         config.engine = v;
     }
@@ -2503,6 +2506,7 @@ mod tests {
             player_hotkeys: _,
             window_geometry: _,
             preview_dialog_enabled: _,
+            hide_to_tray_on_close: _,
             engine: _,
             piper_voice: _,
             language: _,
@@ -2591,6 +2595,13 @@ mod tests {
                 field: "preview_dialog_enabled",
                 patch: UIConfigPatch {
                     preview_dialog_enabled: Some(false),
+                    ..Default::default()
+                },
+            },
+            Case {
+                field: "hide_to_tray_on_close",
+                patch: UIConfigPatch {
+                    hide_to_tray_on_close: Some(true),
                     ..Default::default()
                 },
             },
@@ -2696,6 +2707,7 @@ mod tests {
             player_hotkeys: custom_hotkeys,
             window_geometry: Some([1, 2, 3, 4]),
             preview_dialog_enabled: false,
+            hide_to_tray_on_close: true,
             engine: "silero".to_string(),
             piper_voice: "irina".to_string(),
             language: "ru".to_string(),

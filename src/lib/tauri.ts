@@ -120,6 +120,9 @@ export interface UIConfig {
   player_hotkeys: Record<string, string>;
   window_geometry: [number, number, number, number] | null;
   preview_dialog_enabled: boolean;
+  /** Hide the window into the system tray on close instead of quitting.
+   *  Off by default — closing the window exits the app. */
+  hide_to_tray_on_close: boolean;
   /** Active TTS engine. Defaults to "silero_native" on fresh installs and on
    *  configs that pre-date the engine selector. */
   engine: EngineKind;

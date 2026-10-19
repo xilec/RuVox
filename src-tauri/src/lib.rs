@@ -859,6 +859,20 @@ fn show_startup_storage_error(
     std::process::exit(1);
 }
 
+/// Whether a user-initiated window close should hide the window into the
+/// system tray instead of quitting (see `UIConfig::hide_to_tray_on_close`).
+///
+/// The config is re-read on every close so toggling the setting in the
+/// Settings dialog takes effect without a restart. A missing state or an
+/// unreadable config resolves to `false` — quitting is the safe default and
+/// matches the factory configuration.
+fn should_hide_to_tray<R: Runtime>(app_handle: &AppHandle<R>) -> bool {
+    app_handle
+        .try_state::<AppState>()
+        .and_then(|state| state.storage.load_config().ok())
+        .is_some_and(|config| config.hide_to_tray_on_close)
+}
+
 pub fn run() {
     #[cfg(unix)]
     reap_orphan_mpv();
@@ -950,9 +964,11 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app_handle, event| match event {
             // Window-close intercept: hide the main window instead of
-            // quitting so the app keeps running in the system tray.  Skipped
-            // when the tray's "Выход" item set user_quit — then we let the
-            // window close so app.exit(0) can finish.
+            // quitting so the app keeps running in the system tray. Gated by
+            // the `hide_to_tray_on_close` config (off by default: closing the
+            // window quits). Skipped when the tray's "Выход" item set
+            // user_quit — then we let the window close so app.exit(0) can
+            // finish.
             RunEvent::WindowEvent {
                 label,
                 event: tauri::WindowEvent::CloseRequested { api, .. },
@@ -962,7 +978,7 @@ pub fn run() {
                     .try_state::<AppState>()
                     .map(|s| s.user_quit.load(Ordering::SeqCst))
                     .unwrap_or(false);
-                if !user_quit {
+                if !user_quit && should_hide_to_tray(app_handle) {
                     api.prevent_close();
                     if let Some(w) = app_handle.get_webview_window(&label) {
                         let _ = w.set_skip_taskbar(true);
@@ -972,15 +988,17 @@ pub fn run() {
             }
             // ExitRequested fires when Tauri thinks the last window is gone
             // (e.g. user used a window-manager close that we didn't catch
-            // via WindowEvent).  Block the implicit exit so the app keeps
-            // running in the tray; allow it through only when the tray's
-            // "Выход" set user_quit.
+            // via WindowEvent). Block the implicit exit so the app keeps
+            // running in the tray; allow it through when the tray's "Выход"
+            // set user_quit or when hiding to the tray is disabled (the
+            // window close that emptied the last window should quit the
+            // app).
             RunEvent::ExitRequested { api, .. } => {
                 let user_quit = app_handle
                     .try_state::<AppState>()
                     .map(|s| s.user_quit.load(Ordering::SeqCst))
                     .unwrap_or(false);
-                if !user_quit {
+                if !user_quit && should_hide_to_tray(app_handle) {
                     api.prevent_exit();
                 }
             }
@@ -998,4 +1016,28 @@ pub fn run() {
             }
             _ => {}
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_hide_to_tray;
+    use crate::test_support::build_test_app;
+
+    /// Closing the window quits by default and only hides into the tray when
+    /// the persisted config opts in. The gate re-reads the config, so a
+    /// Settings-dialog change applies without a restart.
+    #[test]
+    fn should_hide_to_tray_follows_persisted_config() {
+        let test_app = build_test_app();
+        let handle = test_app.app.handle().clone();
+        assert!(!should_hide_to_tray(&handle));
+
+        let state = test_app.state();
+        let storage = &state.storage;
+        let mut config = storage.load_config().unwrap();
+        config.hide_to_tray_on_close = true;
+        storage.save_config(&config).unwrap();
+
+        assert!(should_hide_to_tray(&handle));
+    }
 }

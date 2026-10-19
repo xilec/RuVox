@@ -211,6 +211,9 @@ export const en: Record<MessageKey, string> = {
   'settings.notify_on_ready': 'Notify when audio is ready',
   'settings.notify_on_error': 'Notify about synthesis errors',
   'settings.preview_dialog_enabled': 'Show the preview dialog before synthesis',
+  'settings.hide_to_tray_on_close': 'Hide window to tray on close',
+  'settings.hide_to_tray_on_close.description':
+    'When enabled, closing the window hides it and the app keeps running. When disabled, closing the window quits the app.',
   'settings.max_cache_size.label': 'Maximum cache size (MB)',
   'settings.max_cache_size.description':
     'On startup and manual cleanup the oldest entries are deleted until the cache fits this limit.',
