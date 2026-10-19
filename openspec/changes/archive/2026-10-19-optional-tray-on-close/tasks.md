@@ -33,9 +33,9 @@
 
 ## 5. Validation
 
-- [ ] `nix develop -c cargo test --manifest-path src-tauri/Cargo.toml`
-- [ ] `nix develop -c pnpm typecheck`
-- [ ] `nix develop -c pnpm test:unit`
-- [ ] `nix develop -c just lint`
-- [ ] `nix develop -c pnpm dlx @fission-ai/openspec@1.6.0 validate optional-tray-on-close --strict`
-- [ ] Archive the change (`openspec archive`) before the PR.
+- [x] `nix develop -c cargo test --manifest-path src-tauri/Cargo.toml`
+- [x] `nix develop -c pnpm typecheck`
+- [x] `nix develop -c pnpm test:unit`
+- [x] `nix develop -c just lint`
+- [x] `nix develop -c pnpm dlx @fission-ai/openspec@1.6.0 validate optional-tray-on-close --strict`
+- [x] Archive the change (`openspec archive`) before the PR.
