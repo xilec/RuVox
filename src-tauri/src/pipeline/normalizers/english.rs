@@ -475,22 +475,69 @@ impl EnglishNormalizer {
     /// inflection suffix, e.g. "supporting" → "саппортинг".
     ///
     /// Fires only when the (case-insensitive) word ends in a recognized English
-    /// inflection suffix (`INFLECTION_SUFFIXES`) and its stem is a curated
-    /// `IT_TERMS` entry. Returns `None` for every other word — in particular for
-    /// pure abbreviations such as "html" — so callers never get an arbitrary
-    /// word transliterated through this path.
+    /// inflection suffix (`INFLECTION_SUFFIXES`) and its base is a curated
+    /// `IT_TERMS` entry. The base is the stripped stem, the stripped stem with a
+    /// dropped silent "e" restored ("uses" → `use` + "es"), or — for "-ies" —
+    /// `stem + "y"` ("repositories" → `repository`). Returns `None` for every
+    /// other word — in particular for pure abbreviations such as "html" — so
+    /// callers never get an arbitrary word transliterated through this path.
     pub fn compose_inflection(&self, word: &str) -> Option<String> {
         let word_lower = word.to_lowercase();
         for suffix in INFLECTION_SUFFIXES {
-            if word_lower.len() > suffix.len() {
-                if let Some(stem) = word_lower.strip_suffix(suffix) {
-                    if stem.len() >= 3 {
-                        if let Some(base) = IT_TERMS.get(stem) {
-                            return Some(format!("{}{}", base, transliterate_simple(suffix)));
-                        }
-                    }
+            if word_lower.len() <= suffix.len() {
+                continue;
+            }
+            let Some(stem) = word_lower.strip_suffix(suffix) else {
+                continue;
+            };
+            // A one-letter stem cannot hold a curated reading; two letters are
+            // reachable only through the silent-e restoration below ("us" →
+            // "use").
+            if stem.len() < 2 {
+                continue;
+            }
+
+            if suffix == "ies" {
+                // "-ies" is the plural of "-y", so only a real "-y" base
+                // composes ("repositories" → `repository`); a stem that happens
+                // to end in "ies" otherwise ("species") must not compose. The
+                // Russian reading drops the base's trailing "й", because the
+                // plural adds a single "с".
+                if let Some(base) = IT_TERMS.get(format!("{stem}y").as_str()) {
+                    let trimmed = base.strip_suffix('й').unwrap_or(base);
+                    return Some(format!("{trimmed}с"));
+                }
+                continue;
+            }
+
+            // Exact stem hit keeps its precedence and its minimum length, so
+            // already-working forms are untouched.
+            if stem.len() >= 3 {
+                if let Some(base) = IT_TERMS.get(stem) {
+                    return Some(format!("{}{}", base, transliterate_simple(suffix)));
                 }
             }
+
+            // The stem may have dropped a silent "e" before this suffix
+            // ("us" → "use", "cach" → "cache"). "-ally" is excluded: it
+            // attaches to an "-al" base ("practical" → "practically"), so a
+            // restored silent "e" would compose the wrong base ("practice" →
+            // "практисалли").
+            if suffix == "ally" {
+                continue;
+            }
+            let restored = format!("{stem}e");
+            let Some(base) = IT_TERMS.get(restored.as_str()) else {
+                continue;
+            };
+            // English spells a syllabic "es" only after a sibilant stem
+            // ("uses" → "юзес", "caches" → "кэшес"); a non-sibilant stem takes
+            // the plain "s" plural ("features" → "фичас"), which a shorter
+            // suffix composes.
+            if suffix == "es" && !es_reading_is_syllabic(stem) {
+                continue;
+            }
+            return Some(format!("{}{}", base, transliterate_simple(suffix)));
         }
         None
     }
@@ -504,6 +551,17 @@ impl EnglishNormalizer {
     pub fn clear_unknown_words(&mut self) {
         self.unknown_words.clear();
     }
+}
+
+/// Whether the English "-es" plural of a curated base that dropped a silent "e"
+/// (`stem`, without that "e") is spelled with a syllabic "ес".
+///
+/// The plural is syllabic only after a sibilant ("uses" → "юзес", "caches" →
+/// "кэшес"); any other stem takes a plain "s" ("features" → "фичас").
+fn es_reading_is_syllabic(stem: &str) -> bool {
+    ["ch", "sh", "s", "z", "x", "c", "g"]
+        .iter()
+        .any(|ending| stem.ends_with(ending))
 }
 
 /// Transliterate an ASCII lowercase string to Russian using digraph-first rules.
@@ -824,6 +882,19 @@ mod tests {
     }
 
     #[test]
+    fn test_composed_form_not_tracked_but_raw_fallback_is() {
+        // A composed inflected form (here with a restored silent "e") resolves
+        // from a curated reading, so it is not an unknown word; a stem that no
+        // longer composes through "-ies" falls back to transliteration and is
+        // tracked.
+        let mut en = normalizer();
+        en.normalize("uses", true);
+        assert!(!en.get_unknown_words().contains_key("uses"));
+        en.normalize("species", true);
+        assert!(en.get_unknown_words().contains_key("species"));
+    }
+
+    #[test]
     fn test_clear_unknown_words() {
         let mut en = normalizer();
         en.normalize("xyzzy", true);
@@ -859,6 +930,14 @@ mod tests {
     #[test_case("supporter" => "саппортер"; "supporter")]
     #[test_case("feature" => "фича"; "feature")]
     #[test_case("features" => "фичас"; "features")]
+    #[test_case("using" => "юзинг"; "using")]
+    #[test_case("uses" => "юзес"; "uses")]
+    #[test_case("used" => "юзед"; "used")]
+    #[test_case("caches" => "кэшес"; "caches")]
+    #[test_case("cached" => "кэшед"; "cached")]
+    #[test_case("repositories" => "репозиторис"; "repositories")]
+    #[test_case("compilation" => "компайлашн"; "compilation")]
+    #[test_case("practically" => "практикалли"; "practically")]
     #[test_case("null" => "налл"; "null")]
     #[test_case("nullable" => "наллабле"; "nullable")]
     #[test_case("build" => "билд"; "build")]
@@ -895,16 +974,67 @@ mod tests {
             en.compose_inflection("SUPPORTING").as_deref(),
             Some("саппортинг")
         );
+        assert_eq!(en.compose_inflection("USES").as_deref(), Some("юзес"));
+        assert_eq!(
+            en.compose_inflection("REPOSITORIES").as_deref(),
+            Some("репозиторис")
+        );
+    }
+
+    #[test]
+    fn compose_inflection_restores_dropped_silent_e() {
+        // The stripped stem dropped a silent "e" ("us" → "use", "cach" →
+        // "cache"); the restored base composes instead of degrading.
+        let en = EnglishNormalizer::new();
+        assert_eq!(en.compose_inflection("using").as_deref(), Some("юзинг"));
+        assert_eq!(en.compose_inflection("uses").as_deref(), Some("юзес"));
+        assert_eq!(en.compose_inflection("used").as_deref(), Some("юзед"));
+        assert_eq!(en.compose_inflection("caches").as_deref(), Some("кэшес"));
+        assert_eq!(en.compose_inflection("cached").as_deref(), Some("кэшед"));
+    }
+
+    #[test]
+    fn compose_inflection_keeps_plain_s_for_non_sibilant_stems() {
+        // A restored stem that is not sibilant takes the plain "s" plural: the
+        // shorter suffix composes "feature" rather than "фичаес".
+        let en = EnglishNormalizer::new();
+        assert_eq!(en.compose_inflection("features").as_deref(), Some("фичас"));
+        assert_eq!(
+            en.compose_inflection("supports").as_deref(),
+            Some("саппортс")
+        );
+    }
+
+    #[test]
+    fn compose_inflection_does_not_restore_silent_e_for_ally() {
+        // "-ally" attaches to an "-al" base ("practical" → "practically"), so a
+        // restored silent "e" would compose the wrong base; the helper must not
+        // compose "practice" + "ally" ("практисалли").
+        let en = EnglishNormalizer::new();
+        assert_eq!(en.compose_inflection("practically"), None);
+    }
+
+    #[test]
+    fn compose_inflection_reads_ies_from_y_stem() {
+        // "-ies" is the plural of "-y": the base reading drops its trailing "й"
+        // because the plural adds a single "с".
+        let en = EnglishNormalizer::new();
+        assert_eq!(
+            en.compose_inflection("repositories").as_deref(),
+            Some("репозиторис")
+        );
     }
 
     #[test]
     fn compose_inflection_returns_none_for_abbreviations() {
         // A pure abbreviation has no recognized suffix with a curated stem, so
         // the helper must not transliterate it — otherwise letter-by-letter
-        // readings would regress.
+        // readings would regress. A stem that is not a "-y" base must not
+        // compose through the "-ies" branch either ("species" from "spec").
         let en = EnglishNormalizer::new();
         assert_eq!(en.compose_inflection("html"), None);
         assert_eq!(en.compose_inflection("API"), None);
         assert_eq!(en.compose_inflection("json"), None);
+        assert_eq!(en.compose_inflection("species"), None);
     }
 }
