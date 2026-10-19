@@ -1,0 +1,5 @@
+Перед merge request нужен code review.
+Смотри stack trace в логах: live reload сломан, нужен dry run и edge case.
+stack
+trace
+hot  fix

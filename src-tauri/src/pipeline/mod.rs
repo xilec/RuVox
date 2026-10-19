@@ -889,6 +889,7 @@ impl Default for TTSPipeline {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dictionary::DictionaryEntry;
 
     // ── Unit-level sanity tests ────────────────────────────────────────────────
 
@@ -1098,6 +1099,38 @@ mod tests {
         assert_eq!(p.process("use user"), "юз юзер");
         assert_eq!(p.process("tests test"), "тестс тест");
         assert_eq!(p.process("test tests"), "тест тестс");
+    }
+
+    #[test]
+    fn pipeline_phrase_words_read_from_the_dictionary() {
+        // Regression (#287): a phrase used to be transliterated word by word
+        // with the wrong readings ("стак трейс"); its words are curated now, so
+        // the reading does not depend on how the words are separated.
+        let mut p = TTSPipeline::new();
+        assert_eq!(p.process("stack trace"), "стэк трейс");
+        assert_eq!(p.process("stack\ntrace"), "стэк\nтрейс");
+        assert_eq!(p.process("stack  trace"), "стэк трейс");
+        assert_eq!(p.process("stack\ttrace"), "стэк трейс");
+        assert_eq!(
+            p.process("Перед merge request нужен code review."),
+            "Перед мёрдж реквест нужен код ревью."
+        );
+        assert_eq!(
+            p.process("hot fix и live reload, dry run и edge case"),
+            "хот фикс и лайв релоуд, драй ран и эдж кейс"
+        );
+    }
+
+    #[test]
+    fn pipeline_phrase_words_respect_user_dictionary() {
+        // The user dictionary pre-pass runs before English resolution, so an
+        // overridden word wins over its curated reading.
+        let mut p = TTSPipeline::new();
+        p.user_dictionary.insert(DictionaryEntry {
+            from: "stack".to_string(),
+            to: "стек".to_string(),
+        });
+        assert_eq!(p.process("stack trace"), "стек трейс");
     }
 
     #[test]

@@ -320,7 +320,6 @@ beneath,бенис
 benefit,бенефит
 bent,бент
 beside,бесиде
-best practice,бест практис
 best,бест
 better,беттер
 betting,беттинг
@@ -571,8 +570,6 @@ coal,коул
 coast,коуст
 coat,коут
 cobol,кобол
-code review,код ревью
-code smell,код смелл
 code,код
 coffee,коффи
 coin,койн
@@ -777,7 +774,6 @@ cycling,сиклинг
 c#,си шарп
 c++,си плюс плюс
 dad,дад
-daily standup,дейли стендап
 daily,дейли
 damage,дамаге
 damp,дамп
@@ -974,8 +970,7 @@ drugstore,другсторе
 drug,друг
 drum,друм
 drunk,друнк
-dry run,драй ран
-dry,дри
+dry,драй
 due,дуе
 dull,дулл
 dump,думп
@@ -997,8 +992,7 @@ easy,иси
 eat,ит
 economic,економик
 economy,економи
-edge case,эдж кейс
-edge,едге
+edge,эдж
 edition,едишн
 editor,едитор
 educated,едукатед
@@ -1212,7 +1206,6 @@ favourite,фаваурите
 favour,фаваур
 fear,фир
 feather,фисер
-feature branch,фича бранч
 feature,фича
 february,фебруари
 federal,федерал
@@ -1524,8 +1517,6 @@ horse,хорсе
 hospital,хоспитал
 host,хост
 hotel,хотел
-hot fix,хот фикс
-hot reload,хот релоуд
 hot,хот
 hour,хаур
 household,хаусехолд
@@ -1816,7 +1807,6 @@ literature,литературе
 litre,литре
 little,литтле
 lively,ливели
-live reload,лайв релоуд
 living,ливинг
 load,лоуд
 loan,лоун
@@ -1922,7 +1912,6 @@ mention,меншн
 menu,мену
 merely,мерели
 mere,мере
-merge request,мёрдж реквест
 merge,мёрдж
 message,мессаге
 mess,месс
@@ -2444,7 +2433,6 @@ public,публик
 publishing,публишинг
 publish,публиш
 pub,пуб
-pull request,пулл реквест
 pull,пулл
 punch,пунч
 punishment,пунишмент
@@ -2669,7 +2657,7 @@ rule,руле
 rumour,румаур
 runner,руннер
 running,руннинг
-run,рун
+run,ран
 rural,рурал
 rush,руш
 rust,раст
@@ -2952,7 +2940,6 @@ square,скваре
 squeeze,сквизе
 src,сорс
 stable,стабле
-stack trace,стэк трейс
 staff,стафф
 stage,стейдж
 stair,стэйр
@@ -3120,7 +3107,6 @@ teaching,тичинг
 teach,тич
 team,тим
 tea,ти
-tech debt,тек дет
 technical,течникал
 technique,течникве
 technology,течнологи
@@ -3369,7 +3355,6 @@ up,уп
 urban,урбан
 urgent,ургент
 urge,урге
-use case,юз кейс
 useful,усефул
 useless,уселесс
 users,юзерс
