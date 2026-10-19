@@ -517,7 +517,18 @@ dictionary ("api" → "эй пи ай", "github" → "гитхаб"); when an ex
 inflection suffix (`s`, `es`, `ies`, `ed`, `ing`, `er`, `ers`, `able`,
 `ally`, `ment`, `ments`, `ation`) and its stem is an `IT_TERMS` entry,
 compose the curated stem reading with the digraph transliteration of the
-suffix ("supporting" → "саппорт" + "инг" = "саппортинг"); this composition
+suffix ("supporting" → "саппорт" + "инг" = "саппортинг"). When the stripped stem
+is not itself an `IT_TERMS` entry, the composition SHALL retry with the silent
+"e" the stem dropped restored ("uses" → `use` + "es" = "юзес", "cached" →
+`cache` + "ed" = "кэшед"), except for the "-ally" suffix, which attaches to an
+"-al" base ("practical" → "practically") and SHALL keep the plain reading. The
+retry SHALL read "-es" as the syllabic "ес" only when the stem that dropped the
+"e" ends in a sibilant and otherwise SHALL leave the plain "-s" composition to
+win ("features" → "фичас", not "фичаес"). The "-ies" suffix
+SHALL compose only when `stem + "y"` is an `IT_TERMS` entry, dropping a trailing
+"й" from the base reading ("repositories" → `repository` → "репозитори" + "с" =
+"репозиторис"), so a stem that is not a "-y" base does not compose through it
+("species" does not compose from `spec`). This composition
 SHALL apply regardless of the word's letter case — including an
 all-uppercase word — and SHALL be attempted before the all-uppercase
 abbreviation rule; all-uppercase
@@ -609,6 +620,36 @@ abbreviation and a lone letter sound the same ("x" and "X" both → "икс").
 - THEN the word is read as "саппортинг", composing the curated `support`
   reading instead of spelling the letters out, and is not recorded in the
   unknown-words map
+
+#### Scenario: Silent-e stem restored before composing
+
+- GIVEN the inputs "using", "uses", "used", "caches", "cached"
+- WHEN the pipeline processes them
+- THEN they are read as "юзинг", "юзес", "юзед", "кэшес", "кэшед" from the
+  curated `use`/`cache` readings with the silent "e" restored, and they are
+  not recorded in the unknown-words map
+
+#### Scenario: Non-sibilant "-es" keeps the plain plural
+
+- GIVEN the inputs "features" and "supports"
+- WHEN the pipeline processes them
+- THEN they are read as "фичас" and "саппортс" — the plain "-s" reading, not a
+  syllabic "ес" reading of a restored stem
+
+#### Scenario: "-ally" is not a silent-e suffix
+
+- GIVEN the input "practically"
+- WHEN the pipeline processes it
+- THEN it is read as "практикалли" — the plain transliteration, not a
+  composition from a restored `practice` base ("практисалли")
+
+#### Scenario: "-ies" composed only from a "-y" base
+
+- GIVEN the inputs "repositories" and "species"
+- WHEN the pipeline processes them
+- THEN "repositories" is read as "репозиторис" from the curated `repository`
+  reading with its trailing "й" dropped, while "species" does not compose from
+  `spec` and falls back to transliteration
 
 ### Requirement: Numbers
 
