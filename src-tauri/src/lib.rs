@@ -867,10 +867,18 @@ fn show_startup_storage_error(
 /// unreadable config resolves to `false` — quitting is the safe default and
 /// matches the factory configuration.
 fn should_hide_to_tray<R: Runtime>(app_handle: &AppHandle<R>) -> bool {
-    app_handle
-        .try_state::<AppState>()
-        .and_then(|state| state.storage.load_config().ok())
-        .is_some_and(|config| config.hide_to_tray_on_close)
+    let Some(state) = app_handle.try_state::<AppState>() else {
+        return false;
+    };
+    match state.storage.load_config() {
+        Ok(config) => config.hide_to_tray_on_close,
+        Err(e) => {
+            // Quitting is the safe default. Log the failure so a future
+            // fallible config read cannot silently flip close semantics.
+            tracing::warn!("failed to read config while handling window close: {e}");
+            false
+        }
+    }
 }
 
 pub fn run() {
