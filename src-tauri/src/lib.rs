@@ -893,7 +893,6 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
-            tray::init(app.handle())?;
             install_window_icon(app.handle())?;
 
             let player: Arc<dyn PlayerBackend> = Arc::new(Player::new(app.handle().clone())?);
@@ -906,6 +905,14 @@ pub fn run() {
                 Ok(service) => service,
                 Err(e) => show_startup_storage_error(e, app.path().app_log_dir().ok()),
             });
+            // An unreadable config falls back to the factory default (off):
+            // no tray icon and close-to-quit, the same behavior the close gate
+            // uses for a failed read.
+            let config = storage.load_config().unwrap_or_default();
+            // The tray is the only way back into a window hidden on close, so
+            // it exists exactly while hiding is enabled. Keep the icon out of
+            // the notification area when closing quits.
+            tray::set_enabled(app.handle(), config.hide_to_tray_on_close);
             spawn_audio_migration_and_cleanup(Arc::clone(&storage));
 
             let (engine_switcher, ttsd_dir, piper_voices_dir, silero_native_bundle_dir, emitter) =
@@ -925,9 +932,7 @@ pub fn run() {
             // The pipeline's code block narration mode follows the config:
             // apply the persisted value right after construction (later
             // changes arrive via `update_config`).
-            if let Ok(config) = storage.load_config() {
-                apply_configured_code_block_mode(&pipeline, &config);
-            }
+            apply_configured_code_block_mode(&pipeline, &config);
             // The user dictionary file lives next to config.json; storage
             // opening it proves the config root is resolvable.
             let dictionary_store = Arc::new(DictionaryStore::new(
@@ -1047,5 +1052,9 @@ mod tests {
         storage.save_config(&config).unwrap();
 
         assert!(should_hide_to_tray(&handle));
+
+        config.hide_to_tray_on_close = false;
+        storage.save_config(&config).unwrap();
+        assert!(!should_hide_to_tray(&handle));
     }
 }

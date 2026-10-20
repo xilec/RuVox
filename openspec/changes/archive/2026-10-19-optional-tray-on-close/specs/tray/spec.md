@@ -20,8 +20,35 @@ it disabled the exit SHALL proceed so the application quits together with the
 window. The intercept MUST be bypassed when a real quit was requested through
 the tray's "Выход" item (the `user_quit` flag).
 
-The tray icon, its context menu, and the clipboard actions SHALL remain
-available regardless of the setting.
+The tray icon SHALL exist only while the setting is enabled. With
+`hide_to_tray_on_close` off the app quits together with its window, so the
+system SHALL NOT show a tray icon and the tray menu and clipboard actions
+SHALL be unreachable. The icon SHALL be created at startup only when the
+persisted setting is enabled, and `update_config` SHALL create or remove it
+after the config is saved, so toggling the Settings switch applies without a
+restart. With the setting enabled the icon, its context menu, and the
+clipboard actions SHALL remain available.
+
+#### Scenario: No tray icon by default
+
+- GIVEN the application starts with the default configuration
+  (`hide_to_tray_on_close: false`)
+- WHEN the main window is open
+- THEN no tray icon is shown in the notification area
+
+#### Scenario: Enabling the switch adds the icon
+
+- GIVEN the Settings dialog is open with `hide_to_tray_on_close: false`
+- WHEN the user enables the switch and saves
+- THEN the tray icon appears without a restart, and a later window close hides
+  the window instead of quitting
+
+#### Scenario: Disabling the switch removes the icon
+
+- GIVEN the application is running with `hide_to_tray_on_close: true`
+- WHEN the user disables the switch and saves
+- THEN the tray icon disappears without a restart, and a later window close
+  quits the application
 
 #### Scenario: Close button hides the window
 

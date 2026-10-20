@@ -7,6 +7,10 @@ use tauri::{
 
 use crate::state::AppState;
 
+/// Tray icon id: used both when building the icon and when looking it up to
+/// follow the hide-on-close setting.
+const TRAY_ID: &str = "main";
+
 pub fn init<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     // Order rationale: libayatana-appindicator (Linux/KDE/GNOME) opens the
     // menu on every tray-icon click — there are no raw click events.  Put
@@ -20,7 +24,7 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
 
     let menu = Menu::with_items(app, &[&show, &sep1, &add, &sep2, &quit])?;
 
-    let _tray = TrayIconBuilder::with_id("main")
+    let _tray = TrayIconBuilder::with_id(TRAY_ID)
         // Include the version so bug reports can quote it from the tray.
         .tooltip(format!("RuVox v{}", app.package_info().version))
         .icon(load_tray_icon(app)?)
@@ -64,6 +68,35 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         .build(app)?;
 
     Ok(())
+}
+
+/// Create or remove the tray icon to match `UIConfig.hide_to_tray_on_close`.
+///
+/// With hide-on-close off the app quits together with its window, so an icon
+/// would have nothing to restore; it must also leave the notification area
+/// rather than stay visible. The icon is built at startup only when the
+/// persisted setting is enabled, and toggling later adds or removes it.
+pub fn set_enabled<R: Runtime>(app: &AppHandle<R>, enabled: bool) {
+    match (enabled, app.tray_by_id(TRAY_ID).is_some()) {
+        (true, false) => {
+            if let Err(e) = init(app) {
+                tracing::warn!("tray: failed to create the icon: {e}");
+            }
+        }
+        (false, true) => {
+            if let Some(tray) = app.remove_tray_by_id(TRAY_ID) {
+                // Dropping a TrayIcon touches the GTK/macOS backend, which is
+                // main-thread-only; Tauri marshals its tray methods but cannot
+                // do so for `Drop`, hence the explicit hop. The scheduling
+                // failure case means the event loop is already gone (app
+                // exit), where nothing else can be done with the handle.
+                if let Err(e) = app.run_on_main_thread(move || drop(tray)) {
+                    tracing::warn!("tray: failed to schedule icon removal: {e}");
+                }
+            }
+        }
+        _ => {}
+    }
 }
 
 fn show_main_window<R: Runtime>(app: &AppHandle<R>) {

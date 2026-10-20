@@ -1523,9 +1523,15 @@ pub fn apply_configured_code_block_mode(pipeline: &Arc<Mutex<TTSPipeline>>, conf
 ///
 /// A `code_block_mode` change is pushed into the shared pipeline after the
 /// save, so subsequent synthesis/preview runs pick it up without a restart
-/// (synthesis already in flight finishes on the previous mode).
+/// (synthesis already in flight finishes on the previous mode). The tray icon
+/// is created or removed after the save as well, tracking
+/// `hide_to_tray_on_close`.
 #[tauri::command]
-pub async fn update_config(state: State<'_, AppState>, patch: UIConfigPatch) -> CmdResult<()> {
+pub async fn update_config<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    patch: UIConfigPatch,
+) -> CmdResult<()> {
     let mut config = state.storage.load_config().unwrap_or_default();
     let code_block_mode_patch = patch.code_block_mode.clone();
     apply_config_patch(&mut config, patch);
@@ -1557,6 +1563,8 @@ pub async fn update_config(state: State<'_, AppState>, patch: UIConfigPatch) -> 
         );
         state.pipeline.lock().set_code_block_mode(mode);
     }
+
+    crate::tray::set_enabled(&app, config.hide_to_tray_on_close);
     Ok(())
 }
 

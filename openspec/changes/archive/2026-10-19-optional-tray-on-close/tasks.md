@@ -18,7 +18,14 @@
       (prevent exit) on the helper, keeping the `user_quit` bypass.
 - [x] Unit-test the gate: default off, and on after persisting the enabled flag.
 
-## 3. Settings UI
+## 3. Tray icon visibility
+
+- [x] Add `tray::set_enabled` creating or removing the `"main"` tray icon.
+- [x] Gate startup tray creation on the persisted `hide_to_tray_on_close`.
+- [x] Sync the icon from `update_config` after saving, so the Settings switch
+      adds/removes it without a restart.
+
+## 4. Settings UI
 
 - [x] Add `hide_to_tray_on_close` to the `UIConfig` TS type.
 - [x] Add the form field, loaded value, submitted patch entry, and a Switch in
@@ -26,12 +33,12 @@
 - [x] Add RU/EN label and description strings.
 - [x] Update the Settings test fixture and add a toggle-submits-patch test.
 
-## 4. Spec + docs
+## 5. Spec + docs
 
 - [x] Apply the `tray`, `ui`, and `ipc-commands` deltas.
 - [x] Add a `CHANGELOG.md` `[Unreleased]` note.
 
-## 5. Validation
+## 6. Validation
 
 - [x] `nix develop -c cargo test --manifest-path src-tauri/Cargo.toml`
 - [x] `nix develop -c pnpm typecheck`
