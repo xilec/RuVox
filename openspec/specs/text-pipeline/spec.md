@@ -511,7 +511,14 @@ replaced first ("си плюс плюс", "си шарп", "эф шарп"). Sin
 (length-1 runs) SHALL be read by their English letter names via the shared
 letter-name table ("a" → "эй", "I" → "ай", "x" → "икс"),
 case-insensitively; they SHALL NOT be recorded in the unknown-words map.
-For remaining multi-letter words the resolution order SHALL be: exact matches from `MULTI_WORD_PHRASES`; then `IT_TERMS`
+Multi-word input SHALL have no reading of its own: the pipeline SHALL resolve
+each English word individually, so a phrase reads exactly as the concatenation
+of its words' readings and the reading SHALL NOT depend on how the words are
+separated (a space, a tab, a collapsed space run, or a line break) or on the
+letter case. The words of such phrases SHALL be curated individually in
+`IT_TERMS` (`stack` → "стэк", `live` → "лайв", `dry` → "драй", `run` → "ран",
+`edge` → "эдж"), so no phrase entry is needed to read them.
+For remaining multi-letter words the resolution order SHALL be: `IT_TERMS`
 dictionary ("api" → "эй пи ай", "github" → "гитхаб"); when an exact
 `IT_TERMS` entry does not exist but the word ends in a recognized English
 inflection suffix (`s`, `es`, `ies`, `ed`, `ing`, `er`, `ers`, `able`,
@@ -591,12 +598,36 @@ abbreviation and a lone letter sound the same ("x" and "X" both → "икс").
 - WHEN the pipeline processes it
 - THEN the letters are read as "эй" and "ай" ("пункты эй и ай")
 
-#### Scenario: Multi-word phrase resolved before single words
+#### Scenario: Phrase reads by its curated words
 
-- GIVEN the input "поддерживает get user data"
+- GIVEN the input "Вот stack trace из логов"
 - WHEN the pipeline processes it
-- THEN the phrase is resolved through its curated multi-word reading before
-  the single-word English phases process the same text
+- THEN the words resolve through their curated single-word readings
+  ("Вот стэк трейс из логов") with no phrase lookup involved
+
+#### Scenario: Former phrase words are curated individually
+
+- GIVEN the inputs "stack", "live", "dry", "run", "edge"
+- WHEN the pipeline processes them
+- THEN they are read as "стэк", "лайв", "драй", "ран", "эдж" from `IT_TERMS`
+  and are not recorded in the unknown-words map
+
+#### Scenario: Phrase reading is independent of separation
+
+- GIVEN the inputs "stack trace", "Смотри stack  trace в логах" (a doubled
+  space, collapsed by the whitespace phase before the English phase runs),
+  "stack\ttrace" (a tab, collapsed the same way), and "stack\ntrace" (a line
+  break, which the per-word pass treats as a boundary like any other)
+- WHEN the pipeline processes them
+- THEN the words read as "стэк" and "трейс" in every form — the separator
+  between the words never changes the reading and never leaves Latin letters
+
+#### Scenario: User dictionary entry outranks the curated reading
+
+- GIVEN a user dictionary entry mapping "stack" to "стек"
+- WHEN the pipeline processes "stack trace"
+- THEN the entry wins over the built-in reading and the words resolve as
+  "стек трейс"
 
 #### Scenario: Soft-c transliteration fallback
 
