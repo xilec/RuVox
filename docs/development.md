@@ -43,8 +43,11 @@ nix develop -c pnpm tauri dev
 │   │   ├── state.rs        # AppState
 │   │   └── lib.rs          # Tauri::Builder entry point
 │   └── tests/
-│       ├── fixtures/pipeline/  # Golden fixtures (37 cases × 3 files)
-│       └── golden.rs           # Golden integration test
+│       ├── fixtures/pipeline/          # Golden fixtures (37 cases × 3 files)
+│       ├── fixtures/transliteration/   # dictionary_baseline.csv + inflected_forms.csv
+│       ├── golden.rs                   # Golden integration test
+│       ├── dictionary_baseline.rs      # Vocabulary snapshot (UPDATE_BASELINE=1)
+│       └── inflected_forms.rs          # Curated inflected-form readings
 ├── ttsd/                   # Python subprocess (Silero TTS sidecar)
 │   ├── pyproject.toml
 │   └── ttsd/
