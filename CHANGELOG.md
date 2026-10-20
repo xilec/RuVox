@@ -7,6 +7,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 ## [Unreleased]
 
 ### Changed
+- **`stack`, `live`, `dry`, `run`, and `edge` read correctly in phrases** — `stack trace`, `live reload`, `dry run`, and `edge case` now read as `стэк трейс`, `лайв релоуд`, `драй ран`, `эдж кейс` from their curated single words, so the reading no longer depends on the separator between the words (#287).
 - **English normalization handles common inflected forms** — known IT terms now compose a curated base reading with a phonetic suffix (e.g. `support` + `ing`), while raw transliteration remains the fallback for unknown forms.
 - **All-caps inflected IT terms are composed, not spelled out** — an uppercase form such as `SUPPORTING` or `FEATURES` now reads by its curated stem (`саппортинг`, `фичас`) instead of letter by letter (#288).
 - **Inflected forms that drop an "e" or a "y" read from their base** — `uses`/`using`/`cached`, `caches`, `driver`, and `repositories` now compose the curated `use`/`cache`/`drive`/`repository` readings (`юзес`, `юзинг`, `кэшед`, `кэшес`, `драйвер`, `репозиторис`) instead of degrading to raw transliteration, and `species` no longer composes from `spec` (#291).

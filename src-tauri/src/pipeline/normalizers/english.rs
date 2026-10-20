@@ -218,6 +218,16 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     m.insert("practice", "практис");
     m.insert("use", "юз");
     m.insert("case", "кейс");
+    // Words the retired multi-word phrase table used to fix up: curated here so
+    // a phrase reads correctly however its words are separated (#287).
+    m.insert("stack", "стэк");
+    m.insert("live", "лайв");
+    m.insert("dry", "драй");
+    m.insert("run", "ран");
+    m.insert("edge", "эдж");
+    // "living" is /ˈlɪvɪŋ/, not the adjective "live" (/laɪv/) that the curated
+    // stem would compose through, so it is curated in its own right.
+    m.insert("living", "ливинг");
     // Common words in paths/URLs
     m.insert("home", "хоум");
     m.insert("docs", "докс");
@@ -301,30 +311,6 @@ const INFLECTION_SUFFIXES: [&str; 12] = [
     "ation", "able", "ally", "ment", "ments", "ing", "ers", "er", "ies", "es", "ed", "s",
 ];
 
-/// Multi-word IT phrases checked before single words.
-static MULTI_WORD_PHRASES: Lazy<Vec<(&'static str, &'static str)>> = Lazy::new(|| {
-    let mut phrases = vec![
-        ("pull request", "пулл реквест"),
-        ("merge request", "мёрдж реквест"),
-        ("code review", "код ревью"),
-        ("feature branch", "фича бранч"),
-        ("stack trace", "стэк трейс"),
-        ("daily standup", "дейли стендап"),
-        ("hot fix", "хот фикс"),
-        ("hot reload", "хот релоуд"),
-        ("live reload", "лайв релоуд"),
-        ("dry run", "драй ран"),
-        ("tech debt", "тек дет"),
-        ("code smell", "код смелл"),
-        ("best practice", "бест практис"),
-        ("use case", "юз кейс"),
-        ("edge case", "эдж кейс"),
-    ];
-    // Sort by descending length for longest-match behaviour
-    phrases.sort_by_key(|p| std::cmp::Reverse(p.0.len()));
-    phrases
-});
-
 /// Digraph-first transliteration patterns (longest-match via aho-corasick).
 ///
 /// Digraphs must appear before single letters in the patterns list; aho-corasick
@@ -403,13 +389,17 @@ static TRANSLIT_AC: Lazy<(AhoCorasick, Vec<&'static str>)> = Lazy::new(|| {
     (ac, repls)
 });
 
-/// Normalizes an English word or phrase to Russian phonetic spelling.
+/// Normalizes an English word to Russian phonetic spelling.
 ///
 /// Lookup order:
-/// 1. Multi-word phrases (exact, case-insensitive, longest match).
-/// 2. Built-in `IT_TERMS` dictionary.
-/// 3. Bounded inflection composition for known `IT_TERMS` stems.
-/// 4. Simple character-by-character transliteration via `TRANSLIT_AC`.
+/// 1. Built-in `IT_TERMS` dictionary.
+/// 2. Bounded inflection composition for known `IT_TERMS` stems.
+/// 3. Simple character-by-character transliteration via `TRANSLIT_AC`.
+///
+/// Multi-word input has no reading of its own: the pipeline's per-word pass
+/// feeds this function one `\b([A-Za-z]+)\b` token at a time, so every reading
+/// lives in the single-word tables, including the former multi-word phrases
+/// whose words are curated individually (change `retire-multi-word-phrases`).
 ///
 /// User-supplied overrides do not live here: the user dictionary is applied
 /// by the pipeline's dedicated pre-pass phase before English-word resolution
@@ -432,7 +422,7 @@ impl EnglishNormalizer {
         }
     }
 
-    /// Normalize an English word or multi-word phrase.
+    /// Normalize an English word.
     ///
     /// `track_unknown` — if `true`, words resolved via transliteration are
     /// stored in `unknown_words` for later inspection.
@@ -443,24 +433,17 @@ impl EnglishNormalizer {
 
         let text_lower = text.to_lowercase();
 
-        // 1. Multi-word phrases (exact match, already sorted longest-first)
-        for (phrase, translation) in MULTI_WORD_PHRASES.iter() {
-            if text_lower == *phrase {
-                return translation.to_string();
-            }
-        }
-
-        // 2. Built-in IT_TERMS
+        // 1. Built-in IT_TERMS
         if let Some(v) = IT_TERMS.get(text_lower.as_str()) {
             return v.to_string();
         }
 
-        // 3. Bounded morphology for known IT stems (base reading + suffix reading)
+        // 2. Bounded morphology for known IT stems (base reading + suffix reading)
         if let Some(composed) = self.compose_inflection(text) {
             return composed;
         }
 
-        // 4. Transliteration fallback
+        // 3. Transliteration fallback
         let result = transliterate_simple(&text_lower);
 
         if track_unknown && !self.unknown_words.contains_key(text_lower.as_str()) {
@@ -783,13 +766,26 @@ mod tests {
     #[test_case("BRANCH" => "бранч"; "branch")]
     #[test_case("Merge" => "мёрдж"; "merge")]
     #[test_case("COMMIT" => "коммит"; "commit")]
-    #[test_case("Pull Request" => "пулл реквест"; "pull_request_phrase")]
-    #[test_case("CODE REVIEW" => "код ревью"; "code_review_phrase")]
     fn case_insensitive(word: &str) -> String {
         normalizer().normalize(word, false)
     }
 
-    // ── Multi-word phrases ────────────────────────────────────────────────────
+    // ── Former multi-word phrases now read word by word ─────────────────────
+    //
+    // The curated phrase table was retired (change `retire-multi-word-phrases`):
+    // the phrases that did not equal the concatenation of their word readings
+    // (`stack trace`, `live reload`, `dry run`, `edge case`) got the missing
+    // words curated in `IT_TERMS` instead, so a phrase reads the same however
+    // its words are separated — a space, a tab, or a line break.
+
+    /// Reads a phrase the way the pipeline's per-word pass does.
+    fn per_word(phrase: &str) -> String {
+        phrase
+            .split_whitespace()
+            .map(|word| normalizer().normalize(word, false))
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
 
     #[test_case("pull request" => "пулл реквест"; "pull_request")]
     #[test_case("merge request" => "мёрдж реквест"; "merge_request")]
@@ -806,8 +802,26 @@ mod tests {
     #[test_case("best practice" => "бест практис"; "best_practice")]
     #[test_case("use case" => "юз кейс"; "use_case")]
     #[test_case("edge case" => "эдж кейс"; "edge_case")]
-    fn multiword_phrases(phrase: &str) -> String {
-        normalizer().normalize(phrase, false)
+    fn phrase_readings(phrase: &str) -> String {
+        per_word(phrase)
+    }
+
+    /// The words that used to be fixed up by the phrase table are curated
+    /// single words now, so no phrase entry is needed to read them.
+    #[test_case("stack" => "стэк"; "stack")]
+    #[test_case("live" => "лайв"; "live")]
+    #[test_case("dry" => "драй"; "dry")]
+    #[test_case("run" => "ран"; "run")]
+    #[test_case("edge" => "эдж"; "edge")]
+    fn former_phrase_words_are_curated(word: &str) -> String {
+        normalizer().normalize(word, false)
+    }
+
+    /// The verb form keeps its own reading instead of composing the curated
+    /// adjective stem: "living" is /ˈlɪvɪŋ/, not /ˈlaɪvɪŋ/.
+    #[test]
+    fn living_does_not_compose_the_live_stem() {
+        assert_eq!(normalizer().normalize("living", false), "ливинг");
     }
 
     // ── Transliteration (simple fallback), no duplicate elsewhere ────────────
