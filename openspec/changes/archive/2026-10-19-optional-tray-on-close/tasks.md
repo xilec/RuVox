@@ -17,6 +17,9 @@
 - [x] Gate `CloseRequested` (prevent + hide) and `ExitRequested`
       (prevent exit) on the helper, keeping the `user_quit` bypass.
 - [x] Unit-test the gate: default off, and on after persisting the enabled flag.
+- [x] Hide into the tray only while a tray icon exists, so a failed icon
+      creation still lets the window close quit the app; unit-test the
+      decision matrix.
 
 ## 3. Tray icon visibility
 
@@ -24,6 +27,8 @@
 - [x] Gate startup tray creation on the persisted `hide_to_tray_on_close`.
 - [x] Sync the icon from `update_config` after saving, so the Settings switch
       adds/removes it without a restart.
+- [x] Drop the removed icon on the main thread (the GTK/macOS tray backends
+      are main-thread-only).
 
 ## 4. Settings UI
 

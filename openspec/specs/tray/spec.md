@@ -36,6 +36,10 @@ after the config is saved, so toggling the Settings switch applies without a
 restart. With the setting enabled the icon, its context menu, and the
 clipboard actions SHALL remain available.
 
+The window SHALL be hidden into the tray only while a tray icon exists: if the
+icon could not be created, the window close SHALL quit the application, so the
+user never loses a window that nothing can restore.
+
 #### Scenario: No tray icon by default
 
 - GIVEN the application starts with the default configuration
@@ -49,6 +53,14 @@ clipboard actions SHALL remain available.
 - WHEN the user enables the switch and saves
 - THEN the tray icon appears without a restart, and a later window close hides
   the window instead of quitting
+
+#### Scenario: Closing quits when the tray icon is missing
+
+- GIVEN `hide_to_tray_on_close` is enabled but the tray icon could not be
+  created
+- WHEN the user closes the main window
+- THEN the window closes and the application quits instead of hiding into a
+  tray that does not exist
 
 #### Scenario: Disabling the switch removes the icon
 

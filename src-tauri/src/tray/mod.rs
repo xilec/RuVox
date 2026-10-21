@@ -99,6 +99,14 @@ pub fn set_enabled<R: Runtime>(app: &AppHandle<R>, enabled: bool) {
     }
 }
 
+/// Whether the tray icon currently exists.
+///
+/// The close gate uses it: a window may only be hidden into the tray while
+/// there is a tray icon to restore it from.
+pub fn is_present<R: Runtime>(app: &AppHandle<R>) -> bool {
+    app.tray_by_id(TRAY_ID).is_some()
+}
+
 fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.set_skip_taskbar(false);

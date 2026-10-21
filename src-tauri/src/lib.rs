@@ -865,12 +865,13 @@ fn show_startup_storage_error(
 /// The config is re-read on every close so toggling the setting in the
 /// Settings dialog takes effect without a restart. A missing state or an
 /// unreadable config resolves to `false` — quitting is the safe default and
-/// matches the factory configuration.
+/// matches the factory configuration. The window is hidden only while a tray
+/// icon exists: without the icon there would be no way back to the window.
 fn should_hide_to_tray<R: Runtime>(app_handle: &AppHandle<R>) -> bool {
     let Some(state) = app_handle.try_state::<AppState>() else {
         return false;
     };
-    match state.storage.load_config() {
+    let configured = match state.storage.load_config() {
         Ok(config) => config.hide_to_tray_on_close,
         Err(e) => {
             // Quitting is the safe default. Log the failure so a future
@@ -878,7 +879,14 @@ fn should_hide_to_tray<R: Runtime>(app_handle: &AppHandle<R>) -> bool {
             tracing::warn!("failed to read config while handling window close: {e}");
             false
         }
-    }
+    };
+    hide_into_tray(configured, crate::tray::is_present(app_handle))
+}
+
+/// The close decision: hide into the tray only when the setting is on *and* a
+/// tray icon exists to restore the window from.
+fn hide_into_tray(configured: bool, tray_present: bool) -> bool {
+    configured && tray_present
 }
 
 pub fn run() {
@@ -1033,12 +1041,24 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::should_hide_to_tray;
+    use super::{hide_into_tray, should_hide_to_tray};
     use crate::test_support::build_test_app;
+
+    /// The window is hidden into the tray only when the setting is on *and* a
+    /// tray icon exists: without the icon the hidden window could not be
+    /// restored, so closing must quit the app instead.
+    #[test]
+    fn hide_into_tray_requires_the_setting_and_the_icon() {
+        assert!(hide_into_tray(true, true));
+        assert!(!hide_into_tray(true, false));
+        assert!(!hide_into_tray(false, true));
+        assert!(!hide_into_tray(false, false));
+    }
 
     /// Closing the window quits by default and only hides into the tray when
     /// the persisted config opts in. The gate re-reads the config, so a
-    /// Settings-dialog change applies without a restart.
+    /// Settings-dialog change applies without a restart. The test app has no
+    /// tray icon, so the window must never be hidden.
     #[test]
     fn should_hide_to_tray_follows_persisted_config() {
         let test_app = build_test_app();
@@ -1051,7 +1071,7 @@ mod tests {
         config.hide_to_tray_on_close = true;
         storage.save_config(&config).unwrap();
 
-        assert!(should_hide_to_tray(&handle));
+        assert!(!should_hide_to_tray(&handle));
 
         config.hide_to_tray_on_close = false;
         storage.save_config(&config).unwrap();
