@@ -269,6 +269,7 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     m.insert("repo", "репо");
     // Common words that digraph transliteration misreads (silent "e",
     // vowel digraphs it does not know) — issue #139
+    m.insert("ascii", "аски");
     m.insert("byte", "байт");
     m.insert("change", "чейндж");
     m.insert("device", "девайс");
@@ -287,6 +288,10 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     m.insert("size", "сайз");
     m.insert("source", "сорс");
     m.insert("stage", "стейдж");
+    // Read as a word by the all-caps heuristic ("виндоус"), but the common
+    // reading drops the "ow" digraph — curated here so the word-like rule
+    // never reaches it (#290).
+    m.insert("windows", "виндовс");
     // Extra IT terms formerly backed only by exception fallback
     m.insert("ajax", "эйджакс");
     m.insert("cd", "си ди");
