@@ -1204,6 +1204,9 @@ mod tests {
             p.process("API HTML SQL"),
             "эй пи ай эйч ти эм эль эс кью эль"
         );
+        // "SPARK" is absent from every table and one vowel in five letters is
+        // below the threshold, so the length/vowel boundary itself is locked.
+        assert_eq!(p.process("SPARK"), "эс пи эй ар кей");
         // "JSON" is short but also curated: the table wins before the rule.
         assert_eq!(p.process("JSON"), "джейсон");
     }
@@ -1213,9 +1216,13 @@ mod tests {
         // Word-like tokens that are curated keep their curated reading and are
         // not transliterated.
         let mut p = TTSPipeline::new();
-        assert_eq!(p.process("KUBERNETES"), "кубернетис");
-        assert_eq!(p.process("OAUTH"), "о ауз");
-        assert_eq!(p.process("WINDOWS"), "виндовс");
+        // One call, so the empty-map assertion below covers every token: if
+        // the word-like rule ran before the curated tables, all three would be
+        // transliterated and tracked.
+        assert_eq!(
+            p.process("KUBERNETES OAUTH WINDOWS MACOS"),
+            "кубернетис о ауз виндовс мак оу эс"
+        );
         assert!(p.english_normalizer.get_unknown_words().is_empty());
     }
 

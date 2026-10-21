@@ -17,8 +17,9 @@
   `WINDOWS`, `JAVASCRIPT`, `SYSTEM`, `BROWSER` are word-like; `API`, `HTML`,
   `SQL`, `JSON`, `GPU`, `JWT`, `NGINX`, `SPARK` are not.
 - [x] 2.2 Pipeline tests: word-like tokens read as words and are tracked as
-  unknown; short/vowel-poor tokens stay spelled; `KUBERNETES`, `OAUTH`, and
-  `WINDOWS` keep their curated readings and are not tracked.
+  unknown; short/vowel-poor tokens stay spelled (`SPARK` locks the threshold
+  itself); `KUBERNETES`, `OAUTH`, `WINDOWS` (IT_TERMS) and `MACOS`
+  (SPECIAL_CASES) keep their curated readings and are not tracked.
 - [x] 2.3 Golden fixture `english_word_like_all_caps` (input, expected,
   char_map) for the mixed-sentence case.
 - [x] 2.4 `CHANGELOG.md` entry under `[Unreleased]`.
@@ -27,10 +28,11 @@
 
 - [x] 3.1 `just test`
 - [x] 3.2 `just lint`
-- [x] 3.3 `just validate` after archiving the change.
+- [ ] 3.3 `just validate` after archiving the change.
 
 ## 4. Manual pass
 
 - [ ] 4.1 Listen to the calibration sentences and confirm the readings:
   `Собрали DEVELOPER и JAVASCRIPT.`, `LINUX и UBUNTU`, `Через API и HTML`,
-  `SYSTEM WINDOWS`, `KUBERNETES OAUTH`.
+  `SYSTEM WINDOWS`, `KUBERNETES OAUTH`. Also confirm the collateral tokens
+  now read as words: `FIXME`, `README`, `BROWSER`.

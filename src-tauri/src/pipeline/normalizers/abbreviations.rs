@@ -147,14 +147,14 @@ pub fn special_cases() -> &'static HashMap<&'static str, &'static str> {
 /// at least five letters so the short-abbreviation class ("API", "GPU", "JSON")
 /// stays spelled. Consonant-only tokens ("HTML", "SQL") can never qualify.
 pub fn is_word_like(token: &str) -> bool {
-    if token.len() < 5 {
+    if token.chars().count() < 5 {
         return false;
     }
     let vowels = token
         .chars()
         .filter(|c| matches!(c.to_ascii_lowercase(), 'a' | 'e' | 'i' | 'o' | 'u' | 'y'))
         .count();
-    vowels * 4 >= token.len()
+    vowels * 4 >= token.chars().count()
 }
 
 #[cfg(test)]
@@ -354,9 +354,21 @@ mod tests {
 
     #[test]
     fn word_like_threshold_is_one_vowel_per_four_letters() {
-        // Boundary: 2 vowels in 8 letters qualifies, 1 in 5 does not.
+        // TERRAFORM is 3 vowels in 9 letters (above the line); SHRUB is 1 in
+        // 5 and TMUX is four letters, so both stay below it.
         assert!(is_word_like("TERRAFORM"));
-        assert!(!is_word_like("TMUX"));
         assert!(!is_word_like("SHRUB"));
+        assert!(!is_word_like("TMUX"));
+    }
+
+    #[test]
+    fn reads_as_word_keeps_curated_abbreviation_tables() {
+        let n = normalizer();
+        // MACOS and DEVOPS are word-like by the letter counts but curated, so
+        // they must be spelled/served from the tables, not transliterated.
+        assert!(is_word_like("MACOS"));
+        assert!(!n.reads_as_word("MACOS"));
+        assert!(is_word_like("DEVOPS"));
+        assert!(!n.reads_as_word("DEVOPS"));
     }
 }
