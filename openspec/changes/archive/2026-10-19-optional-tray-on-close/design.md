@@ -41,13 +41,21 @@ is gone; gating only `CloseRequested` would leave a windowless process that can
 never be reopened. Both handlers call the same `should_hide_to_tray` helper and
 are bypassed by `user_quit`, preserving the tray "Выход" path.
 
-### Tray icon and actions stay unconditional
+### The tray icon follows the setting (reversed during implementation)
 
-The tray provides clipboard ingestion independent of how the app is closed, and
-the tray icon is not part of the close path. Hiding the icon when the setting is
-off would remove those actions from users who never close the window and would
-add a second visibility state to test. The setting only controls what a close
-request does.
+Originally the design kept the tray icon and its actions unconditional: the
+tray provides clipboard ingestion independent of how the app is closed, so
+hiding the icon with the setting off would remove those actions from users who
+never close the window.
+
+The implementation reversed this decision: with the setting off the app quits
+together with its window, so a tray icon would have nothing to restore, and
+users reported the icon lingering in the notification area while the switch was
+off. The icon is now created only while the setting is on and removed when it
+is turned off, which also takes the menu and the clipboard actions with it.
+The trade-off is accepted: the clipboard actions are reachable through the
+window while the app is open, and the icon is restored the moment the setting
+is turned on again.
 
 ### Default off, including for existing configs
 

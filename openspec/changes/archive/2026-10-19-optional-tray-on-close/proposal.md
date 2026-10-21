@@ -59,8 +59,9 @@ consequence of the tray existing.
 - `src-tauri/src/lib.rs` — `should_hide_to_tray` gate used by the
   `CloseRequested` and `ExitRequested` handlers; startup tray creation gated on
   the persisted setting; unit test for the gate.
-- `src-tauri/src/tray/mod.rs` — `set_enabled` (create/remove the icon) and the
-  shared tray-icon id.
+- `src-tauri/src/tray/mod.rs` — `set_enabled` (create/remove the icon, with the
+  error surfaced to the caller), the shared tray-icon id, and the one-time
+  registration of the tray-menu handlers.
 - `src/lib/tauri.ts` — `UIConfig` type.
 - `src/dialogs/Settings.tsx` — form field, loaded config, submitted patch, and
   the interface-section switch.

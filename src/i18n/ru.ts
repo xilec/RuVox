@@ -309,6 +309,8 @@ export const ru = {
   'errors.generic.synthesis_error': 'Ошибка синтеза речи',
   'errors.generic.playback_error': 'Ошибка воспроизведения',
   'errors.generic.config_error': 'Недопустимое значение настройки',
+  'errors.config.tray_unavailable':
+    'Не удалось создать значок в трее: система не поддерживает трей или нет доступа к служебному каталогу. Настройка осталась выключенной.',
   'errors.generic.internal': 'Внутренняя ошибка',
 
   // ── Backend error codes (CommandError.code) ─────────────────────────────

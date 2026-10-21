@@ -38,7 +38,10 @@ clipboard actions SHALL remain available.
 
 The window SHALL be hidden into the tray only while a tray icon exists: if the
 icon could not be created, the window close SHALL quit the application, so the
-user never loses a window that nothing can restore.
+user never loses a window that nothing can restore. When saving the setting
+fails to create the icon, the system SHALL roll the setting back to its
+previous value and report the failure, so the stored state always matches the
+tray that actually exists.
 
 #### Scenario: No tray icon by default
 
@@ -61,6 +64,13 @@ user never loses a window that nothing can restore.
 - WHEN the user closes the main window
 - THEN the window closes and the application quits instead of hiding into a
   tray that does not exist
+
+#### Scenario: The setting is rolled back when the icon cannot be created
+
+- GIVEN the system has no usable tray icon
+- WHEN the user enables the switch and saves
+- THEN the save reports a failure, the stored setting stays off, and the
+  Settings switch shows the stored state
 
 #### Scenario: Disabling the switch removes the icon
 

@@ -29,6 +29,11 @@
       adds/removes it without a restart.
 - [x] Drop the removed icon on the main thread (the GTK/macOS tray backends
       are main-thread-only).
+- [x] Register the tray-menu handlers once for the app lifetime: Tauri never
+      prunes menu-event listeners, so per-icon registration would multiply
+      the menu actions.
+- [x] Roll the setting back when the icon cannot be created, so the stored
+      state matches the tray that exists; the frontend re-reads the value.
 
 ## 4. Settings UI
 

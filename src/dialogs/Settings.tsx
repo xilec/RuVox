@@ -541,6 +541,18 @@ export function SettingsModal({
         message: formatError(err),
         color: 'red',
       });
+      // The backend rolls the tray setting back when the icon cannot be
+      // created, so re-read the stored value and show it instead of the
+      // rejected one.
+      commands
+        .getConfig()
+        .then((config) => {
+          form.setValues({
+            ...form.values,
+            hide_to_tray_on_close: config.hide_to_tray_on_close,
+          });
+        })
+        .catch(() => {});
     }
   };
 

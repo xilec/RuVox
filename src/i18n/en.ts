@@ -308,6 +308,8 @@ export const en: Record<MessageKey, string> = {
   'errors.generic.synthesis_error': 'Speech synthesis error',
   'errors.generic.playback_error': 'Playback error',
   'errors.generic.config_error': 'Invalid setting value',
+  'errors.config.tray_unavailable':
+    'Could not create the tray icon: the system has no tray support or the runtime directory is not writable. The setting stays off.',
   'errors.generic.internal': 'Internal error',
 
   // ── Backend error codes (CommandError.code) ─────────────────────────────

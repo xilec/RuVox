@@ -1534,6 +1534,9 @@ pub async fn update_config<R: Runtime>(
 ) -> CmdResult<()> {
     let mut config = state.storage.load_config().unwrap_or_default();
     let code_block_mode_patch = patch.code_block_mode.clone();
+    // Remembered to roll the setting back when the tray icon cannot be
+    // created: the persisted flag must match what the app can actually do.
+    let hide_to_tray_before = config.hide_to_tray_on_close;
     apply_config_patch(&mut config, patch);
 
     state
@@ -1564,7 +1567,20 @@ pub async fn update_config<R: Runtime>(
         state.pipeline.lock().set_code_block_mode(mode);
     }
 
-    crate::tray::set_enabled(&app, config.hide_to_tray_on_close);
+    if let Err(e) = crate::tray::set_enabled(&app, config.hide_to_tray_on_close) {
+        // The icon could not be created (no system tray, unwritable runtime
+        // dir). Roll the setting back so the stored state matches reality:
+        // the switch must not promise a tray that does not exist.
+        tracing::warn!("tray: failed to create the icon: {e}");
+        config.hide_to_tray_on_close = hide_to_tray_before;
+        state
+            .storage
+            .save_config(&config)
+            .map_err(CommandError::from)?;
+        return Err(
+            CommandError::config("config.tray_unavailable", vec![]).with_message(e.to_string())
+        );
+    }
     Ok(())
 }
 

@@ -175,4 +175,33 @@ describe('SettingsModal code block narration', () => {
 
     expect(updateConfig.mock.calls[0][0].hide_to_tray_on_close).toBe(true);
   });
+
+  it('shows the stored tray setting when the save is rejected', async () => {
+    // The backend rolls the setting back when the tray icon cannot be
+    // created: the switch must show the stored (off) state, not the rejected
+    // one.
+    updateConfig.mockRejectedValueOnce({
+      type: 'config_error',
+      code: 'config.tray_unavailable',
+    });
+    await renderDialog();
+
+    const traySwitch = [
+      ...document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
+    ].find((input) =>
+      input.closest('label')?.textContent?.includes('Сворачивать в трей'),
+    );
+    expect(traySwitch, 'tray-on-close switch rendered').toBeTruthy();
+
+    await act(async () => {
+      traySwitch!.click();
+      await Promise.resolve();
+    });
+    await clickSave();
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(traySwitch!.checked).toBe(false);
+  });
 });

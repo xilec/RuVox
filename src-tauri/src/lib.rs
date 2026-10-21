@@ -865,21 +865,18 @@ fn show_startup_storage_error(
 /// The config is re-read on every close so toggling the setting in the
 /// Settings dialog takes effect without a restart. A missing state or an
 /// unreadable config resolves to `false` — quitting is the safe default and
-/// matches the factory configuration. The window is hidden only while a tray
-/// icon exists: without the icon there would be no way back to the window.
+/// matches the factory configuration (the storage layer logs the read
+/// failure). The window is hidden only while a tray icon exists: without the
+/// icon there would be no way back to the window.
 fn should_hide_to_tray<R: Runtime>(app_handle: &AppHandle<R>) -> bool {
     let Some(state) = app_handle.try_state::<AppState>() else {
         return false;
     };
-    let configured = match state.storage.load_config() {
-        Ok(config) => config.hide_to_tray_on_close,
-        Err(e) => {
-            // Quitting is the safe default. Log the failure so a future
-            // fallible config read cannot silently flip close semantics.
-            tracing::warn!("failed to read config while handling window close: {e}");
-            false
-        }
-    };
+    let configured = state
+        .storage
+        .load_config()
+        .unwrap_or_default()
+        .hide_to_tray_on_close;
     hide_into_tray(configured, crate::tray::is_present(app_handle))
 }
 
@@ -902,6 +899,10 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
             install_window_icon(app.handle())?;
+            // The tray-menu handlers are registered once for the app lifetime:
+            // Tauri never prunes menu-event listeners, so per-icon
+            // registration would multiply the menu actions.
+            tray::register_menu_events(app);
 
             let player: Arc<dyn PlayerBackend> = Arc::new(Player::new(app.handle().clone())?);
             player::spawn_position_emitter(Arc::clone(&player), app.handle().clone());
@@ -919,8 +920,12 @@ pub fn run() {
             let config = storage.load_config().unwrap_or_default();
             // The tray is the only way back into a window hidden on close, so
             // it exists exactly while hiding is enabled. Keep the icon out of
-            // the notification area when closing quits.
-            tray::set_enabled(app.handle(), config.hide_to_tray_on_close);
+            // the notification area when closing quits. A failed creation
+            // leaves the app without an icon; the close gate then quits
+            // instead of hiding the window.
+            if let Err(e) = tray::set_enabled(app.handle(), config.hide_to_tray_on_close) {
+                tracing::warn!("tray: failed to create the icon at startup: {e}");
+            }
             spawn_audio_migration_and_cleanup(Arc::clone(&storage));
 
             let (engine_switcher, ttsd_dir, piper_voices_dir, silero_native_bundle_dir, emitter) =
