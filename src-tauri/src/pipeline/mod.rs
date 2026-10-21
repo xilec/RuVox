@@ -1196,6 +1196,19 @@ mod tests {
     }
 
     #[test]
+    fn pipeline_caps_guard_entries_keep_short_all_caps_words_readable() {
+        // These words have no useful lowercase information (the transliteration
+        // already matches the curated reading) but their entries keep an
+        // uppercase token from falling through to letter-by-letter spelling;
+        // #292 removed every other no-op, so this is the only reason they stay.
+        let mut p = TTSPipeline::new();
+        assert_eq!(
+            p.process("TEST DATA APP CLASS WEB"),
+            "тест дата апп класс веб"
+        );
+    }
+
+    #[test]
     fn pipeline_short_or_vowel_poor_all_caps_stay_spelled() {
         // The heuristic must not swallow the abbreviation class it exists to
         // distinguish words from.

@@ -6,7 +6,11 @@
   correct a wrong transliteration, not to translate. This is the rule the
   change locks with tests and with the spec.
 - **No-ops are identified by comparing the curated reading with
-  `transliterate_simple` of the same word.** 66 entries matched. Removal is
+  `transliterate_simple` of the same word.** 66 entries matched, but the check
+  has to cover every path that reads the entry, not only lowercase: the
+  all-caps branch spells a token out unless it is curated, so for 27 of the 66
+  the entry is the only thing that keeps "TEST", "DATA", or "APP" readable.
+  Those stay as caps guards with a comment. Removal is
   safe only if the word's reading and the readings of its inflected forms do
   not change, so the audit was done in two steps: first the removed words
   themselves, then every generated inflection (`s`, `es`, `ies`, `ed`, `ing`,
@@ -14,7 +18,7 @@
   resolution paths. Every form produced the same Cyrillic before and after,
   because composition of a no-op stem is by definition the transliteration of
   the stem plus the transliteration of the suffix.
-- **One no-op is kept on purpose: `living`.** The entry is not redundant — it
+- **One more kept entry: `living`.** The entry is not redundant — it
   shadows the inflection composition that would otherwise read the curated
   `live` stem (/laɪv/) plus "-ing" as "лайвинг". The word is /ˈlɪvɪŋ/ →
   "ливинг". The audit therefore treats "curated == raw" as a signal, not as a

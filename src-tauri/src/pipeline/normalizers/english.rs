@@ -160,6 +160,39 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     m.insert("practice", "практис");
     m.insert("use", "юз");
     m.insert("case", "кейс");
+    // Lowercase no-ops that still carry information in the all-caps path: the
+    // raw transliteration is already correct, but without an entry an
+    // uppercase token would fall through to letter-by-letter spelling
+    // ("TEST" -> "ти и эс ти"). They must stay until the all-caps rule can
+    // recognize a spoken word on its own (#292).
+    m.insert("app", "апп");
+    m.insert("best", "бест");
+    m.insert("branch", "бранч");
+    m.insert("class", "класс");
+    m.insert("const", "конст");
+    m.insert("data", "дата");
+    m.insert("doc", "док");
+    m.insert("docs", "докс");
+    m.insert("flask", "фласк");
+    m.insert("hot", "хот");
+    m.insert("impl", "импл");
+    m.insert("jira", "джира");
+    m.insert("mock", "мок");
+    m.insert("nat", "нат");
+    m.insert("next", "некст");
+    m.insert("opt", "опт");
+    m.insert("png", "пнг");
+    m.insert("pod", "под");
+    m.insert("pull", "пулл");
+    m.insert("repo", "репо");
+    m.insert("smell", "смелл");
+    m.insert("spec", "спек");
+    m.insert("sync", "синк");
+    m.insert("ten", "тен");
+    m.insert("test", "тест");
+    m.insert("web", "веб");
+    m.insert("world", "ворлд");
+
     // Words the retired multi-word phrase table used to fix up: curated here so
     // a phrase reads correctly however its words are separated (#287).
     m.insert("stack", "стэк");
@@ -600,9 +633,9 @@ mod tests {
     #[test_case("boolean" => "булин"; "boolean")]
     #[test_case("refactor" => "рефактор"; "refactor")]
     #[test_case("method" => "месод"; "method")]
-    #[test_case("class" => "класс"; "redundant class")]
     #[test_case("index" => "индекс"; "redundant index")]
-    #[test_case("app" => "апп"; "redundant app")]
+    #[test_case("commit" => "коммит"; "redundant commit")]
+    #[test_case("deploy" => "деплой"; "redundant deploy")]
     fn pruned_it_terms_read_by_transliteration(word: &str) -> String {
         // IT_TERMS holds pronunciation only: semantic translations and
         // redundant entries are gone, so these words fall through to the
@@ -615,7 +648,7 @@ mod tests {
         // A pruned word is no longer curated, so the fallback records it in the
         // unknown-words map; a curated one would not be recorded.
         let mut en = normalizer();
-        for word in ["function", "string", "class"] {
+        for word in ["function", "string", "index"] {
             en.normalize(word, true);
             assert!(
                 en.get_unknown_words().contains_key(word),

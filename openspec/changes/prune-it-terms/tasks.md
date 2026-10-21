@@ -4,18 +4,20 @@
 
 - [x] 1.1 Compare every `IT_TERMS` entry with `transliterate_simple` of the same
       word and classify the 228 entries: 155 pronunciation fixes, 7 semantic
-      translations, 66 no-ops.
+      translations, 66 lowercase no-ops.
 - [x] 1.2 For each no-op, compare the reading of every generated inflection
       (`s`, `es`, `ies`, `ed`, `ing`, `er`, `ers`, `able`, `ment`, `ments`,
       `ation`, `ally`) composed from the stem with the transliteration of the
       inflected word: zero differences.
-- [x] 1.3 Compare each removed word's reading before and after removal: only
-      the 7 semantic translations, `method`, and `living` changed.
+- [x] 1.3 Compare each removed word's reading before and after removal in
+      lowercase and in all caps: 27 no-ops are load-bearing in the all-caps
+      path (they block letter-by-letter spelling) and stay as guards; only the
+      7 semantic translations and `method` change their reading.
 
 ## 2. Implementation
 
-- [x] 2.1 Remove the 7 semantic translations and the 65 no-ops from
-      `IT_TERMS`.
+- [x] 2.1 Remove the 7 semantic translations and the 39 genuinely redundant
+      no-ops from `IT_TERMS`, keeping the 27 caps guards.
 - [x] 2.2 Remove `method` so it reads "месод" (`th` → "с").
 - [x] 2.3 Restore `living` with a comment explaining that it shadows the
       `live` + "-ing" composition.

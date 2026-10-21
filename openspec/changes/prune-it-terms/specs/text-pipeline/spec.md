@@ -19,7 +19,9 @@ For remaining multi-letter words the resolution order SHALL be: `IT_TERMS`
 dictionary ("api" → "эй пи ай", "github" → "гитхаб"), which SHALL hold
 pronunciation readings only: a word whose digraph transliteration already reads
 correctly SHALL NOT be listed, and a Russian semantic translation SHALL NOT be
-curated as its reading ("function" reads "функшн", not "функция"); when an exact
+curated as its reading ("function" reads "функшн", not "функция"). The only
+exception SHALL be an entry that keeps an all-caps token from letter-by-letter
+spelling ("TEST" reads "тест", "DATA" reads "дата"); when an exact
 `IT_TERMS` entry does not exist but the word ends in a recognized English
 inflection suffix (`s`, `es`, `ies`, `ed`, `ing`, `er`, `ers`, `able`,
 `ally`, `ment`, `ments`, `ation`) and its stem is an `IT_TERMS` entry,
@@ -222,7 +224,16 @@ abbreviation and a lone letter sound the same ("x" and "X" both → "икс").
 #### Scenario: Redundant curated reading is not listed
 
 - GIVEN a word whose digraph transliteration already matches its curated
-  reading, e.g. "class" or "index"
+  reading, e.g. "index" or "commit"
 - WHEN the pipeline processes it
-- THEN the reading is the transliteration ("класс", "индекс") with no
+- THEN the reading is the transliteration ("индекс", "коммит") with no
   `IT_TERMS` entry, and the word is recorded in the unknown-words map
+
+#### Scenario: A no-op entry survives only as an all-caps guard
+
+- GIVEN the words "test", "data", "app", "class", "web", whose curated
+  readings equal the transliteration
+- WHEN an uppercase token such as "TEST" or "DATA" is processed
+- THEN the curated entry still applies ("тест", "дата") instead of the
+  letter-by-letter spelling the all-caps rule would produce, so these entries
+  are not redundant
