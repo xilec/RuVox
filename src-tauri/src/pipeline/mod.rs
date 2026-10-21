@@ -1184,6 +1184,29 @@ mod tests {
     }
 
     #[test]
+    fn pipeline_composed_forms_not_tracked_while_fallback_is() {
+        // Spec: "Inflected IT-term form composed" — a composed form is read from
+        // the curated stem and never lands in the unknown-words map. Pin the
+        // whole chain (mixed case, several suffixes), and in the same test prove
+        // the map still receives a genuine fallback reading: otherwise "map is
+        // empty" would also pass if tracking had been disabled entirely.
+        let mut p = TTSPipeline::new();
+        assert_eq!(
+            p.process("Supporting supports using caches repositories Compilation"),
+            "саппортинг саппортс юзинг кэшес репозиторис компайлашн"
+        );
+        assert!(p.english_normalizer.get_unknown_words().is_empty());
+
+        p.process("xyzzy");
+        assert!(
+            p.english_normalizer
+                .get_unknown_words()
+                .contains_key("xyzzy"),
+            "the transliteration fallback must still report unknown words"
+        );
+    }
+
+    #[test]
     fn pipeline_pure_abbreviations_keep_letter_readings() {
         // The composition helper fires only on a recognized suffix over a
         // curated stem: pure abbreviations still read letter by letter (or via

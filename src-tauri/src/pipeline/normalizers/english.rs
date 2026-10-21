@@ -908,6 +908,46 @@ mod tests {
         assert!(en.get_unknown_words().contains_key("species"));
     }
 
+    #[test_case("supports"; "plain plural")]
+    #[test_case("supported"; "-ed")]
+    #[test_case("supporting"; "-ing")]
+    #[test_case("supporter"; "-er")]
+    #[test_case("features"; "non-sibilant -es")]
+    #[test_case("nullable"; "-able")]
+    #[test_case("building"; "silent-e -ing from build")]
+    #[test_case("using"; "silent-e -ing from use")]
+    #[test_case("used"; "silent-e -ed from use")]
+    #[test_case("caches"; "sibilant -es")]
+    #[test_case("cached"; "sibilant -ed from cache")]
+    #[test_case("repositories"; "-ies")]
+    #[test_case("compilation"; "-ation")]
+    fn composed_forms_are_not_tracked(word: &str) {
+        // Composition is a curated lookup, not the transliteration fallback, so
+        // no composed form may enter the unknown-words map — whichever suffix
+        // built it (spec: "Inflected IT-term form composed").
+        let mut en = normalizer();
+        en.normalize(word, true);
+        assert!(
+            !en.get_unknown_words().contains_key(word),
+            "{word} composed from a curated stem and must not be tracked"
+        );
+    }
+
+    #[test]
+    fn practically_is_not_composed_and_stays_tracked() {
+        // "-ally" is not a silent-e suffix, so "practically" resolves through
+        // the plain transliteration fallback — and that path must keep
+        // reporting it as unknown, otherwise tracking silently stops working.
+        let mut en = normalizer();
+        en.normalize("practically", true);
+        assert_eq!(
+            en.get_unknown_words()
+                .get("practically")
+                .map(String::as_str),
+            Some("практикалли")
+        );
+    }
+
     #[test]
     fn test_clear_unknown_words() {
         let mut en = normalizer();
