@@ -13,7 +13,7 @@ static AS_WORD: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(||
         ("ajax", "эйджакс"),
         ("crud", "крад"),
         ("cors", "корс"),
-        ("oauth", "о ауз"),
+        ("oauth", "о аус"),
         // Image formats
         ("gif", "гиф"),
         ("jpeg", "джейпег"),
@@ -173,7 +173,7 @@ mod tests {
     #[test_case("AJAX" => "эйджакс"; "ajax")]
     #[test_case("CRUD" => "крад"; "crud")]
     #[test_case("CORS" => "корс"; "cors")]
-    #[test_case("OAuth" => "о ауз"; "oauth")]
+    #[test_case("OAuth" => "о аус"; "oauth")]
     #[test_case("GIF" => "гиф"; "gif")]
     #[test_case("JPEG" => "джейпег"; "jpeg")]
     #[test_case("PNG" => "пи эн джи"; "png_spelled_out")]

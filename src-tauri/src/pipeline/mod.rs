@@ -1220,8 +1220,8 @@ mod tests {
         // the word-like rule ran before the curated tables, all three would be
         // transliterated and tracked.
         assert_eq!(
-            p.process("KUBERNETES OAUTH WINDOWS MACOS"),
-            "кубернетис о ауз виндовс мак оу эс"
+            p.process("KUBERNETES OAUTH WINDOWS MACOS BROWSER"),
+            "кубернетис о аус виндовс мак оу эс браузэр"
         );
         assert!(p.english_normalizer.get_unknown_words().is_empty());
     }

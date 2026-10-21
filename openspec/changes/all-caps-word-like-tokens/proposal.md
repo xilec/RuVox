@@ -21,10 +21,10 @@ wrong reading for tokens that are really words: `DEVELOPER`, `LINUX`, `UBUNTU`,
   and a pipeline test.
 - Word-like tokens are recorded in the unknown-words map, because they are
   resolved by transliteration, not by a curated entry.
-- Two common tokens that the heuristic would otherwise mispronounce get
-  explicit `IT_TERMS` entries, which take precedence: `windows` → "виндовс"
-  (the digraph rules would say "виндоус") and `ascii` → "аски" (they would say
-  "ассии").
+- Common tokens that the heuristic would otherwise mispronounce get explicit
+  `IT_TERMS` entries, which take precedence: `windows` → "виндовс" (the digraph
+  rules would say "виндоус"), `ascii` → "аски" (they would say "ассии"), and
+  `browser` → "браузэр" (they would say "броусер").
 
 Calibration set (vowels/len, "y" counted):
 

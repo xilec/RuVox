@@ -204,5 +204,5 @@ abbreviation and a lone letter sound the same ("x" and "X" both → "икс").
 
 - GIVEN the inputs "KUBERNETES", "OAUTH"
 - WHEN the pipeline processes them
-- THEN "KUBERNETES" reads "кубернетис" and "OAUTH" reads "о ауз" from
+- THEN "KUBERNETES" reads "кубернетис" and "OAUTH" reads "о аус" from
   `IT_TERMS`, and neither is transliterated through the word-like rule

@@ -270,6 +270,7 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     // Common words that digraph transliteration misreads (silent "e",
     // vowel digraphs it does not know) — issue #139
     m.insert("ascii", "аски");
+    m.insert("browser", "браузэр");
     m.insert("byte", "байт");
     m.insert("change", "чейндж");
     m.insert("device", "девайс");
@@ -302,7 +303,7 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     m.insert("iot", "ай о ти");
     m.insert("jpeg", "джейпег");
     m.insert("macos", "мак оу эс");
-    m.insert("oauth", "о ауз");
+    m.insert("oauth", "о аус");
     m.insert("true", "тру");
     m.insert("type", "тайп");
     m

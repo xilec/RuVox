@@ -8,8 +8,9 @@
 - [x] 1.2 In `process_english_tracked`, read a word-like all-caps token through
   `EnglishNormalizer::normalize(word, true)` and keep the letter-by-letter
   branch for everything else.
-- [x] 1.3 Curate `windows` → "виндовс" and `ascii` → "аски" in `IT_TERMS` so the
-  heuristic never mispronounces them.
+- [x] 1.3 Curate `windows` → "виндовс", `ascii` → "аски", and `browser` →
+  "браузэр" in `IT_TERMS` so the heuristic never mispronounces them, and read
+  `oauth` as "о аус".
 
 ## 2. Tests
 

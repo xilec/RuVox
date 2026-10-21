@@ -24,11 +24,12 @@
   branch; `AS_WORD` and `SPECIAL_CASES` are checked explicitly before the
   heuristic. `KUBERNETES` → "кубернетис" and `IOS` → "ай оу эс" therefore keep
   their readings even though both tokens are vowel-rich.
-- **Two curated exceptions.** `windows` → "виндовс": the transliteration
-  produces "виндоус", while the issue's calibration table asks for "виндовс".
+- **Curated exceptions.** `windows` → "виндовс": the transliteration produces
+  "виндоус", while the issue's calibration table asks for "виндовс".
   `ascii` → "аски": the transliteration produces "ассии", which is worse than
-  the conventional Russian reading. Both are ordinary `IT_TERMS` entries, so the
-  pipeline never reaches the heuristic for them.
+  the conventional Russian reading. `browser` → "браузэр": the transliteration
+  produces "броусер", which the manual pass rejected. All three are ordinary
+  `IT_TERMS` entries, so the pipeline never reaches the heuristic for them.
 - **Unknown-words tracking.** A word-like all-caps token is resolved by
   transliteration, so it belongs in the unknown-words map (the spec already says
   transliterated words are recorded and composed forms are not). The map key is
