@@ -538,8 +538,14 @@ SHALL compose only when `stem + "y"` is an `IT_TERMS` entry, dropping a trailing
 ("species" does not compose from `spec`). This composition
 SHALL apply regardless of the word's letter case — including an
 all-uppercase word — and SHALL be attempted before the all-uppercase
-abbreviation rule; all-uppercase
-words of length ≥ 2 via `AbbreviationNormalizer` (special cases like
+abbreviation rule. An all-uppercase token absent from `IT_TERMS`, `AS_WORD`,
+and `SPECIAL_CASES` SHALL be read as a word by digraph transliteration when it
+is word-like — at least five letters and at least one vowel per four letters,
+counting "y" as a vowel ("DEVELOPER" → "девелопер", "LINUX" → "линукс",
+"JAVASCRIPT" → "джаваскрипт", "SYSTEM" → "систем"); a word-like token SHALL
+be recorded in the unknown-words map because it is resolved by transliteration.
+Every other all-uppercase token SHALL be spelled via `AbbreviationNormalizer`
+(special cases like
 "ios" → "ай оу эс", `AS_WORD` entries like "json" → "джейсон", otherwise
 letter-by-letter via the same shared letter-name table); `AS_WORD`
 dictionary for mixed-case entries; and finally digraph-first
@@ -681,6 +687,28 @@ abbreviation and a lone letter sound the same ("x" and "X" both → "икс").
 - THEN "repositories" is read as "репозиторис" from the curated `repository`
   reading with its trailing "й" dropped, while "species" does not compose from
   `spec` and falls back to transliteration
+
+#### Scenario: Long vowel-rich all-caps token read as a word
+
+- GIVEN the inputs "DEVELOPER", "LINUX", "UBUNTU", "JAVASCRIPT"
+- WHEN the pipeline processes them
+- THEN they are read as "девелопер", "линукс", "убунту", "джаваскрипт" via
+  digraph transliteration instead of being spelled letter by letter, and are
+  recorded in the unknown-words map
+
+#### Scenario: Short or vowel-poor all-caps token stays spelled
+
+- GIVEN the inputs "API", "HTML", "SQL"
+- WHEN the pipeline processes them
+- THEN they keep the letter-by-letter readings "эй пи ай", "эйч ти эм эль",
+  "эс кью эль"
+
+#### Scenario: Curated readings outrank the word-like rule
+
+- GIVEN the inputs "KUBERNETES", "OAUTH"
+- WHEN the pipeline processes them
+- THEN "KUBERNETES" reads "кубернетис" and "OAUTH" reads "о аус" from
+  `IT_TERMS`, and neither is transliterated through the word-like rule
 
 ### Requirement: Numbers
 

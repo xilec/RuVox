@@ -13,7 +13,7 @@ static AS_WORD: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(||
         ("ajax", "эйджакс"),
         ("crud", "крад"),
         ("cors", "корс"),
-        ("oauth", "о ауз"),
+        ("oauth", "о аус"),
         // Image formats
         ("gif", "гиф"),
         ("jpeg", "джейпег"),
@@ -53,6 +53,17 @@ pub struct AbbreviationNormalizer;
 impl AbbreviationNormalizer {
     pub fn new() -> Self {
         AbbreviationNormalizer
+    }
+
+    /// Whether an all-uppercase token should be read as a word instead of
+    /// spelled letter by letter: it must be word-like and absent from both
+    /// curated abbreviation tables. `IT_TERMS` is checked by the pipeline
+    /// before it reaches this branch, so curated readings always win.
+    pub fn reads_as_word(&self, token: &str) -> bool {
+        let lower = token.to_lowercase();
+        is_word_like(token)
+            && !AS_WORD.contains_key(lower.as_str())
+            && !SPECIAL_CASES.contains_key(lower.as_str())
     }
 
     pub fn normalize(&self, abbrev: &str) -> String {
@@ -127,6 +138,25 @@ pub fn special_cases() -> &'static HashMap<&'static str, &'static str> {
     &SPECIAL_CASES
 }
 
+/// Whether an all-uppercase token is word-like enough to be read with the
+/// digraph transliteration instead of being spelled letter by letter.
+///
+/// Spelling is the fallback for unknown abbreviations, but it is unreadable for
+/// long vowel-rich tokens ("DEVELOPER", "JAVASCRIPT"). The threshold is one
+/// vowel per four letters with "y" counted as a vowel ("SYSTEM", "SYNTAX"), and
+/// at least five letters so the short-abbreviation class ("API", "GPU", "JSON")
+/// stays spelled. Consonant-only tokens ("HTML", "SQL") can never qualify.
+pub fn is_word_like(token: &str) -> bool {
+    if token.chars().count() < 5 {
+        return false;
+    }
+    let vowels = token
+        .chars()
+        .filter(|c| matches!(c.to_ascii_lowercase(), 'a' | 'e' | 'i' | 'o' | 'u' | 'y'))
+        .count();
+    vowels * 4 >= token.chars().count()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -143,7 +173,7 @@ mod tests {
     #[test_case("AJAX" => "эйджакс"; "ajax")]
     #[test_case("CRUD" => "крад"; "crud")]
     #[test_case("CORS" => "корс"; "cors")]
-    #[test_case("OAuth" => "о ауз"; "oauth")]
+    #[test_case("OAuth" => "о аус"; "oauth")]
     #[test_case("GIF" => "гиф"; "gif")]
     #[test_case("JPEG" => "джейпег"; "jpeg")]
     #[test_case("PNG" => "пи эн джи"; "png_spelled_out")]
@@ -292,5 +322,53 @@ mod tests {
         let map = as_word();
         assert_eq!(map.get("json"), Some(&"джейсон"));
         assert_eq!(map.get("api"), None); // api is spelled out, not in AS_WORD
+    }
+
+    // --- Word-like all-caps calibration (#290) ---
+
+    #[test_case("DEVELOPER"; "developer")]
+    #[test_case("LINUX"; "linux")]
+    #[test_case("UBUNTU"; "ubuntu")]
+    #[test_case("WINDOWS"; "windows")]
+    #[test_case("JAVASCRIPT"; "javascript")]
+    #[test_case("SYSTEM"; "y counts as a vowel")]
+    #[test_case("BROWSER"; "browser")]
+    fn word_like_tokens_read_as_words(token: &str) {
+        assert!(is_word_like(token), "{token} should be read as a word");
+    }
+
+    #[test_case("API"; "api too short")]
+    #[test_case("HTML"; "no vowels")]
+    #[test_case("SQL"; "no vowels, short")]
+    #[test_case("JSON"; "four letters")]
+    #[test_case("GPU"; "gpu too short")]
+    #[test_case("JWT"; "jwt too short, no vowels")]
+    #[test_case("NGINX"; "nginx one vowel in five")]
+    #[test_case("SPARK"; "spark one vowel in five")]
+    fn vowel_poor_or_short_tokens_stay_spelled(token: &str) {
+        assert!(
+            !is_word_like(token),
+            "{token} should keep the letter-by-letter reading"
+        );
+    }
+
+    #[test]
+    fn word_like_threshold_is_one_vowel_per_four_letters() {
+        // TERRAFORM is 3 vowels in 9 letters (above the line); SHRUB is 1 in
+        // 5 and TMUX is four letters, so both stay below it.
+        assert!(is_word_like("TERRAFORM"));
+        assert!(!is_word_like("SHRUB"));
+        assert!(!is_word_like("TMUX"));
+    }
+
+    #[test]
+    fn reads_as_word_keeps_curated_abbreviation_tables() {
+        let n = normalizer();
+        // MACOS and DEVOPS are word-like by the letter counts but curated, so
+        // they must be spelled/served from the tables, not transliterated.
+        assert!(is_word_like("MACOS"));
+        assert!(!n.reads_as_word("MACOS"));
+        assert!(is_word_like("DEVOPS"));
+        assert!(!n.reads_as_word("DEVOPS"));
     }
 }

@@ -824,7 +824,16 @@ impl TTSPipeline {
                     // ("API", "HTML", "SQL", "JSON") keep their readings.
                     composed
                 } else if word.chars().all(|c| c.is_ascii_uppercase()) && word.len() >= 2 {
-                    self.abbrev_normalizer.normalize(word)
+                    if self.abbrev_normalizer.reads_as_word(word) {
+                        // Long vowel-rich all-caps tokens ("DEVELOPER",
+                        // "JAVASCRIPT") are words, not initialisms: spelling
+                        // them letter by letter is unreadable. They go through
+                        // the digraph transliteration and are tracked as
+                        // unknown, like any other transliterated word.
+                        self.english_normalizer.normalize(word, true)
+                    } else {
+                        self.abbrev_normalizer.normalize(word)
+                    }
                 } else if crate::pipeline::normalizers::abbreviations::as_word()
                     .contains_key(word_lower.as_str())
                 {
@@ -1165,6 +1174,55 @@ mod tests {
         // fallback — it must not enter the unknown-words map.
         let mut p = TTSPipeline::new();
         p.process("Переменная x равна 5");
+        assert!(p.english_normalizer.get_unknown_words().is_empty());
+    }
+
+    #[test]
+    fn pipeline_word_like_all_caps_read_as_words() {
+        // Long vowel-rich all-caps tokens are words, not initialisms: they are
+        // transliterated instead of spelled letter by letter, and follow the
+        // tracking rules of any transliterated word.
+        let mut p = TTSPipeline::new();
+        // "y" counts as a vowel, so "SYSTEM" is a word too. One call: the
+        // unknown-words map is cleared at the start of every process call.
+        assert_eq!(
+            p.process("DEVELOPER LINUX UBUNTU JAVASCRIPT SYSTEM"),
+            "девелопер линукс убунту джаваскрипт систем"
+        );
+        let unknown = p.english_normalizer.get_unknown_words();
+        for word in ["developer", "linux", "ubuntu", "javascript", "system"] {
+            assert!(unknown.contains_key(word), "{word} must be tracked");
+        }
+    }
+
+    #[test]
+    fn pipeline_short_or_vowel_poor_all_caps_stay_spelled() {
+        // The heuristic must not swallow the abbreviation class it exists to
+        // distinguish words from.
+        let mut p = TTSPipeline::new();
+        assert_eq!(
+            p.process("API HTML SQL"),
+            "эй пи ай эйч ти эм эль эс кью эль"
+        );
+        // "SPARK" is absent from every table and one vowel in five letters is
+        // below the threshold, so the length/vowel boundary itself is locked.
+        assert_eq!(p.process("SPARK"), "эс пи эй ар кей");
+        // "JSON" is short but also curated: the table wins before the rule.
+        assert_eq!(p.process("JSON"), "джейсон");
+    }
+
+    #[test]
+    fn pipeline_curated_readings_outrank_word_like_rule() {
+        // Word-like tokens that are curated keep their curated reading and are
+        // not transliterated.
+        let mut p = TTSPipeline::new();
+        // One call, so the empty-map assertion below covers every token: if
+        // the word-like rule ran before the curated tables, all three would be
+        // transliterated and tracked.
+        assert_eq!(
+            p.process("KUBERNETES OAUTH WINDOWS MACOS BROWSER"),
+            "кубернетис о аус виндовс мак оу эс браузэр"
+        );
         assert!(p.english_normalizer.get_unknown_words().is_empty());
     }
 
