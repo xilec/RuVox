@@ -54,16 +54,10 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     m.insert("c++", "си плюс плюс");
     m.insert("c#", "си шарп");
     m.insert("f#", "эф шарп");
-    m.insert("haskell", "хаскелл");
-    m.insert("ocaml", "окамл");
     m.insert("erlang", "эрланг");
     m.insert("elixir", "эликсир");
     m.insert("clojure", "кложур");
-    m.insert("prolog", "пролог");
-    m.insert("fortran", "фортран");
-    m.insert("cobol", "кобол");
     m.insert("pascal", "паскаль");
-    m.insert("delphi", "делфи");
     m.insert("php", "пи эйч пи");
     m.insert("sql", "эс кью эль");
     m.insert("html", "эйч ти эм эль");
@@ -71,61 +65,43 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     m.insert("xml", "икс эм эль");
     m.insert("json", "джейсон");
     m.insert("yaml", "ямл");
-    m.insert("toml", "томл");
     m.insert("js", "джи эс");
     m.insert("ts", "ти эс");
     // English numerals (where transliteration differs from expected)
     m.insert("zero", "зиро");
     m.insert("seven", "сэвен");
-    m.insert("ten", "тен");
     m.insert("eleven", "илэвен");
     m.insert("twelve", "твелв");
     m.insert("thirteen", "сёртин");
     m.insert("seventeen", "сэвентин");
-    m.insert("twenty", "твенти");
     // Common code terms
     m.insert("eval", "эвал");
     m.insert("plus", "плас");
-    m.insert("sync", "синк");
     m.insert("succ", "сакс");
 
     m.insert("synthesize", "синтесайз");
     m.insert("addition", "эдишн");
     // Common type/term names
-    m.insert("nat", "нат");
     m.insert("uint", "юинт");
     m.insert("float", "флоат");
     m.insert("double", "дабл");
     m.insert("trait", "трейт");
     m.insert("traits", "трейтс");
-    m.insert("impl", "импл");
-    m.insert("async", "асинк");
     m.insert("await", "эвейт");
-    m.insert("const", "конст");
-    m.insert("static", "статик");
     m.insert("override", "оверрайд");
-    m.insert("virtual", "виртуал");
-    m.insert("abstract", "абстракт");
     m.insert("private", "прайвит");
-    m.insert("protected", "протектед");
     m.insert("generic", "дженерик");
     m.insert("template", "темплейт");
     // Git/VCS terms
     m.insert("feature", "фича");
-    m.insert("branch", "бранч");
     m.insert("merge", "мёрдж");
-    m.insert("commit", "коммит");
-    m.insert("pull", "пулл");
-    m.insert("checkout", "чекаут");
     m.insert("rebase", "рибейз");
     m.insert("stash", "стэш");
     // Development process
     m.insert("review", "ревью");
-    m.insert("deploy", "деплой");
     m.insert("release", "релиз");
     m.insert("debug", "дебаг");
     m.insert("bug", "баг");
-    m.insert("refactor", "рефакторинг");
     m.insert("agile", "эджайл");
     m.insert("scrum", "скрам");
     // Architecture/Code
@@ -133,88 +109,54 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     m.insert("library", "лайбрари");
     m.insert("package", "пакет");
     m.insert("module", "модуль");
-    m.insert("function", "функция");
-    m.insert("method", "метод");
-    m.insert("class", "класс");
-    m.insert("object", "объект");
     m.insert("interface", "интерфейс");
     m.insert("callback", "коллбэк");
     m.insert("promise", "промис");
     m.insert("handler", "хендлер");
-    m.insert("listener", "листенер");
     m.insert("middleware", "мидлвэр");
     m.insert("endpoint", "эндпоинт");
     m.insert("router", "роутер");
-    m.insert("controller", "контроллер");
     m.insert("service", "сервис");
-    m.insert("repository", "репозиторий");
     // Data
     m.insert("cache", "кэш");
     m.insert("queue", "кью");
-    m.insert("array", "массив");
-    m.insert("string", "строка");
-    m.insert("boolean", "булеан");
     m.insert("null", "налл");
     m.insert("undefined", "андефайнд");
-    m.insert("default", "дефолт");
-    m.insert("index", "индекс");
-    m.insert("query", "квери");
     // Infrastructure
-    m.insert("docker", "докер");
     m.insert("container", "контейнер");
     m.insert("kubernetes", "кубернетис");
     m.insert("cluster", "кластер");
     m.insert("node", "нода");
-    m.insert("pod", "под");
     m.insert("nginx", "энджинкс");
     m.insert("backup", "бэкап");
     m.insert("client", "клиент");
     // Testing
-    m.insert("test", "тест");
-    m.insert("mock", "мок");
     m.insert("stub", "стаб");
-    m.insert("spec", "спек");
     // Build
     m.insert("build", "билд");
     m.insert("bundle", "бандл");
     m.insert("compile", "компайл");
-    m.insert("webpack", "вебпак");
     // Programming languages
     m.insert("python", "пайтон");
     m.insert("typescript", "тайпскрипт");
     m.insert("rust", "раст");
-    m.insert("golang", "голанг");
-    m.insert("kotlin", "котлин");
     // Frameworks and tools
     m.insert("react", "риакт");
     m.insert("angular", "ангуляр");
     m.insert("vue", "вью");
     m.insert("svelte", "свелт");
-    m.insert("next", "некст");
     m.insert("express", "экспресс");
     m.insert("django", "джанго");
-    m.insert("flask", "фласк");
     m.insert("fastapi", "фаст эй пи ай");
-    m.insert("laravel", "ларавел");
-    m.insert("redis", "редис");
-    m.insert("mongo", "монго");
-    m.insert("postgres", "постгрес");
     m.insert("github", "гитхаб");
-    m.insert("jira", "джира");
     m.insert("slack", "слэк");
-    m.insert("postman", "постман");
     // Additional common terms
-    m.insert("request", "реквест");
     m.insert("trace", "трейс");
     m.insert("daily", "дейли");
     m.insert("standup", "стендап");
-    m.insert("hot", "хот");
-    m.insert("reload", "релоуд");
     m.insert("tech", "тек");
     m.insert("debt", "дет");
     m.insert("code", "код");
-    m.insert("smell", "смелл");
-    m.insert("best", "бест");
     m.insert("practice", "практис");
     m.insert("use", "юз");
     m.insert("case", "кейс");
@@ -222,51 +164,39 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     // a phrase reads correctly however its words are separated (#287).
     m.insert("stack", "стэк");
     m.insert("live", "лайв");
+    // Not redundant with the raw transliteration, which is identical: without
+    // this entry "living" would compose the "live" stem into "лайвинг", but
+    // the word is /ˈlɪvɪŋ/. The entry shadows that composition (#292).
+    m.insert("living", "ливинг");
     m.insert("dry", "драй");
     m.insert("run", "ран");
     m.insert("edge", "эдж");
     // "living" is /ˈlɪvɪŋ/, not the adjective "live" (/laɪv/) that the curated
     // stem would compose through, so it is curated in its own right.
-    m.insert("living", "ливинг");
     // Common words in paths/URLs
     m.insert("home", "хоум");
-    m.insert("docs", "докс");
     m.insert("user", "юзер");
     m.insert("users", "юзерс");
-    m.insert("admin", "админ");
     m.insert("support", "саппорт");
-    m.insert("config", "конфиг");
-    m.insert("data", "дата");
     m.insert("files", "файлс");
     m.insert("download", "даунлоад");
     m.insert("upload", "аплоад");
-    m.insert("report", "репорт");
-    m.insert("documents", "документс");
-    m.insert("localhost", "локалхост");
     m.insert("api", "эй пи ай");
-    m.insert("app", "апп");
-    m.insert("web", "веб");
     m.insert("src", "сорс");
     m.insert("tmp", "темп");
     m.insert("etc", "етс");
-    m.insert("opt", "опт");
     // File extensions
     m.insert("pdf", "пэ дэ эф");
-    m.insert("doc", "док");
     m.insert("txt", "тэкст");
     m.insert("csv", "си эс ви");
-    m.insert("png", "пнг");
     m.insert("jpg", "джэйпег");
     m.insert("svg", "эс ви джи");
     m.insert("mp3", "эм пэ три");
     m.insert("mp4", "эм пэ четыре");
     // Common words
     m.insert("hello", "хеллоу");
-    m.insert("world", "ворлд");
     m.insert("example", "экзампл");
     m.insert("tutorial", "тьюториал");
-    m.insert("company", "компани");
-    m.insert("repo", "репо");
     // Common words that digraph transliteration misreads (silent "e",
     // vowel digraphs it does not know) — issue #139
     m.insert("ascii", "аски");
@@ -467,7 +397,7 @@ impl EnglishNormalizer {
     /// inflection suffix (`INFLECTION_SUFFIXES`) and its base is a curated
     /// `IT_TERMS` entry. The base is the stripped stem, the stripped stem with a
     /// dropped silent "e" restored ("uses" → `use` + "es"), or — for "-ies" —
-    /// `stem + "y"` ("repositories" → `repository`). Returns `None` for every
+    /// `stem + "y"` ("libraries" → `library`). Returns `None` for every
     /// other word — in particular for pure abbreviations such as "html" — so
     /// callers never get an arbitrary word transliterated through this path.
     pub fn compose_inflection(&self, word: &str) -> Option<String> {
@@ -488,7 +418,7 @@ impl EnglishNormalizer {
 
             if suffix == "ies" {
                 // "-ies" is the plural of "-y", so only a real "-y" base
-                // composes ("repositories" → `repository`); a stem that happens
+                // composes ("libraries" → `library`); a stem that happens
                 // to end in "ies" otherwise ("species") must not compose. The
                 // Russian reading drops the base's trailing "й", because the
                 // plural adds a single "с".
@@ -625,7 +555,6 @@ mod tests {
     #[test_case("release" => "релиз"; "release")]
     #[test_case("debug" => "дебаг"; "debug")]
     #[test_case("bug" => "баг"; "bug")]
-    #[test_case("refactor" => "рефакторинг"; "refactor")]
     #[test_case("scrum" => "скрам"; "scrum")]
     #[test_case("agile" => "эджайл"; "agile")]
     fn it_terms_dev_process(word: &str) -> String {
@@ -636,10 +565,6 @@ mod tests {
     #[test_case("library" => "лайбрари"; "library")]
     #[test_case("package" => "пакет"; "package")]
     #[test_case("module" => "модуль"; "module")]
-    #[test_case("function" => "функция"; "function")]
-    #[test_case("method" => "метод"; "method")]
-    #[test_case("class" => "класс"; "class")]
-    #[test_case("object" => "объект"; "object")]
     #[test_case("interface" => "интерфейс"; "interface")]
     #[test_case("callback" => "коллбэк"; "callback")]
     #[test_case("promise" => "промис"; "promise")]
@@ -650,16 +575,12 @@ mod tests {
     #[test_case("router" => "роутер"; "router")]
     #[test_case("controller" => "контроллер"; "controller")]
     #[test_case("service" => "сервис"; "service")]
-    #[test_case("repository" => "репозиторий"; "repository")]
     fn it_terms_architecture(word: &str) -> String {
         normalizer().normalize(word, false)
     }
 
     #[test_case("cache" => "кэш"; "cache")]
     #[test_case("queue" => "кью"; "queue")]
-    #[test_case("array" => "массив"; "array")]
-    #[test_case("string" => "строка"; "string")]
-    #[test_case("boolean" => "булеан"; "boolean")]
     #[test_case("null" => "налл"; "null")]
     #[test_case("undefined" => "андефайнд"; "undefined")]
     #[test_case("default" => "дефолт"; "default")]
@@ -667,6 +588,40 @@ mod tests {
     #[test_case("query" => "квери"; "query")]
     fn it_terms_data(word: &str) -> String {
         normalizer().normalize(word, false)
+    }
+
+    // ── Pruned IT_TERMS entries read by transliteration (#292) ──────────────
+
+    #[test_case("function" => "функшн"; "function")]
+    #[test_case("string" => "стринг"; "string")]
+    #[test_case("array" => "аррэй"; "array")]
+    #[test_case("object" => "обджект"; "object")]
+    #[test_case("repository" => "репоситори"; "repository")]
+    #[test_case("boolean" => "булин"; "boolean")]
+    #[test_case("refactor" => "рефактор"; "refactor")]
+    #[test_case("method" => "месод"; "method")]
+    #[test_case("class" => "класс"; "redundant class")]
+    #[test_case("index" => "индекс"; "redundant index")]
+    #[test_case("app" => "апп"; "redundant app")]
+    fn pruned_it_terms_read_by_transliteration(word: &str) -> String {
+        // IT_TERMS holds pronunciation only: semantic translations and
+        // redundant entries are gone, so these words fall through to the
+        // digraph transliteration (#292).
+        normalizer().normalize(word, false)
+    }
+
+    #[test]
+    fn pruned_it_terms_are_tracked_as_unknown() {
+        // A pruned word is no longer curated, so the fallback records it in the
+        // unknown-words map; a curated one would not be recorded.
+        let mut en = normalizer();
+        for word in ["function", "string", "class"] {
+            en.normalize(word, true);
+            assert!(
+                en.get_unknown_words().contains_key(word),
+                "{word} is not curated anymore and must be tracked"
+            );
+        }
     }
 
     // Words that digraph transliteration misreads (silent "e" etc.) — #139.
@@ -925,7 +880,7 @@ mod tests {
     #[test_case("used"; "silent-e -ed from use")]
     #[test_case("caches"; "sibilant -es")]
     #[test_case("cached"; "sibilant -ed from cache")]
-    #[test_case("repositories"; "-ies")]
+    #[test_case("libraries"; "-ies")]
     #[test_case("compilation"; "-ation")]
     fn composed_forms_are_not_tracked(word: &str) {
         // Composition is a curated lookup, not the transliteration fallback, so
@@ -995,7 +950,7 @@ mod tests {
     #[test_case("used" => "юзед"; "used")]
     #[test_case("caches" => "кэшес"; "caches")]
     #[test_case("cached" => "кэшед"; "cached")]
-    #[test_case("repositories" => "репозиторис"; "repositories")]
+    #[test_case("libraries" => "лайбрарис"; "libraries")]
     #[test_case("compilation" => "компайлашн"; "compilation")]
     #[test_case("practically" => "практикалли"; "practically")]
     #[test_case("null" => "налл"; "null")]
@@ -1036,8 +991,8 @@ mod tests {
         );
         assert_eq!(en.compose_inflection("USES").as_deref(), Some("юзес"));
         assert_eq!(
-            en.compose_inflection("REPOSITORIES").as_deref(),
-            Some("репозиторис")
+            en.compose_inflection("LIBRARIES").as_deref(),
+            Some("лайбрарис")
         );
     }
 
@@ -1080,8 +1035,8 @@ mod tests {
         // because the plural adds a single "с".
         let en = EnglishNormalizer::new();
         assert_eq!(
-            en.compose_inflection("repositories").as_deref(),
-            Some("репозиторис")
+            en.compose_inflection("libraries").as_deref(),
+            Some("лайбрарис")
         );
     }
 

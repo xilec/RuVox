@@ -1250,8 +1250,8 @@ mod tests {
         // empty" would also pass if tracking had been disabled entirely.
         let mut p = TTSPipeline::new();
         assert_eq!(
-            p.process("Supporting supports using caches repositories Compilation"),
-            "саппортинг саппортс юзинг кэшес репозиторис компайлашн"
+            p.process("Supporting supports using caches libraries Compilation"),
+            "саппортинг саппортс юзинг кэшес лайбрарис компайлашн"
         );
         assert!(p.english_normalizer.get_unknown_words().is_empty());
 
