@@ -29,11 +29,11 @@
 
 - [x] 3.1 `just test`
 - [x] 3.2 `just lint`
-- [ ] 3.3 `just validate` after archiving the change.
+- [x] 3.3 `just validate` after archiving the change.
 
 ## 4. Manual pass
 
-- [ ] 4.1 Listen to the calibration sentences and confirm the readings:
+- [x] 4.1 Listen to the calibration sentences and confirm the readings:
   `Собрали DEVELOPER и JAVASCRIPT.`, `LINUX и UBUNTU`, `Через API и HTML`,
   `SYSTEM WINDOWS`, `KUBERNETES OAUTH`. Also confirm the collateral tokens
   now read as words: `FIXME`, `README`, `BROWSER`.
