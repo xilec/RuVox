@@ -289,7 +289,7 @@ mod tests {
     fn get_marks_builtin_overrides() {
         let pipeline = TTSPipeline::new();
         let mut dict = UserDictionary::default();
-        dict.insert(entry("docker", "докка")); // docker ∈ IT_TERMS
+        dict.insert(entry("nginx", "энджинкс-кастом")); // nginx ∈ IT_TERMS
         dict.insert(entry("ios", "ай ос")); // ios ∈ abbreviation SPECIAL_CASES
         // Not in IT_TERMS / abbreviation maps / CODE_WORDS.
         dict.insert(entry("zabbix", "заббикс"));
@@ -298,10 +298,10 @@ mod tests {
 
         let dtos = dto_list(&pipeline);
         assert_eq!(dtos.len(), 3);
-        let docker = dtos.iter().find(|d| d.from == "docker").expect("docker");
+        let nginx = dtos.iter().find(|d| d.from == "nginx").expect("nginx");
         let ios = dtos.iter().find(|d| d.from == "ios").expect("ios");
         let zabbix = dtos.iter().find(|d| d.from == "zabbix").expect("zabbix");
-        assert!(docker.overrides_builtin);
+        assert!(nginx.overrides_builtin);
         assert!(ios.overrides_builtin);
         assert!(!zabbix.overrides_builtin);
     }

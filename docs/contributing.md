@@ -26,6 +26,15 @@ The normalization pipeline lives in `src-tauri/src/pipeline/normalizers/`. Each 
 
 **1. File:** `src-tauri/src/pipeline/normalizers/english.rs`
 
+An entry is a pronunciation fix, not a translation, and it must do work:
+add one only when the digraph transliteration reads the word wrong (`file` is
+read "филе" without the entry "файл"). If `transliterate_simple` already
+produces the right Cyrillic (`class`, `index`), do not add an entry — it would
+only repeat the fallback. A word with an English reading is never replaced by a
+Russian translation: `function` reads "функшн", not "функция". The one
+exception is an entry that must shadow a wrong inflection composition, such as
+`living` (`live` + "-ing" would read "лайвинг").
+
 Find the `IT_TERMS` table and add an entry (keep alphabetical order within each section):
 
 ```rust

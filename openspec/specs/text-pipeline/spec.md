@@ -519,7 +519,14 @@ letter case. The words of such phrases SHALL be curated individually in
 `IT_TERMS` (`stack` → "стэк", `live` → "лайв", `dry` → "драй", `run` → "ран",
 `edge` → "эдж"), so no phrase entry is needed to read them.
 For remaining multi-letter words the resolution order SHALL be: `IT_TERMS`
-dictionary ("api" → "эй пи ай", "github" → "гитхаб"); when an exact
+dictionary ("api" → "эй пи ай", "github" → "гитхаб"), which SHALL hold
+pronunciation readings only: a word whose digraph transliteration already reads
+correctly SHALL NOT be listed, and a Russian semantic translation SHALL NOT be
+curated as its reading ("function" reads "функшн", not "функция"). An entry
+SHALL remain only when removing it changes a reading on another resolution
+path: it keeps an all-caps token from letter-by-letter spelling ("TEST" reads
+"тест", "DATA" reads "дата", "STRING" reads "стринг") or it shadows a wrong
+inflection composition ("living" reads "ливинг", not "лайвинг"); when an exact
 `IT_TERMS` entry does not exist but the word ends in a recognized English
 inflection suffix (`s`, `es`, `ies`, `ed`, `ing`, `er`, `ers`, `able`,
 `ally`, `ment`, `ments`, `ation`) and its stem is an `IT_TERMS` entry,
@@ -533,8 +540,8 @@ retry SHALL read "-es" as the syllabic "ес" only when the stem that dropped th
 "e" ends in a sibilant and otherwise SHALL leave the plain "-s" composition to
 win ("features" → "фичас", not "фичаес"). The "-ies" suffix
 SHALL compose only when `stem + "y"` is an `IT_TERMS` entry, dropping a trailing
-"й" from the base reading ("repositories" → `repository` → "репозитори" + "с" =
-"репозиторис"), so a stem that is not a "-y" base does not compose through it
+"й" from the base reading ("libraries" → `library` → "лайбрари" + "с" =
+"лайбрарис"), so a stem that is not a "-y" base does not compose through it
 ("species" does not compose from `spec`). This composition
 SHALL apply regardless of the word's letter case — including an
 all-uppercase word — and SHALL be attempted before the all-uppercase
@@ -682,11 +689,11 @@ abbreviation and a lone letter sound the same ("x" and "X" both → "икс").
 
 #### Scenario: "-ies" composed only from a "-y" base
 
-- GIVEN the inputs "repositories" and "species"
+- GIVEN the inputs "libraries" and "species"
 - WHEN the pipeline processes them
-- THEN "repositories" is read as "репозиторис" from the curated `repository`
-  reading with its trailing "й" dropped, while "species" does not compose from
-  `spec` and falls back to transliteration
+- THEN "libraries" is read as "лайбрарис" from the curated `library` reading
+  with its trailing "й" dropped, while "species" does not compose from `spec`
+  and falls back to transliteration
 
 #### Scenario: Long vowel-rich all-caps token read as a word
 
@@ -709,6 +716,40 @@ abbreviation and a lone letter sound the same ("x" and "X" both → "икс").
 - WHEN the pipeline processes them
 - THEN "KUBERNETES" reads "кубернетис" and "OAUTH" reads "о аус" from
   `IT_TERMS`, and neither is transliterated through the word-like rule
+
+#### Scenario: Semantic translation is not curated
+
+- GIVEN the inputs "function", "array", "object", "repository", "boolean",
+  and "refactor"
+- WHEN the pipeline processes them
+- THEN they are read by transliteration ("функшн", "аррэй", "обджект",
+  "репоситори", "булин", "рефактор") because `IT_TERMS` holds pronunciation
+  only, and they are recorded in the unknown-words map
+
+#### Scenario: A semantic translation survives only as a caps guard
+
+- GIVEN the input "string", whose curated reading was the translation "строка"
+- WHEN the pipeline processes "string" and "STRING"
+- THEN both read "стринг" — the entry keeps its transliteration reading only to
+  stop the all-caps rule from spelling the token out, and it is not recorded in
+  the unknown-words map
+
+#### Scenario: Redundant curated reading is not listed
+
+- GIVEN a word whose digraph transliteration already matches its curated
+  reading, e.g. "index" or "commit"
+- WHEN the pipeline processes it
+- THEN the reading is the transliteration ("индекс", "коммит") with no
+  `IT_TERMS` entry, and the word is recorded in the unknown-words map
+
+#### Scenario: A no-op entry survives only as an all-caps guard
+
+- GIVEN the words "test", "data", "app", "class", "web", "string", whose
+  curated readings equal the transliteration
+- WHEN an uppercase token such as "TEST" or "DATA" is processed
+- THEN the curated entry still applies ("тест", "дата", "стринг") instead of the
+  letter-by-letter spelling the all-caps rule would produce, so these entries
+  are not redundant
 
 ### Requirement: Numbers
 

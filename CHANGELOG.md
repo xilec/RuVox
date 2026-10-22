@@ -7,12 +7,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 ## [Unreleased]
 
 ### Changed
+- **`IT_TERMS` keeps pronunciation only** — semantic translations and redundant entries are gone from the curated reading table: `function`, `string`, `array`, `object`, `repository`, `boolean`, and `refactor` now read as English words (`функшн`, `стринг`, `аррэй`, `обджект`, `репоситори`, `булин`, `рефактор`) instead of Russian translations, `method` reads `месод`, and 38 entries that only repeated the transliteration (`commit`, `index`, `docker`, `query`, …) no longer shadow it; the entries that keep an uppercase token from being spelled out (`TEST`, `DATA`, `APP`, `STRING`, …) stay, so every other reading is unchanged (#292).
 - **Long all-caps words are read as words, not spelled out** — `DEVELOPER`, `LINUX`, `UBUNTU`, `JAVASCRIPT`, and `SYSTEM` now read as `девелопер`, `линукс`, `убунту`, `джаваскрипт`, `систем` instead of letter by letter, while short or vowel-poor abbreviations (`API`, `HTML`, `SQL`, `JSON`) keep their letter-by-letter readings (#290).
 - **`stack`, `live`, `dry`, `run`, and `edge` read correctly in phrases** — `stack trace`, `live reload`, `dry run`, and `edge case` now read as `стэк трейс`, `лайв релоуд`, `драй ран`, `эдж кейс` from their curated single words, so the reading no longer depends on the separator between the words (#287).
 - **Closing the window quits by default** — a new Settings switch «Сворачивать в трей при закрытии окна» (off by default) brings back the old behavior of keeping the app running in the tray; the tray icon now appears only while the switch is on, so its menu and clipboard actions are unavailable when closing quits.
 - **English normalization handles common inflected forms** — known IT terms now compose a curated base reading with a phonetic suffix (e.g. `support` + `ing`), while raw transliteration remains the fallback for unknown forms.
 - **All-caps inflected IT terms are composed, not spelled out** — an uppercase form such as `SUPPORTING` or `FEATURES` now reads by its curated stem (`саппортинг`, `фичас`) instead of letter by letter (#288).
-- **Inflected forms that drop an "e" or a "y" read from their base** — `uses`/`using`/`cached`, `caches`, `driver`, and `repositories` now compose the curated `use`/`cache`/`drive`/`repository` readings (`юзес`, `юзинг`, `кэшед`, `кэшес`, `драйвер`, `репозиторис`) instead of degrading to raw transliteration, and `species` no longer composes from `spec` (#291).
+- **Inflected forms that drop an "e" or a "y" read from their base** — `uses`/`using`/`cached`, `caches`, and `driver` now compose the curated `use`/`cache`/`drive` readings (`юзес`, `юзинг`, `кэшед`, `кэшес`, `драйвер`) instead of degrading to raw transliteration, and `species` no longer composes from `spec` (#291).
 
 ## [0.6.0] — 2026-09-05
 

@@ -1196,6 +1196,43 @@ mod tests {
     }
 
     #[test]
+    fn every_noop_entry_keeps_its_all_caps_reading() {
+        // The entries whose curated reading equals the raw transliteration only
+        // carry information where transliteration is not consulted — above
+        // all, they stop an all-caps token from being spelled out. Pin every
+        // one of them, so deleting a guard cannot stay invisible to tests.
+        use crate::pipeline::normalizers::english::{IT_TERMS, transliterate_simple};
+
+        let mut p = TTSPipeline::new();
+        let guards: Vec<(&str, &str)> = IT_TERMS
+            .iter()
+            .filter(|(word, reading)| transliterate_simple(word) == **reading)
+            .map(|(word, reading)| (*word, *reading))
+            .collect();
+        assert!(guards.len() >= 28, "guard set shrank unexpectedly");
+        for (word, reading) in guards {
+            assert_eq!(
+                p.process(&word.to_uppercase()),
+                reading,
+                "{word} lost its all-caps reading"
+            );
+        }
+    }
+
+    #[test]
+    fn pipeline_caps_guard_entries_keep_short_all_caps_words_readable() {
+        // These words have no useful lowercase information (the transliteration
+        // already matches the curated reading) but their entries keep an
+        // uppercase token from falling through to letter-by-letter spelling;
+        // #292 removed every other no-op, so this is the only reason they stay.
+        let mut p = TTSPipeline::new();
+        assert_eq!(
+            p.process("TEST DATA APP CLASS WEB STRING"),
+            "тест дата апп класс веб стринг"
+        );
+    }
+
+    #[test]
     fn pipeline_short_or_vowel_poor_all_caps_stay_spelled() {
         // The heuristic must not swallow the abbreviation class it exists to
         // distinguish words from.
@@ -1250,8 +1287,8 @@ mod tests {
         // empty" would also pass if tracking had been disabled entirely.
         let mut p = TTSPipeline::new();
         assert_eq!(
-            p.process("Supporting supports using caches repositories Compilation"),
-            "саппортинг саппортс юзинг кэшес репозиторис компайлашн"
+            p.process("Supporting supports using caches libraries Compilation"),
+            "саппортинг саппортс юзинг кэшес лайбрарис компайлашн"
         );
         assert!(p.english_normalizer.get_unknown_words().is_empty());
 
