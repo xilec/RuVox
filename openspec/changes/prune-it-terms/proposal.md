@@ -6,14 +6,15 @@
 "файл", where the digraph rules would say "филе") and Russian semantic
 translations (`function` → "функция" instead of the reading "функшн"). It also
 carries entries whose curated reading is byte-for-byte what the transliteration
-already produces (`class`, `index`, `app`), which do no work.
+already produces (`commit`, `index`, `docker`), which do no work in lowercase.
 
 The review of #283/#285 decided that `IT_TERMS` carries pronunciation readings
 only: a listener should hear the English word, not a translation of it. Of the
 228 entries, 7 are semantic translations, 66 look redundant in lowercase, and
 155 are genuine pronunciation fixes. 27 of the 66 turn out to be load-bearing
 in the all-caps path: without them "TEST" or "DATA" would be spelled out letter
-by letter, so they stay as caps guards.
+by letter, so they stay as caps guards; `living` stays because it shadows a
+wrong inflection composition; the remaining 38 are removed.
 
 ## What Changes
 
@@ -21,7 +22,7 @@ by letter, so they stay as caps guards.
   `repository`, `boolean`, `refactor`. They now read by transliteration
   ("функшн", "стринг", "аррэй", "обджект", "репоситори", "булин",
   "рефактор").
-- Remove 39 redundant no-ops: `abstract`, `admin`, `async`, `checkout`,
+- Remove 38 redundant no-ops: `abstract`, `admin`, `async`, `checkout`,
   `cobol`, `commit`, `company`, `config`, `controller`, `default`, `delphi`,
   `deploy`, `docker`, `documents`, `fortran`, `golang`, `haskell`, `index`,
   `kotlin`, `laravel`, `listener`, `localhost`, `mongo`, `ocaml`, `postgres`,
