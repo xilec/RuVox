@@ -19,7 +19,7 @@ identifier normalizer — and found two classes of defects:
   not "сак".
 
 The 155 pronunciation entries otherwise hold up: modern borrowings
-("интерфейс", "сервис", "кластер", "нода") are intentional adaptations, not
+("интерфейс", "сервис", "кластер") are intentional adaptations, not
 aggressive phonetic rewrites, and the remaining semantic translations
 (`package` → "пакет", `feature` → "фича", `module` → "модуль") stay because
 the raw fallback is worse ("пакаге", "фитуре", "модюле") — they belong to the
@@ -37,7 +37,7 @@ transliteration-rules work tracked separately.
   other spelled-out file format (`csv`, `svg`, `pdf`).
 - Read `succ` as "сак".
 - Align the code-identifier readings with their prose counterparts: `hello`
-  "хеллоу" (was "хелло"), `image` "имидж" (was "имадж"), `node` "нода" (was
+  "хеллоу" (was "хелло"), `image` "имидж" (was "имадж"), `node` "нод" (was
   "ноуд").
 - Guard the alignment with a test that fails when a key shared by two
   dictionaries has different readings.

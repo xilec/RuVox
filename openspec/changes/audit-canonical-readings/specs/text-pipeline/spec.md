@@ -278,7 +278,7 @@ fallback produce the same Cyrillic.
 
 - GIVEN the identifiers "hello", "image", and "node"
 - WHEN the code identifier normalizer processes them
-- THEN they read "хеллоу", "имидж", and "нода" — the same readings the prose
+- THEN they read "хеллоу", "имидж", and "нод" — the same readings the prose
   path uses
 
 #### Scenario: An acronym is not curated into an unpronounceable form

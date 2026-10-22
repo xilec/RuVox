@@ -29,9 +29,9 @@ pronounced in Russian anyway.
 
 `code_words` is the identifier table (`getUserData`, `imageUrl`), and `IT_TERMS`
 is the prose table. Inside an identifier the same word should sound the same as
-in prose, so `hello`, `image`, and `node` adopt the prose readings. `node` keeps
-"нода" — the accepted borrowing — rather than the phonetic "ноуд", and `image`
-keeps "имидж", the standard adaptation of /ˈɪmɪdʒ/.
+in prose, so `hello`, `image`, and `node` adopt the prose readings. `node` reads "нод" — the short borrowing a Russian developer says, confirmed by
+ear, rather than the phonetic "ноуд" or the full "нода"; `image` keeps "имидж",
+the standard adaptation of /ˈɪmɪdʒ/.
 
 ### `png` is spelled out
 

@@ -188,7 +188,7 @@ impl CodeIdentifierNormalizer {
         code_words.insert("module", "модуль");
         code_words.insert("component", "компонент");
         code_words.insert("element", "элемент");
-        code_words.insert("node", "нода");
+        code_words.insert("node", "нод");
         code_words.insert("child", "чайлд");
         code_words.insert("parent", "парент");
         code_words.insert("root", "рут");
@@ -697,7 +697,7 @@ mod tests {
     #[test_case("getUserData" => "гет юзер дата"; "get_user_data")]
     #[test_case("helloWorld" => "хеллоу ворлд"; "hello_world")]
     #[test_case("imageUrl" => "имидж ю ар эл"; "image_url")]
-    #[test_case("nodeId" => "нода ай ди"; "node_id")]
+    #[test_case("nodeId" => "нод ай ди"; "node_id")]
     #[test_case("myVariable" => "май вэриабл"; "my_variable")]
     #[test_case("isValid" => "из вэлид"; "is_valid")]
     #[test_case("hasValue" => "хэз вэлью"; "has_value")]

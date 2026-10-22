@@ -126,7 +126,7 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     m.insert("container", "контейнер");
     m.insert("kubernetes", "кубернетис");
     m.insert("cluster", "кластер");
-    m.insert("node", "нода");
+    m.insert("node", "нод");
     m.insert("nginx", "энджинкс");
     m.insert("backup", "бэкап");
     m.insert("client", "клиент");
@@ -732,7 +732,7 @@ mod tests {
     #[test_case("container" => "контейнер"; "container")]
     #[test_case("kubernetes" => "кубернетис"; "kubernetes")]
     #[test_case("cluster" => "кластер"; "cluster")]
-    #[test_case("node" => "нода"; "node")]
+    #[test_case("node" => "нод"; "node")]
     #[test_case("pod" => "под"; "pod")]
     #[test_case("nginx" => "энджинкс"; "nginx")]
     #[test_case("backup" => "бэкап"; "backup")]

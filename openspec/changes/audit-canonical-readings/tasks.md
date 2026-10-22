@@ -19,7 +19,7 @@
       `graphql` use `эл`; `jpg` reads `джейпег`; `png` reads `пи эн джи`;
       `succ` reads `сак`.
 - [x] 2.2 Align `code_words` with prose: `hello` → `хеллоу`, `image` →
-      `имидж`, `node` → `нода`.
+      `имидж`, `node` → `нод`.
 - [x] 2.3 Add a cross-dictionary consistency test over the shared keys, and pin
       the corrected readings in both the prose and identifier paths.
 
