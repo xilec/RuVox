@@ -707,8 +707,8 @@ abbreviation and a lone letter sound the same ("x" and "X" both → "икс").
 
 - GIVEN the inputs "API", "HTML", "SQL"
 - WHEN the pipeline processes them
-- THEN they keep the letter-by-letter readings "эй пи ай", "эйч ти эм эль",
-  "эс кью эль"
+- THEN they keep the letter-by-letter readings "эй пи ай", "эйч ти эм эл",
+  "эс кью эл"
 
 #### Scenario: Curated readings outrank the word-like rule
 
@@ -976,4 +976,42 @@ the split parts/words those phases already produce.
 - GIVEN the entry `user → юзер` and code block narration mode "full"
 - WHEN a fenced code block containing `user_id = 1` is processed
 - THEN the "user" part reads "юзер"
+
+### Requirement: Canonical readings are consistent across dictionaries
+
+The curated dictionaries SHALL agree for every word they share. `IT_TERMS`,
+`abbreviations::AS_WORD`, `abbreviations::SPECIAL_CASES`, and the
+`code_words` table of the code identifier normalizer SHALL NOT hold two
+different readings for the same lowercase key. Letter names used by curated
+acronyms SHALL match `letter_name`, so a curated acronym and the spelling
+fallback produce the same Cyrillic.
+
+#### Scenario: A word present in two dictionaries reads the same
+
+- GIVEN the words `json`, `yaml`, `ajax`, `crud`, `imap`, `oauth`, `jpeg`,
+  `ios`, `iot`, `macos`, and `graphql`, which all appear in `IT_TERMS` and in
+  one of the abbreviation tables
+- WHEN the dictionaries are compared key by key
+- THEN every pair of readings is identical
+
+#### Scenario: Curated acronyms use the same letter names as spelling
+
+- GIVEN the inputs "HTML", "XML", "SQL", and "GRAPHQL"
+- WHEN the pipeline processes them
+- THEN they read "эйч ти эм эл", "икс эм эл", "эс кью эл", and "граф кью эл" —
+  the letter name "эл" that the spelling fallback also produces
+
+#### Scenario: Code identifiers reuse the prose readings
+
+- GIVEN the identifiers "hello", "image", and "node"
+- WHEN the code identifier normalizer processes them
+- THEN they read "хеллоу", "имидж", and "нод" — the same readings the prose
+  path uses
+
+#### Scenario: An acronym is not curated into an unpronounceable form
+
+- GIVEN the input "png"
+- WHEN the pipeline processes it
+- THEN it reads "пи эн джи" instead of the unpronounceable "пнг", and "PNG"
+  keeps the same reading instead of falling through to letter spelling
 
