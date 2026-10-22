@@ -211,6 +211,9 @@ export const en: Record<MessageKey, string> = {
   'settings.notify_on_ready': 'Notify when audio is ready',
   'settings.notify_on_error': 'Notify about synthesis errors',
   'settings.preview_dialog_enabled': 'Show the preview dialog before synthesis',
+  'settings.hide_to_tray_on_close': 'Hide window to tray on close',
+  'settings.hide_to_tray_on_close.description':
+    'When enabled, closing the window hides it, the app keeps running, and a tray icon appears in the notification area. When disabled, closing the window quits the app and there is no tray icon.',
   'settings.max_cache_size.label': 'Maximum cache size (MB)',
   'settings.max_cache_size.description':
     'On startup and manual cleanup the oldest entries are deleted until the cache fits this limit.',
@@ -305,6 +308,8 @@ export const en: Record<MessageKey, string> = {
   'errors.generic.synthesis_error': 'Speech synthesis error',
   'errors.generic.playback_error': 'Playback error',
   'errors.generic.config_error': 'Invalid setting value',
+  'errors.config.tray_unavailable':
+    'Could not create the tray icon: the system has no tray support or the runtime directory is not writable. The setting stays off.',
   'errors.generic.internal': 'Internal error',
 
   // ── Backend error codes (CommandError.code) ─────────────────────────────

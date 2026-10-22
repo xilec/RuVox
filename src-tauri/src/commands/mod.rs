@@ -1523,11 +1523,20 @@ pub fn apply_configured_code_block_mode(pipeline: &Arc<Mutex<TTSPipeline>>, conf
 ///
 /// A `code_block_mode` change is pushed into the shared pipeline after the
 /// save, so subsequent synthesis/preview runs pick it up without a restart
-/// (synthesis already in flight finishes on the previous mode).
+/// (synthesis already in flight finishes on the previous mode). The tray icon
+/// is created or removed after the save as well, tracking
+/// `hide_to_tray_on_close`.
 #[tauri::command]
-pub async fn update_config(state: State<'_, AppState>, patch: UIConfigPatch) -> CmdResult<()> {
+pub async fn update_config<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    patch: UIConfigPatch,
+) -> CmdResult<()> {
     let mut config = state.storage.load_config().unwrap_or_default();
     let code_block_mode_patch = patch.code_block_mode.clone();
+    // Remembered to roll the setting back when the tray icon cannot be
+    // created: the persisted flag must match what the app can actually do.
+    let hide_to_tray_before = config.hide_to_tray_on_close;
     apply_config_patch(&mut config, patch);
 
     state
@@ -1556,6 +1565,21 @@ pub async fn update_config(state: State<'_, AppState>, patch: UIConfigPatch) -> 
             &config.code_block_mode,
         );
         state.pipeline.lock().set_code_block_mode(mode);
+    }
+
+    if let Err(e) = crate::tray::set_enabled(&app, config.hide_to_tray_on_close) {
+        // The icon could not be created (no system tray, unwritable runtime
+        // dir). Roll the setting back so the stored state matches reality:
+        // the switch must not promise a tray that does not exist.
+        tracing::warn!("tray: failed to create the icon: {e}");
+        config.hide_to_tray_on_close = hide_to_tray_before;
+        state
+            .storage
+            .save_config(&config)
+            .map_err(CommandError::from)?;
+        return Err(
+            CommandError::config("config.tray_unavailable", vec![]).with_message(e.to_string())
+        );
     }
     Ok(())
 }
@@ -1908,6 +1932,9 @@ fn apply_config_patch(config: &mut UIConfig, patch: UIConfigPatch) {
     }
     if let Some(v) = patch.preview_dialog_enabled {
         config.preview_dialog_enabled = v;
+    }
+    if let Some(v) = patch.hide_to_tray_on_close {
+        config.hide_to_tray_on_close = v;
     }
     if let Some(v) = patch.engine {
         config.engine = v;
@@ -2503,6 +2530,7 @@ mod tests {
             player_hotkeys: _,
             window_geometry: _,
             preview_dialog_enabled: _,
+            hide_to_tray_on_close: _,
             engine: _,
             piper_voice: _,
             language: _,
@@ -2591,6 +2619,13 @@ mod tests {
                 field: "preview_dialog_enabled",
                 patch: UIConfigPatch {
                     preview_dialog_enabled: Some(false),
+                    ..Default::default()
+                },
+            },
+            Case {
+                field: "hide_to_tray_on_close",
+                patch: UIConfigPatch {
+                    hide_to_tray_on_close: Some(true),
                     ..Default::default()
                 },
             },
@@ -2696,6 +2731,7 @@ mod tests {
             player_hotkeys: custom_hotkeys,
             window_geometry: Some([1, 2, 3, 4]),
             preview_dialog_enabled: false,
+            hide_to_tray_on_close: true,
             engine: "silero".to_string(),
             piper_voice: "irina".to_string(),
             language: "ru".to_string(),

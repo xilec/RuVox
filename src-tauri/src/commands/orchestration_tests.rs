@@ -401,7 +401,9 @@ async fn update_config_failed_engine_switch_preserves_previous_config() {
         engine: Some("nemo".to_string()),
         ..Default::default()
     };
-    let err = update_config(t.state(), patch).await.unwrap_err();
+    let err = update_config(t.app.handle().clone(), t.state(), patch)
+        .await
+        .unwrap_err();
     match err {
         CommandError::ConfigError { code, message, .. } => {
             // The inner ttsd/switcher site id passes through so the frontend
@@ -438,7 +440,9 @@ async fn update_config_silero_native_without_bundle_preserves_previous_config() 
         engine: Some("silero_native".to_string()),
         ..Default::default()
     };
-    let err = update_config(t.state(), patch).await.unwrap_err();
+    let err = update_config(t.app.handle().clone(), t.state(), patch)
+        .await
+        .unwrap_err();
     match err {
         CommandError::ConfigError { code, .. } => assert_eq!(code, "native.bundle_missing"),
         other => panic!("expected ConfigError, got {other:?}"),
@@ -939,7 +943,7 @@ async fn update_config_code_block_mode_applies_live_to_synthesis() {
         code_block_mode: Some("read".to_string()),
         ..Default::default()
     };
-    update_config(t.state(), patch)
+    update_config(t.app.handle().clone(), t.state(), patch)
         .await
         .expect("mode patch applied");
 

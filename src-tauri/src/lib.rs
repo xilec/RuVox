@@ -859,6 +859,33 @@ fn show_startup_storage_error(
     std::process::exit(1);
 }
 
+/// Whether a user-initiated window close should hide the window into the
+/// system tray instead of quitting (see `UIConfig::hide_to_tray_on_close`).
+///
+/// The config is re-read on every close so toggling the setting in the
+/// Settings dialog takes effect without a restart. A missing state or an
+/// unreadable config resolves to `false` — quitting is the safe default and
+/// matches the factory configuration (the storage layer logs the read
+/// failure). The window is hidden only while a tray icon exists: without the
+/// icon there would be no way back to the window.
+fn should_hide_to_tray<R: Runtime>(app_handle: &AppHandle<R>) -> bool {
+    let Some(state) = app_handle.try_state::<AppState>() else {
+        return false;
+    };
+    let configured = state
+        .storage
+        .load_config()
+        .unwrap_or_default()
+        .hide_to_tray_on_close;
+    hide_into_tray(configured, crate::tray::is_present(app_handle))
+}
+
+/// The close decision: hide into the tray only when the setting is on *and* a
+/// tray icon exists to restore the window from.
+fn hide_into_tray(configured: bool, tray_present: bool) -> bool {
+    configured && tray_present
+}
+
 pub fn run() {
     #[cfg(unix)]
     reap_orphan_mpv();
@@ -871,8 +898,11 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
-            tray::init(app.handle())?;
             install_window_icon(app.handle())?;
+            // The tray-menu handlers are registered once for the app lifetime:
+            // Tauri never prunes menu-event listeners, so per-icon
+            // registration would multiply the menu actions.
+            tray::register_menu_events(app);
 
             let player: Arc<dyn PlayerBackend> = Arc::new(Player::new(app.handle().clone())?);
             player::spawn_position_emitter(Arc::clone(&player), app.handle().clone());
@@ -884,6 +914,18 @@ pub fn run() {
                 Ok(service) => service,
                 Err(e) => show_startup_storage_error(e, app.path().app_log_dir().ok()),
             });
+            // An unreadable config falls back to the factory default (off):
+            // no tray icon and close-to-quit, the same behavior the close gate
+            // uses for a failed read.
+            let config = storage.load_config().unwrap_or_default();
+            // The tray is the only way back into a window hidden on close, so
+            // it exists exactly while hiding is enabled. Keep the icon out of
+            // the notification area when closing quits. A failed creation
+            // leaves the app without an icon; the close gate then quits
+            // instead of hiding the window.
+            if let Err(e) = tray::set_enabled(app.handle(), config.hide_to_tray_on_close) {
+                tracing::warn!("tray: failed to create the icon at startup: {e}");
+            }
             spawn_audio_migration_and_cleanup(Arc::clone(&storage));
 
             let (engine_switcher, ttsd_dir, piper_voices_dir, silero_native_bundle_dir, emitter) =
@@ -903,9 +945,7 @@ pub fn run() {
             // The pipeline's code block narration mode follows the config:
             // apply the persisted value right after construction (later
             // changes arrive via `update_config`).
-            if let Ok(config) = storage.load_config() {
-                apply_configured_code_block_mode(&pipeline, &config);
-            }
+            apply_configured_code_block_mode(&pipeline, &config);
             // The user dictionary file lives next to config.json; storage
             // opening it proves the config root is resolvable.
             let dictionary_store = Arc::new(DictionaryStore::new(
@@ -950,9 +990,11 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app_handle, event| match event {
             // Window-close intercept: hide the main window instead of
-            // quitting so the app keeps running in the system tray.  Skipped
-            // when the tray's "Выход" item set user_quit — then we let the
-            // window close so app.exit(0) can finish.
+            // quitting so the app keeps running in the system tray. Gated by
+            // the `hide_to_tray_on_close` config (off by default: closing the
+            // window quits). Skipped when the tray's "Выход" item set
+            // user_quit — then we let the window close so app.exit(0) can
+            // finish.
             RunEvent::WindowEvent {
                 label,
                 event: tauri::WindowEvent::CloseRequested { api, .. },
@@ -962,7 +1004,7 @@ pub fn run() {
                     .try_state::<AppState>()
                     .map(|s| s.user_quit.load(Ordering::SeqCst))
                     .unwrap_or(false);
-                if !user_quit {
+                if !user_quit && should_hide_to_tray(app_handle) {
                     api.prevent_close();
                     if let Some(w) = app_handle.get_webview_window(&label) {
                         let _ = w.set_skip_taskbar(true);
@@ -972,15 +1014,17 @@ pub fn run() {
             }
             // ExitRequested fires when Tauri thinks the last window is gone
             // (e.g. user used a window-manager close that we didn't catch
-            // via WindowEvent).  Block the implicit exit so the app keeps
-            // running in the tray; allow it through only when the tray's
-            // "Выход" set user_quit.
+            // via WindowEvent). Block the implicit exit so the app keeps
+            // running in the tray; allow it through when the tray's "Выход"
+            // set user_quit or when hiding to the tray is disabled (the
+            // window close that emptied the last window should quit the
+            // app).
             RunEvent::ExitRequested { api, .. } => {
                 let user_quit = app_handle
                     .try_state::<AppState>()
                     .map(|s| s.user_quit.load(Ordering::SeqCst))
                     .unwrap_or(false);
-                if !user_quit {
+                if !user_quit && should_hide_to_tray(app_handle) {
                     api.prevent_exit();
                 }
             }
@@ -998,4 +1042,44 @@ pub fn run() {
             }
             _ => {}
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{hide_into_tray, should_hide_to_tray};
+    use crate::test_support::build_test_app;
+
+    /// The window is hidden into the tray only when the setting is on *and* a
+    /// tray icon exists: without the icon the hidden window could not be
+    /// restored, so closing must quit the app instead.
+    #[test]
+    fn hide_into_tray_requires_the_setting_and_the_icon() {
+        assert!(hide_into_tray(true, true));
+        assert!(!hide_into_tray(true, false));
+        assert!(!hide_into_tray(false, true));
+        assert!(!hide_into_tray(false, false));
+    }
+
+    /// Closing the window quits by default and only hides into the tray when
+    /// the persisted config opts in. The gate re-reads the config, so a
+    /// Settings-dialog change applies without a restart. The test app has no
+    /// tray icon, so the window must never be hidden.
+    #[test]
+    fn should_hide_to_tray_follows_persisted_config() {
+        let test_app = build_test_app();
+        let handle = test_app.app.handle().clone();
+        assert!(!should_hide_to_tray(&handle));
+
+        let state = test_app.state();
+        let storage = &state.storage;
+        let mut config = storage.load_config().unwrap();
+        config.hide_to_tray_on_close = true;
+        storage.save_config(&config).unwrap();
+
+        assert!(!should_hide_to_tray(&handle));
+
+        config.hide_to_tray_on_close = false;
+        storage.save_config(&config).unwrap();
+        assert!(!should_hide_to_tray(&handle));
+    }
 }

@@ -212,6 +212,9 @@ export const ru = {
   'settings.notify_on_ready': 'Уведомлять о готовности аудио',
   'settings.notify_on_error': 'Уведомлять об ошибках синтеза',
   'settings.preview_dialog_enabled': 'Показывать диалог предпросмотра перед синтезом',
+  'settings.hide_to_tray_on_close': 'Сворачивать в трей при закрытии окна',
+  'settings.hide_to_tray_on_close.description':
+    'Если включено, окно скрывается в трей, приложение продолжает работать, а в области уведомлений появляется значок. Если выключено, закрытие окна завершает приложение и значка в трее нет.',
   'settings.max_cache_size.label': 'Максимальный размер кэша (МБ)',
   'settings.max_cache_size.description':
     'При запуске и при ручной очистке самые старые записи удаляются, пока кэш не уложится в этот лимит.',
@@ -306,6 +309,8 @@ export const ru = {
   'errors.generic.synthesis_error': 'Ошибка синтеза речи',
   'errors.generic.playback_error': 'Ошибка воспроизведения',
   'errors.generic.config_error': 'Недопустимое значение настройки',
+  'errors.config.tray_unavailable':
+    'Не удалось создать значок в трее: система не поддерживает трей или нет доступа к служебному каталогу. Настройка осталась выключенной.',
   'errors.generic.internal': 'Внутренняя ошибка',
 
   // ── Backend error codes (CommandError.code) ─────────────────────────────

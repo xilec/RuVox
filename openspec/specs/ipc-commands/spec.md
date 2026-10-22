@@ -9,9 +9,7 @@ Tauri events the backend emits to the frontend via `listen("event_name", handler
 This covers command signatures, typed error format, shared data types, and event
 payloads as currently implemented. The backend-to-Python protocol is specified
 separately in `ttsd-protocol`.
-
 ## Requirements
-
 ### Requirement: Command Error Format
 
 All fallible Tauri commands SHALL return errors as a typed JSON object
@@ -87,6 +85,7 @@ interface UIConfig {
   player_hotkeys: Record<string, string>;
   window_geometry: [number, number, number, number] | null;
   preview_dialog_enabled: boolean;
+  hide_to_tray_on_close: boolean;  // default false: closing the window quits
   engine: string;                  // "piper" | "silero" | "silero_native" (default)
   piper_voice: string;             // default "ruslan"
 }
@@ -106,6 +105,13 @@ interface UIConfig {
 - GIVEN a fresh installation with no `config.json`
 - WHEN the frontend calls `invoke("get_config")`
 - THEN the response contains `code_block_mode: "brief"` and no `read_operators` key
+
+#### Scenario: UIConfig defaults keep tray-on-close off
+
+- GIVEN a fresh installation with no `config.json`, or an existing
+  `config.json` written before `hide_to_tray_on_close` existed
+- WHEN the frontend calls `invoke("get_config")`
+- THEN the response contains `hide_to_tray_on_close: false`
 
 ### Requirement: Frontend Parameter Casing
 
@@ -1039,3 +1045,4 @@ casing convention.
 - GIVEN the path points to a nonexistent file
 - WHEN `import_user_dictionary` is called
 - THEN the command rejects with a typed error and the dictionary is unchanged
+

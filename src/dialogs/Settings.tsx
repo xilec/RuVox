@@ -48,6 +48,7 @@ interface SettingsFormValues {
   notify_on_ready: boolean;
   notify_on_error: boolean;
   preview_dialog_enabled: boolean;
+  hide_to_tray_on_close: boolean;
   max_cache_size_mb: number;
   code_block_mode: string;
   theme: string;
@@ -296,6 +297,7 @@ export function SettingsModal({
     notify_on_ready: true,
     notify_on_error: true,
     preview_dialog_enabled: true,
+    hide_to_tray_on_close: false,
     max_cache_size_mb: 500,
     code_block_mode: 'brief',
     theme: 'auto',
@@ -336,6 +338,7 @@ export function SettingsModal({
           notify_on_ready: config.notify_on_ready,
           notify_on_error: config.notify_on_error,
           preview_dialog_enabled: config.preview_dialog_enabled,
+          hide_to_tray_on_close: config.hide_to_tray_on_close,
           max_cache_size_mb: config.max_cache_size_mb,
           code_block_mode: config.code_block_mode,
           theme: config.theme,
@@ -510,6 +513,7 @@ export function SettingsModal({
         notify_on_ready: values.notify_on_ready,
         notify_on_error: values.notify_on_error,
         preview_dialog_enabled: values.preview_dialog_enabled,
+        hide_to_tray_on_close: values.hide_to_tray_on_close,
         max_cache_size_mb: values.max_cache_size_mb,
         code_block_mode: values.code_block_mode,
         theme: values.theme as UIConfigPatch['theme'],
@@ -537,6 +541,18 @@ export function SettingsModal({
         message: formatError(err),
         color: 'red',
       });
+      // The backend rolls the tray setting back when the icon cannot be
+      // created, so re-read the stored value and show it instead of the
+      // rejected one.
+      commands
+        .getConfig()
+        .then((config) => {
+          form.setValues({
+            ...form.values,
+            hide_to_tray_on_close: config.hide_to_tray_on_close,
+          });
+        })
+        .catch(() => {});
     }
   };
 
@@ -787,6 +803,15 @@ export function SettingsModal({
           <Text size="sm" fw={500} c="dimmed">
             {tt('settings.section.interface')}
           </Text>
+
+          <Switch
+            label={tt('settings.hide_to_tray_on_close')}
+            description={tt('settings.hide_to_tray_on_close.description')}
+            key={form.key('hide_to_tray_on_close')}
+            {...form.getInputProps('hide_to_tray_on_close', {
+              type: 'checkbox',
+            })}
+          />
 
           <Select
             label={tt('settings.theme.label')}

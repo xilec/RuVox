@@ -190,6 +190,11 @@ pub struct UIConfig {
     /// Show preview dialog before synthesis.
     #[serde(default = "UIConfig::default_true")]
     pub preview_dialog_enabled: bool,
+    /// Hide the main window into the system tray instead of quitting when the
+    /// user closes it, keeping the app (and any playback) running. Off by
+    /// default: a close request quits the app.
+    #[serde(default)]
+    pub hide_to_tray_on_close: bool,
     /// Active TTS engine: `"piper"` | `"silero"` | `"silero_native"` (default).
     #[serde(default = "UIConfig::default_engine")]
     pub engine: String,
@@ -276,6 +281,7 @@ impl Default for UIConfig {
             player_hotkeys: Self::default_player_hotkeys(),
             window_geometry: None,
             preview_dialog_enabled: true,
+            hide_to_tray_on_close: false,
             engine: Self::default_engine(),
             piper_voice: Self::default_piper_voice(),
             language: Self::default_language(),
@@ -299,6 +305,7 @@ pub struct UIConfigPatch {
     pub player_hotkeys: Option<std::collections::HashMap<String, String>>,
     pub window_geometry: Option<Option<[i32; 4]>>,
     pub preview_dialog_enabled: Option<bool>,
+    pub hide_to_tray_on_close: Option<bool>,
     pub engine: Option<String>,
     pub piper_voice: Option<String>,
     pub language: Option<String>,
@@ -377,6 +384,16 @@ mod tests {
         assert!(!c.speaker.is_empty());
         assert_eq!(c.engine, "silero_native");
         assert_eq!(c.piper_voice, "ruslan");
+        assert!(!c.hide_to_tray_on_close);
+    }
+
+    #[test]
+    fn config_missing_hide_to_tray_flag_defaults_off() {
+        // Configs written before the tray-on-close setting existed lack the
+        // field; they must adopt the off default so closing still quits.
+        let json = r#"{"speaker":"xenia","sample_rate":48000}"#;
+        let c: UIConfig = serde_json::from_str(json).unwrap();
+        assert!(!c.hide_to_tray_on_close);
     }
 
     #[test]
