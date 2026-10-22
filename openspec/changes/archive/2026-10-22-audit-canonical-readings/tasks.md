@@ -28,4 +28,4 @@
 - [x] 3.1 Regenerate the transliteration baseline and update the golden
       fixtures that quote the changed readings.
 - [x] 3.2 Add the `CHANGELOG.md` entry and archive this change.
-- [ ] 3.3 Manual listening pass over the corrected words.
+- [x] 3.3 Manual listening pass over the corrected words: the letter name `эл`, `джейпег`, `пи эн джи`, `сак`, `хеллоу`/`имидж`/`нод`, and the unchanged control words all sound right.
