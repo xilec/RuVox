@@ -19,10 +19,11 @@ For remaining multi-letter words the resolution order SHALL be: `IT_TERMS`
 dictionary ("api" → "эй пи ай", "github" → "гитхаб"), which SHALL hold
 pronunciation readings only: a word whose digraph transliteration already reads
 correctly SHALL NOT be listed, and a Russian semantic translation SHALL NOT be
-curated as its reading ("function" reads "функшн", not "функция"). The only
-exception SHALL be an entry that keeps an all-caps token from letter-by-letter
-spelling ("TEST" reads "тест", "DATA" reads "дата", "STRING" reads "стринг");
-when an exact
+curated as its reading ("function" reads "функшн", not "функция"). An entry
+SHALL remain only when removing it changes a reading on another resolution
+path: it keeps an all-caps token from letter-by-letter spelling ("TEST" reads
+"тест", "DATA" reads "дата", "STRING" reads "стринг") or it shadows a wrong
+inflection composition ("living" reads "ливинг", not "лайвинг"); when an exact
 `IT_TERMS` entry does not exist but the word ends in a recognized English
 inflection suffix (`s`, `es`, `ies`, `ed`, `ing`, `er`, `ers`, `able`,
 `ally`, `ment`, `ments`, `ation`) and its stem is an `IT_TERMS` entry,
@@ -215,12 +216,20 @@ abbreviation and a lone letter sound the same ("x" and "X" both → "икс").
 
 #### Scenario: Semantic translation is not curated
 
-- GIVEN the inputs "function", "string", "array", "object", "repository",
-  "boolean", and "refactor"
+- GIVEN the inputs "function", "array", "object", "repository", "boolean",
+  and "refactor"
 - WHEN the pipeline processes them
-- THEN they are read by transliteration ("функшн", "стринг", "аррэй",
-  "обджект", "репоситори", "булин", "рефактор") because `IT_TERMS` holds
-  pronunciation only, and they are recorded in the unknown-words map
+- THEN they are read by transliteration ("функшн", "аррэй", "обджект",
+  "репоситори", "булин", "рефактор") because `IT_TERMS` holds pronunciation
+  only, and they are recorded in the unknown-words map
+
+#### Scenario: A semantic translation survives only as a caps guard
+
+- GIVEN the input "string", whose curated reading was the translation "строка"
+- WHEN the pipeline processes "string" and "STRING"
+- THEN both read "стринг" — the entry keeps its transliteration reading only to
+  stop the all-caps rule from spelling the token out, and it is not recorded in
+  the unknown-words map
 
 #### Scenario: Redundant curated reading is not listed
 

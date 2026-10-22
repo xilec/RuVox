@@ -10,7 +10,9 @@
   has to cover every path that reads the entry, not only lowercase: the
   all-caps branch spells a token out unless it is curated, so for 27 of the 66
   the entry is the only thing that keeps "TEST", "DATA", or "APP" readable.
-  Those stay as caps guards with a comment. `string` is the only pruned
+  Those stay as caps guards with a comment. The guard set is pinned by a test
+  that walks every entry whose curated reading equals the transliteration, so
+  deleting one cannot stay green. `string` is the only pruned
   semantic word with the same problem: "STRING" has one vowel in six letters,
   so it is spelled out unless curated; it returns with the transliteration
   reading "стринг", not the translation "строка". Removal is

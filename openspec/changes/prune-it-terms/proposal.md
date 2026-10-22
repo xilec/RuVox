@@ -21,9 +21,9 @@ wrong inflection composition; the remaining 38 are removed.
 - Remove the 7 semantic translations: `function`, `string`, `array`, `object`,
   `repository`, `boolean`, `refactor`. They now read by transliteration
   ("функшн", "стринг", "аррэй", "обджект", "репоситори", "булин",
-  "рефактор"). `string` is the one exception: it comes back as a caps guard
-  with its transliteration reading, because "STRING" is vowel-poor enough for
-  the all-caps rule to spell it out.
+  "рефактор"). `string` keeps an entry, but as a caps guard: its reading is
+  the transliteration "стринг" instead of the translation "строка", because
+  "STRING" is vowel-poor enough for the all-caps rule to spell it out.
 - Remove 38 redundant no-ops: `abstract`, `admin`, `async`, `checkout`,
   `cobol`, `commit`, `company`, `config`, `controller`, `default`, `delphi`,
   `deploy`, `docker`, `documents`, `fortran`, `golang`, `haskell`, `index`,
@@ -52,6 +52,9 @@ wrong inflection composition; the remaining 38 are removed.
 
 - Affected specs: `text-pipeline` (requirement "English words, abbreviations,
   and transliteration").
+- Size: 228 → 183 entries; 45 removed (38 no-ops, 6 semantic translations,
+  and the `method` pronunciation override), 28 caps guards kept (27 former
+  no-ops plus `string`), one composition guard (`living`).
 - Affected code: `IT_TERMS` in `normalizers/english.rs`, the readings fixture
   `dictionary_baseline.csv`, `inflected_forms.csv`, one golden fixture, and the
   dictionary/term unit tests.

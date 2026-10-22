@@ -1196,6 +1196,30 @@ mod tests {
     }
 
     #[test]
+    fn every_noop_entry_keeps_its_all_caps_reading() {
+        // The entries whose curated reading equals the raw transliteration only
+        // carry information where transliteration is not consulted — above
+        // all, they stop an all-caps token from being spelled out. Pin every
+        // one of them, so deleting a guard cannot stay invisible to tests.
+        use crate::pipeline::normalizers::english::{IT_TERMS, transliterate_simple};
+
+        let mut p = TTSPipeline::new();
+        let guards: Vec<(&str, &str)> = IT_TERMS
+            .iter()
+            .filter(|(word, reading)| transliterate_simple(word) == **reading)
+            .map(|(word, reading)| (*word, *reading))
+            .collect();
+        assert!(guards.len() >= 28, "guard set shrank unexpectedly");
+        for (word, reading) in guards {
+            assert_eq!(
+                p.process(&word.to_uppercase()),
+                reading,
+                "{word} lost its all-caps reading"
+            );
+        }
+    }
+
+    #[test]
     fn pipeline_caps_guard_entries_keep_short_all_caps_words_readable() {
         // These words have no useful lowercase information (the transliteration
         // already matches the curated reading) but their entries keep an

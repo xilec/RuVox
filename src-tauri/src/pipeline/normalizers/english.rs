@@ -160,11 +160,12 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     m.insert("practice", "практис");
     m.insert("use", "юз");
     m.insert("case", "кейс");
-    // Lowercase no-ops that still carry information in the all-caps path: the
-    // raw transliteration is already correct, but without an entry an
-    // uppercase token would fall through to letter-by-letter spelling
-    // ("TEST" -> "ти и эс ти"). They must stay until the all-caps rule can
-    // recognize a spoken word on its own (#292).
+    // Deliberate exception to "no redundant entries": the raw transliteration
+    // is already correct, but without an entry an uppercase token falls
+    // through to letter-by-letter spelling ("TEST" -> "ти и эс ти"). Short and
+    // vowel-poor upcased tokens are spelled out by design, so the curated
+    // lookup is the only thing that keeps these words readable. Pinned by
+    // `every_noop_entry_keeps_its_all_caps_reading` (#292).
     m.insert("app", "апп");
     m.insert("best", "бест");
     m.insert("branch", "бранч");
@@ -630,7 +631,6 @@ mod tests {
     // ── Pruned IT_TERMS entries read by transliteration (#292) ──────────────
 
     #[test_case("function" => "функшн"; "function")]
-    #[test_case("string" => "стринг"; "string")]
     #[test_case("array" => "аррэй"; "array")]
     #[test_case("object" => "обджект"; "object")]
     #[test_case("repository" => "репоситори"; "repository")]
