@@ -1203,8 +1203,8 @@ mod tests {
         // #292 removed every other no-op, so this is the only reason they stay.
         let mut p = TTSPipeline::new();
         assert_eq!(
-            p.process("TEST DATA APP CLASS WEB"),
-            "тест дата апп класс веб"
+            p.process("TEST DATA APP CLASS WEB STRING"),
+            "тест дата апп класс веб стринг"
         );
     }
 

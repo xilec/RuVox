@@ -10,7 +10,10 @@
   has to cover every path that reads the entry, not only lowercase: the
   all-caps branch spells a token out unless it is curated, so for 27 of the 66
   the entry is the only thing that keeps "TEST", "DATA", or "APP" readable.
-  Those stay as caps guards with a comment. Removal is
+  Those stay as caps guards with a comment. `string` is the only pruned
+  semantic word with the same problem: "STRING" has one vowel in six letters,
+  so it is spelled out unless curated; it returns with the transliteration
+  reading "стринг", not the translation "строка". Removal is
   safe only if the word's reading and the readings of its inflected forms do
   not change, so the audit was done in two steps: first the removed words
   themselves, then every generated inflection (`s`, `es`, `ies`, `ed`, `ing`,

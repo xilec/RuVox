@@ -21,7 +21,9 @@ wrong inflection composition; the remaining 38 are removed.
 - Remove the 7 semantic translations: `function`, `string`, `array`, `object`,
   `repository`, `boolean`, `refactor`. They now read by transliteration
   ("функшн", "стринг", "аррэй", "обджект", "репоситори", "булин",
-  "рефактор").
+  "рефактор"). `string` is the one exception: it comes back as a caps guard
+  with its transliteration reading, because "STRING" is vowel-poor enough for
+  the all-caps rule to spell it out.
 - Remove 38 redundant no-ops: `abstract`, `admin`, `async`, `checkout`,
   `cobol`, `commit`, `company`, `config`, `controller`, `default`, `delphi`,
   `deploy`, `docker`, `documents`, `fortran`, `golang`, `haskell`, `index`,
@@ -31,12 +33,15 @@ wrong inflection composition; the remaining 38 are removed.
   and the readings of their inflected forms are unchanged: composition and
   transliteration produce the same Cyrillic for all of them, which was
   verified word by word.
-- Keep 27 no-op entries that are load-bearing in the all-caps path (`app`,
-  `best`, `branch`, `class`, `const`, `data`, `doc`, `docs`, `flask`, `hot`,
-  `impl`, `jira`, `mock`, `nat`, `next`, `opt`, `png`, `pod`, `pull`, `repo`,
-  `smell`, `spec`, `sync`, `ten`, `test`, `web`, `world`): their lowercase
-  reading is the transliteration, but the curated lookup is the only path that
-  keeps an uppercase token from being spelled letter by letter.
+- Keep 28 entries whose lowercase reading is the transliteration but which are
+  load-bearing in the all-caps path (`app`, `best`, `branch`, `class`, `const`,
+  `data`, `doc`, `docs`, `flask`, `hot`, `impl`, `jira`, `mock`, `nat`, `next`,
+  `opt`, `png`, `pod`, `pull`, `repo`, `smell`, `spec`, `string`, `sync`,
+  `ten`, `test`, `web`, `world`): the curated lookup is the only path that
+  keeps an uppercase token such as "TEST", "DATA", or "STRING" from being
+  spelled letter by letter. 27 of them are former no-ops; `string` is a former
+  semantic translation that returns with the transliteration reading instead of
+  the translation.
 - Keep `living` even though its curated reading equals the raw transliteration:
   without the entry it would compose the curated `live` stem into "лайвинг",
   while the word is /ˈlɪvɪŋ/. The entry shadows that composition.

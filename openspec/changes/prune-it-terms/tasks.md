@@ -17,7 +17,8 @@
 ## 2. Implementation
 
 - [x] 2.1 Remove the 7 semantic translations and the 38 genuinely redundant
-      no-ops from `IT_TERMS`, keeping the 27 caps guards.
+      no-ops from `IT_TERMS`, keeping the 27 caps guards plus `string` (a
+      caps guard with the transliteration reading).
 - [x] 2.2 Remove `method` so it reads "месод" (`th` → "с").
 - [x] 2.3 Restore `living` with a comment explaining that it shadows the
       `live` + "-ing" composition.

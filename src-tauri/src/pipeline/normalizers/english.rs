@@ -192,6 +192,10 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     m.insert("test", "тест");
     m.insert("web", "веб");
     m.insert("world", "ворлд");
+    // Same guard, for the one pruned semantic word that is vowel-poor enough
+    // for the all-caps rule to spell it: "STRING" must not become "эс ти ар
+    // ай эн джи". The reading is the transliteration, not a translation.
+    m.insert("string", "стринг");
 
     // Words the retired multi-word phrase table used to fix up: curated here so
     // a phrase reads correctly however its words are separated (#287).
@@ -648,7 +652,7 @@ mod tests {
         // A pruned word is no longer curated, so the fallback records it in the
         // unknown-words map; a curated one would not be recorded.
         let mut en = normalizer();
-        for word in ["function", "string", "index"] {
+        for word in ["function", "repository", "index"] {
             en.normalize(word, true);
             assert!(
                 en.get_unknown_words().contains_key(word),
