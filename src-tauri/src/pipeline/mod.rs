@@ -1237,10 +1237,7 @@ mod tests {
         // The heuristic must not swallow the abbreviation class it exists to
         // distinguish words from.
         let mut p = TTSPipeline::new();
-        assert_eq!(
-            p.process("API HTML SQL"),
-            "эй пи ай эйч ти эм эль эс кью эль"
-        );
+        assert_eq!(p.process("API HTML SQL"), "эй пи ай эйч ти эм эл эс кью эл");
         // "SPARK" is absent from every table and one vowel in five letters is
         // below the threshold, so the length/vowel boundary itself is locked.
         assert_eq!(p.process("SPARK"), "эс пи эй ар кей");
@@ -1310,8 +1307,8 @@ mod tests {
         assert_eq!(p.process("API"), "эй пи ай");
         assert_eq!(p.process("CPU"), "си пи ю");
         assert_eq!(p.process("JSON"), "джейсон");
-        assert_eq!(p.process("HTML"), "эйч ти эм эль");
-        assert_eq!(p.process("SQL"), "эс кью эль");
+        assert_eq!(p.process("HTML"), "эйч ти эм эл");
+        assert_eq!(p.process("SQL"), "эс кью эл");
         assert_eq!(p.process("XYZ"), "икс вай зет");
         assert!(p.english_normalizer.get_unknown_words().is_empty());
     }

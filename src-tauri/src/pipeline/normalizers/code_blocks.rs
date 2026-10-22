@@ -507,7 +507,7 @@ mod tests {
 
     // ── TestCodeBlockFullMode (3 cases) ────────────────────────────────
 
-    #[test_case("def hello():\n    print('world')", Some("python") => "деф хелло открывающая скобка закрывающая скобка двоеточие принт открывающая скобка ворлд закрывающая скобка"; "python_def_hello")]
+    #[test_case("def hello():\n    print('world')", Some("python") => "деф хеллоу открывающая скобка закрывающая скобка двоеточие принт открывающая скобка ворлд закрывающая скобка"; "python_def_hello")]
     #[test_case("const x = 42;", Some("javascript") => "конст икс равно сорок два точка с запятой"; "js_const_x")]
     #[test_case("getUserData(userId)", None => "гет юзер дата открывающая скобка юзер ай ди закрывающая скобка"; "function_call")]
     fn full_mode(code: &str, language: Option<&str>) -> String {

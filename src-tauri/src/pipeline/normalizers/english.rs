@@ -59,10 +59,10 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     m.insert("clojure", "кложур");
     m.insert("pascal", "паскаль");
     m.insert("php", "пи эйч пи");
-    m.insert("sql", "эс кью эль");
-    m.insert("html", "эйч ти эм эль");
+    m.insert("sql", "эс кью эл");
+    m.insert("html", "эйч ти эм эл");
     m.insert("css", "си эс эс");
-    m.insert("xml", "икс эм эль");
+    m.insert("xml", "икс эм эл");
     m.insert("json", "джейсон");
     m.insert("yaml", "ямл");
     m.insert("js", "джи эс");
@@ -77,7 +77,7 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     // Common code terms
     m.insert("eval", "эвал");
     m.insert("plus", "плас");
-    m.insert("succ", "сакс");
+    m.insert("succ", "сак");
 
     m.insert("synthesize", "синтесайз");
     m.insert("addition", "эдишн");
@@ -182,7 +182,7 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     m.insert("nat", "нат");
     m.insert("next", "некст");
     m.insert("opt", "опт");
-    m.insert("png", "пнг");
+    m.insert("png", "пи эн джи");
     m.insert("pod", "под");
     m.insert("pull", "пулл");
     m.insert("repo", "репо");
@@ -227,7 +227,7 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     m.insert("pdf", "пэ дэ эф");
     m.insert("txt", "тэкст");
     m.insert("csv", "си эс ви");
-    m.insert("jpg", "джэйпег");
+    m.insert("jpg", "джейпег");
     m.insert("svg", "эс ви джи");
     m.insert("mp3", "эм пэ три");
     m.insert("mp4", "эм пэ четыре");
@@ -265,7 +265,7 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     m.insert("ajax", "эйджакс");
     m.insert("cd", "си ди");
     m.insert("crud", "крад");
-    m.insert("graphql", "граф кью эль");
+    m.insert("graphql", "граф кью эл");
     m.insert("imap", "ай мап");
     m.insert("ios", "ай оу эс");
     m.insert("iot", "ай о ти");
@@ -692,8 +692,40 @@ mod tests {
     #[test_case("pdf" => "пэ дэ эф"; "pdf")]
     #[test_case("csv" => "си эс ви"; "csv")]
     #[test_case("svg" => "эс ви джи"; "svg")]
+    #[test_case("png" => "пи эн джи"; "png")]
+    #[test_case("jpg" => "джейпег"; "jpg")]
     fn it_terms_file_extensions_spelled(word: &str) -> String {
         normalizer().normalize(word, false)
+    }
+
+    // Letter names in curated acronyms match `letter_name` (#282).
+    #[test_case("html" => "эйч ти эм эл"; "html")]
+    #[test_case("xml" => "икс эм эл"; "xml")]
+    #[test_case("sql" => "эс кью эл"; "sql")]
+    #[test_case("graphql" => "граф кью эл"; "graphql")]
+    fn it_terms_acronyms_use_the_spelling_letter_name(word: &str) -> String {
+        normalizer().normalize(word, false)
+    }
+
+    #[test_case("succ" => "сак"; "succ")]
+    fn it_terms_mispronounced_words(word: &str) -> String {
+        normalizer().normalize(word, false)
+    }
+
+    #[test]
+    fn dictionaries_agree_on_shared_keys() {
+        use crate::pipeline::normalizers::abbreviations::{as_word, special_cases};
+
+        // A word shared by two dictionaries must not have two readings: the
+        // path that happens to win would otherwise decide pronunciation.
+        for (word, reading) in IT_TERMS.iter() {
+            if let Some(other) = as_word().get(word) {
+                assert_eq!(reading, other, "{word} disagrees with AS_WORD");
+            }
+            if let Some(other) = special_cases().get(word) {
+                assert_eq!(reading, other, "{word} disagrees with SPECIAL_CASES");
+            }
+        }
     }
 
     #[test_case("docker" => "докер"; "docker")]

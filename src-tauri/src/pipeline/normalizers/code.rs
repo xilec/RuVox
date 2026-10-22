@@ -188,7 +188,7 @@ impl CodeIdentifierNormalizer {
         code_words.insert("module", "модуль");
         code_words.insert("component", "компонент");
         code_words.insert("element", "элемент");
-        code_words.insert("node", "ноуд");
+        code_words.insert("node", "нода");
         code_words.insert("child", "чайлд");
         code_words.insert("parent", "парент");
         code_words.insert("root", "рут");
@@ -226,7 +226,7 @@ impl CodeIdentifierNormalizer {
         code_words.insert("output", "аутпут");
         code_words.insert("button", "баттон");
         code_words.insert("link", "линк");
-        code_words.insert("image", "имадж");
+        code_words.insert("image", "имидж");
         code_words.insert("text", "текст");
         code_words.insert("content", "контент");
         code_words.insert("body", "боди");
@@ -407,7 +407,7 @@ impl CodeIdentifierNormalizer {
         code_words.insert("sha", "ша");
         code_words.insert("json", "джейсон");
         // Common words
-        code_words.insert("hello", "хелло");
+        code_words.insert("hello", "хеллоу");
         code_words.insert("world", "ворлд");
         code_words.insert("plus", "плас");
         code_words.insert("foo", "фу");
@@ -659,6 +659,20 @@ mod tests {
     }
 
     #[test]
+    fn code_words_agree_with_it_terms() {
+        use crate::pipeline::normalizers::english::IT_TERMS;
+
+        // The identifier table and the prose table must read a shared word the
+        // same way (#282).
+        let n = normalizer();
+        for (word, reading) in IT_TERMS.iter() {
+            if let Some(other) = n.code_words.get(word) {
+                assert_eq!(reading, other, "{word} disagrees with IT_TERMS");
+            }
+        }
+    }
+
+    #[test]
     fn user_entry_wins_over_code_words() {
         // "get" is a built-in CODE_WORDS entry ("гет"); the user entry must
         // override it at the identifier-part lookup.
@@ -681,6 +695,9 @@ mod tests {
     // --- CamelCase / PascalCase (normalize_camel_case) ---
 
     #[test_case("getUserData" => "гет юзер дата"; "get_user_data")]
+    #[test_case("helloWorld" => "хеллоу ворлд"; "hello_world")]
+    #[test_case("imageUrl" => "имидж ю ар эл"; "image_url")]
+    #[test_case("nodeId" => "нода ай ди"; "node_id")]
     #[test_case("myVariable" => "май вэриабл"; "my_variable")]
     #[test_case("isValid" => "из вэлид"; "is_valid")]
     #[test_case("hasValue" => "хэз вэлью"; "has_value")]
