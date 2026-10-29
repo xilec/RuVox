@@ -65,11 +65,11 @@
 
 ## 4. Span annotations
 
-- [ ] 4.1 Record spans in original coordinates as fragments are detected and
+- [x] 4.1 Record spans in original coordinates as fragments are detected and
   resolve them in one pass after the final trim; drop spans that no longer map
   to output. Verify: unit tests for identifier, dictionary-override and native
   prose-run spans, and for a fragment deleted by a later phase.
-- [ ] 4.2 Cover the span invariants with a property test over every golden
+- [x] 4.2 Cover the span invariants with a property test over every golden
   fixture under every harness profile: sorted, non-overlapping, within bounds,
   `start < end`, and `char_map` invariants untouched. Verify: the property test
   fails on a deliberately overlapping span in a scratch run.

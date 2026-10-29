@@ -19,6 +19,175 @@ use crate::pipeline::tracked_text::{CharMapping, TrackedText};
 use crate::tts::profiles;
 use tts_contract::{Digits, Reading, TextProfile, Units};
 
+// ── Span annotations ──────────────────────────────────────────────────────────
+
+/// What a span annotation marks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpanKind {
+    /// A code identifier the engine reads itself.
+    CodeIdentifier,
+    /// A Latin run in prose the engine reads itself.
+    ProseLatin,
+    /// A fragment the user dictionary replaced.
+    DictionaryOverride,
+}
+
+/// An annotation over the normalized text, in output codepoint coordinates.
+///
+/// Spans express decisions, never markup: the adapter decides how to render
+/// them for its engine, and the normalized text itself never carries tags.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Span {
+    pub kind: SpanKind,
+    /// The language the engine reads the fragment in; `None` when the pipeline
+    /// rewrote the fragment instead of leaving it to the engine.
+    pub lang: Option<&'static str>,
+    /// Half-open codepoint range in [`ProcessedText::text`].
+    pub start: usize,
+    pub end: usize,
+}
+
+/// A span as recorded while processing, in original-document coordinates.
+#[derive(Debug, Clone)]
+struct RecordedSpan {
+    kind: SpanKind,
+    lang: Option<&'static str>,
+    start: usize,
+    end: usize,
+}
+
+/// Maps every byte offset of `text` to its codepoint index.
+///
+/// Recording converts a regex byte match into a codepoint range; without the
+/// table each conversion scans the prefix, which turns a document with many
+/// spans into quadratic work.
+fn byte_to_char_offsets(text: &str) -> Vec<usize> {
+    let mut offsets = vec![0usize; text.len() + 1];
+    let mut byte = 0usize;
+    let mut chars = 0usize;
+    for ch in text.chars() {
+        for slot in &mut offsets[byte..byte + ch.len_utf8()] {
+            *slot = chars;
+        }
+        byte += ch.len_utf8();
+        chars += 1;
+    }
+    offsets[text.len()] = chars;
+    offsets
+}
+
+/// Records byte ranges of `snapshot` as spans of `kind` in original coordinates.
+fn record_byte_ranges(
+    tracked: &mut TrackedText,
+    offsets: &[usize],
+    kind: SpanKind,
+    lang: Option<&'static str>,
+    ranges: &[(usize, usize)],
+    recorded: &mut Vec<RecordedSpan>,
+) {
+    for &(start, end) in ranges {
+        let (orig_start, orig_end) = tracked.original_range(offsets[start], offsets[end]);
+        if orig_end > orig_start {
+            recorded.push(RecordedSpan {
+                kind,
+                lang,
+                start: orig_start,
+                end: orig_end,
+            });
+        }
+    }
+}
+
+/// Records what `find` selects over the current text as spans of `kind`, and
+/// returns those ranges in current codepoint coordinates so a later scan can
+/// skip the fragments already claimed.
+fn record_native(
+    tracked: &mut TrackedText,
+    kind: SpanKind,
+    lang: Option<&'static str>,
+    find: impl FnOnce(&str) -> Vec<(usize, usize)>,
+    recorded: &mut Vec<RecordedSpan>,
+) -> Vec<(usize, usize)> {
+    let snapshot = tracked.text().to_string();
+    let ranges = find(&snapshot);
+    let offsets = byte_to_char_offsets(&snapshot);
+    record_byte_ranges(tracked, &offsets, kind, lang, &ranges, recorded);
+    ranges
+        .iter()
+        .map(|&(start, end)| (offsets[start], offsets[end]))
+        .collect()
+}
+
+/// Resolves recorded spans from original into output coordinates in one pass.
+///
+/// `char_map` is monotone in original position, so a single advancing cursor
+/// covers every span: no reverse index, no string search.
+fn resolve_spans(char_map: &[(usize, usize)], mut recorded: Vec<RecordedSpan>) -> Vec<Span> {
+    if recorded.is_empty() {
+        return Vec::new();
+    }
+    // Dictionary overrides are the most specific decision, identifiers next;
+    // the narrowest record wins when records overlap.
+    recorded.sort_by_key(|span| (span.start, kind_priority(span.kind), span.end - span.start));
+
+    let mut resolved = Vec::with_capacity(recorded.len());
+    let mut cursor = 0usize;
+    let mut last_end = 0usize;
+    for span in recorded {
+        if span.start < last_end {
+            continue; // already covered by a more specific span
+        }
+        while cursor < char_map.len() && char_map[cursor].1 <= span.start {
+            cursor += 1;
+        }
+        let start = cursor;
+        let mut end = cursor;
+        while cursor < char_map.len() && char_map[cursor].0 < span.end {
+            cursor += 1;
+            end = cursor;
+        }
+        if end > start {
+            last_end = span.end;
+            resolved.push(Span {
+                kind: span.kind,
+                lang: span.lang,
+                start,
+                end,
+            });
+        }
+    }
+    resolved
+}
+
+/// Narrower wins when two records cover the same original range.
+fn kind_priority(kind: SpanKind) -> u8 {
+    match kind {
+        SpanKind::DictionaryOverride => 0,
+        SpanKind::CodeIdentifier => 1,
+        SpanKind::ProseLatin => 2,
+    }
+}
+
+/// Asserts the span invariants the `position-mapping` spec requires, in debug
+/// builds only: sorted, non-overlapping, non-empty, inside the output.
+fn debug_assert_spans(mapping: &CharMapping, spans: &[Span]) {
+    debug_assert_eq!(
+        mapping.char_map.len(),
+        mapping.transformed.chars().count(),
+        "char_map length must stay the codepoint count of the transformed text"
+    );
+    let mut previous_end = 0;
+    for span in spans {
+        debug_assert!(span.start < span.end, "empty span reported: {span:?}");
+        debug_assert!(span.end <= mapping.char_map.len(), "span past the text");
+        debug_assert!(
+            span.start >= previous_end,
+            "spans must be sorted and non-overlapping: {span:?}"
+        );
+        previous_end = span.end;
+    }
+}
+
 // ── Static compiled regexes ───────────────────────────────────────────────────
 
 fn re_url() -> &'static Regex {
@@ -262,6 +431,8 @@ pub struct ProcessedText {
     pub text: String,
     /// Codepoint-level bridge from `text` back to the original document.
     pub mapping: CharMapping,
+    /// Fragments the adapter must render or wrap, sorted and non-overlapping.
+    pub spans: Vec<Span>,
 }
 
 /// Main pipeline for TTS text preprocessing.
@@ -361,6 +532,7 @@ impl TTSPipeline {
                     transformed: String::new(),
                     char_map: Vec::new(),
                 },
+                spans: Vec::new(),
             };
         }
 
@@ -371,6 +543,11 @@ impl TTSPipeline {
         let narrate_identifiers = profile.route.identifier == Reading::Narrate;
         let expand_digits = profile.digits == Digits::Expanded;
         let expand_units = profile.units == Units::Expanded;
+
+        // The language the engine reads a native fragment in — the same one a
+        // `Native` span carries.
+        let native_lang = profile.native_language();
+        let mut recorded: Vec<RecordedSpan> = Vec::new();
 
         self.english_normalizer.clear_unknown_words();
 
@@ -409,6 +586,7 @@ impl TTSPipeline {
                     transformed: String::new(),
                     char_map: Vec::new(),
                 },
+                spans: Vec::new(),
             };
         }
 
@@ -609,6 +787,7 @@ impl TTSPipeline {
         // A profile that routes identifiers `Native` keeps them verbatim for the
         // engine; the English phase below must not re-read them either, which is
         // why identifier routing implies prose routing (see `TextProfile`).
+        let mut identifier_ranges: Vec<(usize, usize)> = Vec::new();
         if narrate_identifiers {
             let code = &self.code_normalizer;
             let user_dict = &self.user_dictionary;
@@ -624,6 +803,26 @@ impl TTSPipeline {
             tracked.sub(re_kebab(), |caps| {
                 code.normalize_kebab_case(caps.get(0).unwrap().as_str(), user_dict)
             });
+        } else {
+            // The identifiers stay for the engine: annotate them, and remember
+            // their ranges so the prose scan does not claim them as prose.
+            identifier_ranges = record_native(
+                &mut tracked,
+                SpanKind::CodeIdentifier,
+                native_lang,
+                |text| {
+                    let mut ranges: Vec<(usize, usize)> =
+                        [re_camel_lower(), re_pascal(), re_snake(), re_kebab()]
+                            .into_iter()
+                            .flat_map(|pattern| pattern.find_iter(text))
+                            .map(|m| (m.start(), m.end()))
+                            .collect();
+                    ranges.sort_unstable();
+                    ranges.dedup();
+                    ranges
+                },
+                &mut recorded,
+            );
         }
 
         // ── Phase 15.5: User dictionary pre-pass ─────────────────────────────
@@ -631,7 +830,7 @@ impl TTSPipeline {
         // never whole identifiers) and before English-word resolution (user
         // entries win over every built-in table). No-op for an empty
         // dictionary — output stays byte-identical.
-        self.process_user_dictionary_tracked(&mut tracked);
+        self.process_user_dictionary_tracked(&mut tracked, &mut recorded);
 
         // ── Phase 16: English words ───────────────────────────────────────────
         // Skipped entirely for a Latin-native profile: transliteration, the
@@ -639,6 +838,22 @@ impl TTSPipeline {
         // are all the compensation a Russian-only engine needs.
         if narrate_latin {
             self.process_english_tracked(&mut tracked);
+        } else {
+            record_native(
+                &mut tracked,
+                SpanKind::ProseLatin,
+                native_lang,
+                |text| {
+                    re_english_words()
+                        .find_iter(text)
+                        .map(|m| (m.start(), m.end()))
+                        .filter(|&(start, end)| {
+                            !identifier_ranges.iter().any(|&(s, e)| start < e && s < end)
+                        })
+                        .collect()
+                },
+                &mut recorded,
+            );
         }
 
         // ── Phase 17: Numbers ─────────────────────────────────────────────────
@@ -680,15 +895,21 @@ impl TTSPipeline {
                 transformed: result.clone(),
                 char_map: new_char_map,
             };
+            let spans = resolve_spans(&final_mapping.char_map, recorded);
+            debug_assert_spans(&final_mapping, &spans);
             return ProcessedText {
                 text: result,
                 mapping: final_mapping,
+                spans,
             };
         }
 
+        let spans = resolve_spans(&mapping.char_map, recorded);
+        debug_assert_spans(&mapping, &spans);
         ProcessedText {
             text: result,
             mapping,
+            spans,
         }
     }
 
@@ -815,7 +1036,11 @@ impl TTSPipeline {
     /// spoken form. Only exact hits are replaced — non-hits flow into the
     /// English-word phase unchanged, so built-in behavior and golden fixtures
     /// are unaffected.
-    fn process_user_dictionary_tracked(&mut self, tracked: &mut TrackedText) {
+    fn process_user_dictionary_tracked(
+        &mut self,
+        tracked: &mut TrackedText,
+        recorded: &mut Vec<RecordedSpan>,
+    ) {
         if self.user_dictionary.is_empty() {
             return;
         }
@@ -830,6 +1055,18 @@ impl TTSPipeline {
                     .map(|to| (m.start(), m.end(), to.to_string()))
             })
             .collect();
+        if !matches.is_empty() {
+            let offsets = byte_to_char_offsets(&snapshot);
+            let ranges: Vec<(usize, usize)> = matches.iter().map(|(s, e, _)| (*s, *e)).collect();
+            record_byte_ranges(
+                tracked,
+                &offsets,
+                SpanKind::DictionaryOverride,
+                None,
+                &ranges,
+                recorded,
+            );
+        }
         tracked.replace_byte_ranges(matches);
     }
 
@@ -1557,5 +1794,88 @@ mod tests {
             .process_for_engine(&once, &crate::tts::profiles::SILERO_PROFILE)
             .text;
         assert_eq!(again, once);
+    }
+
+    // ── Span annotations ──────────────────────────────────────────────────────
+
+    /// The output slice a span covers, so assertions read in text terms.
+    fn span_text(text: &str, span: &Span) -> String {
+        text.chars()
+            .skip(span.start)
+            .take(span.end - span.start)
+            .collect()
+    }
+
+    #[test]
+    fn narrating_profile_produces_no_spans() {
+        let mut p = TTSPipeline::new();
+        let out = p.process_for_engine(
+            "Вызови getUserData() через API",
+            &crate::tts::profiles::SILERO_PROFILE,
+        );
+        assert!(out.spans.is_empty(), "unexpected spans: {:?}", out.spans);
+    }
+
+    #[test]
+    fn native_prose_run_is_annotated_with_its_language() {
+        let mut p = TTSPipeline::new();
+        let out = p.process_for_engine("Kubernetes нужен", native_profile());
+        assert_eq!(out.spans.len(), 1, "spans: {:?}", out.spans);
+        let span = &out.spans[0];
+        assert_eq!(span.kind, SpanKind::ProseLatin);
+        assert_eq!(span.lang, Some("en"));
+        assert_eq!(span_text(&out.text, span), "Kubernetes");
+    }
+
+    #[test]
+    fn native_identifier_and_prose_are_annotated_separately() {
+        let mut p = TTSPipeline::new();
+        let out = p.process_for_engine("Вызови getUserData через API", native_profile());
+        let kinds: Vec<_> = out.spans.iter().map(|s| s.kind).collect();
+        assert_eq!(kinds, vec![SpanKind::CodeIdentifier, SpanKind::ProseLatin]);
+        assert_eq!(span_text(&out.text, &out.spans[0]), "getUserData");
+        assert_eq!(span_text(&out.text, &out.spans[1]), "API");
+    }
+
+    #[test]
+    fn dictionary_override_is_annotated_in_output_coordinates() {
+        let mut p = TTSPipeline::new();
+        let mut dict = UserDictionary::default();
+        dict.insert(DictionaryEntry {
+            from: "docker".to_string(),
+            to: "доккер".to_string(),
+        });
+        p.set_user_dictionary(dict);
+        let out = p.process_for_engine(
+            "Запусти docker сейчас",
+            &crate::tts::profiles::SILERO_PROFILE,
+        );
+        assert_eq!(out.text, "Запусти доккер сейчас");
+        assert_eq!(out.spans.len(), 1, "spans: {:?}", out.spans);
+        assert_eq!(out.spans[0].kind, SpanKind::DictionaryOverride);
+        assert_eq!(out.spans[0].lang, None);
+        assert_eq!(span_text(&out.text, &out.spans[0]), "доккер");
+    }
+
+    #[test]
+    fn spans_shift_with_earlier_replacements() {
+        // The code block expands before the Latin word is annotated, so the
+        // span must follow the output text, not its original offset.
+        let mut p = TTSPipeline::new();
+        let out =
+            p.process_for_engine("```rust\nlet a = 1;\n```\nKubernetes тут", native_profile());
+        assert_eq!(out.spans.len(), 1, "spans: {:?}", out.spans);
+        assert_eq!(span_text(&out.text, &out.spans[0]), "Kubernetes");
+    }
+
+    #[test]
+    fn empty_input_produces_no_spans() {
+        let mut p = TTSPipeline::new();
+        assert!(p.process_for_engine("", native_profile()).spans.is_empty());
+        assert!(
+            p.process_for_engine("   \n\t ", native_profile())
+                .spans
+                .is_empty()
+        );
     }
 }

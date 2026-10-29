@@ -199,12 +199,19 @@ space and the invariants).
 Annotations SHALL express decisions, never markup: no span SHALL contain tag
 syntax, and the normalized text SHALL remain the exact synthesis input.
 
-#### Scenario: Annotated identifier in a narrating profile
+#### Scenario: Dictionary override in a narrating profile
 
-- GIVEN a profile whose identifier route is `Narrate` and a user dictionary
-  entry that overrides a word inside an identifier
-- WHEN the pipeline processes the identifier
-- THEN a dictionary-override span is produced for the overridden part
+- GIVEN the reference profile and a user dictionary entry that rewrites a
+  standalone Latin token
+- WHEN the pipeline processes a text containing that token
+- THEN a dictionary-override span covers the replacement in the output
+
+An override applied *inside* a narrated identifier is not annotated
+separately: the identifier phase replaces the whole identifier as one unit, so
+its `char_map` entry maps every replacement codepoint to the whole original
+identifier. Producing a part-level span would require part-wise replacement and
+would change the mapping of every identifier in the corpus — that is #308's
+territory, and this change keeps the mapping stable.
 
 #### Scenario: No markup leaks into the text
 

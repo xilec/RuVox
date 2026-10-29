@@ -122,6 +122,10 @@ direct lookup). At the end, one pass over the final `char_map` resolves each
 span into output coordinates. There is no second range bookkeeping and no
 reverse index.
 
+- *Known limitation:* an identifier is replaced by one mapping entry covering the
+  whole identifier, so an override applied to one of its parts has no distinct
+  output range; part-level annotations wait for part-wise replacement (#308).
+
 - *Alternative — store spans in output coordinates from the start:* rejected.
   Later phases shift output positions, so every phase would need to re-base
   every recorded span, creating a second range system that must agree with

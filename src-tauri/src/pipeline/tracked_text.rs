@@ -331,6 +331,42 @@ impl TrackedText {
         self.flush_pending();
     }
 
+    /// Maps a half-open range in current-text codepoint coordinates to the
+    /// original document, for span recording mid-pipeline.
+    ///
+    /// A range that overlaps a replacement maps to that replacement's whole
+    /// original range — the same collapse [`CharMapping::get_original_range`]
+    /// applies once the mapping is built, so a span recorded here and resolved
+    /// at the end agrees with the final `char_map`.
+    pub fn original_range(&mut self, char_start: usize, char_end: usize) -> (usize, usize) {
+        self.flush_pending();
+        let (orig_start, _) = self.original_range_at(char_start);
+        let end_probe = char_end.saturating_sub(1).max(char_start);
+        let (_, orig_end) = self.original_range_at(end_probe);
+        (orig_start, orig_end)
+    }
+
+    /// Original range of a single codepoint position.
+    fn original_range_at(&self, pos: usize) -> (usize, usize) {
+        let candidate = partition_point(self.offset_entries.len(), |i| {
+            self.entry_current_start(i) <= pos as i64
+        });
+        if candidate > 0 {
+            let i = candidate - 1;
+            if (pos as i64) < self.entry_current_end(i) {
+                let entry = &self.offset_entries[i];
+                return (entry.orig_start, entry.orig_end);
+            }
+        }
+        // Outside every replacement: shift by the deltas of the entries that
+        // end before `pos`, which is where the identity mapping has moved to.
+        let before = partition_point(self.offset_entries.len(), |i| {
+            self.entry_current_end(i) <= pos as i64
+        });
+        let orig = (pos as i64 - self.delta_prefix[before]).max(0) as usize;
+        (orig, orig + 1)
+    }
+
     /// Build the `CharMapping` from all accumulated replacements.
     pub fn build_mapping(mut self) -> CharMapping {
         self.flush_pending();
@@ -1244,5 +1280,28 @@ mod tests {
         for i in 0..5 {
             assert_eq!(mapping.char_map[i], (i, i + 1));
         }
+    }
+
+    #[test]
+    fn original_range_converts_current_positions() {
+        let mut tracked = TrackedText::new("ab X cd");
+        // Before any replacement the mapping is the identity.
+        assert_eq!(tracked.original_range(0, 2), (0, 2));
+
+        tracked.replace("X", "UVW");
+        // The replacement text maps to the whole original "X".
+        let (s, e) = tracked.original_range(3, 6);
+        assert_eq!((s, e), (3, 4));
+        // Text after the replacement shifts by the length delta (+2).
+        assert_eq!(tracked.original_range(7, 9), (5, 7));
+    }
+
+    #[test]
+    fn original_range_agrees_with_the_built_mapping() {
+        let mut tracked = TrackedText::new("getUserData и API");
+        tracked.replace("getUserData", "гет юзер дата");
+        let (start, end) = tracked.original_range(0, 12);
+        let mapping = tracked.build_mapping();
+        assert_eq!(mapping.get_original_range(0, 12), (start, end));
     }
 }

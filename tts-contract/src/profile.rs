@@ -184,6 +184,14 @@ impl TextProfile {
         self.languages.contains(&language)
     }
 
+    /// The first language this engine reads natively that is not Russian.
+    ///
+    /// A `Native` fragment is read in that language, so it is also the language
+    /// a span annotation carries.
+    pub fn native_language(&self) -> Option<&'static str> {
+        self.languages.iter().copied().find(|lang| *lang != "ru")
+    }
+
     /// Checks the cross-field invariants a profile must satisfy.
     pub fn validate(&self) -> Result<(), ProfileError> {
         if self.route.any_native() && !self.languages.iter().any(|lang| *lang != "ru") {
