@@ -406,3 +406,21 @@ fn a_cyrillic_key_round_trips_through_the_file() {
     let loaded = DictionaryStore::new(path).load();
     assert_eq!(loaded.get("замок"), Some("зам+ок"));
 }
+
+#[test]
+fn script_of_the_keys_is_reported() {
+    let mut dict = UserDictionary::default();
+    assert!(!dict.has_keys_in(KeyScript::Latin));
+    assert!(!dict.has_keys_in(KeyScript::Cyrillic));
+
+    dict.insert(entry("docker", "доккер"));
+    assert!(dict.has_keys_in(KeyScript::Latin));
+    assert!(
+        !dict.has_keys_in(KeyScript::Cyrillic),
+        "a Latin-only dictionary must not trigger the Cyrillic scan"
+    );
+
+    dict.insert(entry("замок", "зам+ок"));
+    assert!(dict.has_keys_in(KeyScript::Latin));
+    assert!(dict.has_keys_in(KeyScript::Cyrillic));
+}

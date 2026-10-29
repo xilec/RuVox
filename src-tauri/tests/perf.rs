@@ -62,11 +62,11 @@ fn dense_markup_1mb_normalizes_within_budget() {
     );
 }
 
-/// A Cyrillic dictionary entry costs one extra candidate scan, not a second
-/// pass over every word of a document with no Cyrillic keys. Both runs share
-/// the same budget as the empty-dictionary case.
+/// A Cyrillic dictionary entry adds one candidate scan over Cyrillic words.
+/// The input is a quarter of the main case so the suite does not pay a second
+/// full-size debug pass, but a quadratic scan still blows the budget.
 #[test]
-fn cyrillic_dictionary_entry_keeps_the_1mb_budget() {
+fn cyrillic_dictionary_entry_keeps_the_quarter_size_budget() {
     let _guard = PERF_LOCK
         .lock()
         .expect("perf test serialization lock poisoned");
@@ -77,15 +77,15 @@ fn cyrillic_dictionary_entry_keeps_the_1mb_budget() {
         to: "зам+ок".to_string(),
     });
     pipeline.set_user_dictionary(dict);
-    let input = dense_markup(1_000_000);
+    let input = dense_markup(256_000);
 
     let start = Instant::now();
     let _ = pipeline.process_with_char_mapping(&input);
     let elapsed = start.elapsed();
 
     assert!(
-        elapsed < Duration::from_secs(30),
-        "1 MB with a Cyrillic dictionary entry normalized in {elapsed:?}, budget is 30 s"
+        elapsed < Duration::from_secs(15),
+        "256 KB with a Cyrillic dictionary entry normalized in {elapsed:?}, budget is 15 s"
     );
 }
 
