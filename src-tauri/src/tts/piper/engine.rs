@@ -33,6 +33,13 @@ use serde_json::json;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 
+use super::chunked::{ChunkedTimeline, synthesize_chunked};
+use super::timestamps::estimate_timestamps_chunked;
+use crate::tts::engine::{EngineKind, TtsEngine};
+use crate::tts::profiles::PIPER_PROFILE;
+use crate::tts::supervisor::Emitter;
+use crate::tts::{CharMappingEntry, ModelInfo, SynthesizeOutput, TtsError};
+
 /// VITS `length_scale` applied at synthesis time. The Piper voice configs
 /// ship `length_scale: 1.0` which sounds slow on Russian voices; 0.8 cuts
 /// audio length by ~20% while keeping the natural prosody (we change the
@@ -54,13 +61,6 @@ fn max_chunk_chars() -> usize {
         .char_limit()
         .expect("piper profile declares a codepoint chunk limit")
 }
-
-use super::chunked::{ChunkedTimeline, synthesize_chunked};
-use super::timestamps::estimate_timestamps_chunked;
-use crate::tts::engine::{EngineKind, TtsEngine};
-use crate::tts::profiles::PIPER_PROFILE;
-use crate::tts::supervisor::Emitter;
-use crate::tts::{CharMappingEntry, ModelInfo, SynthesizeOutput, TtsError};
 
 type LoadedSlot = Arc<RwLock<Option<LoadedVoice>>>;
 

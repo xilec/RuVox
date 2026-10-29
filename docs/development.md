@@ -58,6 +58,7 @@ nix develop -c pnpm tauri dev
 │       ├── protocol.py     # Request/response types
 │       └── main.py         # Main stdin→stdout JSON loop
 ├── silero-native/          # Native Silero v5 engine (ONNX Runtime, no Python)
+├── tts-contract/           # Shared text contract: profile types + chunker (data only)
 ├── docs/                   # Documentation (this directory)
 ├── scripts/                # Utilities (launch-prod, rebuild_prod)
 ├── nix/
@@ -78,6 +79,7 @@ nix build .#ruvox && ./result/bin/ruvox     # production binary
 
 ```bash
 nix develop -c cargo test --manifest-path src-tauri/Cargo.toml                  # all Rust tests
+nix develop -c cargo test --manifest-path tts-contract/Cargo.toml               # shared contract crate
 nix develop -c cargo test --manifest-path src-tauri/Cargo.toml --test golden    # golden tests only
 nix develop -c pnpm typecheck                                                   # TypeScript strict
 nix develop -c bash -c "cd ttsd && uv run python -m pytest"                     # Python subprocess

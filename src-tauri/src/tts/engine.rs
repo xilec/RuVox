@@ -32,8 +32,9 @@ pub enum EngineKind {
 }
 
 impl EngineKind {
-    /// Every variant. Exists so completeness (a profile per engine, an
-    /// availability probe per engine) is asserted rather than remembered.
+    /// Every variant, so a per-engine table (a profile, a test loop) is asserted
+    /// to cover all of them instead of relying on memory. Not every caller needs
+    /// it: the availability probe walks what the UI can offer, not this list.
     pub const ALL: &'static [EngineKind] = &[
         EngineKind::Silero,
         EngineKind::Piper,

@@ -279,8 +279,9 @@ const TRACKED_OPERATOR_KEYS: &[&str] =
 /// The pipeline's output: the text the engine will speak and the mapping back
 /// to the original document.
 ///
-/// Span annotations join this type once the route-aware phases produce them;
-/// the fields here are the part every caller needs today.
+/// The spans describe the fragments the adapter must treat specially (render
+/// markup around them, or hand them to the engine as-is); they never appear in
+/// `text` itself.
 pub struct ProcessedText {
     /// Normalized text — the exact synthesis input.
     pub text: String,
@@ -1684,6 +1685,22 @@ mod tests {
         p.set_user_dictionary(dict);
         let out = p.process_for_engine("Kubernetes кластер", native_profile());
         assert_eq!(out.text, "кубернетес кластер");
+    }
+
+    #[test]
+    fn narrated_fragments_are_not_read_twice() {
+        // A second pass must not re-read what the first already narrated: URLs and
+        // identifiers are the fragments whose narration emits new Latin.
+        let mut p = TTSPipeline::new();
+        for input in [
+            "https://example.com/path/to/page",
+            "Вызови getUserData сейчас",
+            "Рост 50% и 1.5 GB, дата 12.05.2024",
+        ] {
+            let once = p.process_text(input);
+            let twice = p.process_text(&once);
+            assert_eq!(once, twice, "second pass changed {input:?}");
+        }
     }
 
     #[test]

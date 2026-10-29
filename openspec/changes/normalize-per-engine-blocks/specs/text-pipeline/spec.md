@@ -239,11 +239,12 @@ expose a bare `process(input)` that discards the mapping.
 The pipeline SHALL be shared as `Arc<Mutex<TTSPipeline>>` in `AppState` and
 invoked from the `add_text_entry` / `add_clipboard_entry` commands
 (normalization before synthesis) and from `preview_normalize` (normalization
-preview dialog). Both call sites SHALL pass the profile of the engine that is
-active at that moment, captured in the same critical section that produces the
-normalized text and the code-block narration mode, so that a racing engine
-switch cannot falsify the recorded settings. The preview SHALL therefore show
-the text the active engine will actually be asked to speak.
+preview dialog). Both call sites SHALL read the profile from the active engine
+in the same lock-free read that supplies the code-block narration mode and the
+voice, so the text is normalized for the engine the caller saw. A later switch
+between normalization and synthesis is fixed by the generation snapshot, not
+by holding the pipeline lock, which no longer spans both steps. The preview
+SHALL therefore show the text the engine seen by the dialog will speak.
 
 When normalization yields an empty string, the system SHALL reject synthesis
 with the user-visible error "нормализация вернула пустой текст".

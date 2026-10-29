@@ -167,12 +167,11 @@ impl SileroNative {
     /// Synthesize text at `sample_rate` (8000/24000/48000; the engine
     /// default used by callers is 24000).
     ///
-    /// Text longer than [`chunking::MAX_CHUNK_SIZE`] chars is split into
-    /// sentence-boundary chunks (ttsd `split_into_chunks` parity), each chunk
-    /// is synthesized separately, and the audio is concatenated; word
-    /// timestamps are shifted by the accumulated chunk durations. A chunk
-    /// that still overflows the exported decoder's fixed positional table
-    /// is re-split in half until it fits.
+    /// Text longer than the load-time chunk limit is split into sentence-boundary
+    /// chunks by the shared splitter, each chunk is synthesized separately, and
+    /// the audio is concatenated; word timestamps are shifted by the accumulated
+    /// chunk durations. A chunk that still overflows the exported decoder's
+    /// fixed positional table is re-split in half until it fits.
     #[instrument(skip_all, fields(speaker, sample_rate, text_len = text.len()))]
     pub fn synthesize(
         &self,

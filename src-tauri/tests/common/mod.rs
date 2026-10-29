@@ -140,9 +140,16 @@ pub fn collect_profile_cases() -> Vec<(&'static str, String)> {
     };
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
-        if !known.iter().any(|(known, _)| *known == name) || !entry.path().is_dir() {
-            continue;
+        if !entry.path().is_dir() {
+            continue; // flat fixtures live directly under fixtures/pipeline/
         }
+        // A directory here is either a pinned profile or a typo that would
+        // silently disable every fixture inside it.
+        assert!(
+            known.iter().any(|(known, _)| *known == name),
+            "unknown profile folder {name:?} under fixtures/pipeline; known: {:?}",
+            known.iter().map(|(known, _)| *known).collect::<Vec<_>>()
+        );
         let nested = match fs::read_dir(entry.path()) {
             Ok(nested) => nested,
             Err(_) => continue,

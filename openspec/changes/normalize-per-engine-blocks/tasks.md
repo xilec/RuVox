@@ -35,9 +35,11 @@
   Verify: unit test asserts the switcher reports the active engine's profile
   after a switch.
 - [x] 2.2 Thread the active profile through `run_pipeline_normalization` and
-  `preview_normalize`, captured in the same critical section as
-  `code_block_mode`. Verify: test asserts the generation snapshot and the
-  preview both use the profile captured with the text, not a later config read.
+  `preview_normalize`, read from the engine together with `code_block_mode` so
+  one read supplies both. Verify: the routing tests drive each gated path
+  through `process_for_engine`; the config read itself stays a single
+  lock-free snapshot, and a switch after normalization is covered by the
+  generation snapshot, not by the pipeline lock.
 
 ## 3. Route-aware normalization
 
@@ -58,7 +60,7 @@
   phase re-reads them. Verify: unit tests with `digits`/`units` in each of the
   four combinations, plus the existing number fixtures under the Silero
   profile.
-- [ ] 3.4 Add "no double normalization" assertions: idempotence for
+- [x] 3.4 Add "no double normalization" assertions: idempotence for
   transliteration and number expansion, and "already narrated fragment is not
   re-read" for URLs and identifiers. Verify: the new tests plus a fixture that
   reproduces a double-application bug if the gating regresses.

@@ -94,6 +94,7 @@ retry the call.
 │   ├── export/       #   maintainer exporter: upstream .pt → ONNX bundle (uv)
 │   ├── tests/        #   unit tier + bundle-gated parity suite
 │   └── docs/         #   architecture.md (pipeline, debugging), benchmarks.md
+├── tts-contract/     # Shared text contract crate: profile types and the chunker
 ├── ai/rules/         # conventions.md + code-quality.md — hard rules & craft standard
 ├── docs/             # Project documentation (process docs; behavior specs live in openspec/)
 ├── openspec/         # OpenSpec: specs/ (behavior source of truth), changes/ (proposals), config.yaml
@@ -174,6 +175,7 @@ The authoritative hard rule lives in
 nix develop -c just test                                                   # everything
 nix develop -c cargo test --manifest-path src-tauri/Cargo.toml             # Rust (incl. golden pipeline fixtures)
 nix develop -c cargo test --manifest-path silero-native/Cargo.toml         # native Silero engine (bundle-gated tests skip without SILERO_NATIVE_BUNDLE)
+nix develop -c cargo test --manifest-path tts-contract/Cargo.toml          # shared profile types and chunker
 nix develop -c pnpm typecheck                                              # TS typecheck
 nix develop -c pnpm test:unit                                              # TS unit tests
 nix develop -c bash -c "cd ttsd && uv run python -m pytest"                # Python subprocess tests

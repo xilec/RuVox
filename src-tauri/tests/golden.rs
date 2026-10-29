@@ -1,9 +1,10 @@
 /// Integration test harness for TTSPipeline golden fixtures.
 ///
 /// Reads every `*.input.txt` in `tests/fixtures/pipeline/`, runs
-/// `TTSPipeline::process_with_char_mapping`, and compares both the
-/// normalised text and the character mapping against the corresponding
-/// `*.expected.txt` and `*.char_map.json` fixture files.
+/// `TTSPipeline::process_for_engine` with the fixture's profile (shared cases run
+/// under every profile in `RUVOX_GOLDEN_PROFILES`, `<profile>/` folders pin one),
+/// and compares both the normalised text and the character mapping against the
+/// corresponding `*.expected.txt` and `*.char_map.json` fixture files.
 ///
 /// Run with:
 ///   cargo test --manifest-path src-tauri/Cargo.toml --test golden
