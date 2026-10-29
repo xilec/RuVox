@@ -34,7 +34,10 @@ class FakeEngine:
             raise self._load_exc
         self._loaded = True
 
-    def synthesize(self, *, text, speaker, sample_rate, out_wav, char_mapping=None):
+    def synthesize(
+        self, *, text, speaker, sample_rate, out_wav, char_mapping=None,
+        chunk_limit=None,
+    ):
         self.synth_calls.append(
             {
                 "text": text,
@@ -42,6 +45,7 @@ class FakeEngine:
                 "sample_rate": sample_rate,
                 "out_wav": out_wav,
                 "char_mapping": char_mapping,
+                "chunk_limit": chunk_limit,
             }
         )
         if self._synth_exc is not None:
@@ -68,7 +72,9 @@ def _reset_engine(monkeypatch):
     yield
 
 
-def _make_synth_request(text="привет", char_mapping=None) -> SynthesizeRequest:
+def _make_synth_request(
+    text="привет", char_mapping=None, chunk_limit=None
+) -> SynthesizeRequest:
     return SynthesizeRequest(
         cmd="synthesize",
         text=text,
@@ -76,6 +82,7 @@ def _make_synth_request(text="привет", char_mapping=None) -> SynthesizeReq
         sample_rate=48000,
         out_wav="/tmp/out.wav",
         char_mapping=char_mapping,
+        chunk_limit=chunk_limit,
     )
 
 
@@ -195,6 +202,20 @@ def test_handle_synthesize_ok_without_char_mapping(use_engine):
     assert resp.ok is True
     assert resp.duration_sec == 1.5
     assert engine.synth_calls[0]["char_mapping"] is None
+
+
+def test_handle_synthesize_forwards_the_chunk_limit(use_engine):
+    """The request's limit is the only thing that bounds the engine's chunks."""
+    engine = use_engine(FakeEngine(loaded=True))
+    resp = ttsd_main._handle_synthesize(_make_synth_request(chunk_limit=400))
+    assert isinstance(resp, ttsd_main.OkSynthesize)
+    assert engine.synth_calls[0]["chunk_limit"] == 400
+
+
+def test_handle_synthesize_without_a_limit_lets_the_engine_decide(use_engine):
+    engine = use_engine(FakeEngine(loaded=True))
+    ttsd_main._handle_synthesize(_make_synth_request())
+    assert engine.synth_calls[0]["chunk_limit"] is None
 
 
 def test_handle_synthesize_ok_builds_char_mapping_dicts(use_engine):

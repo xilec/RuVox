@@ -73,11 +73,11 @@ fn dense_markup_scaling_is_near_linear() {
     let input_2n = dense_markup(256_000);
 
     let start = Instant::now();
-    let _ = pipeline.process(&input_n);
+    let _ = pipeline.process_with_char_mapping(&input_n);
     let time_n = start.elapsed();
 
     let start = Instant::now();
-    let _ = pipeline.process(&input_2n);
+    let _ = pipeline.process_with_char_mapping(&input_2n);
     let time_2n = start.elapsed();
 
     // A quadratic implementation grows ~4x or worse per doubling; near-linear

@@ -23,7 +23,8 @@ fn main() {
 
     println!("loading bundle from {}", dir.display());
     let t0 = Instant::now();
-    let engine = SileroNative::load(&dir).expect("bundle must load");
+    let engine = SileroNative::load(&dir, silero_native::chunking::MAX_CHUNK_SIZE)
+        .expect("bundle must load");
     println!("loaded in {:.1?}", t0.elapsed());
 
     let phrases = [

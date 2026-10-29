@@ -15,6 +15,7 @@ rust-version = "1.85"
 # does not work inside the nix sandbox. Feature unification with src-tauri
 # (which depends on this crate by path) requires identical flags here.
 [dependencies]
+tts-contract = { path = "../tts-contract" }
 # NOTE: do not add `default-features = false` here — with ort rc.12 the
 # minimal feature set miscompiles against the ort-sys bindings
 # (`SessionOptionsAppendExecutionProvider_VitisAI` missing on `OrtApi`).

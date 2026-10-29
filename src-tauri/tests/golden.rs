@@ -1,19 +1,17 @@
 /// Integration test harness for TTSPipeline golden fixtures.
 ///
 /// Reads every `*.input.txt` in `tests/fixtures/pipeline/`, runs
-/// `TTSPipeline::process_with_char_mapping`, and compares both the
-/// normalised text and the character mapping against the corresponding
-/// `*.expected.txt` and `*.char_map.json` fixture files.
+/// `TTSPipeline::process_for_engine` with the fixture's profile (shared cases run
+/// under every profile in `RUVOX_GOLDEN_PROFILES`, `<profile>/` folders pin one),
+/// and compares both the normalised text and the character mapping against the
+/// corresponding `*.expected.txt` and `*.char_map.json` fixture files.
 ///
 /// Run with:
 ///   cargo test --manifest-path src-tauri/Cargo.toml --test golden
-use ruvox_tauri_lib::dictionary::{UserDictionary, parse_import, validate_entry};
 use ruvox_tauri_lib::pipeline::TTSPipeline;
-use ruvox_tauri_lib::pipeline::normalizers::code_blocks::CodeBlockMode;
 use serde::Deserialize;
 use similar::{ChangeTag, TextDiff};
 use std::fs;
-use std::path::PathBuf;
 
 mod common;
 
@@ -26,74 +24,14 @@ struct CharMapFixture {
     char_map: Vec<[usize; 2]>,
 }
 
-// ── Fixture discovery ──────────────────────────────────────────────────────────
-
-fn fixtures_dir() -> PathBuf {
-    common::resolve_test_path("tests/fixtures/pipeline")
-}
-
-/// Returns sorted list of case names derived from `*.input.txt` files.
-fn collect_case_names() -> Vec<String> {
-    let dir = fixtures_dir();
-    let mut names: Vec<String> = fs::read_dir(&dir)
-        .unwrap_or_else(|e| panic!("cannot read fixtures dir {}: {}", dir.display(), e))
-        .filter_map(|entry| {
-            let entry = entry.expect("dir entry error");
-            let name = entry.file_name();
-            let s = name.to_string_lossy();
-            if s.ends_with(".input.txt") {
-                Some(s.trim_end_matches(".input.txt").to_string())
-            } else {
-                None
-            }
-        })
-        .collect();
-    names.sort();
-    names
-}
-
-fn read_fixture_text(case: &str, ext: &str) -> String {
-    let path = fixtures_dir().join(format!("{}.{}", case, ext));
-    fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("cannot read fixture {}: {}", path.display(), e))
-        .trim_end_matches('\n')
-        .to_string()
-}
+// ── Fixture access ─────────────────────────────────────────────────────────────
 
 fn read_char_map_fixture(case: &str) -> CharMapFixture {
-    let path = fixtures_dir().join(format!("{}.char_map.json", case));
+    let path = common::fixtures_dir().join(format!("{}.char_map.json", case));
     let json = fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("cannot read char_map fixture {}: {}", path.display(), e));
     serde_json::from_str(&json)
         .unwrap_or_else(|e| panic!("cannot parse char_map fixture {}: {}", path.display(), e))
-}
-
-/// Optional `<case>.mode.txt` sidecar pinning the code block narration mode
-/// for the case; absent = the pipeline's default (Brief).
-fn read_mode_sidecar(case: &str) -> Option<CodeBlockMode> {
-    let path = fixtures_dir().join(format!("{}.mode.txt", case));
-    let text = fs::read_to_string(&path).ok()?;
-    match text.trim() {
-        "brief" => Some(CodeBlockMode::Brief),
-        "read" => Some(CodeBlockMode::Full),
-        other => panic!("invalid mode sidecar {}: {:?}", path.display(), other),
-    }
-}
-
-/// Optional `<case>.dict.toml` sidecar loading user-dictionary entries for
-/// the case (same TOML shape as the shipped file); absent = empty dictionary.
-fn read_dict_sidecar(case: &str) -> UserDictionary {
-    let path = fixtures_dir().join(format!("{}.dict.toml", case));
-    let text = match fs::read_to_string(&path) {
-        Ok(text) => text,
-        Err(_) => return UserDictionary::default(),
-    };
-    let mut dict = UserDictionary::default();
-    for entry in parse_import(&text).expect("valid dict sidecar TOML") {
-        validate_entry(&entry.from, &entry.to).expect("valid dict sidecar entry");
-        dict.insert(entry);
-    }
-    dict
 }
 
 // ── Diff helpers ───────────────────────────────────────────────────────────────
@@ -154,28 +92,61 @@ fn char_map_diff(expected: &[[usize; 2]], actual: &[(usize, usize)], limit: usiz
 
 // ── Main harness ───────────────────────────────────────────────────────────────
 
+/// One run of the corpus: which profile, and which fixture case.
+///
+/// A case under `tests/fixtures/pipeline/<profile>/` runs only under that
+/// profile; a case at the top level is profile-invariant and therefore runs
+/// under every profile in [`common::selected_profile_names`].
+struct GoldenCase {
+    path: String,
+    profile: String,
+}
+
+fn collect_cases() -> Vec<GoldenCase> {
+    let mut cases = Vec::new();
+    for profile in common::selected_profile_names() {
+        for path in common::collect_case_names() {
+            cases.push(GoldenCase {
+                path,
+                profile: profile.to_string(),
+            });
+        }
+    }
+    for (profile, path) in common::collect_profile_cases() {
+        cases.push(GoldenCase {
+            path,
+            profile: profile.to_string(),
+        });
+    }
+    cases
+}
+
 #[test]
 fn golden_fixtures() {
-    let cases = collect_case_names();
+    let cases = collect_cases();
     assert!(
         !cases.is_empty(),
         "no fixture cases found in {}",
-        fixtures_dir().display()
+        common::fixtures_dir().display()
     );
 
     let mut failures: Vec<String> = Vec::new();
 
-    for case_name in &cases {
-        let input = read_fixture_text(case_name, "input.txt");
-        let expected_text = read_fixture_text(case_name, "expected.txt");
+    for case in &cases {
+        let case_name = &case.path;
+        let profile = common::profile_by_name(&case.profile);
+        let input = common::read_fixture_text(case_name, "input.txt");
+        let expected_text = common::read_fixture_text(case_name, "expected.txt");
         let expected_map = read_char_map_fixture(case_name);
 
         let mut pipeline = TTSPipeline::new();
-        if let Some(mode) = read_mode_sidecar(case_name) {
+        if let Some(mode) = common::read_mode_sidecar(case_name) {
             pipeline.set_code_block_mode(mode);
         }
-        pipeline.set_user_dictionary(read_dict_sidecar(case_name));
-        let (actual_text, actual_mapping) = pipeline.process_with_char_mapping(&input);
+        pipeline.set_user_dictionary(common::read_dict_sidecar(case_name));
+        let processed = pipeline.process_for_engine(&input, profile);
+        let actual_text = processed.text;
+        let actual_mapping = processed.mapping;
 
         let mut case_errors: Vec<String> = Vec::new();
 
@@ -223,8 +194,9 @@ fn golden_fixtures() {
 
         if !case_errors.is_empty() {
             failures.push(format!(
-                "\n=== FAIL: {} ===\n{}",
+                "\n=== FAIL: {} under {} ===\n{}",
                 case_name,
+                case.profile,
                 case_errors.join("\n")
             ));
         }

@@ -11,19 +11,28 @@ import re
 MAX_CHUNK_SIZE = 900
 
 
-def split_into_chunks(text: str) -> list[tuple[str, int]]:
-    """Split text into chunks for TTS processing.
+def split_into_chunks(
+    text: str, limit: int = MAX_CHUNK_SIZE
+) -> list[tuple[str, int]]:
+    """Split text into chunks of at most `limit` characters.
 
-    Returns list of (chunk_text, start_position) tuples.
+    `limit` comes from the engine's text profile on the Rust side; the module
+    constant is only the default for callers without one.
+
+    Returns list of (chunk_text, start_position) tuples. An empty or
+    whitespace-only text has no chunks.
     """
-    if len(text) <= MAX_CHUNK_SIZE:
+    if not text.strip():
+        return []
+
+    if len(text) <= limit:
         return [(text, 0)]
 
     chunks: list[tuple[str, int]] = []
     current_pos = 0
 
     while current_pos < len(text):
-        chunk_end = min(current_pos + MAX_CHUNK_SIZE, len(text))
+        chunk_end = min(current_pos + limit, len(text))
 
         if chunk_end >= len(text):
             chunks.append((text[current_pos:], current_pos))
@@ -44,7 +53,7 @@ def split_into_chunks(text: str) -> list[tuple[str, int]]:
                 best_split = match.end()
 
         if best_split == -1 or best_split < len(chunk_text) // 2:
-            best_split = MAX_CHUNK_SIZE
+            best_split = limit
 
         actual_chunk = text[current_pos : current_pos + best_split].strip()
         if actual_chunk:

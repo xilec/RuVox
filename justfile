@@ -14,11 +14,15 @@ dev:
     pnpm tauri dev
 
 # Run all tests (Rust + TS + Python)
-test: test-rust test-silero-native test-ts test-python
+test: test-rust test-silero-native test-contract test-ts test-python
 
 # Rust tests (incl. golden pipeline fixtures)
 test-rust:
     cargo test --manifest-path src-tauri/Cargo.toml
+
+# Shared text contract (profiles + chunker)
+test-contract:
+    cargo test --manifest-path tts-contract/Cargo.toml
 
 # silero-native engine tests
 test-silero-native:
@@ -37,8 +41,10 @@ test-python:
 lint:
     cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
     cargo fmt --manifest-path silero-native/Cargo.toml -- --check
+    cargo fmt --manifest-path tts-contract/Cargo.toml -- --check
     cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --no-deps -- -D warnings
     cargo clippy --manifest-path silero-native/Cargo.toml --all-targets --no-deps -- -D warnings
+    cargo clippy --manifest-path tts-contract/Cargo.toml --all-targets --no-deps -- -D warnings
     cargo deny --manifest-path src-tauri/Cargo.toml check
     pnpm lint
     pnpm knip

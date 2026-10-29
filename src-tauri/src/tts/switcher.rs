@@ -346,6 +346,28 @@ mod tests {
         }
     }
 
+    /// The wrapper reports the text contract of whichever engine is active, so a
+    /// profile read after a switch never describes the previous engine.
+    #[tokio::test]
+    async fn text_profile_follows_the_active_engine() {
+        use crate::tts::profiles::{PIPER_PROFILE, SILERO_NATIVE_PROFILE};
+
+        let (sw, _voices_tmp, _ttsd_tmp, bundle_tmp) = fake_switcher();
+        assert_eq!(sw.text_profile(), &PIPER_PROFILE);
+
+        // A real switch to an engine with a different contract: Piper reads
+        // digits and units itself, Silero does not.
+        write_fake_bundle(bundle_tmp.path(), &[("tts_main.onnx", b"m")]);
+        sw.apply_config("silero_native", "ruslan").await.unwrap();
+        assert_eq!(sw.kind(), EngineKind::SileroNative);
+        assert_eq!(sw.text_profile(), &SILERO_NATIVE_PROFILE);
+        assert_ne!(
+            sw.text_profile().charset,
+            PIPER_PROFILE.charset,
+            "the switcher must report the new engine's contract, not the old one"
+        );
+    }
+
     #[tokio::test]
     async fn apply_config_with_same_engine_and_voice_is_noop() {
         let (sw, _voices_tmp, _ttsd_tmp, _bundle_tmp) = fake_switcher();

@@ -1,6 +1,9 @@
 pub mod constants;
 pub mod normalizers;
+pub mod spans;
 pub mod tracked_text;
+
+pub use spans::{Span, SpanKind};
 
 use std::sync::OnceLock;
 
@@ -15,7 +18,13 @@ use crate::pipeline::normalizers::english::EnglishNormalizer;
 use crate::pipeline::normalizers::numbers::NumberNormalizer;
 use crate::pipeline::normalizers::symbols::SymbolNormalizer;
 use crate::pipeline::normalizers::urls::{URLPathNormalizer, is_known_tld};
+use crate::pipeline::spans::{
+    RecordedSpan, byte_to_char_offsets, debug_assert_spans, record_byte_ranges, record_native,
+    resolve_spans,
+};
 use crate::pipeline::tracked_text::{CharMapping, TrackedText};
+use crate::tts::profiles;
+use tts_contract::{Digits, Reading, TextProfile, Units};
 
 // ── Static compiled regexes ───────────────────────────────────────────────────
 
@@ -130,6 +139,39 @@ fn re_percentage() -> &'static Regex {
 fn re_percentage_range() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"\b(\d+)\s*-\s*(\d+)\s*%").expect("valid regex"))
+}
+
+/// Units `re_size` accepts, lowercased: the guard below reads the word right
+/// after a number instead of scanning forward for a size match, which would
+/// rescan the rest of the document for every number.
+const SIZE_UNITS: [&str; 17] = [
+    "kb", "mb", "gb", "tb", "ms", "sec", "min", "hr", "px", "em", "rem", "vh", "vw", "кб", "мб",
+    "гб", "тб",
+];
+
+/// True when the number at `start..end` belongs to a percentage or a size,
+/// which the gated unit phases own as a whole.
+fn unit_owns(snapshot: &str, end: usize) -> bool {
+    let after = snapshot[end..].trim_start_matches(' ');
+    if after.starts_with('%') {
+        return true;
+    }
+
+    // Left bound of a percentage range ("10-20%"): dash, digits, percent sign.
+    if let Some(rest) = after.strip_prefix('-') {
+        let digit_bytes = rest.len() - rest.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+        if digit_bytes > 0 && rest[digit_bytes..].trim_start_matches(' ').starts_with('%') {
+            return true;
+        }
+    }
+
+    // A size unit attached directly or after a single space ("100MB", "1.5 GB").
+    let word: String = after.chars().take_while(|c| c.is_alphanumeric()).collect();
+    let boundary = after
+        .chars()
+        .nth(word.chars().count())
+        .is_none_or(|c| !c.is_alphanumeric());
+    boundary && SIZE_UNITS.contains(&word.to_lowercase().as_str())
 }
 
 fn re_inline_code() -> &'static Regex {
@@ -250,6 +292,21 @@ const TRACKED_OPERATOR_KEYS: &[&str] =
 
 // ── TTSPipeline ────────────────────────────────────────────────────────────────
 
+/// The pipeline's output: the text the engine will speak and the mapping back
+/// to the original document.
+///
+/// The spans describe the fragments the adapter must treat specially (render
+/// markup around them, or hand them to the engine as-is); they never appear in
+/// `text` itself.
+pub struct ProcessedText {
+    /// Normalized text — the exact synthesis input.
+    pub text: String,
+    /// Codepoint-level bridge from `text` back to the original document.
+    pub mapping: CharMapping,
+    /// Fragments the adapter must render or wrap, sorted and non-overlapping.
+    pub spans: Vec<Span>,
+}
+
 /// Main pipeline for TTS text preprocessing.
 ///
 /// Owns all normalizer instances. Phase order matters: see `process_with_char_mapping`.
@@ -320,24 +377,49 @@ impl TTSPipeline {
             || self.code_normalizer.contains_builtin(word_lower)
     }
 
-    /// Process text for TTS. Returns normalized text without position mapping.
-    pub fn process(&mut self, input: &str) -> String {
-        let (result, _) = self.process_with_char_mapping(input);
-        result
+    /// Process text for TTS with precise character-level mapping under the
+    /// reference (Silero) profile.
+    ///
+    /// Compatibility wrapper for callers that normalize once for the strictest
+    /// engine: the golden corpus, dictionary-entry validation and tests. Real
+    /// synthesis goes through [`Self::process_for_engine`] with the active
+    /// engine's profile.
+    pub fn process_with_char_mapping(&mut self, input: &str) -> (String, CharMapping) {
+        let processed = self.process_for_engine(input, &profiles::SILERO_PROFILE);
+        (processed.text, processed.mapping)
     }
 
-    /// Process text for TTS with precise character-level mapping.
-    pub fn process_with_char_mapping(&mut self, input: &str) -> (String, CharMapping) {
+    /// Process text for TTS under `profile` — the text contract of the engine
+    /// that will synthesize the result.
+    ///
+    /// The profile only selects which phase runs; the phase order itself is
+    /// fixed (see the `text-pipeline` spec), so a profile can never make one
+    /// phase consume another phase's fragment.
+    pub fn process_for_engine(&mut self, input: &str, profile: &TextProfile) -> ProcessedText {
         if input.is_empty() {
-            return (
-                String::new(),
-                CharMapping {
+            return ProcessedText {
+                text: String::new(),
+                mapping: CharMapping {
                     original: String::new(),
                     transformed: String::new(),
                     char_map: Vec::new(),
                 },
-            );
+                spans: Vec::new(),
+            };
         }
+
+        // Routing decisions, read once per call: a fragment is either narrated
+        // in Russian by the pipeline or left for the engine, and the number and
+        // unit phases run only when the engine cannot read them.
+        let narrate_latin = profile.route.latin_prose == Reading::Narrate;
+        let narrate_identifiers = profile.route.identifier == Reading::Narrate;
+        let expand_digits = profile.digits == Digits::Expanded;
+        let expand_units = profile.units == Units::Expanded;
+
+        // The language the engine reads a native fragment in — the same one a
+        // `Native` span carries.
+        let native_lang = profile.native_language();
+        let mut recorded: Vec<RecordedSpan> = Vec::new();
 
         self.english_normalizer.clear_unknown_words();
 
@@ -369,21 +451,22 @@ impl TTSPipeline {
         tracked.sub(re_collapse_spaces(), |_| " ".to_string());
 
         if tracked.text().trim().is_empty() {
-            return (
-                String::new(),
-                CharMapping {
+            return ProcessedText {
+                text: String::new(),
+                mapping: CharMapping {
                     original: input.to_string(),
                     transformed: String::new(),
                     char_map: Vec::new(),
                 },
-            );
+                spans: Vec::new(),
+            };
         }
 
         // ── Phase 5: Inline code ─────────────────────────────────────────────
         self.process_inline_code_tracked(&mut tracked);
 
         // ── Phase 6: Markdown structure ───────────────────────────────────────
-        self.process_markdown_tracked(&mut tracked);
+        self.process_markdown_tracked(&mut tracked, expand_digits);
 
         // ── Phase 7: URLs ─────────────────────────────────────────────────────
         {
@@ -446,7 +529,9 @@ impl TTSPipeline {
         }
 
         // ── Phase 8: Sizes (e.g. 100MB, 50ms) ────────────────────────────────
-        {
+        // Unit expansion needs the number in words, so it runs only when the
+        // profile expands units (which implies digits — see `TextProfile::validate`).
+        if expand_units {
             let num = &self.number_normalizer;
             tracked.sub(re_size(), |caps| {
                 num.normalize_size(caps.get(0).unwrap().as_str())
@@ -459,7 +544,7 @@ impl TTSPipeline {
         // range, or bare-number phases. Runs after URLs/emails/IPs/paths
         // (Phases 7-8), whose regions are already consumed, so date-like
         // substrings inside them are not re-matched here.
-        {
+        if expand_digits {
             let num = &self.number_normalizer;
             // normalize_date and normalize_time return their input unchanged on an
             // invalid calendar/clock value, so out-of-range matches become no-ops
@@ -479,7 +564,7 @@ impl TTSPipeline {
         // is left bare (#112). The range reading already puts both bounds in
         // genitive, so the fixed genitive-plural "процентов" is always right
         // after "до <genitive>".
-        {
+        if expand_units {
             let num = &self.number_normalizer;
             tracked.sub(re_percentage_range(), |caps| {
                 let range = format!(
@@ -501,7 +586,7 @@ impl TTSPipeline {
         // ── Phase 10: Percentages ─────────────────────────────────────────────
         // Must precede versions: re_version matches a bare "12.5" inside "12.5%",
         // so running versions first would consume the number and leave a bare "%".
-        {
+        if expand_units {
             let num = &self.number_normalizer;
             tracked.sub(re_percentage(), |caps| {
                 num.normalize_percentage(caps.get(0).unwrap().as_str())
@@ -509,17 +594,17 @@ impl TTSPipeline {
         }
 
         // ── Phase 11: Ranges (e.g. 10-20) ────────────────────────────────────
-        {
+        if expand_digits {
             let num = &self.number_normalizer;
-            tracked.sub(re_range(), |caps| {
+            self.sub_number_phase(&mut tracked, re_range(), expand_units, |caps| {
                 num.normalize_range(caps.get(0).unwrap().as_str())
             });
         }
 
         // ── Phase 12: Versions (e.g. v1.2.3) ─────────────────────────────────
-        {
+        if expand_digits {
             let num = &self.number_normalizer;
-            tracked.sub(re_version(), |caps| {
+            self.sub_number_phase(&mut tracked, re_version(), expand_units, |caps| {
                 let v = caps.get(0).unwrap().as_str();
                 if v.contains('.') {
                     num.normalize_version(v)
@@ -533,17 +618,22 @@ impl TTSPipeline {
         // Must run after versions (so "1.5" keeps its version reading) and
         // before operators/numbers (so the fraction digits are consumed
         // before the number phase — and its dot guard — runs).
-        {
+        if expand_digits {
             let num = &self.number_normalizer;
-            tracked.sub(re_leading_dot_decimal(), |caps| {
-                let boundary = caps.get(1).unwrap().as_str();
-                let digits = caps.get(2).unwrap().as_str();
-                format!(
-                    "{}{}",
-                    boundary,
-                    num.normalize_float(&format!("0.{digits}"))
-                )
-            });
+            self.sub_number_phase(
+                &mut tracked,
+                re_leading_dot_decimal(),
+                expand_units,
+                |caps| {
+                    let boundary = caps.get(1).unwrap().as_str();
+                    let digits = caps.get(2).unwrap().as_str();
+                    format!(
+                        "{}{}",
+                        boundary,
+                        num.normalize_float(&format!("0.{digits}"))
+                    )
+                },
+            );
         }
 
         // ── Phase 13: Operators ───────────────────────────────────────────────
@@ -564,12 +654,17 @@ impl TTSPipeline {
         }
         // Tilde before a number means "approximately": ~46 → около 46.
         // We capture the digit(s) after the tilde and emit them after "около ".
-        tracked.sub(re_tilde_approx(), |caps| {
-            format!("около {}", caps.get(1).unwrap().as_str())
-        });
+        if expand_digits {
+            tracked.sub(re_tilde_approx(), |caps| {
+                format!("около {}", caps.get(1).unwrap().as_str())
+            });
+        }
 
         // ── Phase 15: Code identifiers ────────────────────────────────────────
-        {
+        // A profile that routes identifiers `Native` keeps them verbatim for the
+        // engine; the English phase below must not re-read them either, which is
+        // why identifier routing implies prose routing (see `TextProfile`).
+        if narrate_identifiers {
             let code = &self.code_normalizer;
             let user_dict = &self.user_dictionary;
             tracked.sub(re_camel_lower(), |caps| {
@@ -584,6 +679,27 @@ impl TTSPipeline {
             tracked.sub(re_kebab(), |caps| {
                 code.normalize_kebab_case(caps.get(0).unwrap().as_str(), user_dict)
             });
+        } else {
+            // The identifiers stay for the engine: annotate them. The prose scan
+            // below would claim the same fragment, and `keep_specific_spans`
+            // resolves that overlap in original coordinates.
+            record_native(
+                &mut tracked,
+                SpanKind::CodeIdentifier,
+                native_lang,
+                |text| {
+                    let mut ranges: Vec<(usize, usize)> =
+                        [re_camel_lower(), re_pascal(), re_snake(), re_kebab()]
+                            .into_iter()
+                            .flat_map(|pattern| pattern.find_iter(text))
+                            .map(|m| (m.start(), m.end()))
+                            .collect();
+                    ranges.sort_unstable();
+                    ranges.dedup();
+                    ranges
+                },
+                &mut recorded,
+            );
         }
 
         // ── Phase 15.5: User dictionary pre-pass ─────────────────────────────
@@ -591,13 +707,33 @@ impl TTSPipeline {
         // never whole identifiers) and before English-word resolution (user
         // entries win over every built-in table). No-op for an empty
         // dictionary — output stays byte-identical.
-        self.process_user_dictionary_tracked(&mut tracked);
+        self.process_user_dictionary_tracked(&mut tracked, &mut recorded);
 
         // ── Phase 16: English words ───────────────────────────────────────────
-        self.process_english_tracked(&mut tracked);
+        // Skipped entirely for a Latin-native profile: transliteration, the
+        // built-in IT dictionary, abbreviation readings and single-letter names
+        // are all the compensation a Russian-only engine needs.
+        if narrate_latin {
+            self.process_english_tracked(&mut tracked);
+        } else {
+            record_native(
+                &mut tracked,
+                SpanKind::ProseLatin,
+                native_lang,
+                |text| {
+                    re_english_words()
+                        .find_iter(text)
+                        .map(|m| (m.start(), m.end()))
+                        .collect()
+                },
+                &mut recorded,
+            );
+        }
 
         // ── Phase 17: Numbers ─────────────────────────────────────────────────
-        self.process_numbers_tracked(&mut tracked);
+        if expand_digits {
+            self.process_numbers_tracked(&mut tracked, expand_units);
+        }
 
         // ── Postprocess ───────────────────────────────────────────────────────
         tracked.sub(re_multi_spaces(), |_| " ".to_string());
@@ -633,10 +769,22 @@ impl TTSPipeline {
                 transformed: result.clone(),
                 char_map: new_char_map,
             };
-            return (result, final_mapping);
+            let spans = resolve_spans(&final_mapping.char_map, recorded);
+            debug_assert_spans(&final_mapping, &spans);
+            return ProcessedText {
+                text: result,
+                mapping: final_mapping,
+                spans,
+            };
         }
 
-        (result, mapping)
+        let spans = resolve_spans(&mapping.char_map, recorded);
+        debug_assert_spans(&mapping, &spans);
+        ProcessedText {
+            text: result,
+            mapping,
+            spans,
+        }
     }
 
     // ── Private processing helpers ─────────────────────────────────────────────
@@ -699,7 +847,7 @@ impl TTSPipeline {
             .join(" ")
     }
 
-    fn process_markdown_tracked(&self, tracked: &mut TrackedText) {
+    fn process_markdown_tracked(&self, tracked: &mut TrackedText, expand_digits: bool) {
         tracked.sub(re_heading(), |_| String::new());
 
         // Markdown links: [text](url) → text (link text preserved for further normalization).
@@ -736,7 +884,12 @@ impl TTSPipeline {
             }
         }
 
-        // Numbered lists: "1. " → "первое: "
+        // Numbered lists: "1. " → "первое: ". Gated with the digit phases: the
+        // marker is a number, and an engine that reads digits itself does not
+        // need it spelled out.
+        if !expand_digits {
+            return;
+        }
         let num = &self.number_normalizer;
         tracked.sub(re_md_list_number(), |caps| {
             let n: u32 = caps.get(1).unwrap().as_str().parse().unwrap_or(0);
@@ -762,7 +915,11 @@ impl TTSPipeline {
     /// spoken form. Only exact hits are replaced — non-hits flow into the
     /// English-word phase unchanged, so built-in behavior and golden fixtures
     /// are unaffected.
-    fn process_user_dictionary_tracked(&mut self, tracked: &mut TrackedText) {
+    fn process_user_dictionary_tracked(
+        &mut self,
+        tracked: &mut TrackedText,
+        recorded: &mut Vec<RecordedSpan>,
+    ) {
         if self.user_dictionary.is_empty() {
             return;
         }
@@ -777,6 +934,18 @@ impl TTSPipeline {
                     .map(|to| (m.start(), m.end(), to.to_string()))
             })
             .collect();
+        if !matches.is_empty() {
+            let offsets = byte_to_char_offsets(&snapshot);
+            let ranges: Vec<(usize, usize)> = matches.iter().map(|(s, e, _)| (*s, *e)).collect();
+            record_byte_ranges(
+                tracked,
+                &offsets,
+                SpanKind::DictionaryOverride,
+                None,
+                &ranges,
+                recorded,
+            );
+        }
         tracked.replace_byte_ranges(matches);
     }
 
@@ -849,7 +1018,35 @@ impl TTSPipeline {
         tracked.replace_byte_ranges(matches);
     }
 
-    fn process_numbers_tracked(&self, tracked: &mut TrackedText) {
+    /// Runs a digit phase, skipping matches that belong to a unit construct
+    /// when the unit phases are gated off (`units: Native`).
+    ///
+    /// Without this the skipped unit phases would leave their number to the
+    /// digit phases below, which read "50 %" or "1.5 GB" as a bare number and
+    /// strand the unit.
+    fn sub_number_phase(
+        &self,
+        tracked: &mut TrackedText,
+        pattern: &Regex,
+        expand_units: bool,
+        mut replacer: impl FnMut(&regex::Captures) -> String,
+    ) {
+        if expand_units {
+            tracked.sub(pattern, |caps| replacer(caps));
+            return;
+        }
+        let snapshot = tracked.text().to_string();
+        tracked.sub(pattern, |caps| {
+            let m = caps.get(0).unwrap();
+            if unit_owns(&snapshot, m.end()) {
+                m.as_str().to_string()
+            } else {
+                replacer(caps)
+            }
+        });
+    }
+
+    fn process_numbers_tracked(&self, tracked: &mut TrackedText, expand_units: bool) {
         // Effective pattern: `(?<![.])(\d+)(?![.]\d)` on top of the Unicode-aware
         // `\b\d+\b` from re_number(). The regex crate lacks lookbehind/lookahead,
         // and `\b` already rejects digits, letters, and underscore next to the
@@ -870,9 +1067,17 @@ impl TTSPipeline {
                 let end = m.end();
 
                 let preceded_ok = start == 0 || !snapshot[..start].ends_with('.');
-                let followed_ok = end >= snapshot.len()
-                    || !snapshot[end..].starts_with('.')
-                    || !snapshot[end + 1..].starts_with(|c: char| c.is_ascii_digit());
+                // A percent sign is not a word character, so `\b` does not
+                // protect it, and a size unit may follow a space: with units
+                // left to the engine, the number phase would read the "50" of
+                // "50 %" or the "1.5" of "1.5 GB" and strand the unit. The
+                // skipped unit phases own that fragment, so the number stays
+                // with it.
+                let unit_follows = unit_owns(&snapshot, end);
+                let followed_ok = (expand_units || !unit_follows)
+                    && (end >= snapshot.len()
+                        || !snapshot[end..].starts_with('.')
+                        || !snapshot[end + 1..].starts_with(|c: char| c.is_ascii_digit()));
 
                 if preceded_ok && followed_ok {
                     let replacement = self.number_normalizer.normalize_number(m.as_str());
@@ -893,6 +1098,18 @@ impl Default for TTSPipeline {
     }
 }
 
+impl TTSPipeline {
+    /// Normalized text under the reference profile, mapping discarded.
+    ///
+    /// Test-only: production callers need the mapping for word highlighting, so
+    /// no bare `process()` exists on the public surface.
+    #[cfg(test)]
+    fn process_text(&mut self, input: &str) -> String {
+        self.process_for_engine(input, &profiles::SILERO_PROFILE)
+            .text
+    }
+}
+
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -905,14 +1122,14 @@ mod tests {
     #[test]
     fn pipeline_empty_input() {
         let mut p = TTSPipeline::new();
-        assert_eq!(p.process(""), "");
+        assert_eq!(p.process_text(""), "");
     }
 
     #[test]
     fn pipeline_plain_russian() {
         let mut p = TTSPipeline::new();
         let input = "Привет мир";
-        assert_eq!(p.process(input), "Привет мир");
+        assert_eq!(p.process_text(input), "Привет мир");
     }
 
     #[test]
@@ -921,20 +1138,23 @@ mod tests {
         // so the time phase is a no-op and does not consume the region. TrackedText
         // skips no-op replacements, leaving the digits for the number phase to read.
         let mut p = TTSPipeline::new();
-        assert_eq!(p.process("В 25:00 встреча"), "В двадцать пять:ноль встреча");
+        assert_eq!(
+            p.process_text("В 25:00 встреча"),
+            "В двадцать пять:ноль встреча"
+        );
     }
 
     #[test]
     fn pipeline_number_inline() {
         let mut p = TTSPipeline::new();
-        assert_eq!(p.process("Версия 3"), "Версия три");
+        assert_eq!(p.process_text("Версия 3"), "Версия три");
     }
 
     #[test]
     fn pipeline_mermaid_marker() {
         let mut p = TTSPipeline::new();
         let input = "```mermaid\ngraph TD\nA-->B\n```";
-        assert_eq!(p.process(input), "Тут мермэйд диаграмма");
+        assert_eq!(p.process_text(input), "Тут мермэйд диаграмма");
     }
 
     #[test]
@@ -947,10 +1167,10 @@ mod tests {
     fn pipeline_code_block_mode_switch_changes_narration() {
         let mut p = TTSPipeline::new();
         let input = "```python\nprint('hi')\n```";
-        assert_eq!(p.process(input), "далее следует пример кода на пайтон");
+        assert_eq!(p.process_text(input), "далее следует пример кода на пайтон");
         p.set_code_block_mode(CodeBlockMode::Full);
         assert_eq!(
-            p.process(input),
+            p.process_text(input),
             "принт открывающая скобка хи закрывающая скобка"
         );
     }
@@ -969,7 +1189,7 @@ mod tests {
     fn pipeline_process_vs_char_mapping_consistent() {
         let mut p = TTSPipeline::new();
         let input = "Файл весит 100MB и версия v2.3.1.";
-        let direct = p.process(input);
+        let direct = p.process_text(input);
         let (mapped, _) = p.process_with_char_mapping(input);
         assert_eq!(direct, mapped);
     }
@@ -986,9 +1206,9 @@ mod tests {
         // decimal/version separator, so a number before a sentence-ending
         // period was left as unreadable digits.
         let mut p = TTSPipeline::new();
-        assert_eq!(p.process("Встреча в 5."), "Встреча в пять.");
+        assert_eq!(p.process_text("Встреча в 5."), "Встреча в пять.");
         assert_eq!(
-            p.process("Сначала пункт 3. Потом пункт 4."),
+            p.process_text("Сначала пункт 3. Потом пункт 4."),
             "Сначала пункт три. Потом пункт четыре."
         );
     }
@@ -1000,7 +1220,7 @@ mod tests {
         // not change this path.
         let mut p = TTSPipeline::new();
         assert_eq!(
-            p.process("Остаток 3.14 в конце"),
+            p.process_text("Остаток 3.14 в конце"),
             "Остаток три точка четырнадцать в конце"
         );
     }
@@ -1012,9 +1232,9 @@ mod tests {
         // unreadable digits. Read it as a proper decimal, identical to the
         // explicit-zero form.
         let mut p = TTSPipeline::new();
-        assert_eq!(p.process("Вес .5 кг"), "Вес ноль точка пять кг");
+        assert_eq!(p.process_text("Вес .5 кг"), "Вес ноль точка пять кг");
         assert_eq!(
-            p.process(".75 вероятность"),
+            p.process_text(".75 вероятность"),
             "ноль точка семь пять вероятность"
         );
     }
@@ -1025,7 +1245,7 @@ mod tests {
         // not a decimal — the leading-dot phase must skip it, and the number
         // phase guard keeps the digit unexpanded as before.
         let mut p = TTSPipeline::new();
-        assert_eq!(p.process("файл example.5"), "файл экзампл.5");
+        assert_eq!(p.process_text("файл example.5"), "файл экзампл.5");
     }
 
     #[test]
@@ -1033,7 +1253,7 @@ mod tests {
         // "1.5" is consumed by the version phase before the leading-dot
         // phase runs — no double-consume, no "ноль" prefix.
         let mut p = TTSPipeline::new();
-        assert_eq!(p.process("Точность 1.5"), "Точность один точка пять");
+        assert_eq!(p.process_text("Точность 1.5"), "Точность один точка пять");
     }
 
     #[test]
@@ -1043,11 +1263,14 @@ mod tests {
         // dash. The percentage-range phase must claim "N-M%" as one region.
         let mut p = TTSPipeline::new();
         assert_eq!(
-            p.process("Рост на 10-20% за квартал"),
+            p.process_text("Рост на 10-20% за квартал"),
             "Рост на от десяти до двадцати процентов за квартал"
         );
         // Whitespace around the dash and before "%" is tolerated.
-        assert_eq!(p.process("10 - 20 %"), "от десяти до двадцати процентов");
+        assert_eq!(
+            p.process_text("10 - 20 %"),
+            "от десяти до двадцати процентов"
+        );
     }
 
     #[test]
@@ -1059,7 +1282,7 @@ mod tests {
         // regex change cannot quietly turn this into a range.
         let mut p = TTSPipeline::new();
         assert_eq!(
-            p.process("метрика x10-20%"),
+            p.process_text("метрика x10-20%"),
             "метрика x10-двадцать процентов"
         );
     }
@@ -1069,10 +1292,13 @@ mod tests {
         // The new phase must not steal plain ranges or plain percentages.
         let mut p = TTSPipeline::new();
         assert_eq!(
-            p.process("диапазон 10-20"),
+            p.process_text("диапазон 10-20"),
             "диапазон от десяти до двадцати"
         );
-        assert_eq!(p.process("загрузка 20%"), "загрузка двадцать процентов");
+        assert_eq!(
+            p.process_text("загрузка 20%"),
+            "загрузка двадцать процентов"
+        );
     }
 
     #[test]
@@ -1080,9 +1306,9 @@ mod tests {
         // Digits glued to a Latin letter belong to the code-identifier phase,
         // so the number phase must leave leftovers like v1 / x2 / app2 alone.
         let mut p = TTSPipeline::new();
-        assert_eq!(p.process("Запусти v1 сейчас"), "Запусти v1 сейчас");
-        assert_eq!(p.process("Координата x2 равна"), "Координата x2 равна");
-        assert_eq!(p.process("Файл app2 лежит тут"), "Файл app2 лежит тут");
+        assert_eq!(p.process_text("Запусти v1 сейчас"), "Запусти v1 сейчас");
+        assert_eq!(p.process_text("Координата x2 равна"), "Координата x2 равна");
+        assert_eq!(p.process_text("Файл app2 лежит тут"), "Файл app2 лежит тут");
     }
 
     #[test]
@@ -1104,10 +1330,10 @@ mod tests {
         // which hit the shorter word embedded in an earlier longer token
         // ("use" inside "user"), leaving Latin debris for Silero.
         let mut p = TTSPipeline::new();
-        assert_eq!(p.process("user use"), "юзер юз");
-        assert_eq!(p.process("use user"), "юз юзер");
-        assert_eq!(p.process("tests test"), "тестс тест");
-        assert_eq!(p.process("test tests"), "тест тестс");
+        assert_eq!(p.process_text("user use"), "юзер юз");
+        assert_eq!(p.process_text("use user"), "юз юзер");
+        assert_eq!(p.process_text("tests test"), "тестс тест");
+        assert_eq!(p.process_text("test tests"), "тест тестс");
     }
 
     #[test]
@@ -1116,16 +1342,16 @@ mod tests {
         // with the wrong readings ("стак трейс"); its words are curated now, so
         // the reading does not depend on how the words are separated.
         let mut p = TTSPipeline::new();
-        assert_eq!(p.process("stack trace"), "стэк трейс");
-        assert_eq!(p.process("stack\ntrace"), "стэк\nтрейс");
-        assert_eq!(p.process("stack  trace"), "стэк трейс");
-        assert_eq!(p.process("stack\ttrace"), "стэк трейс");
+        assert_eq!(p.process_text("stack trace"), "стэк трейс");
+        assert_eq!(p.process_text("stack\ntrace"), "стэк\nтрейс");
+        assert_eq!(p.process_text("stack  trace"), "стэк трейс");
+        assert_eq!(p.process_text("stack\ttrace"), "стэк трейс");
         assert_eq!(
-            p.process("Перед merge request нужен code review."),
+            p.process_text("Перед merge request нужен code review."),
             "Перед мёрдж реквест нужен код ревью."
         );
         assert_eq!(
-            p.process("hot fix и live reload, dry run и edge case"),
+            p.process_text("hot fix и live reload, dry run и edge case"),
             "хот фикс и лайв релоуд, драй ран и эдж кейс"
         );
     }
@@ -1139,7 +1365,7 @@ mod tests {
             from: "stack".to_string(),
             to: "стек".to_string(),
         });
-        assert_eq!(p.process("stack trace"), "стек трейс");
+        assert_eq!(p.process_text("stack trace"), "стек трейс");
     }
 
     #[test]
@@ -1147,13 +1373,13 @@ mod tests {
         // Regression (#75): same literal-replace bug in the numbers phase —
         // "1" replaced inside "10", "42" inside "142".
         let mut p = TTSPipeline::new();
-        assert_eq!(p.process("10:1"), "десять:один");
+        assert_eq!(p.process_text("10:1"), "десять:один");
         assert_eq!(
-            p.process("Счёт 10:1 в нашу пользу."),
+            p.process_text("Счёт 10:1 в нашу пользу."),
             "Счёт десять:один в нашу пользу."
         );
-        assert_eq!(p.process("142 42"), "сто сорок два сорок два");
-        assert_eq!(p.process("42 142"), "сорок два сто сорок два");
+        assert_eq!(p.process_text("142 42"), "сто сорок два сорок два");
+        assert_eq!(p.process_text("42 142"), "сорок два сто сорок два");
     }
 
     #[test]
@@ -1162,10 +1388,10 @@ mod tests {
         // letters) and were silently dropped by Silero.
         let mut p = TTSPipeline::new();
         assert_eq!(
-            p.process("Переменная x равна 5"),
+            p.process_text("Переменная x равна 5"),
             "Переменная икс равна пять"
         );
-        assert_eq!(p.process("пункты a и I"), "пункты эй и ай");
+        assert_eq!(p.process_text("пункты a и I"), "пункты эй и ай");
     }
 
     #[test]
@@ -1173,7 +1399,7 @@ mod tests {
         // Letter-name spelling is a dictionary lookup, not a transliteration
         // fallback — it must not enter the unknown-words map.
         let mut p = TTSPipeline::new();
-        p.process("Переменная x равна 5");
+        p.process_text("Переменная x равна 5");
         assert!(p.english_normalizer.get_unknown_words().is_empty());
     }
 
@@ -1186,7 +1412,7 @@ mod tests {
         // "y" counts as a vowel, so "SYSTEM" is a word too. One call: the
         // unknown-words map is cleared at the start of every process call.
         assert_eq!(
-            p.process("DEVELOPER LINUX UBUNTU JAVASCRIPT SYSTEM"),
+            p.process_text("DEVELOPER LINUX UBUNTU JAVASCRIPT SYSTEM"),
             "девелопер линукс убунту джаваскрипт систем"
         );
         let unknown = p.english_normalizer.get_unknown_words();
@@ -1212,7 +1438,7 @@ mod tests {
         assert!(guards.len() >= 28, "guard set shrank unexpectedly");
         for (word, reading) in guards {
             assert_eq!(
-                p.process(&word.to_uppercase()),
+                p.process_text(&word.to_uppercase()),
                 reading,
                 "{word} lost its all-caps reading"
             );
@@ -1227,7 +1453,7 @@ mod tests {
         // #292 removed every other no-op, so this is the only reason they stay.
         let mut p = TTSPipeline::new();
         assert_eq!(
-            p.process("TEST DATA APP CLASS WEB STRING"),
+            p.process_text("TEST DATA APP CLASS WEB STRING"),
             "тест дата апп класс веб стринг"
         );
     }
@@ -1237,12 +1463,15 @@ mod tests {
         // The heuristic must not swallow the abbreviation class it exists to
         // distinguish words from.
         let mut p = TTSPipeline::new();
-        assert_eq!(p.process("API HTML SQL"), "эй пи ай эйч ти эм эл эс кью эл");
+        assert_eq!(
+            p.process_text("API HTML SQL"),
+            "эй пи ай эйч ти эм эл эс кью эл"
+        );
         // "SPARK" is absent from every table and one vowel in five letters is
         // below the threshold, so the length/vowel boundary itself is locked.
-        assert_eq!(p.process("SPARK"), "эс пи эй ар кей");
+        assert_eq!(p.process_text("SPARK"), "эс пи эй ар кей");
         // "JSON" is short but also curated: the table wins before the rule.
-        assert_eq!(p.process("JSON"), "джейсон");
+        assert_eq!(p.process_text("JSON"), "джейсон");
     }
 
     #[test]
@@ -1254,7 +1483,7 @@ mod tests {
         // the word-like rule ran before the curated tables, all three would be
         // transliterated and tracked.
         assert_eq!(
-            p.process("KUBERNETES OAUTH WINDOWS MACOS BROWSER"),
+            p.process_text("KUBERNETES OAUTH WINDOWS MACOS BROWSER"),
             "кубернетис о аус виндовс мак оу эс браузэр"
         );
         assert!(p.english_normalizer.get_unknown_words().is_empty());
@@ -1267,9 +1496,9 @@ mod tests {
         // known IT term was spelled letter by letter. Composition now runs
         // first and is case-independent, matching the mixed-case path.
         let mut p = TTSPipeline::new();
-        assert_eq!(p.process("SUPPORTING"), "саппортинг");
-        assert_eq!(p.process("BUILDING"), "билдинг");
-        assert_eq!(p.process("FEATURES"), "фичас");
+        assert_eq!(p.process_text("SUPPORTING"), "саппортинг");
+        assert_eq!(p.process_text("BUILDING"), "билдинг");
+        assert_eq!(p.process_text("FEATURES"), "фичас");
         // Composition is a curated lookup, not the transliteration fallback,
         // so the composed form must not enter the unknown-words map.
         assert!(p.english_normalizer.get_unknown_words().is_empty());
@@ -1284,12 +1513,12 @@ mod tests {
         // empty" would also pass if tracking had been disabled entirely.
         let mut p = TTSPipeline::new();
         assert_eq!(
-            p.process("Supporting supports using caches libraries Compilation"),
+            p.process_text("Supporting supports using caches libraries Compilation"),
             "саппортинг саппортс юзинг кэшес лайбрарис компайлашн"
         );
         assert!(p.english_normalizer.get_unknown_words().is_empty());
 
-        p.process("xyzzy");
+        p.process_text("xyzzy");
         assert!(
             p.english_normalizer
                 .get_unknown_words()
@@ -1304,12 +1533,12 @@ mod tests {
         // curated stem: pure abbreviations still read letter by letter (or via
         // their `AS_WORD` entry) and are never recorded as unknown words.
         let mut p = TTSPipeline::new();
-        assert_eq!(p.process("API"), "эй пи ай");
-        assert_eq!(p.process("CPU"), "си пи ю");
-        assert_eq!(p.process("JSON"), "джейсон");
-        assert_eq!(p.process("HTML"), "эйч ти эм эл");
-        assert_eq!(p.process("SQL"), "эс кью эл");
-        assert_eq!(p.process("XYZ"), "икс вай зет");
+        assert_eq!(p.process_text("API"), "эй пи ай");
+        assert_eq!(p.process_text("CPU"), "си пи ю");
+        assert_eq!(p.process_text("JSON"), "джейсон");
+        assert_eq!(p.process_text("HTML"), "эйч ти эм эл");
+        assert_eq!(p.process_text("SQL"), "эс кью эл");
+        assert_eq!(p.process_text("XYZ"), "икс вай зет");
         assert!(p.english_normalizer.get_unknown_words().is_empty());
     }
 
@@ -1319,7 +1548,7 @@ mod tests {
     fn pipeline_schemeless_www_domain() {
         let mut p = TTSPipeline::new();
         assert_eq!(
-            p.process("Сайт www.example.com недоступен"),
+            p.process_text("Сайт www.example.com недоступен"),
             "Сайт ввв точка экзампл точка ком недоступен"
         );
     }
@@ -1328,7 +1557,7 @@ mod tests {
     fn pipeline_schemeless_bare_domain_with_path() {
         let mut p = TTSPipeline::new();
         assert_eq!(
-            p.process("документация на docs.python.org/3/tutorial"),
+            p.process_text("документация на docs.python.org/3/tutorial"),
             "документация на докс точка пайтон точка орг слэш три слэш тьюториал"
         );
     }
@@ -1339,7 +1568,7 @@ mod tests {
         // read as "точка".
         let mut p = TTSPipeline::new();
         assert_eq!(
-            p.process("Смотри example.com, там документация."),
+            p.process_text("Смотри example.com, там документация."),
             "Смотри экзампл точка ком, там документация."
         );
     }
@@ -1350,7 +1579,7 @@ mod tests {
         // must not be re-matched as a bare domain.
         let mut p = TTSPipeline::new();
         assert_eq!(
-            p.process("Пишите на user@example.com"),
+            p.process_text("Пишите на user@example.com"),
             "Пишите на юзер собака экзампл точка ком"
         );
     }
@@ -1361,10 +1590,13 @@ mod tests {
         // must not be detected as bare domains.
         let mut p = TTSPipeline::new();
         assert_eq!(
-            p.process("открой file.txt и config.yaml"),
+            p.process_text("открой file.txt и config.yaml"),
             "открой файл.тэкст и конфиг.ямл"
         );
-        assert_eq!(p.process("версия 1.2.3"), "версия один точка два точка три");
+        assert_eq!(
+            p.process_text("версия 1.2.3"),
+            "версия один точка два точка три"
+        );
     }
 
     #[test]
@@ -1372,15 +1604,285 @@ mod tests {
         // "site.dev" inside a file path is a directory, not a domain.
         let mut p = TTSPipeline::new();
         assert_eq!(
-            p.process("Файл /home/site.dev/main.py лежит тут"),
+            p.process_text("Файл /home/site.dev/main.py лежит тут"),
             "Файл слэш хоум слэш сайт точка дев слэш мэйн точка пи лежит тут"
         );
         // Same guard for Windows-style separators: "app.dev" after a
         // backslash must not be read as a domain. (Backslash paths are not
         // matched by re_path today at all — pre-existing gap, out of scope.)
         assert_eq!(
-            p.process(r"путь C:\projects\app.dev\main.py тут"),
+            p.process_text(r"путь C:\projects\app.dev\main.py тут"),
             "путь си:\\проджектс\\апп.дев\\мэйн.пи тут"
         );
+    }
+
+    // ── Profile gating ────────────────────────────────────────────────────────
+
+    /// The strictest and the most permissive profiles the pipeline supports.
+    fn native_profile() -> &'static TextProfile {
+        &crate::tts::profiles::NATIVE_EN_PROFILE
+    }
+
+    #[test]
+    fn native_profile_keeps_prose_latin() {
+        let mut p = TTSPipeline::new();
+        let out = p.process_for_engine("Kubernetes нужен кластер", native_profile());
+        assert_eq!(out.text, "Kubernetes нужен кластер");
+    }
+
+    #[test]
+    fn native_profile_keeps_identifiers_and_abbreviations() {
+        let mut p = TTSPipeline::new();
+        let out = p.process_for_engine("Вызови getUserData() через API", native_profile());
+        assert_eq!(out.text, "Вызови getUserData() через API");
+    }
+
+    #[test]
+    fn identifier_route_is_independent_of_prose_route() {
+        let mut p = TTSPipeline::new();
+        let mut profile = *native_profile();
+        profile.route.identifier = Reading::Narrate;
+        let out = p.process_for_engine("getUserData и Kubernetes", &profile);
+        assert_eq!(out.text, "гет юзер дата и Kubernetes");
+    }
+
+    #[test]
+    fn native_digits_leave_numbers_untouched() {
+        let mut p = TTSPipeline::new();
+        let out = p.process_for_engine("42 сервера и версия 1.2.3", native_profile());
+        assert_eq!(out.text, "42 сервера и версия 1.2.3");
+    }
+
+    #[test]
+    fn native_units_expand_digits_but_keep_the_percentage() {
+        let mut p = TTSPipeline::new();
+        let mut profile = *native_profile();
+        profile.digits = Digits::Expanded;
+        let out = p.process_for_engine("рост 50% и 42 сервера", &profile);
+        assert_eq!(out.text, "рост 50% и сорок два сервера");
+    }
+
+    #[test]
+    fn native_units_leave_every_unit_fragment_untouched() {
+        // The unit phases own these fragments as a whole; with units gated off,
+        // the digit phases must not consume the number and strand the unit.
+        let mut p = TTSPipeline::new();
+        let mut profile = *native_profile();
+        profile.digits = Digits::Expanded;
+        for input in ["12.5%", "10-20%", "50 %", "1.5 GB", "512 KB", "2 min"] {
+            let out = p.process_for_engine(input, &profile);
+            assert_eq!(out.text, input, "{input} must stay with its unit");
+        }
+        // Untouched fragments outside a unit still expand.
+        let out = p.process_for_engine("12.5 и 7 штук", &profile);
+        assert_eq!(out.text, "двенадцать точка пять и семь штук");
+    }
+
+    #[test]
+    fn markdown_list_numbers_follow_the_digits_route() {
+        let mut p = TTSPipeline::new();
+        let mut profile = *native_profile();
+        profile.digits = Digits::Expanded;
+        let out = p.process_for_engine("1. Первое", &profile);
+        assert_eq!(out.text, "первое:Первое");
+
+        let out = p.process_for_engine("1. Первое", native_profile());
+        assert_eq!(out.text, "1. Первое", "the marker itself is a number");
+    }
+
+    #[test]
+    fn user_dictionary_applies_under_a_native_profile() {
+        let mut p = TTSPipeline::new();
+        let mut dict = UserDictionary::default();
+        dict.insert(DictionaryEntry {
+            from: "kubernetes".to_string(),
+            to: "кубернетес".to_string(),
+        });
+        p.set_user_dictionary(dict);
+        let out = p.process_for_engine("Kubernetes кластер", native_profile());
+        assert_eq!(out.text, "кубернетес кластер");
+    }
+
+    #[test]
+    fn narrated_fragments_are_not_read_twice() {
+        // A second pass must not re-read what the first already narrated: URLs and
+        // identifiers are the fragments whose narration emits new Latin.
+        let mut p = TTSPipeline::new();
+        for input in [
+            "https://example.com/path/to/page",
+            "Вызови getUserData сейчас",
+            "Рост 50% и 1.5 GB, дата 12.05.2024",
+        ] {
+            let once = p.process_text(input);
+            let twice = p.process_text(&once);
+            assert_eq!(once, twice, "second pass changed {input:?}");
+        }
+    }
+
+    #[test]
+    fn transliteration_is_not_applied_twice() {
+        let mut p = TTSPipeline::new();
+        let once = p
+            .process_for_engine(
+                "Вызови getUserData() через API",
+                &crate::tts::profiles::SILERO_PROFILE,
+            )
+            .text;
+        assert_eq!(once, "Вызови гет юзер дата() через эй пи ай");
+        let again = p
+            .process_for_engine(&once, &crate::tts::profiles::SILERO_PROFILE)
+            .text;
+        assert_eq!(again, once);
+    }
+
+    #[test]
+    fn number_expansion_is_not_applied_twice() {
+        let mut p = TTSPipeline::new();
+        let once = p
+            .process_for_engine("42 сервера", &crate::tts::profiles::SILERO_PROFILE)
+            .text;
+        assert_eq!(once, "сорок два сервера");
+        let again = p
+            .process_for_engine(&once, &crate::tts::profiles::SILERO_PROFILE)
+            .text;
+        assert_eq!(again, once);
+    }
+
+    // ── Span annotations ──────────────────────────────────────────────────────
+
+    /// The output slice a span covers, so assertions read in text terms.
+    fn span_text(text: &str, span: &Span) -> String {
+        text.chars()
+            .skip(span.start)
+            .take(span.end - span.start)
+            .collect()
+    }
+
+    #[test]
+    fn narrating_profile_produces_no_spans() {
+        let mut p = TTSPipeline::new();
+        let out = p.process_for_engine(
+            "Вызови getUserData() через API",
+            &crate::tts::profiles::SILERO_PROFILE,
+        );
+        assert!(out.spans.is_empty(), "unexpected spans: {:?}", out.spans);
+    }
+
+    #[test]
+    fn native_prose_run_is_annotated_with_its_language() {
+        let mut p = TTSPipeline::new();
+        let out = p.process_for_engine("Kubernetes нужен", native_profile());
+        assert_eq!(out.spans.len(), 1, "spans: {:?}", out.spans);
+        let span = &out.spans[0];
+        assert_eq!(span.kind, SpanKind::ProseLatin);
+        assert_eq!(span.lang, Some("en"));
+        assert_eq!(span_text(&out.text, span), "Kubernetes");
+    }
+
+    #[test]
+    fn native_identifier_and_prose_are_annotated_separately() {
+        let mut p = TTSPipeline::new();
+        let out = p.process_for_engine("Вызови getUserData через API", native_profile());
+        let kinds: Vec<_> = out.spans.iter().map(|s| s.kind).collect();
+        assert_eq!(kinds, vec![SpanKind::CodeIdentifier, SpanKind::ProseLatin]);
+        assert_eq!(span_text(&out.text, &out.spans[0]), "getUserData");
+        assert_eq!(span_text(&out.text, &out.spans[1]), "API");
+    }
+
+    #[test]
+    fn dictionary_override_is_annotated_in_output_coordinates() {
+        let mut p = TTSPipeline::new();
+        let mut dict = UserDictionary::default();
+        dict.insert(DictionaryEntry {
+            from: "docker".to_string(),
+            to: "доккер".to_string(),
+        });
+        p.set_user_dictionary(dict);
+        let out = p.process_for_engine(
+            "Запусти docker сейчас",
+            &crate::tts::profiles::SILERO_PROFILE,
+        );
+        assert_eq!(out.text, "Запусти доккер сейчас");
+        assert_eq!(out.spans.len(), 1, "spans: {:?}", out.spans);
+        assert_eq!(out.spans[0].kind, SpanKind::DictionaryOverride);
+        assert_eq!(out.spans[0].lang, None);
+        assert_eq!(span_text(&out.text, &out.spans[0]), "доккер");
+    }
+
+    #[test]
+    fn spans_shift_with_earlier_replacements() {
+        // The code block expands before the Latin word is annotated, so the
+        // span must follow the output text, not its original offset.
+        let mut p = TTSPipeline::new();
+        let out =
+            p.process_for_engine("```rust\nlet a = 1;\n```\nKubernetes тут", native_profile());
+        assert_eq!(out.spans.len(), 1, "spans: {:?}", out.spans);
+        assert_eq!(span_text(&out.text, &out.spans[0]), "Kubernetes");
+    }
+
+    #[test]
+    fn empty_input_produces_no_spans() {
+        let mut p = TTSPipeline::new();
+        assert!(p.process_for_engine("", native_profile()).spans.is_empty());
+        assert!(
+            p.process_for_engine("   \n\t ", native_profile())
+                .spans
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn dictionary_override_inside_a_native_identifier_drops_the_identifier_span() {
+        // "get-user" is one kebab identifier, and the dictionary replaces only
+        // its second part: the identifier annotation would claim "get-юзер" as
+        // Latin, so it gives way to the override instead.
+        let mut p = TTSPipeline::new();
+        let mut dict = UserDictionary::default();
+        dict.insert(DictionaryEntry {
+            from: "user".to_string(),
+            to: "юзер".to_string(),
+        });
+        p.set_user_dictionary(dict);
+        let out = p.process_for_engine("вызови get-user сейчас", native_profile());
+        assert_eq!(out.text, "вызови get-юзер сейчас");
+        // "юзер" gives way to the override; what is left of the identifier is a
+        // plain Latin run, which the engine reads natively.
+        let kinds: Vec<(SpanKind, String)> = out
+            .spans
+            .iter()
+            .map(|span| (span.kind, span_text(&out.text, span)))
+            .collect();
+        assert_eq!(
+            kinds,
+            vec![
+                (SpanKind::ProseLatin, "get".to_string()),
+                (SpanKind::DictionaryOverride, "юзер".to_string())
+            ]
+        );
+        assert!(
+            out.spans
+                .iter()
+                .all(|span| span.lang.is_some() == (span.kind == SpanKind::ProseLatin)),
+            "only the Latin run carries a language: {:?}",
+            out.spans
+        );
+    }
+
+    #[test]
+    fn dictionary_override_wins_over_a_native_identifier_span() {
+        // The identifier and the dictionary both claim this fragment; the more
+        // specific decision must win and the overlap must not survive as two
+        // spans (the recordings happen on either side of the dictionary pass).
+        let mut p = TTSPipeline::new();
+        let mut dict = UserDictionary::default();
+        dict.insert(DictionaryEntry {
+            from: "getuserdata".to_string(),
+            to: "получить данные".to_string(),
+        });
+        p.set_user_dictionary(dict);
+        let out = p.process_for_engine("Вызови getUserData сейчас", native_profile());
+        assert_eq!(out.spans.len(), 1, "spans: {:?}", out.spans);
+        assert_eq!(out.spans[0].kind, SpanKind::DictionaryOverride);
+        assert_eq!(span_text(&out.text, &out.spans[0]), "получить данные");
     }
 }

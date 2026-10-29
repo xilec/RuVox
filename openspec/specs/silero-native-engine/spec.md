@@ -7,9 +7,7 @@ ONNX Runtime from a pre-exported model bundle: bundle format and verification,
 text frontend parity with the upstream Python frontend, the synthesis output
 contract shared with the `ttsd` engine, supported speakers and sample rates,
 word timestamps, and edge-case handling.
-
 ## Requirements
-
 ### Requirement: Model Bundle Format and Verification
 
 The engine SHALL load from a model bundle directory containing:
@@ -169,12 +167,16 @@ original-text codepoint positions via the existing `char_mapping` mechanism.
 The frontend and synthesis SHALL handle: empty input (typed `bad_input`,
 no inference), single-vowel words, inputs whose predicted durations contain
 zeros (durations clamped inside the exported graph before
-`repeat_interleave`), and inputs longer than one chunk (the engine splits
-text into ≤900-character chunks on sentence boundaries, mirroring
-`ttsd/ttsd/chunking.py`, synthesizes chunk by chunk, and concatenates the
-audio with monotonically shifted timestamps). Because the exported
-`tts_main.onnx` bakes a 5000-frame positional table, a chunk that still
-overflows it MUST be split recursively until it fits.
+`repeat_interleave`), and inputs longer than one chunk. Long-text splitting
+SHALL use the shared splitter (see `text-chunking`) parameterized by the Silero
+text profile — 900 codepoints, no inserted pauses — instead of an engine-local
+copy; the engine synthesizes chunk by chunk and concatenates the audio with
+monotonically shifted timestamps. Because the exported `tts_main.onnx` bakes a
+5000-frame positional table, a chunk that still overflows it MUST be split
+recursively until it fits. Newline collapsing before the frontend
+(`sanitize_for_silero`) SHALL remain an engine-side step: it exists because the
+model's char-level tokenizer does not handle control characters, not because
+the pipeline decided anything about the text.
 
 #### Scenario: empty input rejected
 
@@ -206,3 +208,11 @@ overflows it MUST be split recursively until it fits.
 - THEN newlines are replaced with spaces (mirroring ttsd's
   `sanitize_for_silero`) before symbol filtering, so adjacent words are
   never concatenated
+
+#### Scenario: splitting is shared, not local
+
+- GIVEN the crate's sources
+- WHEN the chunk splitter is located
+- THEN it comes from the shared crate parameterized by the Silero profile, and
+  no local copy of the split algorithm remains
+

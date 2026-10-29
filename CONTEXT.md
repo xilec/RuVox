@@ -21,3 +21,57 @@ at each of those sites.
 _Avoid_: custom term (implementation name inside `EnglishNormalizer`), entry
 type, layer, case-sensitive entry
 
+### Text preparation
+
+**Text Profile**:
+Declarative per-engine description of what the engine can read and of its
+limits — supported languages, per-kind fragment routes, native digits and units,
+stress support (declared, not yet acted on), allowed charset, chunking limit and
+its unit, language-tag syntax, pause policy — keyed by `EngineKind`, holding
+data only and no behavior.
+_Avoid_: capability profile, engine config, pipeline settings
+
+**Shared block**:
+A normalization rule that runs for every engine because it only touches
+document structure or identifies fragments — markdown structure, quotes,
+whitespace, extraction of code, URLs, emails, user-dictionary application — and
+never the pronunciation of a fragment the engine could read itself.
+_Avoid_: generic block, common stage
+
+**Gated block**:
+A normalization rule whose execution depends on the Text Profile: Latin
+transliteration (including abbreviations), number and unit expansion — and
+therefore the Russian narration of such a fragment, which runs when its
+Fragment route says `Narrate`. Symbol substitution and postprocessing are
+shared; chunking reads the profile's limit and pauses but runs for every
+engine.
+_Avoid_: engine-specific block, conditional stage
+
+**Fragment route**:
+The Text Profile's per-fragment-kind decision — `Narrate` or `Native` —
+carried for prose Latin runs and code identifiers today; abbreviations travel
+with the prose route, and URLs/emails and fenced code blocks keep structural
+narration until their own route lands.
+`Narrate` is the pipeline rewriting the fragment into Russian (the crutch a
+Russian-only engine needs); `Native` is the fragment surviving as-is for the
+engine to read in its own language.
+_Avoid_: latin mode, transliteration flag, engine mode
+
+**Markup**:
+The tag syntax an engine wants around a `Native` span: `None`, `RuEnTags`
+(`<ru>…</ru>`, `<en>…</en>`) or `LangTag`. Rendered by the adapter only — the
+pipeline never emits tags and `CharMapping` never sees them.
+_Avoid_: tag format, ssml mode
+
+**Adapter step**:
+Work an engine implementation must do that no pipeline rule can own — symbol
+filtering against the engine charset, tag rendering, and the synthesis calls
+themselves.
+_Avoid_: engine block, engine-specific normalization
+
+**Span annotation**:
+A `(kind, language, range)` decision carried by the pipeline output, the range
+expressed in final normalized text, saying what a fragment is (code identifier,
+prose Latin run, dictionary override) instead of how to mark it up.
+_Avoid_: markup, tag, token
+

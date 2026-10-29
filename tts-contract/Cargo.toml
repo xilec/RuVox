@@ -1,0 +1,14 @@
+[package]
+name = "tts-contract"
+version = "0.1.0"
+description = "Data-only contract for TTS text preparation: engine text profiles and the shared chunk splitter"
+authors = []
+license = "GPL-3.0-only"
+repository = "https://github.com/xilec/RuVox"
+edition = "2024"
+rust-version = "1.85"
+
+# Deliberately dependency-free: this crate is shared by the application crate
+# and by the standalone `silero-native` crate, so every dependency added here
+# has to be justified for both.
+[dependencies]

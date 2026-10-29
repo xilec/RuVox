@@ -59,6 +59,9 @@ impl std::fmt::Debug for SynthesisResult {
 /// Public engine handle: load once, synthesize many.
 pub struct SileroNative {
     engine: Engine,
+    /// Per-chunk char limit, taken from the engine's text profile. A constant
+    /// here would be a second source of truth for a number the profile owns.
+    chunk_limit: usize,
 }
 
 /// One synthesized (sub-)chunk: its text, char offset in the full input and
@@ -87,9 +90,14 @@ fn is_positional_overflow(e: &EngineError) -> bool {
 impl SileroNative {
     /// Load and verify the model bundle, open the always-needed ONNX
     /// sessions (PQMF opens lazily on first use).
-    pub fn load(bundle_dir: impl AsRef<Path>) -> Result<Self> {
+    ///
+    /// `chunk_limit` is the per-chunk char bound the caller's text profile
+    /// declares; the crate holds no default of its own so the profile stays the
+    /// only source of that number.
+    pub fn load(bundle_dir: impl AsRef<Path>, chunk_limit: usize) -> Result<Self> {
         Ok(Self {
             engine: Engine::load(bundle_dir.as_ref())?,
+            chunk_limit,
         })
     }
 
@@ -140,7 +148,7 @@ impl SileroNative {
                     chars = text.chars().count(),
                     "chunk overflows the decoder positional table; re-splitting"
                 );
-                for (sub, sub_offset) in chunking::split_with_limit(text, half) {
+                for (sub, sub_offset) in tts_contract::chunk::split_with_limit(text, half) {
                     self.synthesize_with_fallback(
                         &sub,
                         offset + sub_offset,
@@ -159,12 +167,11 @@ impl SileroNative {
     /// Synthesize text at `sample_rate` (8000/24000/48000; the engine
     /// default used by callers is 24000).
     ///
-    /// Text longer than [`chunking::MAX_CHUNK_SIZE`] chars is split into
-    /// sentence-boundary chunks (ttsd `split_into_chunks` parity), each chunk
-    /// is synthesized separately, and the audio is concatenated; word
-    /// timestamps are shifted by the accumulated chunk durations. A chunk
-    /// that still overflows the exported decoder's fixed positional table
-    /// is re-split in half until it fits.
+    /// Text longer than the load-time chunk limit is split into sentence-boundary
+    /// chunks by the shared splitter, each chunk is synthesized separately, and
+    /// the audio is concatenated; word timestamps are shifted by the accumulated
+    /// chunk durations. A chunk that still overflows the exported decoder's
+    /// fixed positional table is re-split in half until it fits.
     #[instrument(skip_all, fields(speaker, sample_rate, text_len = text.len()))]
     pub fn synthesize(
         &self,
@@ -176,7 +183,7 @@ impl SileroNative {
         // before chunking so chunk offsets and word timestamps are in
         // stripped-text coordinates. `Engine::prepare` does NOT strip again.
         let stripped = frontend::text::strip_unsupported_markup(text);
-        let chunks = chunking::split_into_chunks(&stripped);
+        let chunks = tts_contract::chunk::split_with_limit(&stripped, self.chunk_limit);
 
         let mut outputs: Vec<ChunkOutput> = Vec::new();
         for (chunk_text, chunk_start) in &chunks {

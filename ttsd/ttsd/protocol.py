@@ -56,6 +56,9 @@ class SynthesizeRequest(BaseModel):
     sample_rate: int
     out_wav: str
     char_mapping: list[CharMappingEntry] | None = None
+    # Per-chunk character limit from the Rust text profile. Absent means the
+    # sidecar's own default (older callers and the mock sidecars in tests).
+    chunk_limit: int | None = Field(default=None, ge=1)
 
 
 class ShutdownRequest(BaseModel):

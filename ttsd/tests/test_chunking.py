@@ -5,7 +5,15 @@ import pytest
 from ttsd.chunking import MAX_CHUNK_SIZE, sanitize_for_silero, split_into_chunks
 
 
-def _assert_covers_source(text: str, chunks: list[tuple[str, int]]) -> None:
+def test_whitespace_only_has_no_chunks():
+    """An empty chunk would become an empty synthesis call."""
+    assert split_into_chunks("") == []
+    assert split_into_chunks("   \n\n  ") == []
+
+
+def _assert_covers_source(
+    text: str, chunks: list[tuple[str, int]], limit: int = MAX_CHUNK_SIZE
+) -> None:
     """Every chunk must sit at its declared start position, stay within
     MAX_CHUNK_SIZE, and the gaps between (and after) chunks must be
     whitespace-only — i.e. the chunks collectively cover all non-whitespace
@@ -13,7 +21,7 @@ def _assert_covers_source(text: str, chunks: list[tuple[str, int]]) -> None:
     """
     for chunk_text, start in chunks:
         assert text[start : start + len(chunk_text)] == chunk_text
-        assert len(chunk_text) <= MAX_CHUNK_SIZE
+        assert len(chunk_text) <= limit
 
     for (chunk_text, start), (_, next_start) in zip(chunks, chunks[1:], strict=False):
         gap = text[start + len(chunk_text) : next_start]
@@ -72,3 +80,24 @@ class TestSanitizeForSilero:
     )
     def test_sanitize(self, text, expected):
         assert sanitize_for_silero(text) == expected
+
+
+class TestChunkLimit:
+    """The limit is engine data from the Rust text profile, not a constant."""
+
+    def test_custom_limit_splits_earlier(self):
+        text = "Это предложение. " * 60
+        default_chunks = split_into_chunks(text)
+        custom_chunks = split_into_chunks(text, 200)
+        assert len(custom_chunks) > len(default_chunks)
+        for chunk_text, _ in custom_chunks:
+            assert len(chunk_text) <= 200
+        _assert_covers_source(text, custom_chunks, limit=200)
+
+    def test_default_limit_matches_the_module_constant(self):
+        text = "Это предложение. " * 60
+        assert split_into_chunks(text) == split_into_chunks(text, MAX_CHUNK_SIZE)
+
+    def test_text_within_the_custom_limit_stays_one_chunk(self):
+        text = "короткий текст"
+        assert split_into_chunks(text, 50) == [(text, 0)]

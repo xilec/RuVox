@@ -114,7 +114,17 @@ impl SileroNativeEngine {
         }
 
         let dir = bundle_dir.to_path_buf();
-        let engine = tokio::task::spawn_blocking(move || SileroNative::load(&dir))
+        // The chunk limit comes from the engine's text profile, so the profile
+        // remains the one place that decides how the text is cut.
+        let chunk_limit = crate::tts::profiles::SILERO_NATIVE_PROFILE
+            .chunk
+            .char_limit()
+            // A seconds-based limit would need a duration estimate before the text
+            // could be cut; the shipping profile declares characters, and a
+            // profile that silently fell back to a constant would split by a
+            // number no profile declared.
+            .expect("the Silero profile declares a codepoint chunk limit");
+        let engine = tokio::task::spawn_blocking(move || SileroNative::load(&dir, chunk_limit))
             .await
             .map_err(|e| TtsError::Ttsd {
                 code: "silero_native_load_panic".to_string(),

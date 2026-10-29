@@ -9,7 +9,7 @@ import numpy as np
 import torch
 from scipy.io import wavfile
 
-from ttsd.chunking import sanitize_for_silero, split_into_chunks
+from ttsd.chunking import MAX_CHUNK_SIZE, sanitize_for_silero, split_into_chunks
 from ttsd.protocol import WordTimestamp
 from ttsd.timestamps import estimate_timestamps_chunked
 
@@ -60,6 +60,7 @@ class SileroEngine:
         sample_rate: int,
         out_wav: Path,
         char_mapping: object | None = None,
+        chunk_limit: int | None = None,
     ) -> SynthesisOutput:
         if not self._loaded:
             self.load()
@@ -69,7 +70,7 @@ class SileroEngine:
         # Empty/whitespace-only text is rejected upstream by the protocol layer
         # (main._handle_synthesize returns a bad_input ErrResponse); the engine
         # trusts that invariant instead of re-validating it here.
-        chunks = split_into_chunks(text)
+        chunks = split_into_chunks(text, chunk_limit or MAX_CHUNK_SIZE)
         logger.debug("Synthesizing %d chars in %d chunks", len(text), len(chunks))
 
         audio_parts: list[np.ndarray] = []

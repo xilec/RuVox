@@ -17,6 +17,9 @@ use async_trait::async_trait;
 
 use super::{CharMappingEntry, ModelInfo, SynthesizeOutput, TtsError};
 
+use crate::tts::profiles;
+use tts_contract::TextProfile;
+
 /// Identifies which engine implementation is currently active. Used for
 /// logging, telemetry, and (future) UI events that need to differentiate
 /// between Silero and Piper lifecycle.
@@ -29,6 +32,15 @@ pub enum EngineKind {
 }
 
 impl EngineKind {
+    /// Every variant, so a per-engine table (a profile, a test loop) is asserted
+    /// to cover all of them instead of relying on memory. Not every caller needs
+    /// it: the availability probe walks what the UI can offer, not this list.
+    pub const ALL: &'static [EngineKind] = &[
+        EngineKind::Silero,
+        EngineKind::Piper,
+        EngineKind::SileroNative,
+    ];
+
     pub fn as_str(self) -> &'static str {
         match self {
             EngineKind::Silero => "silero",
@@ -50,6 +62,17 @@ pub trait TtsEngine: Send + Sync {
     /// engine-aware decisions (the input length limit gates on it), so it must
     /// reflect the actually-active engine at call time.
     fn kind(&self) -> EngineKind;
+
+    /// The text contract of the active engine: what it reads itself and what
+    /// the pipeline must rewrite on its behalf.
+    ///
+    /// Default: the registry entry for [`Self::kind`]. A wrapper that moves
+    /// between engines (the switcher) therefore reports the profile of the
+    /// engine that is active right now, and an engine with a bespoke contract
+    /// overrides this method.
+    fn text_profile(&self) -> &'static TextProfile {
+        profiles::profile_for(self.kind())
+    }
 
     /// Load the model. Idempotent — calling it twice should be a no-op.
     /// Implementations should emit `model_loading` → `model_loaded` /
