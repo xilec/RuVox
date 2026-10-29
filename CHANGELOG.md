@@ -9,7 +9,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 ### Added
 - **Russian words in the dictionary** — the source word may be a Russian
   Cyrillic token (`замок`), so a wrong stress can be fixed with `зам+ок`; the
-  entry matches the exact word form, case-insensitively.
+  entry matches the exact word form, case-insensitively (#315).
 - **Dictionary stress marks** — a pronunciation entry may now carry one `+`
   immediately before a Russian vowel (`М+осква`), and the mark reaches an
   engine that supports stress: today the in-process Silero, where it
