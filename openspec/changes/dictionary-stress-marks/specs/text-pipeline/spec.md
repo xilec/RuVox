@@ -14,13 +14,14 @@ and replace only exact case-insensitive key hits; non-hits SHALL flow into
 the English-word phase unchanged. Lookups in identifiers and URLs SHALL use
 the split parts/words those phases already produce.
 
-The replacement SHALL be the entry's spoken form. When the entry carries a
-stress mark and the active profile declares stress support (`Stress::Auto` or
-`Stress::Manual`), the replacement SHALL keep the mark so the engine applies
-it; when the profile declares `Stress::None`, the mark SHALL be omitted. The
-mark SHALL be inserted as part of the replacement region, so no later phase
-reads it as an operator or a symbol, and `CharMapping` SHALL map it to the
-original word like the rest of the replacement.
+The replacement SHALL be the entry's `to` as typed. When the profile declares
+`Stress::None`, the replacement SHALL be the spoken form instead — the same
+text with the stress mark removed; otherwise the mark SHALL stay, so the engine
+applies it. A malformed mark never reaches this phase: validation rejects it on
+save and skips it on load. The mark SHALL be inserted as part of the
+replacement region, so no later phase reads it as an operator or a symbol, and
+`CharMapping` SHALL map it to the original word like the rest of the
+replacement.
 
 #### Scenario: Entry overrides an IT term in prose
 

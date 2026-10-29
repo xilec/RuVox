@@ -7,7 +7,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 ## [Unreleased]
 
 ### Added
-- **Ударение в словаре** — в словаре произношения теперь можно указать ударение знаком `+` перед гласной (`М+осква`), и оно доедет до движка, который это умеет: пока это встроенный Silero, где автоматическое ударение перекрывается явной меткой. Движок `ttsd` и Piper метку отбрасывают; форма словаря показывает значок справки и проверяет синтаксис (#312).
+- **Dictionary stress marks** — a pronunciation entry may now carry one `+`
+  immediately before a Russian vowel (`М+осква`), and the mark reaches an
+  engine that supports stress: today the in-process Silero, where it
+  overrides the automatic accentuation. The `ttsd` sidecar and Piper strip
+  the mark; the dictionary form shows a help icon and validates the syntax
+  (#312).
 
 ### Changed
 - **Curated reading audit** — acronyms now use the letter name `эл` that the spelling fallback already produces (`HTML` → `эйч ти эм эл`, `XML` → `икс эм эл`, `SQL` → `эс кью эл`, `GRAPHQL` → `граф кью эл`), `JPG` reads `джейпег` like `JPEG`, `PNG` reads `пи эн джи` instead of the unpronounceable `пнг`, `succ` reads `сак`, and code identifiers read `hello`, `image`, and `node` exactly like prose (`хеллоу`, `имидж`, `нод`), with `node` now reading `нод`; a test now fails when two dictionaries disagree on a shared word (#282).
