@@ -24,6 +24,18 @@ Invariant: a profile that routes any Latin fragment `Native` SHALL list at
 least one language other than Russian; declaring native Latin reading without a
 language to read it in is a specification error, not a runtime state.
 
+Invariant: `units: Expanded` SHALL require `digits: Expanded` — a unit reading
+spells its number out ("пятьдесят процентов"), so the pipeline cannot expand a
+unit while the engine reads the number.
+
+Invariant: `identifier: Native` SHALL require `latin_prose: Native` — an engine
+that reads identifiers natively reads Latin by definition, and the opposite
+combination would hand the same engine a Latin token in one place and its
+Russian reading in another.
+
+A profile that violates an invariant SHALL be rejected by `TextProfile::validate`
+rather than handled at runtime.
+
 #### Scenario: Every engine kind has a profile
 
 - GIVEN the registry
@@ -36,6 +48,13 @@ language to read it in is a specification error, not a runtime state.
 - GIVEN a profile with `latin_prose: Native` and `languages: ["ru"]`
 - WHEN the profile invariants are checked
 - THEN the check fails
+
+#### Scenario: Incoherent profile combinations are rejected
+
+- GIVEN a profile with `digits: Native` and `units: Expanded`
+- WHEN the profile invariants are checked
+- THEN the check fails, because a unit reading needs the number in words
+- AND a profile with `identifier: Native` and `latin_prose: Narrate` fails too
 
 #### Scenario: Profile is data, not behavior
 
@@ -52,9 +71,20 @@ and lets the adapter read it in its own language.
 
 This change SHALL route two kinds: a Latin run in prose and a code identifier
 (including identifiers split out of identifiers, per the existing code-identifier
-requirement). Abbreviations, URLs/emails and fenced code blocks SHALL remain
-`Narrate`-only until evidence for a `Native` route exists; the route struct
-SHALL grow one field per kind when that evidence arrives.
+requirement). Abbreviations, URLs/emails and fenced code blocks SHALL NOT carry
+their own route until evidence for one exists; the route struct SHALL grow one
+field per kind when that evidence arrives.
+
+The Latin prose block is one unit of compensation for a Russian-only reader:
+transliteration, the built-in term dictionary, abbreviation readings and
+single-letter naming SHALL all be gated by the prose route together, because a
+single route cannot honestly claim that an engine reads "Kubernetes" natively
+but needs "API" spelled out in Cyrillic.
+
+URLs, emails and fenced code blocks SHALL keep their structural narration
+regardless of the prose route for this change: their reading is punctuation
+words ("точка", "слэш") and block markers, not a transliteration of a prose
+word. Reading them natively needs a route of their own (#311).
 
 A fragment routed `Native` SHALL be annotated (see the span requirement) and
 SHALL NOT be rewritten by any narrating phase. A fragment routed `Narrate`
@@ -82,12 +112,18 @@ something to read.
 - THEN the output is "Вызови гет юзер дата() через эй пи ай" and no native span
   is produced
 
-#### Scenario: Unrouted kinds are never native
+#### Scenario: Unrouted kinds keep their structural narration
 
 - GIVEN a profile that routes prose and identifiers `Native`
-- WHEN the pipeline processes a text containing a URL, an abbreviation and a
-  fenced code block
+- WHEN the pipeline processes a text containing a URL and a fenced code block
 - THEN those fragments are narrated in Russian exactly as today
+
+#### Scenario: Abbreviations follow the prose route
+
+- GIVEN a profile that routes prose `Native`
+- WHEN the pipeline processes "API нужен отдельно"
+- THEN "API" stays Latin, because abbreviation reading is part of the same
+  compensation as transliteration and no separate route exists yet
 
 ### Requirement: Shared, gated and adapter blocks
 
@@ -97,15 +133,16 @@ at most once per fragment. The owners SHALL be:
 - **Shared blocks** (run for every profile, because they decide structure or
   identify fragments rather than pronunciation): BOM removal, quote and dash
   normalization, whitespace normalization, Markdown structure, extraction of
-  fenced code blocks, inline code, URLs/emails/IPs/paths, sizes, dates, times,
-  percentages, ranges, versions, leading-dot decimals, operators, special
-  symbols, code-identifier splitting, abbreviation resolution,
-  user-dictionary application, punctuation post-processing, and the final trim.
-- **Gated blocks** (run only when the profile asks): Latin transliteration and
-  the Russian narration of a fragment whose route is `Narrate`; number
-  expansion for digits (`digits: Expanded`); unit expansion for percentages,
-  sizes and currency (`units: Expanded`); stress marking (`stress: Auto` or
-  `Manual`); chunking (see `text-chunking`).
+  fenced code blocks, inline code, URLs/emails/IPs/paths, operators, special
+  symbols, user-dictionary application, punctuation post-processing, and the
+  final trim.
+- **Gated blocks** (run only when the profile asks): the Latin prose block
+  (transliteration, term dictionary, abbreviations, single-letter naming) and
+  the Russian narration of an identifier; digit expansion — numbers, dates,
+  times, ranges, versions, leading-dot decimals and tilde-approximation — for
+  `digits: Expanded`; unit expansion — sizes, percentages and percentage
+  ranges — for `units: Expanded`; stress marking (`stress: Auto` or `Manual`);
+  chunking (see `text-chunking`).
 - **Adapter steps** (performed by the engine implementation, never by the
   pipeline): filtering against the engine charset, collapsing newlines before a
   model tokenizer that cannot handle them, rendering markup around native
@@ -124,9 +161,16 @@ fragment untouched, and no other block SHALL re-process it.
 
 #### Scenario: Units and digits are independent
 
-- GIVEN a profile with `digits: Native` and `units: Expanded`
+- GIVEN a profile with `digits: Expanded` and `units: Native`
 - WHEN the pipeline processes "рост 12.5% и 42 сервера"
-- THEN "12.5%" is read as words with "процентов" while "42" stays as digits
+- THEN "42" is read as "сорок два" while "12.5%" stays as it is, sign included
+
+#### Scenario: A number is not split from its unit sign
+
+- GIVEN a profile with `units: Native`
+- WHEN the pipeline runs its number block on "рост 50%"
+- THEN the number is left untouched: "50" is not read on its own, because the
+  unit phase that owns the fragment did not run and the "%" would be stranded
 
 #### Scenario: Nothing is applied twice
 

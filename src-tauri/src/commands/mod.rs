@@ -32,6 +32,7 @@ use crate::tts::{
     AvailableEngines, CharMappingEntry, ModelInfo, SynthesizeOutput, TtsEngine, TtsError,
     availability,
 };
+use tts_contract::TextProfile;
 
 // ── Error type ─────────────────────────────────────────────────────────────────
 
@@ -304,12 +305,13 @@ impl SynthesisError {
 async fn run_pipeline_normalization(
     pipeline: Arc<Mutex<TTSPipeline>>,
     text: String,
+    profile: &'static TextProfile,
 ) -> Result<(String, CharMapping, String), tokio::task::JoinError> {
     tokio::task::spawn_blocking(move || {
         let mut p = pipeline.lock();
-        let (normalized, mapping) = p.process_with_char_mapping(&text);
+        let processed = p.process_for_engine(&text, profile);
         let code_block_mode = p.code_block_mode().as_config_str().to_string();
-        (normalized, mapping, code_block_mode)
+        (processed.text, processed.mapping, code_block_mode)
     })
     .await
 }
@@ -318,9 +320,10 @@ async fn run_pipeline_normalization(
 async fn run_normalization(
     pipeline: Arc<Mutex<TTSPipeline>>,
     original_text: String,
+    profile: &'static TextProfile,
 ) -> Result<(String, CharMapping, String), SynthesisError> {
     let (normalized, mapping, code_block_mode) =
-        run_pipeline_normalization(pipeline, original_text)
+        run_pipeline_normalization(pipeline, original_text, profile)
             .await
             .map_err(|e| SynthesisError::PipelinePanic(e.to_string()))?;
 
@@ -733,8 +736,12 @@ pub fn spawn_synthesis<R: Runtime + 'static>(
             };
 
             let result: Result<(), SynthesisError> = async {
-                let (normalized, mapping, applied_code_block_mode) =
-                    run_normalization(Arc::clone(&pipeline), entry.original_text.clone()).await?;
+                let (normalized, mapping, applied_code_block_mode) = run_normalization(
+                    Arc::clone(&pipeline),
+                    entry.original_text.clone(),
+                    tts.text_profile(),
+                )
+                .await?;
                 mark_processing(&storage, &app, &entry_id, &normalized);
                 let normalized_for_snapshot = normalized.clone();
                 let outcome = synthesize_audio(
@@ -1024,12 +1031,14 @@ pub async fn add_clipboard_entry<R: Runtime>(
 async fn preview_normalization(
     pipeline: Arc<Mutex<TTSPipeline>>,
     text: String,
+    profile: &'static TextProfile,
 ) -> CmdResult<(String, CharMapping)> {
-    let (normalized, mapping, _code_block_mode) = run_pipeline_normalization(pipeline, text)
-        .await
-        .map_err(|e| {
-            CommandError::internal("pipeline.panicked", vec![]).with_message(e.to_string())
-        })?;
+    let (normalized, mapping, _code_block_mode) =
+        run_pipeline_normalization(pipeline, text, profile)
+            .await
+            .map_err(|e| {
+                CommandError::internal("pipeline.panicked", vec![]).with_message(e.to_string())
+            })?;
     Ok((normalized, mapping))
 }
 
@@ -1043,7 +1052,7 @@ pub async fn preview_normalize(
     text: String,
 ) -> CmdResult<PreviewNormalizeResult> {
     let (normalized, _char_mapping) =
-        preview_normalization(Arc::clone(&state.pipeline), text).await?;
+        preview_normalization(Arc::clone(&state.pipeline), text, state.tts.text_profile()).await?;
     Ok(PreviewNormalizeResult { normalized })
 }
 
@@ -2038,18 +2047,26 @@ mod synthesis_tests {
     #[tokio::test]
     async fn run_normalization_returns_normalized_text_and_mapping() {
         let pipeline = Arc::new(Mutex::new(TTSPipeline::new()));
-        let (normalized, _mapping, _mode) = run_normalization(pipeline, "Привет мир".to_string())
-            .await
-            .unwrap();
+        let (normalized, _mapping, _mode) = run_normalization(
+            pipeline,
+            "Привет мир".to_string(),
+            &crate::tts::profiles::SILERO_PROFILE,
+        )
+        .await
+        .unwrap();
         assert!(!normalized.is_empty());
     }
 
     #[tokio::test]
     async fn run_normalization_flags_empty_input_as_empty_text() {
         let pipeline = Arc::new(Mutex::new(TTSPipeline::new()));
-        let err = run_normalization(pipeline, String::new())
-            .await
-            .unwrap_err();
+        let err = run_normalization(
+            pipeline,
+            String::new(),
+            &crate::tts::profiles::SILERO_PROFILE,
+        )
+        .await
+        .unwrap_err();
         assert!(matches!(err, SynthesisError::EmptyText));
     }
 
@@ -2925,14 +2942,42 @@ mod tests {
         let pipeline = Arc::new(Mutex::new(TTSPipeline::new()));
         let input = "Привет, мир 42!".to_string();
 
-        let (normalized, mapping) = preview_normalization(pipeline, input.clone())
-            .await
-            .unwrap();
+        let (normalized, mapping) = preview_normalization(
+            pipeline,
+            input.clone(),
+            &crate::tts::profiles::SILERO_PROFILE,
+        )
+        .await
+        .unwrap();
 
         assert!(!normalized.is_empty());
         assert_eq!(mapping.original, input);
         assert_eq!(mapping.transformed, normalized);
         assert_eq!(mapping.char_map.len(), normalized.chars().count());
+    }
+
+    /// The preview must show what the active engine will actually speak, so it
+    /// takes that engine's profile rather than the reference one.
+    #[tokio::test]
+    async fn preview_normalization_uses_the_profile_it_is_given() {
+        let pipeline = Arc::new(Mutex::new(TTSPipeline::new()));
+        let (native, _) = preview_normalization(
+            Arc::clone(&pipeline),
+            "Kubernetes кластер".to_string(),
+            &crate::tts::profiles::NATIVE_EN_PROFILE,
+        )
+        .await
+        .unwrap();
+        assert_eq!(native, "Kubernetes кластер");
+
+        let (reference, _) = preview_normalization(
+            pipeline,
+            "Kubernetes кластер".to_string(),
+            &crate::tts::profiles::SILERO_PROFILE,
+        )
+        .await
+        .unwrap();
+        assert_eq!(reference, "кубернетис кластер");
     }
 
     /// Unlike `run_normalization` (which flags empty input as
@@ -2941,9 +2986,13 @@ mod tests {
     #[tokio::test]
     async fn preview_normalization_allows_empty_text() {
         let pipeline = Arc::new(Mutex::new(TTSPipeline::new()));
-        let (normalized, _mapping) = preview_normalization(pipeline, String::new())
-            .await
-            .unwrap();
+        let (normalized, _mapping) = preview_normalization(
+            pipeline,
+            String::new(),
+            &crate::tts::profiles::SILERO_PROFILE,
+        )
+        .await
+        .unwrap();
         assert!(normalized.is_empty());
     }
 

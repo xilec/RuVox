@@ -30,29 +30,29 @@
 
 ## 2. Profile reaches the pipeline
 
-- [ ] 2.1 Add `TtsEngine::text_profile()` with a default that resolves through
+- [x] 2.1 Add `TtsEngine::text_profile()` with a default that resolves through
   `profile_for(self.kind())`; make `TtsSwitcher` delegate to the active engine.
   Verify: unit test asserts the switcher reports the active engine's profile
   after a switch.
-- [ ] 2.2 Thread the active profile through `run_pipeline_normalization` and
+- [x] 2.2 Thread the active profile through `run_pipeline_normalization` and
   `preview_normalize`, captured in the same critical section as
   `code_block_mode`. Verify: test asserts the generation snapshot and the
   preview both use the profile captured with the text, not a later config read.
 
 ## 3. Route-aware normalization
 
-- [ ] 3.1 Introduce `ProcessedText { text, mapping, spans }` and
+- [x] 3.1 Introduce `ProcessedText { text, mapping, spans }` and
   `process_for_engine(input, &profile)`; make `process_with_char_mapping` a
   thin wrapper over the Silero profile and delete `process()`; update
   `commands/mod.rs` and `commands/dictionary.rs`. Verify: every existing golden
   fixture stays byte-identical and `cargo test --manifest-path
   src-tauri/Cargo.toml` green.
-- [ ] 3.2 Gate transliteration and Russian narration on the fragment route:
+- [x] 3.2 Gate transliteration and Russian narration on the fragment route:
   with `latin_prose: Native` a prose Latin run survives, with `identifier:
   Native` an identifier survives, otherwise today's output is produced. Verify:
   unit tests per block, including "routed Native leaves the fragment
   untouched" and "the narrating profile reproduces the existing reading".
-- [ ] 3.3 Gate the number and unit phases: `digits: Native` skips number,
+- [x] 3.3 Gate the number and unit phases: `digits: Native` skips number,
   float, range, version, date and time expansion; `units: Native` skips
   percentages and sizes; both leave their fragments untouched and no later
   phase re-reads them. Verify: unit tests with `digits`/`units` in each of the

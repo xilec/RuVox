@@ -346,6 +346,22 @@ mod tests {
         }
     }
 
+    /// The wrapper reports the text contract of whichever engine is active, so a
+    /// profile read after a switch never describes the previous engine.
+    #[tokio::test]
+    async fn text_profile_follows_the_active_engine() {
+        let (sw, _voices_tmp, _ttsd_tmp, _bundle_tmp) = fake_switcher();
+        assert_eq!(
+            sw.text_profile(),
+            crate::tts::profiles::profile_for(sw.kind())
+        );
+        sw.apply_config("piper", "irina").await.unwrap();
+        assert_eq!(
+            sw.text_profile(),
+            crate::tts::profiles::profile_for(sw.kind())
+        );
+    }
+
     #[tokio::test]
     async fn apply_config_with_same_engine_and_voice_is_noop() {
         let (sw, _voices_tmp, _ttsd_tmp, _bundle_tmp) = fake_switcher();

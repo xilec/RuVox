@@ -189,6 +189,17 @@ impl TextProfile {
         if self.route.any_native() && !self.languages.iter().any(|lang| *lang != "ru") {
             return Err(ProfileError::NativeLatinWithoutLanguage);
         }
+        // A unit reading spells the number out ("пятьдесят процентов"), so the
+        // pipeline cannot expand units while the engine reads the number.
+        if self.units == Units::Expanded && self.digits == Digits::Native {
+            return Err(ProfileError::ExpandedUnitsWithoutDigits);
+        }
+        // An engine that reads identifiers natively reads Latin by definition;
+        // routing identifiers Native while transliterating prose would hand it
+        // a Latin token in one place and a transliteration in another.
+        if self.route.identifier == Reading::Native && self.route.latin_prose == Reading::Narrate {
+            return Err(ProfileError::NativeIdentifierWithoutNativeProse);
+        }
         Ok(())
     }
 }
@@ -199,6 +210,12 @@ pub enum ProfileError {
     /// A fragment is routed `Native` while the engine lists no language other
     /// than Russian — there would be no language to read it in.
     NativeLatinWithoutLanguage,
+    /// Units are expanded by the pipeline while digits are left to the engine:
+    /// a unit reading needs the number in words.
+    ExpandedUnitsWithoutDigits,
+    /// Identifiers are routed `Native` while prose is transliterated — the same
+    /// engine would receive both a Latin token and its Russian reading.
+    NativeIdentifierWithoutNativeProse,
 }
 
 impl fmt::Display for ProfileError {
@@ -207,6 +224,12 @@ impl fmt::Display for ProfileError {
             ProfileError::NativeLatinWithoutLanguage => f.write_str(
                 "profile routes Latin fragments Native but lists no language other than Russian",
             ),
+            ProfileError::ExpandedUnitsWithoutDigits => f.write_str(
+                "profile expands units while leaving digits Native; a unit reading needs words",
+            ),
+            ProfileError::NativeIdentifierWithoutNativeProse => {
+                f.write_str("profile routes identifiers Native while transliterating prose")
+            }
         }
     }
 }
@@ -289,5 +312,34 @@ mod tests {
         let profile = native_profile();
         assert!(profile.reads_natively("en"));
         assert!(!profile.reads_natively("de"));
+    }
+
+    #[test]
+    fn expanding_units_while_leaving_digits_native_is_rejected() {
+        let mut profile = native_profile();
+        profile.digits = Digits::Native;
+        profile.units = Units::Expanded;
+        assert_eq!(
+            profile.validate(),
+            Err(ProfileError::ExpandedUnitsWithoutDigits)
+        );
+    }
+
+    #[test]
+    fn native_identifiers_require_native_prose() {
+        let mut profile = native_profile();
+        profile.route.latin_prose = Reading::Narrate;
+        assert_eq!(
+            profile.validate(),
+            Err(ProfileError::NativeIdentifierWithoutNativeProse)
+        );
+    }
+
+    #[test]
+    fn expanded_digits_with_native_units_is_valid() {
+        let mut profile = native_profile();
+        profile.digits = Digits::Expanded;
+        profile.units = Units::Native;
+        assert_eq!(profile.validate(), Ok(()));
     }
 }

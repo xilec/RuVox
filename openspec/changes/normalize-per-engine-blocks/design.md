@@ -85,10 +85,20 @@ identifier narration.
 
 ### D4. Only fragment kinds with a decided answer are routed now
 
-This change routes `latin_prose` and `identifier`. Abbreviations, URLs/emails
-and fenced blocks stay narrate-only until the probe issue produces evidence.
+This change routes `latin_prose` and `identifier`. Abbreviations travel with
+`latin_prose` rather than getting a field of their own: reading "API" in Cyrillic
+is the same compensation as transliterating "Kubernetes", so a profile that
+reads prose natively reads abbreviations natively too, and splitting them would
+serve a combination no engine has asked for. URLs/emails and fenced blocks stay
+narrate-only until the probe issue produces evidence — their narration is
+structural ("точка", "слэш", block markers), not a transliteration of prose.
 `Route` is a struct with an explicit field per kind, so adding a kind is a code
 change, not a data change.
+
+Known gap, deferred to #311: URL narration still transliterates Latin path
+components ("example.com/path" → "экзампл точка ком слэш пат") even under a
+`Native` prose route, because the URL block owns that fragment. Leaving URLs
+verbatim is what the URL route will decide.
 
 - *Alternative — declare all five kinds and implement two:* rejected. An enum
   field whose `Native` value is unimplemented invites a caller to set it and

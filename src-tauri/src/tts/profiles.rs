@@ -84,6 +84,31 @@ pub static PIPER_PROFILE: TextProfile = TextProfile {
     markup: Markup::None,
 };
 
+/// A profile for an engine that reads Latin, digits and units natively.
+///
+/// Deliberately absent from [`profile_for`]: no engine ships with it. It exists
+/// so tests and the golden harness can exercise every gated path — a profile is
+/// data, so proving a gated block works needs no engine to implement it.
+pub static NATIVE_EN_PROFILE: TextProfile = TextProfile {
+    languages: &["ru", "en"],
+    route: Route {
+        latin_prose: Reading::Native,
+        identifier: Reading::Native,
+    },
+    digits: Digits::Native,
+    units: Units::Native,
+    stress: Stress::Manual,
+    charset: Charset::Any,
+    chunk: Chunk {
+        limit: Limit::Secs(25),
+        pauses: Pauses {
+            paragraph_ms: 0,
+            segment_ms: 200,
+        },
+    },
+    markup: Markup::RuEnTags,
+};
+
 /// The profile of an engine kind.
 ///
 /// Total over [`EngineKind::ALL`]: the registry test asserts that every variant
@@ -100,6 +125,22 @@ pub fn profile_for(kind: EngineKind) -> &'static TextProfile {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_en_profile_satisfies_its_invariants() {
+        assert_eq!(NATIVE_EN_PROFILE.validate(), Ok(()));
+    }
+
+    #[test]
+    fn native_en_profile_is_not_reachable_from_the_registry() {
+        for kind in EngineKind::ALL {
+            assert_ne!(
+                profile_for(*kind),
+                &NATIVE_EN_PROFILE,
+                "no shipping engine may use the test-only profile"
+            );
+        }
+    }
 
     #[test]
     fn every_engine_kind_has_a_profile() {
