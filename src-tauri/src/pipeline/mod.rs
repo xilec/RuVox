@@ -24,7 +24,7 @@ use crate::pipeline::spans::{
 };
 use crate::pipeline::tracked_text::{CharMapping, TrackedText};
 use crate::tts::profiles;
-use tts_contract::{Digits, Reading, TextProfile, Units};
+use tts_contract::{Digits, Reading, Stress, TextProfile, Units};
 
 // ── Static compiled regexes ───────────────────────────────────────────────────
 
@@ -415,6 +415,12 @@ impl TTSPipeline {
         let narrate_identifiers = profile.route.identifier == Reading::Narrate;
         let expand_digits = profile.digits == Digits::Expanded;
         let expand_units = profile.units == Units::Expanded;
+
+        // An explicit dictionary stress mark reaches the text only when the
+        // active engine renders it; the dictionary carries the decision for the
+        // lookup sites that never see the profile.
+        self.user_dictionary
+            .set_mark_stress(profile.stress != Stress::None);
 
         // The language the engine reads a native fragment in — the same one a
         // `Native` span carries.
@@ -930,8 +936,8 @@ impl TTSPipeline {
                 let m = caps.get(0)?;
                 let word_lower = m.as_str().to_lowercase();
                 self.user_dictionary
-                    .get(&word_lower)
-                    .map(|to| (m.start(), m.end(), to.to_string()))
+                    .resolve(&word_lower)
+                    .map(|to| (m.start(), m.end(), to.into_owned()))
             })
             .collect();
         if !matches.is_empty() {
@@ -1884,5 +1890,63 @@ mod tests {
         assert_eq!(out.spans.len(), 1, "spans: {:?}", out.spans);
         assert_eq!(out.spans[0].kind, SpanKind::DictionaryOverride);
         assert_eq!(span_text(&out.text, &out.spans[0]), "получить данные");
+    }
+
+    // ── Dictionary stress marks (change `dictionary-stress-marks`) ──────────
+
+    fn dictionary_with_mark() -> UserDictionary {
+        let mut dict = UserDictionary::default();
+        dict.insert(DictionaryEntry {
+            from: "moskva".to_string(),
+            to: "М+осква".to_string(),
+        });
+        dict
+    }
+
+    #[test]
+    fn stress_mark_reaches_a_profile_that_declares_it() {
+        let mut p = TTSPipeline::new();
+        p.set_user_dictionary(dictionary_with_mark());
+        let out = p.process_for_engine(
+            "в moskva сегодня",
+            &crate::tts::profiles::SILERO_NATIVE_PROFILE,
+        );
+        assert_eq!(out.text, "в М+осква сегодня");
+        // The mark travels with the replacement, so the override span still
+        // covers the whole word and maps back to the original token.
+        assert_eq!(out.spans.len(), 1, "spans: {:?}", out.spans);
+        assert_eq!(span_text(&out.text, &out.spans[0]), "М+осква");
+        let word_start = "в ".chars().count();
+        let ranges: Vec<(usize, usize)> =
+            out.mapping.char_map[word_start..word_start + "М+осква".chars().count()].to_vec();
+        for (s, e) in ranges {
+            let mapped: String = out.mapping.original.chars().skip(s).take(e - s).collect();
+            assert_eq!(
+                mapped, "moskva",
+                "every replacement character, the mark included, maps onto the word"
+            );
+        }
+    }
+
+    #[test]
+    fn stress_mark_is_stripped_for_a_profile_without_support() {
+        let mut p = TTSPipeline::new();
+        p.set_user_dictionary(dictionary_with_mark());
+        let out = p.process_for_engine("в moskva сегодня", &crate::tts::profiles::SILERO_PROFILE);
+        assert_eq!(out.text, "в Москва сегодня");
+        assert!(!out.text.contains('+'), "no mark leaks: {:?}", out.text);
+    }
+
+    #[test]
+    fn the_mark_is_not_read_as_an_operator() {
+        // The dictionary pre-pass runs after the operator phase, so the '+' is
+        // part of the replacement rather than a symbol the pipeline narrates.
+        let mut p = TTSPipeline::new();
+        p.set_user_dictionary(dictionary_with_mark());
+        let out = p.process_for_engine(
+            "в moskva сегодня",
+            &crate::tts::profiles::SILERO_NATIVE_PROFILE,
+        );
+        assert!(!out.text.contains("плюс"), "text: {:?}", out.text);
     }
 }
