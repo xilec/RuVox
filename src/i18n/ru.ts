@@ -405,11 +405,12 @@ export const ru = {
   'dictionary.column.from': 'Слово',
   'dictionary.column.to': 'Произношение',
   'dictionary.form.from': 'Слово',
-  'dictionary.form.from.placeholder': 'например, IPv6 или GitHub',
+  'dictionary.form.from.placeholder': 'например, IPv6, GitHub или замок',
   'dictionary.form.to': 'Как произносить',
   'dictionary.form.to.placeholder': 'например, айпи ви шесть',
-  'dictionary.form.error.from.required': 'Введите слово: латинские буквы и цифры, хотя бы одна буква.',
-  'dictionary.form.error.from.charset': 'Только латинские буквы и цифры, минимум одна буква (например, IPv6, x86).',
+  'dictionary.form.error.from.required': 'Введите слово: латинские или русские буквы и цифры, хотя бы одна буква.',
+  'dictionary.form.error.from.charset':
+    'Одно слово из латинских или русских букв и цифр, минимум одна буква (например, IPv6, x86, замок).',
   'dictionary.form.error.from.too_long': 'Слишком длинное слово (максимум 64 символа).',
   'dictionary.form.error.to.required': 'Введите произношение.',
   'dictionary.form.error.to.stress_malformed':
@@ -418,6 +419,9 @@ export const ru = {
   'dictionary.form.stress.hint':
     'Поставьте + перед гласной, чтобы задать ударение: М+осква. Ударение применяется только движками, которые его поддерживают.',
   'dictionary.form.stress.help': 'Справка об ударении',
+  'dictionary.form.from.hint':
+    'Русское слово ищется по точной форме: для «замка» нужна отдельная запись.',
+  'dictionary.form.from.help': 'Справка о поиске слова',
   'dictionary.form.warning.latin':
     'В произношении есть латиница или цифры — они прозвучат как есть.',
   'dictionary.status.saved': 'Все изменения сохранены',

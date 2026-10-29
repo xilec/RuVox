@@ -62,7 +62,35 @@ fn dense_markup_1mb_normalizes_within_budget() {
     );
 }
 
+/// A Cyrillic dictionary entry costs one extra candidate scan, not a second
+/// pass over every word of a document with no Cyrillic keys. Both runs share
+/// the same budget as the empty-dictionary case.
+#[test]
+fn cyrillic_dictionary_entry_keeps_the_1mb_budget() {
+    let _guard = PERF_LOCK
+        .lock()
+        .expect("perf test serialization lock poisoned");
+    let mut pipeline = TTSPipeline::new();
+    let mut dict = ruvox_tauri_lib::dictionary::UserDictionary::default();
+    dict.insert(ruvox_tauri_lib::dictionary::DictionaryEntry {
+        from: "замок".to_string(),
+        to: "зам+ок".to_string(),
+    });
+    pipeline.set_user_dictionary(dict);
+    let input = dense_markup(1_000_000);
+
+    let start = Instant::now();
+    let _ = pipeline.process_with_char_mapping(&input);
+    let elapsed = start.elapsed();
+
+    assert!(
+        elapsed < Duration::from_secs(30),
+        "1 MB with a Cyrillic dictionary entry normalized in {elapsed:?}, budget is 30 s"
+    );
+}
+
 /// Spec scenario "Doubling the input scales near-linearly".
+
 #[test]
 fn dense_markup_scaling_is_near_linear() {
     let _guard = PERF_LOCK

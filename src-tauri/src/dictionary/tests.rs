@@ -25,9 +25,40 @@ fn accepts_alnum_token_with_letter() {
 }
 
 #[test]
-fn rejects_cyrillic_from() {
+fn accepts_a_russian_word() {
+    assert!(validate_entry("замок", "зам+ок").is_ok());
+    assert!(validate_entry("Замок", "зам+ок").is_ok(), "case is fine");
+    assert!(
+        validate_entry("ёлка", "+Ёлка").is_ok(),
+        "ё is a Russian letter"
+    );
+    assert!(
+        validate_entry("А4", "а четыре").is_ok(),
+        "letters and digits"
+    );
+}
+
+#[test]
+fn rejects_a_multi_word_key() {
     assert!(matches!(
-        validate_entry("Иванов", "иванов"),
+        validate_entry("Иванов Пётр", "иванов пётр"),
+        Err(DictionaryError::InvalidFrom)
+    ));
+}
+
+#[test]
+fn rejects_a_mixed_script_key() {
+    assert!(matches!(
+        validate_entry("IPзамок", "ип замок"),
+        Err(DictionaryError::InvalidFrom)
+    ));
+}
+
+#[test]
+fn rejects_a_non_russian_cyrillic_letter() {
+    // Ukrainian "і" is outside the Russian alphabet the pipeline narrates.
+    assert!(matches!(
+        validate_entry("кіт", "кот"),
         Err(DictionaryError::InvalidFrom)
     ));
 }
@@ -200,7 +231,7 @@ fn invalid_entries_are_skipped_on_load() {
     // Non-ASCII keys need TOML quoting; "123" is a valid bare key.
     fs::write(
         &path,
-        "version = 1\n\n[entries]\n\"Иванов\" = \"иванов\"\ndocker = \"докер\"\n123 = \"число\"\n",
+        "version = 1\n\n[entries]\n\"Иванов Пётр\" = \"иванов\"\ndocker = \"докер\"\n123 = \"число\"\n",
     )
     .expect("write fixture");
 
@@ -355,4 +386,23 @@ fn the_mark_survives_export_and_reimport() {
     let entries = store::parse_import(&fs::read_to_string(&out).expect("read")).expect("reparse");
 
     assert_eq!(entries, vec![entry("Москва", "М+осква")]);
+}
+
+#[test]
+fn a_cyrillic_key_round_trips_through_the_file() {
+    // TOML quotes a non-bare key on write; if it did not, the loader would
+    // reject the file it just wrote.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("user_dictionary.toml");
+    let mut dict = UserDictionary::default();
+    dict.insert(entry("замок", "зам+ок"));
+    store::export_to(&dict, &path).expect("export");
+
+    let raw = fs::read_to_string(&path).expect("read");
+    assert!(
+        raw.contains("\"замок\" = \"зам+ок\""),
+        "a Cyrillic key is quoted: {raw}"
+    );
+    let loaded = DictionaryStore::new(path).load();
+    assert_eq!(loaded.get("замок"), Some("зам+ок"));
 }

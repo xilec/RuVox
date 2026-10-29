@@ -39,7 +39,7 @@ impl DictionaryEntry {
 #[derive(Debug, thiserror::Error)]
 pub enum DictionaryError {
     #[error(
-        "source word must be a single Latin token (letters and digits, at least one letter, max {MAX_FROM_LEN} chars)"
+        "source word must be a single token of Latin or Russian letters and digits, one script, at least one letter, max {MAX_FROM_LEN} chars"
     )]
     InvalidFrom,
     #[error("spoken form must be non-empty and at most {MAX_TO_LEN} characters")]
@@ -99,17 +99,56 @@ pub fn strip_stress(to: &str) -> String {
     to.chars().filter(|c| *c != STRESS_MARK).collect()
 }
 
-/// Validate `from`/`to` per the user-dictionary spec: `from` matches
-/// `^[A-Za-z0-9]+$` with at least one letter (alnum tokens like "IPv6" are
-/// the point; pure numbers, Cyrillic, and punctuation are not), `to` is a
-/// non-empty free-form string whose spoken form is at most [`MAX_TO_LEN`]
-/// characters, optionally carrying one well-formed stress mark.
+/// True for a Russian Cyrillic letter in either case. The rest of the Cyrillic
+/// block (Ukrainian, Serbian, …) is rejected on purpose: the pipeline narrates
+/// Russian, so an entry in another script would match text it cannot handle.
+fn is_russian_letter(c: char) -> bool {
+    matches!(c, 'а'..='я' | 'А'..='Я' | 'ё' | 'Ё')
+}
+
+/// The script a dictionary key is written in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyScript {
+    Latin,
+    Cyrillic,
+}
+
+/// The script `from` uses, or `None` when it is not a single valid token: one
+/// word of letters and digits with at least one letter, all letters from one
+/// script, at most [`MAX_FROM_LEN`] characters.
+pub fn key_script(from: &str) -> Option<KeyScript> {
+    if from.is_empty() || from.chars().count() > MAX_FROM_LEN {
+        return None;
+    }
+    let mut script = None;
+    for c in from.chars() {
+        if c.is_ascii_digit() {
+            continue;
+        }
+        let this = if c.is_ascii_alphabetic() {
+            KeyScript::Latin
+        } else if is_russian_letter(c) {
+            KeyScript::Cyrillic
+        } else {
+            return None;
+        };
+        match script {
+            None => script = Some(this),
+            Some(seen) if seen == this => {}
+            Some(_) => return None,
+        }
+    }
+    script
+}
+
+/// Validate `from`/`to` per the user-dictionary spec: `from` is one token of
+/// Latin or Russian Cyrillic letters and digits with at least one letter (alnum
+/// tokens like "IPv6" and Russian words like "замок" are the point; pure
+/// numbers, punctuation, and mixed-script tokens are not), `to` is a non-empty
+/// free-form string whose spoken form is at most [`MAX_TO_LEN`] characters,
+/// optionally carrying one well-formed stress mark.
 pub fn validate_entry(from: &str, to: &str) -> Result<(), DictionaryError> {
-    let from_ok = !from.is_empty()
-        && from.len() <= MAX_FROM_LEN
-        && from.bytes().all(|b| b.is_ascii_alphanumeric())
-        && from.bytes().any(|b| b.is_ascii_alphabetic());
-    if !from_ok {
+    if key_script(from).is_none() {
         return Err(DictionaryError::InvalidFrom);
     }
     let spoken = spoken_form(to)?;
@@ -157,6 +196,16 @@ impl UserDictionary {
 
     pub fn contains(&self, word_lower: &str) -> bool {
         self.entries.contains_key(word_lower)
+    }
+
+    /// True when at least one key is written in `script`. The pre-pass uses it
+    /// to skip a candidate scan for a script the dictionary cannot match;
+    /// dictionaries are small, so a pass over the keys per normalization is
+    /// cheaper than keeping script counters in sync with every mutation.
+    pub fn has_keys_in(&self, script: KeyScript) -> bool {
+        self.entries
+            .keys()
+            .any(|key| key_script(key) == Some(script))
     }
 
     pub fn len(&self) -> usize {

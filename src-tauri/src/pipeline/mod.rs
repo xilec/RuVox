@@ -9,7 +9,7 @@ use std::sync::OnceLock;
 
 use regex::Regex;
 
-use crate::dictionary::UserDictionary;
+use crate::dictionary::{KeyScript, UserDictionary};
 use crate::pipeline::constants::{ARROW_SYMBOLS, GREEK_LETTERS, MATH_SYMBOLS};
 use crate::pipeline::normalizers::abbreviations::AbbreviationNormalizer;
 use crate::pipeline::normalizers::code::CodeIdentifierNormalizer;
@@ -233,6 +233,16 @@ fn re_user_dict_token() -> &'static Regex {
     // other prose phase — become user-dictionary candidates. At least one
     // letter is required, so a non-hit flows into later phases unchanged.
     RE.get_or_init(|| Regex::new(r"\b[A-Za-z0-9]*[A-Za-z][A-Za-z0-9]*\b").expect("valid regex"))
+}
+
+fn re_user_dict_token_cyrillic() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    // The Cyrillic mirror of `re_user_dict_token`: one Russian word (letters and
+    // digits, at least one letter), so a stress entry like `замок = "зам+ок"`
+    // can match. The two patterns are disjoint — a token belongs to one script —
+    // and the pre-pass runs this one only when the dictionary has a Cyrillic
+    // key, so a Latin-only dictionary pays nothing for Russian text.
+    RE.get_or_init(|| Regex::new(r"\b[0-9]*[а-яёА-ЯЁ][0-9а-яёА-ЯЁ]*\b").expect("valid regex"))
 }
 
 fn re_number() -> &'static Regex {
@@ -939,16 +949,19 @@ impl TTSPipeline {
             return;
         }
         let snapshot = tracked.text().to_string();
-        let matches: Vec<(usize, usize, String)> = re_user_dict_token()
-            .captures_iter(&snapshot)
-            .filter_map(|caps| {
-                let m = caps.get(0)?;
-                let word_lower = m.as_str().to_lowercase();
-                self.user_dictionary
-                    .resolve(&word_lower, self.mark_stress)
-                    .map(|to| (m.start(), m.end(), to.into_owned()))
-            })
-            .collect();
+        // A script the dictionary cannot match costs no scan: the two candidate
+        // patterns are disjoint, so a Latin-only dictionary never pays for the
+        // Cyrillic pass and vice versa.
+        let mut matches: Vec<(usize, usize, String)> = Vec::new();
+        if self.user_dictionary.has_keys_in(KeyScript::Latin) {
+            matches.extend(self.dictionary_hits(&snapshot, re_user_dict_token()));
+        }
+        if self.user_dictionary.has_keys_in(KeyScript::Cyrillic) {
+            matches.extend(self.dictionary_hits(&snapshot, re_user_dict_token_cyrillic()));
+        }
+        // Two passes produce two sorted runs, not one: the replacement applies
+        // in reverse order, so the merged list has to be sorted by start.
+        matches.sort_by_key(|(start, _, _)| *start);
         if !matches.is_empty() {
             let offsets = byte_to_char_offsets(&snapshot);
             let ranges: Vec<(usize, usize)> = matches.iter().map(|(s, e, _)| (*s, *e)).collect();
@@ -962,6 +975,21 @@ impl TTSPipeline {
             );
         }
         tracked.replace_byte_ranges(matches);
+    }
+
+    /// Exact case-insensitive dictionary hits of one candidate pattern, with the
+    /// text to insert already resolved for the active stress mode.
+    fn dictionary_hits(&self, text: &str, pattern: &Regex) -> Vec<(usize, usize, String)> {
+        pattern
+            .captures_iter(text)
+            .filter_map(|caps| {
+                let m = caps.get(0)?;
+                let word_lower = m.as_str().to_lowercase();
+                self.user_dictionary
+                    .resolve(&word_lower, self.mark_stress)
+                    .map(|to| (m.start(), m.end(), to.into_owned()))
+            })
+            .collect()
     }
 
     fn process_english_tracked(&mut self, tracked: &mut TrackedText) {
@@ -1963,5 +1991,113 @@ mod tests {
             marked_again, marked,
             "the previous run's decision must not stick to the pipeline"
         );
+    }
+
+    // ── Cyrillic dictionary keys (change `dictionary-cyrillic-keys`) ────────
+
+    fn dictionary_with_cyrillic_mark() -> UserDictionary {
+        let mut dict = UserDictionary::default();
+        dict.insert(DictionaryEntry {
+            from: "замок".to_string(),
+            to: "зам+ок".to_string(),
+        });
+        dict
+    }
+
+    #[test]
+    fn a_cyrillic_entry_replaces_its_exact_word() {
+        let mut p = TTSPipeline::new();
+        p.set_user_dictionary(dictionary_with_cyrillic_mark());
+        let out = p.process_for_engine(
+            "старый замок стоит",
+            &crate::tts::profiles::SILERO_NATIVE_PROFILE,
+        );
+        assert_eq!(out.text, "старый зам+ок стоит");
+        assert_eq!(out.spans.len(), 1, "spans: {:?}", out.spans);
+        assert_eq!(out.spans[0].kind, SpanKind::DictionaryOverride);
+        assert_eq!(
+            out.spans[0].lang, None,
+            "a Russian word needs no language tag"
+        );
+        assert_eq!(span_text(&out.text, &out.spans[0]), "зам+ок");
+    }
+
+    #[test]
+    fn a_cyrillic_entry_matches_case_insensitively_but_not_inflections() {
+        let mut p = TTSPipeline::new();
+        p.set_user_dictionary(dictionary_with_cyrillic_mark());
+        let upper = p.process_for_engine(
+            "старый ЗАМОК стоит",
+            &crate::tts::profiles::SILERO_NATIVE_PROFILE,
+        );
+        assert_eq!(
+            upper.text, "старый зам+ок стоит",
+            "the typed case is replaced"
+        );
+        let inflected = p.process_for_engine(
+            "старого замка нет",
+            &crate::tts::profiles::SILERO_NATIVE_PROFILE,
+        );
+        assert_eq!(
+            inflected.text, "старого замка нет",
+            "an inflected form is a different key"
+        );
+        assert!(inflected.spans.is_empty(), "spans: {:?}", inflected.spans);
+    }
+
+    #[test]
+    fn a_cyrillic_entry_strips_the_mark_without_stress_support() {
+        let mut p = TTSPipeline::new();
+        p.set_user_dictionary(dictionary_with_cyrillic_mark());
+        let out = p.process_for_engine("старый замок стоит", &crate::tts::profiles::SILERO_PROFILE);
+        assert_eq!(out.text, "старый замок стоит");
+        assert!(!out.text.contains('+'), "no mark leaks: {:?}", out.text);
+    }
+
+    #[test]
+    fn a_latin_only_dictionary_leaves_russian_words_alone() {
+        // The Cyrillic scan is skipped entirely; this pins that the skip cannot
+        // change the output for a dictionary that has no Cyrillic key.
+        let mut p = TTSPipeline::new();
+        let mut dict = UserDictionary::default();
+        dict.insert(DictionaryEntry {
+            from: "docker".to_string(),
+            to: "доккер".to_string(),
+        });
+        p.set_user_dictionary(dict);
+        let out = p.process_for_engine(
+            "Запусти docker и замок",
+            &crate::tts::profiles::SILERO_PROFILE,
+        );
+        assert_eq!(out.text, "Запусти доккер и замок");
+    }
+
+    #[test]
+    fn entries_of_both_scripts_apply_in_text_order() {
+        // The two candidate scans each yield a sorted run; the merged list must
+        // stay sorted because the replacement applies back to front.
+        let mut p = TTSPipeline::new();
+        let mut dict = UserDictionary::default();
+        dict.insert(DictionaryEntry {
+            from: "docker".to_string(),
+            to: "доккер".to_string(),
+        });
+        dict.insert(DictionaryEntry {
+            from: "замок".to_string(),
+            to: "зам+ок".to_string(),
+        });
+        p.set_user_dictionary(dict);
+
+        let cyrillic_first = p.process_for_engine(
+            "старый замок и docker",
+            &crate::tts::profiles::SILERO_NATIVE_PROFILE,
+        );
+        assert_eq!(cyrillic_first.text, "старый зам+ок и доккер");
+
+        let latin_first = p.process_for_engine(
+            "docker и старый замок",
+            &crate::tts::profiles::SILERO_NATIVE_PROFILE,
+        );
+        assert_eq!(latin_first.text, "доккер и старый зам+ок");
     }
 }

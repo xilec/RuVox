@@ -21,8 +21,16 @@ describe('validateEntryInput', () => {
     expect(validateEntryInput({ from: '', to: 'что-то' })?.reason).toBe('from.required');
   });
 
-  it('rejects a Cyrillic from', () => {
-    expect(validateEntryInput({ from: 'Иванов', to: 'иванов' })?.reason).toBe('from.charset');
+  it('accepts a Russian word', () => {
+    expect(validateEntryInput({ from: 'замок', to: 'зам+ок' })).toBeNull();
+  });
+
+  it('rejects a multi-word from', () => {
+    expect(validateEntryInput({ from: 'Иванов Пётр', to: 'иванов' })?.reason).toBe('from.charset');
+  });
+
+  it('rejects a mixed-script from', () => {
+    expect(validateEntryInput({ from: 'IPзамок', to: 'ип замок' })?.reason).toBe('from.charset');
   });
 
   it('rejects a digit-only from', () => {
@@ -106,8 +114,13 @@ describe('isSingleSourceToken', () => {
     expect(isSingleSourceToken('IPv6')).toBe(true);
   });
 
-  it('rejects Cyrillic', () => {
-    expect(isSingleSourceToken('иванов')).toBe(false);
+  it('accepts a Russian word', () => {
+    expect(isSingleSourceToken('замок')).toBe(true);
+    expect(isSingleSourceToken('  Замок ')).toBe(true);
+  });
+
+  it('rejects a mixed-script token', () => {
+    expect(isSingleSourceToken('IPзамок')).toBe(false);
   });
 
   it('rejects multi-word selections', () => {

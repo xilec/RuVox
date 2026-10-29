@@ -310,7 +310,21 @@ export function DictionaryModal({
         {editor !== null && (
           <Stack gap="xs" p="sm" bd="1px solid var(--mantine-color-default-border)">
             <TextInput
-              label={tt('dictionary.form.from')}
+              label={
+                <Group gap="xs" wrap="nowrap">
+                  {tt('dictionary.form.from')}
+                  <Tooltip label={tt('dictionary.form.from.hint')} multiline w={260} withArrow>
+                    <ActionIcon
+                      variant="subtle"
+                      size="xs"
+                      radius="xl"
+                      aria-label={tt('dictionary.form.from.help')}
+                    >
+                      ?
+                    </ActionIcon>
+                  </Tooltip>
+                </Group>
+              }
               placeholder={tt('dictionary.form.from.placeholder')}
               value={editor.from}
               data-autofocus

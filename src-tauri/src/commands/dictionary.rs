@@ -246,7 +246,7 @@ mod tests {
         let imported = vec![
             entry("docker", "докка"),
             entry("kubectl", "куб контрол"),
-            entry("Иванов", "иванов"), // invalid: Cyrillic from
+            entry("Иванов Пётр", "иванов"), // invalid: two words
         ];
 
         let (dict, report) = apply_import(&current, imported, ImportMode::Merge);

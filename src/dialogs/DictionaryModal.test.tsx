@@ -65,12 +65,21 @@ function clickButton(label: string) {
   act(() => button.click());
 }
 
-describe('DictionaryModal stress help', () => {
+describe('DictionaryModal field help', () => {
   it('offers a help affordance on the spoken-form field', async () => {
     await renderModal();
     clickButton('Добавить слово');
 
     const help = document.querySelector('[aria-label="Справка об ударении"]');
+    expect(help).not.toBeNull();
+    expect(help?.textContent).toBe('?');
+  });
+
+  it('offers a help affordance on the word field', async () => {
+    await renderModal();
+    clickButton('Добавить слово');
+
+    const help = document.querySelector('[aria-label="Справка о поиске слова"]');
     expect(help).not.toBeNull();
     expect(help?.textContent).toBe('?');
   });
@@ -83,5 +92,10 @@ describe('DictionaryModal stress help', () => {
     expect(hint).toContain('ударение');
     expect(hint).toContain('движками');
     expect(translate('en', 'dictionary.form.stress.hint')).toContain('+');
+  });
+
+  it('says that a Russian word is matched exactly', () => {
+    expect(translate('ru', 'dictionary.form.from.hint')).toContain('точной форме');
+    expect(translate('en', 'dictionary.form.from.hint')).toContain('exact form');
   });
 });

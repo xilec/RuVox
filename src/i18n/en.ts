@@ -401,11 +401,12 @@ export const en: Record<MessageKey, string> = {
   'dictionary.column.from': 'Word',
   'dictionary.column.to': 'Spoken form',
   'dictionary.form.from': 'Word',
-  'dictionary.form.from.placeholder': 'e.g. IPv6 or GitHub',
+  'dictionary.form.from.placeholder': 'e.g. IPv6, GitHub or замок',
   'dictionary.form.to': 'How to pronounce',
   'dictionary.form.to.placeholder': 'e.g. айпи ви шесть',
-  'dictionary.form.error.from.required': 'Enter a word: Latin letters and digits, at least one letter.',
-  'dictionary.form.error.from.charset': 'Latin letters and digits only, at least one letter (e.g. IPv6, x86).',
+  'dictionary.form.error.from.required': 'Enter a word: Latin or Russian letters and digits, at least one letter.',
+  'dictionary.form.error.from.charset':
+    'One word of Latin or Russian letters and digits, at least one letter (e.g. IPv6, x86, замок).',
   'dictionary.form.error.from.too_long': 'The word is too long (64 characters max).',
   'dictionary.form.error.to.required': 'Enter the spoken form.',
   'dictionary.form.error.to.stress_malformed':
@@ -414,6 +415,9 @@ export const en: Record<MessageKey, string> = {
   'dictionary.form.stress.hint':
     'Put + before a vowel to set the stress: М+осква. The stress applies only to engines that support it.',
   'dictionary.form.stress.help': 'About stress marks',
+  'dictionary.form.from.hint':
+    'A Russian word is matched by its exact form: a different inflection needs its own entry.',
+  'dictionary.form.from.help': 'Word matching help',
   'dictionary.form.warning.latin':
     'The spoken form contains Latin letters or digits — they will be read as-is.',
   'dictionary.status.saved': 'All changes saved',

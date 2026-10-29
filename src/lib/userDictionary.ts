@@ -16,9 +16,11 @@ const STRESS_MARK = '+';
 /** Russian vowels a stress mark may precede (both cases are accepted). */
 const STRESSED_VOWELS = 'аеёиоуыэюя';
 
-/** A single valid source token: Latin letters and digits, ≥1 letter — the
- *  same token shape the dictionary pre-pass regex matches in text. */
-const SOURCE_TOKEN_RE = /^(?=.*[A-Za-z])[A-Za-z0-9]+$/;
+/** A single valid source token: one word of letters and digits with at least
+ *  one letter, all letters from one script (Latin or Russian Cyrillic) — the
+ *  same shapes the dictionary pre-pass matches in text. */
+const LATIN_TOKEN_RE = /^[A-Za-z0-9]*[A-Za-z][A-Za-z0-9]*$/;
+const CYRILLIC_TOKEN_RE = /^[0-9]*[а-яёА-ЯЁ][0-9а-яёА-ЯЁ]*$/;
 
 export interface EntryInput {
   from: string;
@@ -66,7 +68,7 @@ export function validateEntryInput(
 
   if (from.length === 0) return { reason: 'from.required', blocking: true };
   if (from.length > MAX_FROM_LEN) return { reason: 'from.too_long', blocking: true };
-  if (!SOURCE_TOKEN_RE.test(from)) return { reason: 'from.charset', blocking: true };
+  if (!isSingleSourceToken(from)) return { reason: 'from.charset', blocking: true };
 
   if (to.length === 0) return { reason: 'to.required', blocking: true };
   const spoken = spokenForm(to);
@@ -111,5 +113,6 @@ export function sortAndFilterEntries<T extends EntryInput>(
 /** True when a text selection is exactly one valid source token (the
  *  preview dialog's "В словарь" quick-add gate). */
 export function isSingleSourceToken(selection: string): boolean {
-  return SOURCE_TOKEN_RE.test(selection.trim());
+  const token = selection.trim();
+  return LATIN_TOKEN_RE.test(token) || CYRILLIC_TOKEN_RE.test(token);
 }
