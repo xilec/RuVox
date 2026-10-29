@@ -42,7 +42,7 @@
 
 ## 5. Verification
 
-- [ ] 5.1 `nix develop -c just test` and `just lint` green.
+- [x] 5.1 `nix develop -c just test` and `just lint` green.
 - [ ] 5.2 Manual pass: create an entry with a mark, preview the text, and hear
   the stress on the native engine; check that the sidecar and Piper read the
   word without the mark.
