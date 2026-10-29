@@ -21,11 +21,12 @@
   `EngineKind` variant resolves and that no profile routes a Latin fragment
   `Native` without a non-Russian language. Verify: the registry test fails when
   a variant is added without a profile.
-- [x] 1.5 Document the crate and record the rule: `tts-contract/README.md` (why
-  it is separate, what each profile field answers, usage, tests),
-  `src-tauri/README.md`, and the per-crate README rule in
-  `ai/rules/conventions.md`. Verify: every crate directory carries a README
-  naming its purpose, layout and test command.
+- [x] 1.5 Record the per-crate README rule in `ai/rules/conventions.md` and
+  apply it: a crate README says what the crate is for and which command checks
+  it, then links to where the details live (`openspec/specs/`, `docs/`,
+  `AGENTS.md`) instead of duplicating them. Verify: `src-tauri/`,
+  `silero-native/` and `tts-contract/` each carry such a README and none of
+  them repeats a file tree, an API table or a field-by-field description.
 
 ## 2. Profile reaches the pipeline
 

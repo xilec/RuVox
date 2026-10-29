@@ -61,11 +61,17 @@ Craft rules (layout, test quality, duplication, idiom, correctness) live in
 ## Crates
 
 Every crate directory (`src-tauri/`, `silero-native/`, `tts-contract/`, and any
-new one) MUST carry a `README.md` stating what the crate is for, where things
-live when the layout is not obvious, how to build and test it, and a usage
-snippet when it is a library. Deep material — architecture, benchmarks, bundle
-formats — stays in the crate's own `docs/`; the README links to it instead of
-repeating it. A new crate is not finished until its README exists.
+new one) MUST carry a `README.md` that says what the crate is for and which
+command checks it. That is the whole content: a per-crate README is short by
+design, because anything else — file trees, API tables, field descriptions,
+usage examples — goes stale faster than it is read and turns every refactor into
+a documentation chore.
+
+The details have fixed homes instead: behavior in `openspec/specs/`, layout and
+toolchain in `AGENTS.md` and `docs/`, crate-internal architecture in the
+crate's own `docs/` (e.g. `silero-native/docs/architecture.md`), decisions in
+`openspec/changes/` (archived). A README MAY link to those; it MUST NOT
+duplicate them. A new crate is not finished until its README exists.
 
 ## The TTS constraint (load-bearing)
 
