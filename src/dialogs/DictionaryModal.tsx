@@ -60,6 +60,13 @@ const VALIDATION_KEY: Record<DictionaryValidationReason, Parameters<ReturnType<t
   'to.latin_warning': 'dictionary.form.warning.latin',
 };
 
+/** The dialog sits above Settings (z 200) and the floating preview window
+ *  (--ruvox-preview-z: 300); its tooltips have to clear the dialog itself,
+ *  because the Mantine default (popover, z 300) would land behind it. */
+const DIALOG_Z = 400;
+const NESTED_DIALOG_Z = 500;
+const TOOLTIP_Z = 600;
+
 /** True when the dropped file looks like a dictionary TOML (the AppShell
  *  global drop handler only claims importable text files, so a .toml lands
  *  here; anything else is ignored silently, same contract as AppShell). */
@@ -290,9 +297,7 @@ export function DictionaryModal({
       title={tt('dictionary.title')}
       size="lg"
       withinPortal
-      /* Above the Settings modal (z 200) and the floating preview window
-       * (--ruvox-preview-z: 300): the editor is opened from both. */
-      zIndex={400}
+      zIndex={DIALOG_Z}
     >
       <Stack gap="sm">
         <Group justify="space-between" wrap="nowrap">
@@ -312,7 +317,13 @@ export function DictionaryModal({
             <TextInput
               label={tt('dictionary.form.from')}
               rightSection={
-                <Tooltip label={tt('dictionary.form.from.hint')} multiline w={260} withArrow>
+                <Tooltip
+                  label={tt('dictionary.form.from.hint')}
+                  multiline
+                  w={260}
+                  withArrow
+                  zIndex={TOOLTIP_Z}
+                >
                   <ActionIcon
                     variant="subtle"
                     size="sm"
@@ -336,7 +347,13 @@ export function DictionaryModal({
             <TextInput
               label={tt('dictionary.form.to')}
               rightSection={
-                <Tooltip label={tt('dictionary.form.stress.hint')} multiline w={260} withArrow>
+                <Tooltip
+                  label={tt('dictionary.form.stress.hint')}
+                  multiline
+                  w={260}
+                  withArrow
+                  zIndex={TOOLTIP_Z}
+                >
                   <ActionIcon
                     variant="subtle"
                     size="sm"
@@ -470,7 +487,7 @@ export function DictionaryModal({
         title={tt('dictionary.import.choose.title')}
         size="md"
         withinPortal
-        zIndex={500}
+        zIndex={NESTED_DIALOG_Z}
       >
         <Stack gap="sm">
           <Text size="sm">{tt('dictionary.import.choose.message', [pendingImport ?? ''])}</Text>
