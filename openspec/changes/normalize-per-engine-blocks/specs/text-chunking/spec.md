@@ -32,12 +32,16 @@ language-segment boundary, where `0` means "no inserted silence".
 - THEN it originates from a profile field, and no engine module declares a
   chunk-size or pause constant
 
-#### Scenario: Second-based limit is honoured
+#### Scenario: A second-based limit is data, not behavior yet
 
 - GIVEN a profile that declares `Secs(25)`
-- WHEN a long text is split
-- THEN chunks are bounded by the produced audio duration estimate, not by a
-  codepoint count
+- WHEN an engine asks it for a codepoint limit
+- THEN the answer is absent and the engine must decide what to do (all three
+  shipping profiles declare `Chars`, so this path is unexercised)
+
+Cutting by predicted audio duration needs a duration estimate that this change
+does not build: the first engine that needs `Secs` brings it, and until then a
+second-based profile is expressible data that no engine consumes.
 
 ### Requirement: Break preference
 

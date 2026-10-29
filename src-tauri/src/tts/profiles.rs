@@ -24,7 +24,7 @@ pub static SILERO_PROFILE: TextProfile = TextProfile {
     },
     digits: Digits::Expanded,
     units: Units::Expanded,
-    stress: Stress::Auto,
+    stress: Stress::None,
     charset: Charset::ModelAlphabet,
     chunk: Chunk {
         limit: Limit::Chars(900),
@@ -47,7 +47,7 @@ pub static SILERO_NATIVE_PROFILE: TextProfile = TextProfile {
     },
     digits: Digits::Expanded,
     units: Units::Expanded,
-    stress: Stress::Auto,
+    stress: Stress::None,
     charset: Charset::ModelAlphabet,
     chunk: Chunk {
         limit: Limit::Chars(900),
@@ -97,7 +97,7 @@ pub static NATIVE_EN_PROFILE: TextProfile = TextProfile {
     },
     digits: Digits::Native,
     units: Units::Native,
-    stress: Stress::Manual,
+    stress: Stress::None,
     charset: Charset::Any,
     chunk: Chunk {
         limit: Limit::Secs(25),
@@ -165,9 +165,11 @@ mod tests {
             "Piper's memory bound differs from Silero's model bound"
         );
         assert_ne!(
-            PIPER_PROFILE.stress, SILERO_PROFILE.stress,
-            "Piper has no stress control of its own"
+            PIPER_PROFILE.charset, SILERO_PROFILE.charset,
+            "Piper is sanitized by its adapter while Silero is bound to its model alphabet"
         );
+        // `stress` is declared data with no behavior yet, so every profile says
+        // `None`; the stress change (#312) is what will make engines differ here.
     }
 
     #[test]

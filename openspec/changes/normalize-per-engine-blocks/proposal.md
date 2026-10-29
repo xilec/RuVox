@@ -33,9 +33,6 @@ every new engine tempts a fork.
 - **One shared chunker** in a new `tts-contract` crate consumed by both
   `src-tauri` and `silero-native`, parameterized by profile limit and pauses;
   `ttsd` receives its limit in the request instead of hard-coding it.
-- **Stress behind the profile** — the pipeline never emits `+`; a
-  user-dictionary `to` may carry one explicit mark, stored structurally and
-  rendered by the adapter of the engine that supports it.
 - **Test infrastructure** — profile-parameterized golden harness, a test-only
   Latin-native profile that exercises every gated path, and
   "no double normalization" assertions.
@@ -49,6 +46,9 @@ every new engine tempts a fork.
 - **Gated built-in dictionaries** and engine-scoped dictionaries (#310);
   built-in tables stay unconditional here, the user dictionary keeps its
   precedence.
+- **Stress marks** (the dictionary `+` syntax, stored stress position, adapter
+  rendering and automatic stress) (#312); the profile declares `stress` as data,
+  every shipping engine declares `None`, and nothing consumes it yet.
 - Per-voice language catalogues: languages are declared per engine and all its
   voices inherit them; Silero exposes Russian voices only.
 - Any audible change for Silero, `ttsd` and Piper: their output stays
@@ -68,7 +68,6 @@ every new engine tempts a fork.
   annotation output, adapter boundaries.
 - `position-mapping`: span annotations beside `CharMapping` and their
   invariants.
-- `user-dictionary`: one explicit stress mark in `to`.
 - `piper-engine`: chunk limit and paragraph pause come from the profile.
 - `silero-native-engine`: chunking moves to the shared chunker.
 - `ttsd-protocol`: the `synthesize` request carries the chunk limit.

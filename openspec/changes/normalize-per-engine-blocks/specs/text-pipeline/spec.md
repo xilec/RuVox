@@ -141,13 +141,12 @@ at most once per fragment. The owners SHALL be:
   the Russian narration of an identifier; digit expansion — numbers, dates,
   times, ranges, versions, leading-dot decimals and tilde-approximation — for
   `digits: Expanded`; unit expansion — sizes, percentages and percentage
-  ranges — for `units: Expanded`; stress marking (`stress: Auto` or `Manual`);
-  chunking (see `text-chunking`).
+  ranges — for `units: Expanded`; chunking (see `text-chunking`).
 - **Adapter steps** (performed by the engine implementation, never by the
   pipeline): filtering against the engine charset, collapsing newlines before a
   model tokenizer that cannot handle them, rendering markup around native
-  spans, rendering stress marks in the engine's syntax, and issuing the
-  synthesis calls.
+  spans, and issuing the synthesis calls. Stress rendering is the next
+  consumer of this boundary and arrives with its own change (#312).
 
 The gated number and unit blocks SHALL be skipped as a whole when the profile
 declares the corresponding capability `Native`: a skipped block SHALL leave its

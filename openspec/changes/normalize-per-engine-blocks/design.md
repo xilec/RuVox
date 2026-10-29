@@ -160,16 +160,28 @@ a Rust crate cannot be imported there — but the limit travels in the
 - *Alternative — leave the Python constant:* rejected. Two homes for one
   number is exactly what this change exists to remove.
 
-### D9. Stress is a structural dictionary field, never a `+` in pipeline text
+### D9. Stress is declared data; its behavior is a separate change
 
-`to` may carry one `+` before a vowel; it is parsed at load into the entry and
-preserved verbatim on import/export. The profile declares `stress: None | Auto
-| Manual`; an explicit mark vetoes automatic stress for that word; the adapter
-renders marks in its own syntax.
+The profile carries `stress: None | Auto | Manual` because the field belongs to
+any complete text contract, but nothing consumes it in this change: no
+shipping engine declares support (`None` for all three), no dictionary entry
+carries a mark, and the pipeline never emits `+`.
 
-- *Alternative — the pipeline emits `+` into the text:* rejected. `+` would
-  leak into `CharMapping`, the symbol phase and charset filtering, and every
-  downstream consumer would need to know it is not content.
+Stress behavior needs two pieces this change does not build: where the mark
+lives after the dictionary replaces a word (a span carries kind, language and
+range only, so the position has no home yet), and what syntax each engine
+wants. Both land in the stress change (#312), which will also decide whether
+the pipeline may emit a placeholder or the adapter must receive the position.
+
+- *Alternative — ship the dictionary mark now:* rejected. A `+` that reaches
+the text would leak into `CharMapping`, the symbol phase and charset
+filtering, and half a feature would put a claim in the specs that the code
+does not honour.
+
+- *Alternative — drop the `Stress` field entirely:* rejected. The profile is a
+  description of an engine, not of what this change implements, and a field
+  with no consumer is cheaper to add now than to thread through every profile
+  and test later.
 
 ### D10. Per-call profile, reference wrapper, no `process()`
 
