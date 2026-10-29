@@ -117,7 +117,7 @@
   unchanged in `tests/perf.rs`.
 - [x] 6.3 `openspec validate normalize-per-engine-blocks --strict` reports no
   errors (length warnings only).
-- [ ] 6.4 Manual pass: run the app, synthesize a mixed technical text with the
+- [x] 6.4 Manual pass: run the app, synthesize a mixed technical text with the
   default engine, and confirm audio and per-word highlighting match the
   pre-change behavior; repeat with Piper and ttsd so every engine's chunking
   path is exercised.
