@@ -128,10 +128,11 @@ pub fn profile_by_name(name: &str) -> &'static tts_contract::TextProfile {
 
 /// Cases pinned to one profile: `tests/fixtures/pipeline/<profile>/<case>.*`.
 ///
-/// Returns `(profile, case path relative to the fixtures dir)`.
-pub fn collect_profile_cases() -> Vec<(String, String)> {
+/// Returns `(profile name, case path relative to the fixtures dir)`; the name is
+/// one of [`all_profiles`], so callers resolve it with [`profile_by_name`].
+pub fn collect_profile_cases() -> Vec<(&'static str, String)> {
     let dir = fixtures_dir();
-    let known: Vec<&str> = all_profiles().into_iter().map(|(name, _)| name).collect();
+    let known = all_profiles();
     let mut cases = Vec::new();
     let entries = match fs::read_dir(&dir) {
         Ok(entries) => entries,
@@ -139,7 +140,7 @@ pub fn collect_profile_cases() -> Vec<(String, String)> {
     };
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
-        if !known.contains(&name.as_str()) || !entry.path().is_dir() {
+        if !known.iter().any(|(known, _)| *known == name) || !entry.path().is_dir() {
             continue;
         }
         let nested = match fs::read_dir(entry.path()) {
@@ -155,7 +156,12 @@ pub fn collect_profile_cases() -> Vec<(String, String)> {
             })
             .collect();
         names.sort();
-        cases.extend(names.into_iter().map(|case| (name.clone(), case)));
+        let profile = known
+            .iter()
+            .find(|(known, _)| *known == name)
+            .map(|(known, _)| *known)
+            .expect("the folder name came from the profile list");
+        cases.extend(names.into_iter().map(|case| (profile, case)));
     }
     cases.sort();
     cases

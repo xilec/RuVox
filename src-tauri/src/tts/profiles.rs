@@ -183,6 +183,16 @@ mod tests {
     }
 
     #[test]
+    fn silero_chunk_limits_match_their_engines() {
+        // The profile owns the number; the engine crate's constant and the ttsd
+        // default are the values it must agree with, so drift fails here where
+        // every engine is visible at once.
+        let expected = silero_native::chunking::MAX_CHUNK_SIZE;
+        assert_eq!(SILERO_NATIVE_PROFILE.chunk.char_limit(), Some(expected));
+        assert_eq!(SILERO_PROFILE.chunk.char_limit(), Some(expected));
+    }
+
+    #[test]
     fn piper_chunk_limit_is_the_measured_memory_bound() {
         assert_eq!(PIPER_PROFILE.chunk.char_limit(), Some(500));
         assert_eq!(PIPER_PROFILE.chunk.paragraph_pause_sec(), 0.45);

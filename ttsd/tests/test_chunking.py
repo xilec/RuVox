@@ -5,6 +5,12 @@ import pytest
 from ttsd.chunking import MAX_CHUNK_SIZE, sanitize_for_silero, split_into_chunks
 
 
+def test_whitespace_only_has_no_chunks():
+    """An empty chunk would become an empty synthesis call."""
+    assert split_into_chunks("") == []
+    assert split_into_chunks("   \n\n  ") == []
+
+
 def _assert_covers_source(
     text: str, chunks: list[tuple[str, int]], limit: int = MAX_CHUNK_SIZE
 ) -> None:

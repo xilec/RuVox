@@ -140,10 +140,16 @@ reverse index.
 ### D7. `digits` and `units` split at the existing normalizer entry points
 
 `digits` gates `normalize_number`, `normalize_float`, `normalize_range`,
-`normalize_version`, `normalize_date`, `normalize_time`; `units` gates
-`normalize_percentage` and `normalize_size` (plus currency and `№` handled in
-the same phase). The split is already visible in the code and needs no new
-classification.
+`normalize_version`, `normalize_date`, `normalize_time` and the numbered-list
+marker; `units` gates `normalize_percentage` and `normalize_size`. Currency
+signs stay in the shared symbol phase: they are symbols, not units, and no
+engine reads them as money. The split is already visible in the code and needs
+no new classification.
+
+With `units: Native` the digit phases must not consume a number that a skipped
+unit phase owns (`50 %`, `12.5%`, `10-20%`, `1.5 GB`). One guard (`unit_owns`)
+serves every digit phase, because a bare number next to a unit marker would
+otherwise be read alone and strand the unit.
 
 ### D8. One chunker for in-process engines; `ttsd` keeps its algorithm and receives the limit
 
@@ -201,21 +207,28 @@ it. Callers pass `tts.text_profile()` captured in the same critical section as
 ### D11. A test-only profile parameterizes the golden harness
 
 `native_en` (`["ru", "en"]`, `digits: Native`, `units: Native`, every route
-`Native`) is a `#[cfg(test)]` constant, not a registry entry, so `EngineKind`
-does not grow dead variants. The harness takes the profile list from an
-environment variable; running the corpus under a substituted profile is what
-classifies a fixture as profile-specific, and fixtures move into
+`Native`) ships in the crate but is not a registry entry, so `EngineKind` does
+not grow a dead variant while the integration tests (a separate crate, with no
+access to `#[cfg(test)]` items) can still use it. The harness takes the profile
+list from an environment variable; running the corpus under a substituted
+profile is what classifies a fixture as profile-specific, and fixtures move into
 `tests/fixtures/pipeline/<profile>/` mechanically rather than by inspection.
 
-### D12. `charset` is declared by the profile, enforced by the adapter, asserted by a test
+### D12. `charset` is declared by the profile, enforced by the adapter
 
-The pipeline never filters. The adapter filters defensively against the
-declared alphabet, and a per-profile test asserts that the pipeline's output is
-already a subset of it — so a rule emitting a codepoint the model silently
-drops fails a test instead of losing characters in audio.
+The pipeline never filters: filtering is an adapter step, and the adapter
+receives the normalized text plus the profile. `silero-native` already drops
+codepoints its bundle's alphabet lacks; Piper sanitizes its own way.
 `sanitize_for_silero` (newline collapsing before the model tokenizer) is an
 adapter step for the same reason: it is about the model's tokenizer, not about
 a text decision.
+
+- *Alternative — a profile-level test that the output fits the alphabet:*
+  rejected for this change. The alphabet is a bundle artifact
+  (`frontend.json`, present only when `SILERO_NATIVE_BUNDLE` is set), so the
+  check belongs to the engine's own suite next to its parity tests; duplicating
+  the symbol list here would create the second home this change exists to
+  avoid.
 
 ## Risks / Trade-offs
 

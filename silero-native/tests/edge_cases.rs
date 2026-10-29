@@ -2,12 +2,13 @@
 //! invalid inputs must fail with typed `BadInput` before any inference runs.
 //! Bundle-gated like the other integration tests.
 
+use silero_native::chunking::MAX_CHUNK_SIZE;
 use silero_native::{EngineError, SileroNative};
 
 mod common;
 
 fn engine() -> Option<SileroNative> {
-    SileroNative::load(common::gated_bundle_dir()?).ok()
+    SileroNative::load(common::gated_bundle_dir()?, MAX_CHUNK_SIZE).ok()
 }
 
 #[test]

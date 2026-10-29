@@ -1,6 +1,9 @@
 pub mod constants;
 pub mod normalizers;
+pub mod spans;
 pub mod tracked_text;
+
+pub use spans::{Span, SpanKind};
 
 use std::sync::OnceLock;
 
@@ -15,207 +18,13 @@ use crate::pipeline::normalizers::english::EnglishNormalizer;
 use crate::pipeline::normalizers::numbers::NumberNormalizer;
 use crate::pipeline::normalizers::symbols::SymbolNormalizer;
 use crate::pipeline::normalizers::urls::{URLPathNormalizer, is_known_tld};
+use crate::pipeline::spans::{
+    RecordedSpan, byte_to_char_offsets, debug_assert_spans, record_byte_ranges, record_native,
+    resolve_spans,
+};
 use crate::pipeline::tracked_text::{CharMapping, TrackedText};
 use crate::tts::profiles;
 use tts_contract::{Digits, Reading, TextProfile, Units};
-
-// ── Span annotations ──────────────────────────────────────────────────────────
-
-/// What a span annotation marks.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SpanKind {
-    /// A code identifier the engine reads itself.
-    CodeIdentifier,
-    /// A Latin run in prose the engine reads itself.
-    ProseLatin,
-    /// A fragment the user dictionary replaced.
-    DictionaryOverride,
-}
-
-/// An annotation over the normalized text, in output codepoint coordinates.
-///
-/// Spans express decisions, never markup: the adapter decides how to render
-/// them for its engine, and the normalized text itself never carries tags.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Span {
-    pub kind: SpanKind,
-    /// The language the engine reads the fragment in; `None` when the pipeline
-    /// rewrote the fragment instead of leaving it to the engine.
-    pub lang: Option<&'static str>,
-    /// Half-open codepoint range in [`ProcessedText::text`].
-    pub start: usize,
-    pub end: usize,
-}
-
-/// A span as recorded while processing, in original-document coordinates.
-#[derive(Debug, Clone)]
-struct RecordedSpan {
-    kind: SpanKind,
-    lang: Option<&'static str>,
-    start: usize,
-    end: usize,
-}
-
-/// Maps every byte offset of `text` to its codepoint index.
-///
-/// Recording converts a regex byte match into a codepoint range; without the
-/// table each conversion scans the prefix, which turns a document with many
-/// spans into quadratic work.
-fn byte_to_char_offsets(text: &str) -> Vec<usize> {
-    let mut offsets = vec![0usize; text.len() + 1];
-    let mut byte = 0usize;
-    let mut chars = 0usize;
-    for ch in text.chars() {
-        for slot in &mut offsets[byte..byte + ch.len_utf8()] {
-            *slot = chars;
-        }
-        byte += ch.len_utf8();
-        chars += 1;
-    }
-    offsets[text.len()] = chars;
-    offsets
-}
-
-/// Records byte ranges of `snapshot` as spans of `kind` in original coordinates.
-fn record_byte_ranges(
-    tracked: &mut TrackedText,
-    offsets: &[usize],
-    kind: SpanKind,
-    lang: Option<&'static str>,
-    ranges: &[(usize, usize)],
-    recorded: &mut Vec<RecordedSpan>,
-) {
-    for &(start, end) in ranges {
-        let (orig_start, orig_end) = tracked.original_range(offsets[start], offsets[end]);
-        if orig_end > orig_start {
-            recorded.push(RecordedSpan {
-                kind,
-                lang,
-                start: orig_start,
-                end: orig_end,
-            });
-        }
-    }
-}
-
-/// Records what `find` selects over the current text as spans of `kind`.
-fn record_native(
-    tracked: &mut TrackedText,
-    kind: SpanKind,
-    lang: Option<&'static str>,
-    find: impl FnOnce(&str) -> Vec<(usize, usize)>,
-    recorded: &mut Vec<RecordedSpan>,
-) {
-    let snapshot = tracked.text().to_string();
-    let ranges = find(&snapshot);
-    let offsets = byte_to_char_offsets(&snapshot);
-    record_byte_ranges(tracked, &offsets, kind, lang, &ranges, recorded);
-}
-
-/// Resolves recorded spans from original into output coordinates in one pass.
-///
-/// `char_map` is monotone in original position, so a single advancing cursor
-/// covers every span: no reverse index, no string search.
-fn resolve_spans(char_map: &[(usize, usize)], recorded: Vec<RecordedSpan>) -> Vec<Span> {
-    let kept = keep_specific_spans(recorded);
-    if kept.is_empty() {
-        return Vec::new();
-    }
-
-    let mut resolved = Vec::with_capacity(kept.len());
-    let mut cursor = 0usize;
-    for span in kept {
-        while cursor < char_map.len() && char_map[cursor].1 <= span.start {
-            cursor += 1;
-        }
-        let start = cursor;
-        let mut end = cursor;
-        while cursor < char_map.len() && char_map[cursor].0 < span.end {
-            cursor += 1;
-            end = cursor;
-        }
-        if end > start {
-            resolved.push(Span {
-                kind: span.kind,
-                lang: span.lang,
-                start,
-                end,
-            });
-        }
-    }
-    resolved
-}
-
-/// Drops overlapping records, keeping the most specific decision per region.
-///
-/// The overlap has to be resolved in original coordinates, not by comparing
-/// live ranges: a native identifier also matches the prose word pattern, and
-/// the dictionary pre-pass runs between the two recordings, so the current
-/// text at each recording differs.
-fn keep_specific_spans(recorded: Vec<RecordedSpan>) -> Vec<RecordedSpan> {
-    let mut specific: Vec<RecordedSpan> = recorded
-        .iter()
-        .filter(|span| span.kind != SpanKind::ProseLatin)
-        .cloned()
-        .collect();
-    specific.sort_by_key(|span| (span.start, kind_priority(span.kind), span.end - span.start));
-
-    let mut kept: Vec<RecordedSpan> = Vec::with_capacity(specific.len());
-    let mut last_end = 0usize;
-    for span in specific {
-        if span.start < last_end {
-            continue;
-        }
-        last_end = span.end;
-        kept.push(span);
-    }
-
-    let mut prose: Vec<RecordedSpan> = recorded
-        .into_iter()
-        .filter(|span| span.kind == SpanKind::ProseLatin)
-        .collect();
-    prose.sort_by_key(|span| (span.start, span.end));
-    for span in prose {
-        let claimed = kept
-            .iter()
-            .any(|kept| span.start < kept.end && kept.start < span.end);
-        if !claimed {
-            kept.push(span);
-        }
-    }
-
-    kept.sort_by_key(|span| span.start);
-    kept
-}
-
-/// Narrower wins when two records cover the same original range.
-fn kind_priority(kind: SpanKind) -> u8 {
-    match kind {
-        SpanKind::DictionaryOverride => 0,
-        SpanKind::CodeIdentifier => 1,
-        SpanKind::ProseLatin => 2,
-    }
-}
-
-/// Asserts the span invariants the `position-mapping` spec requires, in debug
-/// builds only: sorted, non-overlapping, non-empty, inside the output.
-fn debug_assert_spans(mapping: &CharMapping, spans: &[Span]) {
-    debug_assert_eq!(
-        mapping.char_map.len(),
-        mapping.transformed.chars().count(),
-        "char_map length must stay the codepoint count of the transformed text"
-    );
-    let mut previous_end = 0;
-    for span in spans {
-        debug_assert!(span.start < span.end, "empty span reported: {span:?}");
-        debug_assert!(span.end <= mapping.char_map.len(), "span past the text");
-        debug_assert!(
-            span.start >= previous_end,
-            "spans must be sorted and non-overlapping: {span:?}"
-        );
-        previous_end = span.end;
-    }
-}
 
 // ── Static compiled regexes ───────────────────────────────────────────────────
 
@@ -330,6 +139,23 @@ fn re_percentage() -> &'static Regex {
 fn re_percentage_range() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"\b(\d+)\s*-\s*(\d+)\s*%").expect("valid regex"))
+}
+
+/// True when the number at `start..end` belongs to a percentage or a size,
+/// which the gated unit phases own as a whole.
+fn unit_owns(snapshot: &str, start: usize, end: usize) -> bool {
+    if snapshot[end..].trim_start_matches(' ').starts_with('%') {
+        return true;
+    }
+    // "100MB", "1.5 GB", or the left bound of "10-20%": the match has to
+    // start where the number starts and reach past it.
+    [re_size(), re_percentage_range()]
+        .into_iter()
+        .any(|pattern| {
+            pattern
+                .find_at(snapshot, start)
+                .is_some_and(|m| m.start() == start && m.end() > end)
+        })
 }
 
 fn re_inline_code() -> &'static Regex {
@@ -623,7 +449,7 @@ impl TTSPipeline {
         self.process_inline_code_tracked(&mut tracked);
 
         // ── Phase 6: Markdown structure ───────────────────────────────────────
-        self.process_markdown_tracked(&mut tracked);
+        self.process_markdown_tracked(&mut tracked, expand_digits);
 
         // ── Phase 7: URLs ─────────────────────────────────────────────────────
         {
@@ -753,7 +579,7 @@ impl TTSPipeline {
         // ── Phase 11: Ranges (e.g. 10-20) ────────────────────────────────────
         if expand_digits {
             let num = &self.number_normalizer;
-            tracked.sub(re_range(), |caps| {
+            self.sub_number_phase(&mut tracked, re_range(), expand_units, |caps| {
                 num.normalize_range(caps.get(0).unwrap().as_str())
             });
         }
@@ -761,7 +587,7 @@ impl TTSPipeline {
         // ── Phase 12: Versions (e.g. v1.2.3) ─────────────────────────────────
         if expand_digits {
             let num = &self.number_normalizer;
-            tracked.sub(re_version(), |caps| {
+            self.sub_number_phase(&mut tracked, re_version(), expand_units, |caps| {
                 let v = caps.get(0).unwrap().as_str();
                 if v.contains('.') {
                     num.normalize_version(v)
@@ -777,15 +603,20 @@ impl TTSPipeline {
         // before the number phase — and its dot guard — runs).
         if expand_digits {
             let num = &self.number_normalizer;
-            tracked.sub(re_leading_dot_decimal(), |caps| {
-                let boundary = caps.get(1).unwrap().as_str();
-                let digits = caps.get(2).unwrap().as_str();
-                format!(
-                    "{}{}",
-                    boundary,
-                    num.normalize_float(&format!("0.{digits}"))
-                )
-            });
+            self.sub_number_phase(
+                &mut tracked,
+                re_leading_dot_decimal(),
+                expand_units,
+                |caps| {
+                    let boundary = caps.get(1).unwrap().as_str();
+                    let digits = caps.get(2).unwrap().as_str();
+                    format!(
+                        "{}{}",
+                        boundary,
+                        num.normalize_float(&format!("0.{digits}"))
+                    )
+                },
+            );
         }
 
         // ── Phase 13: Operators ───────────────────────────────────────────────
@@ -999,7 +830,7 @@ impl TTSPipeline {
             .join(" ")
     }
 
-    fn process_markdown_tracked(&self, tracked: &mut TrackedText) {
+    fn process_markdown_tracked(&self, tracked: &mut TrackedText, expand_digits: bool) {
         tracked.sub(re_heading(), |_| String::new());
 
         // Markdown links: [text](url) → text (link text preserved for further normalization).
@@ -1036,7 +867,12 @@ impl TTSPipeline {
             }
         }
 
-        // Numbered lists: "1. " → "первое: "
+        // Numbered lists: "1. " → "первое: ". Gated with the digit phases: the
+        // marker is a number, and an engine that reads digits itself does not
+        // need it spelled out.
+        if !expand_digits {
+            return;
+        }
         let num = &self.number_normalizer;
         tracked.sub(re_md_list_number(), |caps| {
             let n: u32 = caps.get(1).unwrap().as_str().parse().unwrap_or(0);
@@ -1165,6 +1001,34 @@ impl TTSPipeline {
         tracked.replace_byte_ranges(matches);
     }
 
+    /// Runs a digit phase, skipping matches that belong to a unit construct
+    /// when the unit phases are gated off (`units: Native`).
+    ///
+    /// Without this the skipped unit phases would leave their number to the
+    /// digit phases below, which read "50 %" or "1.5 GB" as a bare number and
+    /// strand the unit.
+    fn sub_number_phase(
+        &self,
+        tracked: &mut TrackedText,
+        pattern: &Regex,
+        expand_units: bool,
+        mut replacer: impl FnMut(&regex::Captures) -> String,
+    ) {
+        if expand_units {
+            tracked.sub(pattern, |caps| replacer(caps));
+            return;
+        }
+        let snapshot = tracked.text().to_string();
+        tracked.sub(pattern, |caps| {
+            let m = caps.get(0).unwrap();
+            if unit_owns(&snapshot, m.start(), m.end()) {
+                m.as_str().to_string()
+            } else {
+                replacer(caps)
+            }
+        });
+    }
+
     fn process_numbers_tracked(&self, tracked: &mut TrackedText, expand_units: bool) {
         // Effective pattern: `(?<![.])(\d+)(?![.]\d)` on top of the Unicode-aware
         // `\b\d+\b` from re_number(). The regex crate lacks lookbehind/lookahead,
@@ -1187,11 +1051,12 @@ impl TTSPipeline {
 
                 let preceded_ok = start == 0 || !snapshot[..start].ends_with('.');
                 // A percent sign is not a word character, so `\b` does not
-                // protect it: with units left to the engine, the number phase
-                // would read the "50" of "50%" and strand the sign. The unit
-                // phases own that fragment and are skipped, so the number has
-                // to be left alone with it.
-                let unit_follows = snapshot[end..].starts_with('%');
+                // protect it, and a size unit may follow a space: with units
+                // left to the engine, the number phase would read the "50" of
+                // "50 %" or the "1.5" of "1.5 GB" and strand the unit. The
+                // skipped unit phases own that fragment, so the number stays
+                // with it.
+                let unit_follows = unit_owns(&snapshot, start, end);
                 let followed_ok = (expand_units || !unit_follows)
                     && (end >= snapshot.len()
                         || !snapshot[end..].starts_with('.')
@@ -1781,6 +1646,34 @@ mod tests {
     }
 
     #[test]
+    fn native_units_leave_every_unit_fragment_untouched() {
+        // The unit phases own these fragments as a whole; with units gated off,
+        // the digit phases must not consume the number and strand the unit.
+        let mut p = TTSPipeline::new();
+        let mut profile = *native_profile();
+        profile.digits = Digits::Expanded;
+        for input in ["12.5%", "10-20%", "50 %", "1.5 GB", "512 KB", "2 min"] {
+            let out = p.process_for_engine(input, &profile);
+            assert_eq!(out.text, input, "{input} must stay with its unit");
+        }
+        // Untouched fragments outside a unit still expand.
+        let out = p.process_for_engine("12.5 и 7 штук", &profile);
+        assert_eq!(out.text, "двенадцать точка пять и семь штук");
+    }
+
+    #[test]
+    fn markdown_list_numbers_follow_the_digits_route() {
+        let mut p = TTSPipeline::new();
+        let mut profile = *native_profile();
+        profile.digits = Digits::Expanded;
+        let out = p.process_for_engine("1. Первое", &profile);
+        assert_eq!(out.text, "первое:Первое");
+
+        let out = p.process_for_engine("1. Первое", native_profile());
+        assert_eq!(out.text, "1. Первое", "the marker itself is a number");
+    }
+
+    #[test]
     fn user_dictionary_applies_under_a_native_profile() {
         let mut p = TTSPipeline::new();
         let mut dict = UserDictionary::default();
@@ -1902,6 +1795,43 @@ mod tests {
             p.process_for_engine("   \n\t ", native_profile())
                 .spans
                 .is_empty()
+        );
+    }
+
+    #[test]
+    fn dictionary_override_inside_a_native_identifier_drops_the_identifier_span() {
+        // "get-user" is one kebab identifier, and the dictionary replaces only
+        // its second part: the identifier annotation would claim "get-юзер" as
+        // Latin, so it gives way to the override instead.
+        let mut p = TTSPipeline::new();
+        let mut dict = UserDictionary::default();
+        dict.insert(DictionaryEntry {
+            from: "user".to_string(),
+            to: "юзер".to_string(),
+        });
+        p.set_user_dictionary(dict);
+        let out = p.process_for_engine("вызови get-user сейчас", native_profile());
+        assert_eq!(out.text, "вызови get-юзер сейчас");
+        // "юзер" gives way to the override; what is left of the identifier is a
+        // plain Latin run, which the engine reads natively.
+        let kinds: Vec<(SpanKind, String)> = out
+            .spans
+            .iter()
+            .map(|span| (span.kind, span_text(&out.text, span)))
+            .collect();
+        assert_eq!(
+            kinds,
+            vec![
+                (SpanKind::ProseLatin, "get".to_string()),
+                (SpanKind::DictionaryOverride, "юзер".to_string())
+            ]
+        );
+        assert!(
+            out.spans
+                .iter()
+                .all(|span| span.lang.is_some() == (span.kind == SpanKind::ProseLatin)),
+            "only the Latin run carries a language: {:?}",
+            out.spans
         );
     }
 

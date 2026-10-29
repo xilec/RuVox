@@ -11,7 +11,6 @@
 //!   cargo test --manifest-path src-tauri/Cargo.toml --test span_invariants
 
 use ruvox_tauri_lib::pipeline::{Span, SpanKind, TTSPipeline};
-use ruvox_tauri_lib::tts::profiles::{NATIVE_EN_PROFILE, SILERO_PROFILE};
 
 mod common;
 
@@ -25,19 +24,9 @@ fn cases_with_profiles() -> Vec<(String, Vec<&'static str>)> {
     cases.extend(
         common::collect_profile_cases()
             .into_iter()
-            .map(|(profile, path)| (path, vec![profile_by_name(&profile)])),
+            .map(|(profile, path)| (path, vec![profile])),
     );
     cases
-}
-
-/// The fixture folder owns the profile name; the profile list is typed by the
-/// same string, so this is the only place the two are joined.
-fn profile_by_name(name: &str) -> &'static str {
-    common::all_profiles()
-        .into_iter()
-        .find(|(known, _)| *known == name)
-        .map(|(known, _)| known)
-        .unwrap_or_else(|| panic!("unknown golden profile {name:?}"))
 }
 
 #[test]
@@ -57,22 +46,13 @@ fn span_invariants_hold_for_every_fixture_under_its_profiles() {
                 pipeline.set_code_block_mode(mode);
             }
             pipeline.set_user_dictionary(dict.clone());
-            let out = pipeline.process_for_engine(&input, profile_of(profile_name));
+            let out = pipeline.process_for_engine(&input, common::profile_by_name(profile_name));
             let label = format!("{case}/{profile_name}");
             assert_span_invariants(&out.text, &out.spans, &out.mapping.char_map, &label);
             checked += 1;
         }
     }
     assert!(checked >= cases.len());
-}
-
-/// Maps a harness name to the profile value the pipeline takes.
-fn profile_of(name: &str) -> &'static tts_contract::TextProfile {
-    match name {
-        "silero" => &SILERO_PROFILE,
-        "native_en" => &NATIVE_EN_PROFILE,
-        other => panic!("unknown golden profile {other:?}"),
-    }
 }
 
 fn assert_span_invariants(text: &str, spans: &[Span], char_map: &[(usize, usize)], label: &str) {

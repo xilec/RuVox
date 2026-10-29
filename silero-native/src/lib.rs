@@ -90,19 +90,15 @@ fn is_positional_overflow(e: &EngineError) -> bool {
 impl SileroNative {
     /// Load and verify the model bundle, open the always-needed ONNX
     /// sessions (PQMF opens lazily on first use).
-    pub fn load(bundle_dir: impl AsRef<Path>) -> Result<Self> {
+    ///
+    /// `chunk_limit` is the per-chunk char bound the caller's text profile
+    /// declares; the crate holds no default of its own so the profile stays the
+    /// only source of that number.
+    pub fn load(bundle_dir: impl AsRef<Path>, chunk_limit: usize) -> Result<Self> {
         Ok(Self {
             engine: Engine::load(bundle_dir.as_ref())?,
-            chunk_limit: chunking::MAX_CHUNK_SIZE,
+            chunk_limit,
         })
-    }
-
-    /// Overrides the per-chunk char limit with the one from the text profile
-    /// the caller normalizes for — the app passes the Silero-native profile's
-    /// limit, so the profile, not this crate, decides the chunk boundaries.
-    pub fn with_chunk_limit(mut self, limit: usize) -> Self {
-        self.chunk_limit = limit;
-        self
     }
 
     /// Synthesize one chunk, re-splitting it in half when the exported

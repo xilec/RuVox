@@ -10,6 +10,7 @@
 //! `sequence`/`dur_hat` fields — see `tests/tools/gen_parity_fixtures.py`).
 
 use serde::Deserialize;
+use silero_native::chunking::MAX_CHUNK_SIZE;
 use silero_native::SileroNative;
 use silero_native::engine::Engine;
 
@@ -98,7 +99,7 @@ fn word_onsets_follow_reference_within_50ms() {
     let Some(dir) = common::gated_bundle_dir() else {
         return;
     };
-    let native = SileroNative::load(&dir).expect("bundle must load");
+    let native = SileroNative::load(&dir, MAX_CHUNK_SIZE).expect("bundle must load");
     let engine = Engine::load(&dir).expect("bundle must load");
 
     for case in &fixtures().cases {
@@ -178,7 +179,7 @@ fn highlight_never_jumps_ahead_on_tricky_text() {
     let Some(dir) = common::gated_bundle_dir() else {
         return;
     };
-    let native = SileroNative::load(&dir).expect("bundle must load");
+    let native = SileroNative::load(&dir, MAX_CHUNK_SIZE).expect("bundle must load");
 
     // Regression for the literal-'+' misalignment: a standalone '+' in the
     // text ("правило + команда") used to cascade fourteen words into
@@ -225,7 +226,7 @@ fn timestamps_are_sample_rate_invariant() {
     let Some(dir) = common::gated_bundle_dir() else {
         return;
     };
-    let native = SileroNative::load(&dir).expect("bundle must load");
+    let native = SileroNative::load(&dir, MAX_CHUNK_SIZE).expect("bundle must load");
 
     let phrases = [
         "Вызови функцию гет юзер дата через эй пи ай.",

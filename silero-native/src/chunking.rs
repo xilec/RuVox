@@ -12,11 +12,17 @@
 //! before [`crate::frontend::text::prepare_text_input`] so the upstream-pinned
 //! golden behavior of that function stays untouched.
 //!
-//! `split_into_chunks` handles long text: the model degrades on very long
-//! inputs, so text beyond [`MAX_CHUNK_SIZE`] chars is synthesized in
-//! sentence-boundary chunks and the audio concatenated.
+//! Long text is split by the `tts-contract` splitter at the limit the engine
+//! was loaded with: the model degrades on very long inputs, so each chunk is
+//! synthesized on its own and the audio concatenated. [`MAX_CHUNK_SIZE`] is
+//! the crate's default for direct users (examples, tests); the app passes the
+//! value from the engine's text profile.
 
-/// Maximum characters per synthesis chunk (Silero limit is ~1000-1500).
+/// Default characters per synthesis chunk (Silero limit is ~1000-1500).
+///
+/// The app takes its limit from the text profile and never falls back to this
+/// constant; it stays here for direct users of the crate and as the reference
+/// the ttsd parity fixture is checked against.
 pub const MAX_CHUNK_SIZE: usize = 900;
 
 /// Port of `ttsd.chunking.sanitize_for_silero`:
@@ -61,14 +67,14 @@ pub fn sanitize_for_silero(text: &str) -> String {
     out.trim().to_string()
 }
 
-/// End of a sanitized text, split at `limit` chars: a thin wrapper over the
-/// shared splitter in `tts-contract`, which owns the algorithm so the app's
+/// Split a sanitized text at `limit` chars: a thin wrapper over the shared
+/// splitter in `tts-contract`, which owns the algorithm so the app's
 /// in-process engines and the Python sidecar cannot drift apart.
 ///
 /// `(chunk_text, start)` pairs, where `start` is the chunk's char offset in
 /// `text` (matching ttsd's Python string indices — char, not byte, offsets).
-pub fn split_into_chunks(text: &str) -> Vec<(String, usize)> {
-    tts_contract::chunk::split_with_limit(text, MAX_CHUNK_SIZE)
+pub fn split_into_chunks(text: &str, limit: usize) -> Vec<(String, usize)> {
+    tts_contract::chunk::split_with_limit(text, limit)
 }
 
 #[cfg(test)]
@@ -148,13 +154,13 @@ mod tests {
     #[test]
     fn short_text_is_a_single_chunk() {
         let text = "Привет мир";
-        assert_eq!(split_into_chunks(text), vec![(text.to_string(), 0)]);
+        assert_eq!(split_into_chunks(text, MAX_CHUNK_SIZE), vec![(text.to_string(), 0)]);
     }
 
     #[test]
     fn long_text_splits_on_sentence_boundaries() {
         let text = "Это предложение. ".repeat(60);
-        let chunks = split_into_chunks(&text);
+        let chunks = split_into_chunks(&text, MAX_CHUNK_SIZE);
         assert!(chunks.len() > 1);
         for (chunk_text, _) in &chunks {
             assert!(!chunk_text.trim().is_empty());
@@ -171,7 +177,7 @@ mod tests {
     #[test]
     fn chunk_starts_are_ordered() {
         let text = "Слово слово слово. ".repeat(60);
-        let chunks = split_into_chunks(&text);
+        let chunks = split_into_chunks(&text, MAX_CHUNK_SIZE);
         let starts: Vec<usize> = chunks.iter().map(|(_, s)| *s).collect();
         assert!(starts.windows(2).all(|w| w[0] < w[1]));
         assert_covers_source(&text, &chunks);
@@ -180,7 +186,7 @@ mod tests {
     #[test]
     fn unbroken_text_falls_back_to_hard_split() {
         let text = "A".repeat(2000);
-        let chunks = split_into_chunks(&text);
+        let chunks = split_into_chunks(&text, MAX_CHUNK_SIZE);
         assert!(chunks.len() > 1);
         for (_, start) in &chunks {
             assert_eq!(*start % MAX_CHUNK_SIZE, 0);
@@ -193,7 +199,7 @@ mod tests {
         // Cyrillic is 2 bytes/char: ttsd positions are Python str indices,
         // so the port must count chars, not bytes.
         let text = format!("{} в конце", "ё".repeat(950));
-        let chunks = split_into_chunks(&text);
+        let chunks = split_into_chunks(&text, MAX_CHUNK_SIZE);
         let starts: Vec<usize> = chunks.iter().map(|(_, s)| *s).collect();
         assert_eq!(starts[0], 0);
         assert!(starts.iter().all(|&s| s <= text.chars().count()));

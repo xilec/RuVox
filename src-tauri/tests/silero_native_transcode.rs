@@ -55,7 +55,9 @@ fn silero_native_output_transcodes_to_opus() {
         return;
     };
 
-    let engine = silero_native::SileroNative::load(&bundle).expect("load model bundle");
+    let engine =
+        silero_native::SileroNative::load(&bundle, silero_native::chunking::MAX_CHUNK_SIZE)
+            .expect("load model bundle");
     let result = engine
         .synthesize("Привет, мир!", "xenia", 24_000)
         .expect("synthesize");

@@ -255,6 +255,16 @@ struct DriverRequest {
 ///
 /// All calls are async and execute one at a time (Silero is not thread-safe).
 /// The underlying driver task owns the subprocess and serializes all I/O.
+/// The chunk limit the sidecar must split at: the Silero profile owns the
+/// number, and the Python constant is only the default for callers without a
+/// profile.
+fn silero_chunk_limit() -> Option<u32> {
+    profiles::SILERO_PROFILE
+        .chunk
+        .char_limit()
+        .map(|limit| limit as u32)
+}
+
 pub struct TtsSubprocess {
     sender: mpsc::Sender<DriverRequest>,
     /// Kill signal for the driver task (see [`TtsSubprocess::kill_now`]).
@@ -339,19 +349,13 @@ impl TtsSubprocess {
     ) -> Result<SynthesizeOutput, TtsError> {
         const SYNTHESIZE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
-        // The sidecar splits long text itself, so it needs the engine's limit
-        // from the profile rather than a constant on the Python side.
-        let chunk_limit = profiles::SILERO_PROFILE
-            .chunk
-            .char_limit()
-            .map(|limit| limit as u32);
         let req = TtsRequest::Synthesize {
             text,
             speaker,
             sample_rate,
             out_wav,
             char_mapping,
-            chunk_limit,
+            chunk_limit: silero_chunk_limit(),
         };
         let resp = timeout(SYNTHESIZE_TIMEOUT, self.send(req))
             .await

@@ -112,7 +112,10 @@ fn collect_cases() -> Vec<GoldenCase> {
         }
     }
     for (profile, path) in common::collect_profile_cases() {
-        cases.push(GoldenCase { path, profile });
+        cases.push(GoldenCase {
+            path,
+            profile: profile.to_string(),
+        });
     }
     cases
 }

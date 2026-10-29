@@ -66,6 +66,12 @@ fn first_paragraph_break(window: &[char]) -> Option<usize> {
 /// a text within the limit is returned verbatim from offset 0 (no leading
 /// whitespace in real pipeline output).
 pub fn split_with_limit(text: &str, limit: usize) -> Vec<(String, usize)> {
+    // Nothing to synthesize: an empty or whitespace-only text has no chunks,
+    // not one empty one.
+    if text.trim().is_empty() {
+        return Vec::new();
+    }
+
     let chars: Vec<char> = text.chars().collect();
     let len = chars.len();
     if len <= limit && first_paragraph_break(&chars).is_none() {
@@ -287,6 +293,13 @@ mod tests {
         let chunks = split_with_limit(&paragraph, 200);
         assert!(chunks.len() >= 3, "long paragraph must split: {chunks:?}");
         assert_covers_source(&paragraph, 200, &chunks);
+    }
+
+    #[test]
+    fn whitespace_only_text_has_no_chunks() {
+        // An empty chunk would be sent to the engine as a synthesis call.
+        assert!(split_with_limit("", 900).is_empty());
+        assert!(split_with_limit("   \n\n  ", 900).is_empty());
     }
 
     #[test]

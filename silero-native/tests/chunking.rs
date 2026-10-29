@@ -84,7 +84,7 @@ fn split_matches_ttsd_golden() {
         // sees it: `synthesize` splits the sanitized text, which is trimmed.
         // Trim both sides so the comparison checks the split itself, not that
         // one trailing space.
-        let actual: Vec<(String, usize)> = split_into_chunks(&case.input)
+        let actual: Vec<(String, usize)> = split_into_chunks(&case.input, silero_native::chunking::MAX_CHUNK_SIZE)
             .into_iter()
             .map(|(text, start)| (text.trim_end().to_string(), start))
             .collect();

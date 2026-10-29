@@ -19,8 +19,12 @@ def split_into_chunks(
     `limit` comes from the engine's text profile on the Rust side; the module
     constant is only the default for callers without one.
 
-    Returns list of (chunk_text, start_position) tuples.
+    Returns list of (chunk_text, start_position) tuples. An empty or
+    whitespace-only text has no chunks.
     """
+    if not text.strip():
+        return []
+
     if len(text) <= limit:
         return [(text, 0)]
 

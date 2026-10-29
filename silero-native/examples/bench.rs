@@ -106,7 +106,8 @@ fn main() {
     let dir = common::bundle_dir_arg();
 
     let t = Instant::now();
-    let engine = SileroNative::load(&dir).expect("bundle must load");
+    let engine = SileroNative::load(&dir, silero_native::chunking::MAX_CHUNK_SIZE)
+        .expect("bundle must load");
     let load = t.elapsed();
 
     println!("phrase: {PHRASE:?} ({} chars)", PHRASE.chars().count());

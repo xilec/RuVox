@@ -183,9 +183,13 @@ fragment untouched, and no other block SHALL re-process it.
 
 - GIVEN a profile whose engine drops codepoints outside its alphabet
 - WHEN the pipeline processes a text containing such a codepoint
-- THEN the pipeline does not remove it; the adapter filters it, and a
-  profile-level test asserts that the pipeline's output is already within the
-  declared alphabet
+- THEN the pipeline does not remove it; the adapter filters it
+
+A profile-level assertion that the output already fits the declared alphabet is
+not part of this change: the Silero alphabet lives in the model bundle
+(`frontend.json`, loaded only when `SILERO_NATIVE_BUNDLE` is set), so the check
+belongs to the bundle-gated engine suite. `charset` is declared data that no
+pipeline phase reads.
 
 ### Requirement: Span annotation output
 
