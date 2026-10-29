@@ -2,8 +2,8 @@
 
 In-process **Silero TTS v5** engine for RuVox, running on ONNX Runtime —
 a native (Rust) replacement for the Python `ttsd` sidecar path. It is the
-third TTS engine in the app («Silero (нативный)»), alongside Piper
-(default) and Silero via `ttsd` (Python, kept as fallback).
+default TTS engine in the app («Silero (нативный)»), alongside Piper (the
+zero-dependency fallback) and Silero via `ttsd` (Python, opt-in).
 
 ## What is where
 

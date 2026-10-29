@@ -53,6 +53,19 @@ Craft rules (layout, test quality, duplication, idiom, correctness) live in
   default engine; Piper is the zero-dependency fallback; Silero via ttsd is
   the opt-in fallback (flake flag `withSilero`). Slim `.#ruvox` must not pull
   in ttsd — gated in CI.
+- **Per-engine text contract:** the text profile and the shared splitter live
+  in the `tts-contract` crate (data only, no engine identity, no behavior
+  beyond the splitter), so the application and an engine crate can share them
+  without either depending on the other.
+
+## Crates
+
+Every crate directory (`src-tauri/`, `silero-native/`, `tts-contract/`, and any
+new one) MUST carry a `README.md` stating what the crate is for, where things
+live when the layout is not obvious, how to build and test it, and a usage
+snippet when it is a library. Deep material — architecture, benchmarks, bundle
+formats — stays in the crate's own `docs/`; the README links to it instead of
+repeating it. A new crate is not finished until its README exists.
 
 ## The TTS constraint (load-bearing)
 
