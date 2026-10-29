@@ -10,8 +10,8 @@
 //! `sequence`/`dur_hat` fields — see `tests/tools/gen_parity_fixtures.py`).
 
 use serde::Deserialize;
-use silero_native::chunking::MAX_CHUNK_SIZE;
 use silero_native::SileroNative;
+use silero_native::chunking::MAX_CHUNK_SIZE;
 use silero_native::engine::Engine;
 
 mod common;

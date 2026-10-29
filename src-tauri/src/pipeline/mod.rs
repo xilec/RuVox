@@ -141,21 +141,37 @@ fn re_percentage_range() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"\b(\d+)\s*-\s*(\d+)\s*%").expect("valid regex"))
 }
 
+/// Units `re_size` accepts, lowercased: the guard below reads the word right
+/// after a number instead of scanning forward for a size match, which would
+/// rescan the rest of the document for every number.
+const SIZE_UNITS: [&str; 17] = [
+    "kb", "mb", "gb", "tb", "ms", "sec", "min", "hr", "px", "em", "rem", "vh", "vw", "кб", "мб",
+    "гб", "тб",
+];
+
 /// True when the number at `start..end` belongs to a percentage or a size,
 /// which the gated unit phases own as a whole.
-fn unit_owns(snapshot: &str, start: usize, end: usize) -> bool {
-    if snapshot[end..].trim_start_matches(' ').starts_with('%') {
+fn unit_owns(snapshot: &str, end: usize) -> bool {
+    let after = snapshot[end..].trim_start_matches(' ');
+    if after.starts_with('%') {
         return true;
     }
-    // "100MB", "1.5 GB", or the left bound of "10-20%": the match has to
-    // start where the number starts and reach past it.
-    [re_size(), re_percentage_range()]
-        .into_iter()
-        .any(|pattern| {
-            pattern
-                .find_at(snapshot, start)
-                .is_some_and(|m| m.start() == start && m.end() > end)
-        })
+
+    // Left bound of a percentage range ("10-20%"): dash, digits, percent sign.
+    if let Some(rest) = after.strip_prefix('-') {
+        let digit_bytes = rest.len() - rest.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+        if digit_bytes > 0 && rest[digit_bytes..].trim_start_matches(' ').starts_with('%') {
+            return true;
+        }
+    }
+
+    // A size unit attached directly or after a single space ("100MB", "1.5 GB").
+    let word: String = after.chars().take_while(|c| c.is_alphanumeric()).collect();
+    let boundary = after
+        .chars()
+        .nth(word.chars().count())
+        .is_none_or(|c| !c.is_alphanumeric());
+    boundary && SIZE_UNITS.contains(&word.to_lowercase().as_str())
 }
 
 fn re_inline_code() -> &'static Regex {
@@ -1022,7 +1038,7 @@ impl TTSPipeline {
         let snapshot = tracked.text().to_string();
         tracked.sub(pattern, |caps| {
             let m = caps.get(0).unwrap();
-            if unit_owns(&snapshot, m.start(), m.end()) {
+            if unit_owns(&snapshot, m.end()) {
                 m.as_str().to_string()
             } else {
                 replacer(caps)
@@ -1057,7 +1073,7 @@ impl TTSPipeline {
                 // "50 %" or the "1.5" of "1.5 GB" and strand the unit. The
                 // skipped unit phases own that fragment, so the number stays
                 // with it.
-                let unit_follows = unit_owns(&snapshot, start, end);
+                let unit_follows = unit_owns(&snapshot, end);
                 let followed_ok = (expand_units || !unit_follows)
                     && (end >= snapshot.len()
                         || !snapshot[end..].starts_with('.')

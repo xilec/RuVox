@@ -154,7 +154,10 @@ mod tests {
     #[test]
     fn short_text_is_a_single_chunk() {
         let text = "Привет мир";
-        assert_eq!(split_into_chunks(text, MAX_CHUNK_SIZE), vec![(text.to_string(), 0)]);
+        assert_eq!(
+            split_into_chunks(text, MAX_CHUNK_SIZE),
+            vec![(text.to_string(), 0)]
+        );
     }
 
     #[test]
