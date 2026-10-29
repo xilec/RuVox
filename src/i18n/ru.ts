@@ -412,7 +412,12 @@ export const ru = {
   'dictionary.form.error.from.charset': 'Только латинские буквы и цифры, минимум одна буква (например, IPv6, x86).',
   'dictionary.form.error.from.too_long': 'Слишком длинное слово (максимум 64 символа).',
   'dictionary.form.error.to.required': 'Введите произношение.',
+  'dictionary.form.error.to.stress_malformed':
+    'Знак ударения ставится один раз и только перед гласной: например, М+осква.',
   'dictionary.form.error.to.too_long': 'Слишком длинное произношение (максимум 256 символов).',
+  'dictionary.form.stress.hint':
+    'Поставьте + перед гласной, чтобы задать ударение: М+осква. Ударение применяется только движками, которые его поддерживают.',
+  'dictionary.form.stress.help': 'Справка об ударении',
   'dictionary.form.warning.latin':
     'В произношении есть латиница или цифры — они прозвучат как есть.',
   'dictionary.status.saved': 'Все изменения сохранены',

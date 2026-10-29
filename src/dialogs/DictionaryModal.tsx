@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ActionIcon,
   Badge,
   Button,
   Divider,
@@ -9,6 +10,7 @@ import {
   Table,
   Text,
   TextInput,
+  Tooltip,
 } from '@mantine/core';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
@@ -53,6 +55,7 @@ const VALIDATION_KEY: Record<DictionaryValidationReason, Parameters<ReturnType<t
   'from.charset': 'dictionary.form.error.from.charset',
   'from.too_long': 'dictionary.form.error.from.too_long',
   'to.required': 'dictionary.form.error.to.required',
+  'to.stress_malformed': 'dictionary.form.error.to.stress_malformed',
   'to.too_long': 'dictionary.form.error.to.too_long',
   'to.latin_warning': 'dictionary.form.warning.latin',
 };
@@ -319,7 +322,21 @@ export function DictionaryModal({
               }
             />
             <TextInput
-              label={tt('dictionary.form.to')}
+              label={
+                <Group gap="xs" wrap="nowrap">
+                  {tt('dictionary.form.to')}
+                  <Tooltip label={tt('dictionary.form.stress.hint')} multiline w={260} withArrow>
+                    <ActionIcon
+                      variant="subtle"
+                      size="xs"
+                      radius="xl"
+                      aria-label={tt('dictionary.form.stress.help')}
+                    >
+                      ?
+                    </ActionIcon>
+                  </Tooltip>
+                </Group>
+              }
               placeholder={tt('dictionary.form.to.placeholder')}
               value={editor.to}
               onChange={(e) => setEditor({ ...editor, to: e.currentTarget.value })}

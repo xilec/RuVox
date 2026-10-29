@@ -4,6 +4,7 @@ import {
   isDuplicateFrom,
   isSingleSourceToken,
   sortAndFilterEntries,
+  splitStress,
   validateEntryInput,
 } from './userDictionary';
 
@@ -117,5 +118,31 @@ describe('isSingleSourceToken', () => {
     expect(isSingleSourceToken('C++')).toBe(false);
     expect(isSingleSourceToken('')).toBe(false);
     expect(isSingleSourceToken('   ')).toBe(false);
+  });
+});
+
+describe('stress marks', () => {
+  it('accepts a mark before a vowel', () => {
+    expect(validateEntryInput({ from: 'moskva', to: 'М+осква' })).toBeNull();
+    expect(validateEntryInput({ from: 'zamok', to: 'зам+ок' })).toBeNull();
+  });
+
+  it('rejects a malformed mark', () => {
+    for (const to of ['Моск+ва', 'М+оск+ва', '+Москва', 'Москва+']) {
+      expect(validateEntryInput({ from: 'moskva', to })?.reason).toBe('to.stress_malformed');
+    }
+  });
+
+  it('splits the spoken form and the stressed vowel', () => {
+    expect(splitStress('М+осква')).toEqual({ spoken: 'Москва', stressIndex: 1 });
+    expect(splitStress('зам+ок')).toEqual({ spoken: 'замок', stressIndex: 3 });
+    expect(splitStress('Москва')).toEqual({ spoken: 'Москва', stressIndex: null });
+    expect(splitStress('Моск+ва')).toBeNull();
+  });
+
+  it('counts the length without the mark', () => {
+    const spoken = 'б'.repeat(257);
+    expect(validateEntryInput({ from: 'x', to: spoken })?.reason).toBe('to.too_long');
+    expect(validateEntryInput({ from: 'x', to: `+${'а'.repeat(255)}` })).toBeNull();
   });
 });

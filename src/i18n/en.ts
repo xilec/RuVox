@@ -408,7 +408,12 @@ export const en: Record<MessageKey, string> = {
   'dictionary.form.error.from.charset': 'Latin letters and digits only, at least one letter (e.g. IPv6, x86).',
   'dictionary.form.error.from.too_long': 'The word is too long (64 characters max).',
   'dictionary.form.error.to.required': 'Enter the spoken form.',
+  'dictionary.form.error.to.stress_malformed':
+    'A stress mark goes once, immediately before a vowel: for example, М+осква.',
   'dictionary.form.error.to.too_long': 'The spoken form is too long (256 characters max).',
+  'dictionary.form.stress.hint':
+    'Put + before a vowel to set the stress: М+осква. The stress applies only to engines that support it.',
+  'dictionary.form.stress.help': 'About stress marks',
   'dictionary.form.warning.latin':
     'The spoken form contains Latin letters or digits — they will be read as-is.',
   'dictionary.status.saved': 'All changes saved',
