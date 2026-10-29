@@ -58,7 +58,7 @@ inflection needs its own entry.
 - THEN it is accepted and the stress is applied wherever the exact word
   "замок" (any case) occurs
 
-#### Scenario: Cyrillic source token is rejected
+#### Scenario: Multi-word source token is rejected
 
 - GIVEN an entry attempt with `from` "Иванов Петр"
 - WHEN the entry is validated
@@ -163,7 +163,7 @@ Invalid entries SHALL never abort a merge import.
 
 #### Scenario: Merge skips invalid entries
 
-- GIVEN the imported file contains an entry with Cyrillic `from`
+- GIVEN the imported file contains an entry with a multi-word `from`
 - WHEN the user imports in merge mode
 - THEN valid entries are applied, the invalid one is skipped, and the report
   counts it as skipped
@@ -178,8 +178,8 @@ Invalid entries SHALL never abort a merge import.
 #### Scenario: Export round-trips
 
 - GIVEN the dictionary contains two entries
-- WHEN the user exports it and imports the file back in merge mode
-- THEN the dictionary is unchanged and the report says two entries updated
+- WHEN they are exported and the file is imported again
+- THEN the dictionary is unchanged
 
 ### Requirement: Runtime refresh and audio cache
 

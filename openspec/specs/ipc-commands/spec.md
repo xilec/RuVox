@@ -1022,10 +1022,17 @@ casing convention.
 #### Scenario: save rejects an invalid entry atomically
 
 - GIVEN the current dictionary is valid and a save is requested with one
-  valid and one invalid entry (Cyrillic `from`)
+  valid and one invalid entry (a multi-word `from`)
 - WHEN `save_user_dictionary` is called
 - THEN the command rejects with a validation error and the dictionary file
   is unchanged
+
+#### Scenario: save accepts a Russian word
+
+- GIVEN a save is requested with `замок → зам+ок`
+- WHEN `save_user_dictionary` is called
+- THEN the command succeeds and `get_user_dictionary` returns the entry with
+  the mark preserved
 
 #### Scenario: save refreshes normalization without restart
 
@@ -1045,4 +1052,3 @@ casing convention.
 - GIVEN the path points to a nonexistent file
 - WHEN `import_user_dictionary` is called
 - THEN the command rejects with a typed error and the dictionary is unchanged
-

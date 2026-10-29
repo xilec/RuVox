@@ -55,7 +55,7 @@ inflection needs its own entry.
 - THEN it is accepted and the stress is applied wherever the exact word
   "замок" (any case) occurs
 
-#### Scenario: Cyrillic source token is rejected
+#### Scenario: Multi-word source token is rejected
 
 - GIVEN an entry attempt with `from` "Иванов Петр"
 - WHEN the entry is validated
@@ -108,3 +108,41 @@ inflection needs its own entry.
 - WHEN the user asks for help on the spoken-form field
 - THEN the tooltip states that `+` before a vowel sets the stress and that
   only engines with stress support apply it
+
+### Requirement: Import and export
+
+Export SHALL write the current entries as a valid dictionary TOML file to
+the chosen path. Import SHALL read a TOML file, validate every entry, and
+apply one of two modes chosen by the user at import time: **merge** —
+imported entries win on key collisions, invalid entries are skipped, and the
+result is reported as counts (added / updated / skipped); **replace** — the
+imported list fully replaces the current dictionary after validation.
+Invalid entries SHALL never abort a merge import.
+
+#### Scenario: Merge with collision
+
+- GIVEN the current dictionary has `docker → докер` and the imported file has
+  `docker → докка`
+- WHEN the user imports in merge mode
+- THEN the resulting entry is `docker → докка` and the report says one entry
+  updated
+
+#### Scenario: Merge skips invalid entries
+
+- GIVEN the imported file contains an entry with a multi-word `from`
+- WHEN the user imports in merge mode
+- THEN valid entries are applied, the invalid one is skipped, and the report
+  counts it as skipped
+
+#### Scenario: Replace mode
+
+- GIVEN the current dictionary has three entries and the imported file has
+  one valid entry
+- WHEN the user imports in replace mode
+- THEN the dictionary contains exactly the imported entry
+
+#### Scenario: Export round-trips
+
+- GIVEN the dictionary contains two entries
+- WHEN they are exported and the file is imported again
+- THEN the dictionary is unchanged
