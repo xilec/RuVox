@@ -4,6 +4,7 @@ import {
   isDuplicateFrom,
   isSingleSourceToken,
   sortAndFilterEntries,
+  spokenForm,
   validateEntryInput,
 } from './userDictionary';
 
@@ -20,8 +21,16 @@ describe('validateEntryInput', () => {
     expect(validateEntryInput({ from: '', to: 'что-то' })?.reason).toBe('from.required');
   });
 
-  it('rejects a Cyrillic from', () => {
-    expect(validateEntryInput({ from: 'Иванов', to: 'иванов' })?.reason).toBe('from.charset');
+  it('accepts a Russian word', () => {
+    expect(validateEntryInput({ from: 'замок', to: 'зам+ок' })).toBeNull();
+  });
+
+  it('rejects a multi-word from', () => {
+    expect(validateEntryInput({ from: 'Иванов Пётр', to: 'иванов' })?.reason).toBe('from.charset');
+  });
+
+  it('rejects a mixed-script from', () => {
+    expect(validateEntryInput({ from: 'IPзамок', to: 'ип замок' })?.reason).toBe('from.charset');
   });
 
   it('rejects a digit-only from', () => {
@@ -105,8 +114,13 @@ describe('isSingleSourceToken', () => {
     expect(isSingleSourceToken('IPv6')).toBe(true);
   });
 
-  it('rejects Cyrillic', () => {
-    expect(isSingleSourceToken('иванов')).toBe(false);
+  it('accepts a Russian word', () => {
+    expect(isSingleSourceToken('замок')).toBe(true);
+    expect(isSingleSourceToken('  Замок ')).toBe(true);
+  });
+
+  it('rejects a mixed-script token', () => {
+    expect(isSingleSourceToken('IPзамок')).toBe(false);
   });
 
   it('rejects multi-word selections', () => {
@@ -117,5 +131,33 @@ describe('isSingleSourceToken', () => {
     expect(isSingleSourceToken('C++')).toBe(false);
     expect(isSingleSourceToken('')).toBe(false);
     expect(isSingleSourceToken('   ')).toBe(false);
+  });
+});
+
+describe('stress marks', () => {
+  it('accepts a mark before a vowel', () => {
+    expect(validateEntryInput({ from: 'moskva', to: 'М+осква' })).toBeNull();
+    expect(validateEntryInput({ from: 'zamok', to: 'зам+ок' })).toBeNull();
+    expect(validateEntryInput({ from: 'yolka', to: '+Ёлка' })).toBeNull();
+    expect(validateEntryInput({ from: 'moskva', to: 'Москв+а' })).toBeNull();
+  });
+
+  it('rejects a malformed mark', () => {
+    for (const to of ['Моск+ва', 'М+оск+ва', '+Москва', 'Москва+']) {
+      expect(validateEntryInput({ from: 'moskva', to })?.reason).toBe('to.stress_malformed');
+    }
+  });
+
+  it('strips the mark from the spoken form', () => {
+    expect(spokenForm('М+осква')).toBe('Москва');
+    expect(spokenForm('зам+ок')).toBe('замок');
+    expect(spokenForm('Москва')).toBe('Москва');
+    expect(spokenForm('Моск+ва')).toBeNull();
+  });
+
+  it('counts the length without the mark', () => {
+    const spoken = 'б'.repeat(257);
+    expect(validateEntryInput({ from: 'x', to: spoken })?.reason).toBe('to.too_long');
+    expect(validateEntryInput({ from: 'x', to: `+${'а'.repeat(255)}` })).toBeNull();
   });
 });

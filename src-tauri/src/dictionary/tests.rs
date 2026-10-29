@@ -25,9 +25,40 @@ fn accepts_alnum_token_with_letter() {
 }
 
 #[test]
-fn rejects_cyrillic_from() {
+fn accepts_a_russian_word() {
+    assert!(validate_entry("замок", "зам+ок").is_ok());
+    assert!(validate_entry("Замок", "зам+ок").is_ok(), "case is fine");
+    assert!(
+        validate_entry("ёлка", "+Ёлка").is_ok(),
+        "ё is a Russian letter"
+    );
+    assert!(
+        validate_entry("А4", "а четыре").is_ok(),
+        "letters and digits"
+    );
+}
+
+#[test]
+fn rejects_a_multi_word_key() {
     assert!(matches!(
-        validate_entry("Иванов", "иванов"),
+        validate_entry("Иванов Пётр", "иванов пётр"),
+        Err(DictionaryError::InvalidFrom)
+    ));
+}
+
+#[test]
+fn rejects_a_mixed_script_key() {
+    assert!(matches!(
+        validate_entry("IPзамок", "ип замок"),
+        Err(DictionaryError::InvalidFrom)
+    ));
+}
+
+#[test]
+fn rejects_a_non_russian_cyrillic_letter() {
+    // Ukrainian "і" is outside the Russian alphabet the pipeline narrates.
+    assert!(matches!(
+        validate_entry("кіт", "кот"),
         Err(DictionaryError::InvalidFrom)
     ));
 }
@@ -200,7 +231,7 @@ fn invalid_entries_are_skipped_on_load() {
     // Non-ASCII keys need TOML quoting; "123" is a valid bare key.
     fs::write(
         &path,
-        "version = 1\n\n[entries]\n\"Иванов\" = \"иванов\"\ndocker = \"докер\"\n123 = \"число\"\n",
+        "version = 1\n\n[entries]\n\"Иванов Пётр\" = \"иванов\"\ndocker = \"докер\"\n123 = \"число\"\n",
     )
     .expect("write fixture");
 
@@ -269,4 +300,139 @@ fn export_writes_valid_dictionary_file() {
 
     let entries = store::parse_import(&fs::read_to_string(&out).expect("read")).expect("reparse");
     assert_eq!(entries, vec![entry("GitHub", "гитхаб")]);
+}
+
+// ── Stress marks ───────────────────────────────────────────────────────────
+
+#[test]
+fn accepts_a_mark_before_a_vowel() {
+    assert!(validate_entry("moskva", "М+осква").is_ok());
+    assert!(validate_entry("zamok", "зам+ок").is_ok(), "lowercase vowel");
+    assert!(
+        validate_entry("yolka", "+Ёлка").is_ok(),
+        "a mark at the start is fine before a vowel"
+    );
+}
+
+#[test]
+fn rejects_a_malformed_mark() {
+    for to in ["Моск+ва", "М+оск+ва", "+Москва", "Москва+", "М+осква+"]
+    {
+        assert!(
+            matches!(
+                validate_entry("moskva", to),
+                Err(DictionaryError::InvalidStress)
+            ),
+            "{to:?} must be rejected"
+        );
+    }
+}
+
+#[test]
+fn the_spoken_form_never_contains_the_mark() {
+    assert_eq!(spoken_form("М+осква").expect("valid"), "Москва");
+    assert_eq!(spoken_form("зам+ок").expect("valid"), "замок");
+    assert_eq!(spoken_form("Москва").expect("valid"), "Москва");
+    assert!(matches!(
+        spoken_form("Моск+ва"),
+        Err(DictionaryError::InvalidStress)
+    ));
+}
+
+#[test]
+fn the_length_limit_counts_the_spoken_form() {
+    let spoken = "а".repeat(MAX_TO_LEN);
+    assert!(
+        validate_entry("x", &format!("{spoken}+а")).is_err(),
+        "over the limit"
+    );
+    let at_limit = "б".repeat(MAX_TO_LEN - 1);
+    assert!(
+        validate_entry("x", &format!("{at_limit}+а")).is_ok(),
+        "the mark itself does not count"
+    );
+}
+
+#[test]
+fn resolve_keeps_the_mark_only_when_asked() {
+    let mut dict = UserDictionary::default();
+    dict.insert(entry("moskva", "М+осква"));
+    assert_eq!(dict.resolve("moskva", false).as_deref(), Some("Москва"));
+    assert_eq!(dict.resolve("moskva", true).as_deref(), Some("М+осква"));
+}
+
+#[test]
+fn a_malformed_mark_in_the_file_is_skipped() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("user_dictionary.toml");
+    fs::write(
+        &path,
+        "version = 1\n\n[entries]\nmoskva = \"Моск+ва\"\nzamok = \"зам+ок\"\n",
+    )
+    .expect("write");
+    let dict = DictionaryStore::new(path).load();
+    assert_eq!(dict.len(), 1, "only the well-formed entry survives");
+    assert!(dict.contains("zamok"));
+}
+
+#[test]
+fn the_mark_survives_export_and_reimport() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut dict = UserDictionary::default();
+    dict.insert(entry("Москва", "М+осква"));
+    let out = dir.path().join("exported.toml");
+
+    store::export_to(&dict, &out).expect("export");
+    let entries = store::parse_import(&fs::read_to_string(&out).expect("read")).expect("reparse");
+
+    assert_eq!(entries, vec![entry("Москва", "М+осква")]);
+}
+
+#[test]
+fn a_cyrillic_key_round_trips_through_the_file() {
+    // TOML quotes a non-bare key on write; if it did not, the loader would
+    // reject the file it just wrote.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("user_dictionary.toml");
+    let mut dict = UserDictionary::default();
+    dict.insert(entry("замок", "зам+ок"));
+    store::export_to(&dict, &path).expect("export");
+
+    let raw = fs::read_to_string(&path).expect("read");
+    assert!(
+        raw.contains("\"замок\" = \"зам+ок\""),
+        "a Cyrillic key is quoted: {raw}"
+    );
+    let loaded = DictionaryStore::new(path).load();
+    assert_eq!(loaded.get("замок"), Some("зам+ок"));
+}
+
+#[test]
+fn script_of_the_keys_is_reported() {
+    let mut dict = UserDictionary::default();
+    assert!(!dict.has_keys_in(KeyScript::Latin));
+    assert!(!dict.has_keys_in(KeyScript::Cyrillic));
+
+    dict.insert(entry("docker", "доккер"));
+    assert!(dict.has_keys_in(KeyScript::Latin));
+    assert!(
+        !dict.has_keys_in(KeyScript::Cyrillic),
+        "a Latin-only dictionary must not trigger the Cyrillic scan"
+    );
+
+    dict.insert(entry("замок", "зам+ок"));
+    assert!(dict.has_keys_in(KeyScript::Latin));
+    assert!(dict.has_keys_in(KeyScript::Cyrillic));
+}
+
+#[test]
+fn e_and_yo_are_different_keys() {
+    let mut dict = UserDictionary::default();
+    dict.insert(entry("все", "вс+е"));
+    assert_eq!(dict.resolve("все", true).as_deref(), Some("вс+е"));
+    assert_eq!(
+        dict.resolve("всё", true),
+        None,
+        "ё is a different letter, so the entry must not fire on it"
+    );
 }

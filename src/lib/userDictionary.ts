@@ -1,17 +1,27 @@
 /**
  * Pure helpers for the user dictionary editor (change `user-dictionary`).
  * Mirrors the backend validation contract (src-tauri/src/dictionary): a
- * source token is Latin letters and digits with at least one letter; the
- * spoken form is a non-empty free-form string. The Rust side stays the
- * source of truth — these checks exist to give the form instant feedback.
+ * source token is one word of Latin or Russian Cyrillic letters and digits
+ * with at least one letter; the
+ * spoken form is a non-empty free-form string that may carry one `+` before
+ * a Russian vowel to fix the stress. The Rust side stays the source of truth —
+ * these checks exist to give the form instant feedback.
  */
 
 const MAX_FROM_LEN = 64;
 const MAX_TO_LEN = 256;
 
-/** A single valid source token: Latin letters and digits, ≥1 letter — the
- *  same token shape the dictionary pre-pass regex matches in text. */
-const SOURCE_TOKEN_RE = /^(?=.*[A-Za-z])[A-Za-z0-9]+$/;
+/** The explicit stress mark a spoken form may carry: `+` before the vowel. */
+const STRESS_MARK = '+';
+
+/** Russian vowels a stress mark may precede (both cases are accepted). */
+const STRESSED_VOWELS = 'аеёиоуыэюя';
+
+/** A single valid source token: one word of letters and digits with at least
+ *  one letter, all letters from one script (Latin or Russian Cyrillic) — the
+ *  same shapes the dictionary pre-pass matches in text. */
+const LATIN_TOKEN_RE = /^[A-Za-z0-9]*[A-Za-z][A-Za-z0-9]*$/;
+const CYRILLIC_TOKEN_RE = /^[0-9]*[а-яёА-ЯЁ][0-9а-яёА-ЯЁ]*$/;
 
 export interface EntryInput {
   from: string;
@@ -24,8 +34,29 @@ export type DictionaryValidationReason =
   | 'from.charset'
   | 'from.too_long'
   | 'to.required'
+  | 'to.stress_malformed'
   | 'to.too_long'
   | 'to.latin_warning';
+
+/** The spoken form with the stress mark removed, or null when the mark is
+ *  malformed. Mirrors the Rust `spoken_form`, so the editor rejects exactly
+ *  what the backend rejects. */
+export function spokenForm(to: string): string | null {
+  let spoken = '';
+  let stressed = false;
+  for (let i = 0; i < to.length; i += 1) {
+    const ch = to[i];
+    if (ch !== STRESS_MARK) {
+      spoken += ch;
+      continue;
+    }
+    if (stressed) return null;
+    const next = to[i + 1];
+    if (next === undefined || !STRESSED_VOWELS.includes(next.toLowerCase())) return null;
+    stressed = true;
+  }
+  return spoken;
+}
 
 /** Validate a from/to pair. Returns the first hard failure, or null when
  *  the pair passes; `to.latin_warning` is a soft warning the caller treats
@@ -38,14 +69,16 @@ export function validateEntryInput(
 
   if (from.length === 0) return { reason: 'from.required', blocking: true };
   if (from.length > MAX_FROM_LEN) return { reason: 'from.too_long', blocking: true };
-  if (!SOURCE_TOKEN_RE.test(from)) return { reason: 'from.charset', blocking: true };
+  if (!isSingleSourceToken(from)) return { reason: 'from.charset', blocking: true };
 
   if (to.length === 0) return { reason: 'to.required', blocking: true };
-  if ([...to].length > MAX_TO_LEN) return { reason: 'to.too_long', blocking: true };
+  const spoken = spokenForm(to);
+  if (spoken === null) return { reason: 'to.stress_malformed', blocking: true };
+  if ([...spoken].length > MAX_TO_LEN) return { reason: 'to.too_long', blocking: true };
 
   // Soft warning: Latin letters or digits inside `to` reach the TTS engine
   // verbatim — later phases do not re-normalize a dictionary replacement.
-  if (/[A-Za-z0-9]/.test(to)) return { reason: 'to.latin_warning', blocking: false };
+  if (/[A-Za-z0-9]/.test(spoken)) return { reason: 'to.latin_warning', blocking: false };
 
   return null;
 }
@@ -81,5 +114,6 @@ export function sortAndFilterEntries<T extends EntryInput>(
 /** True when a text selection is exactly one valid source token (the
  *  preview dialog's "В словарь" quick-add gate). */
 export function isSingleSourceToken(selection: string): boolean {
-  return SOURCE_TOKEN_RE.test(selection.trim());
+  const token = selection.trim();
+  return LATIN_TOKEN_RE.test(token) || CYRILLIC_TOKEN_RE.test(token);
 }

@@ -26,7 +26,7 @@ type, layer, case-sensitive entry
 **Text Profile**:
 Declarative per-engine description of what the engine can read and of its
 limits — supported languages, per-kind fragment routes, native digits and units,
-stress support (declared, not yet acted on), allowed charset, chunking limit and
+stress support (which decides whether an explicit dictionary mark survives), allowed charset, chunking limit and
 its unit, language-tag syntax, pause policy — keyed by `EngineKind`, holding
 data only and no behavior.
 _Avoid_: capability profile, engine config, pipeline settings

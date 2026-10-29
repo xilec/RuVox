@@ -10,7 +10,6 @@
 //!   cargo test --manifest-path src-tauri/Cargo.toml --test golden_profiles -- --ignored --nocapture
 
 use ruvox_tauri_lib::pipeline::TTSPipeline;
-use ruvox_tauri_lib::tts::profiles::NATIVE_EN_PROFILE;
 
 mod common;
 
@@ -68,18 +67,33 @@ fn classify_corpus_by_profile() {
     assert_eq!(invariant.len() + specific.len(), cases.len());
 }
 
-/// Authoring helper for the `native_en/` fixture: rewrites its expected text
-/// and char map from the current pipeline, then the case is reviewed by hand.
+/// Authoring helper for the per-profile fixtures: rewrites the expected text
+/// and char map of one case from the current pipeline, then the case is
+/// reviewed by hand.
 ///
-///   cargo test --test golden_profiles -- --ignored write_native_en_case
+///   RUVOX_FIXTURE_CASE=native_en/dictionary_stress \
+///     cargo test --test golden_profiles -- --ignored write_fixture_case
+///
+/// Without the variable it defaults to `native_en/native_blocks`.
 #[test]
 #[ignore = "fixture authoring helper"]
-fn write_native_en_case() {
-    let dir = common::fixtures_dir().join("native_en");
-    let input = common::read_fixture_text("native_en/native_blocks", "input.txt");
+fn write_fixture_case() {
+    let case = std::env::var("RUVOX_FIXTURE_CASE")
+        .unwrap_or_else(|_| "native_en/native_blocks".to_string());
+    let (profile_name, case_name) = case
+        .split_once('/')
+        .unwrap_or_else(|| panic!("expected <profile>/<case>, got {case:?}"));
+    let input = common::read_fixture_text(&format!("{profile_name}/{case_name}"), "input.txt");
     let mut pipeline = TTSPipeline::new();
-    let out = pipeline.process_for_engine(&input, &NATIVE_EN_PROFILE);
+    pipeline.set_user_dictionary(common::read_dict_sidecar(&format!(
+        "{profile_name}/{case_name}"
+    )));
+    if let Some(mode) = common::read_mode_sidecar(&format!("{profile_name}/{case_name}")) {
+        pipeline.set_code_block_mode(mode);
+    }
+    let out = pipeline.process_for_engine(&input, common::profile_by_name(profile_name));
 
+    let dir = common::fixtures_dir().join(profile_name);
     let mapping = serde_json::json!({
         "original": out.mapping.original,
         "transformed": out.mapping.transformed,
@@ -90,7 +104,8 @@ fn write_native_en_case() {
         "{}\n",
         serde_json::to_string_pretty(&mapping).expect("serialize mapping")
     );
-    std::fs::write(dir.join("native_blocks.expected.txt"), expected_text)
+    std::fs::write(dir.join(format!("{case_name}.expected.txt")), expected_text)
         .expect("write expected text");
-    std::fs::write(dir.join("native_blocks.char_map.json"), char_map).expect("write char map");
+    std::fs::write(dir.join(format!("{case_name}.char_map.json")), char_map)
+        .expect("write char map");
 }

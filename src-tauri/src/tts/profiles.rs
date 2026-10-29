@@ -12,10 +12,12 @@ use tts_contract::{
     Charset, Chunk, Digits, Limit, Markup, Pauses, Reading, Route, Stress, TextProfile, Units,
 };
 
-/// Silero, both the `ttsd` sidecar and the in-process crate: Russian only, so
-/// every Latin fragment is transliterated; digits and units are expanded by the
-/// pipeline; stress is applied by the engine's own frontend; codepoints outside
-/// the model alphabet are dropped, which is why the alphabet is declared here.
+/// The `ttsd` sidecar (Silero v5 through Python): Russian only, so every Latin
+/// fragment is transliterated; digits and units are expanded by the pipeline;
+/// codepoints outside the model alphabet are dropped, which is why the alphabet
+/// is declared here. Stress is [`Stress::None`]: the Python frontend accentuates
+/// on its own, but whether it honours an explicit `+` is not verified yet, so
+/// the dictionary mark is stripped until the probe (#311) says otherwise.
 pub static SILERO_PROFILE: TextProfile = TextProfile {
     languages: &["ru"],
     route: Route {
@@ -36,9 +38,10 @@ pub static SILERO_PROFILE: TextProfile = TextProfile {
     markup: Markup::None,
 };
 
-/// The in-process Silero engine. Identical to the sidecar profile: same model
-/// family, same frontend, same limits. Kept as a distinct value so the two can
-/// diverge (the native frontend ports the Python one) without touching callers.
+/// The in-process Silero engine. Same model family and limits as the sidecar
+/// profile, but the accentor is our code: it predicts stress and keeps an
+/// explicit `+` mark where the user put it, which is [`Stress::Auto`]. Kept as a
+/// distinct value so the two can diverge further without touching callers.
 pub static SILERO_NATIVE_PROFILE: TextProfile = TextProfile {
     languages: &["ru"],
     route: Route {
@@ -47,7 +50,7 @@ pub static SILERO_NATIVE_PROFILE: TextProfile = TextProfile {
     },
     digits: Digits::Expanded,
     units: Units::Expanded,
-    stress: Stress::None,
+    stress: Stress::Auto,
     charset: Charset::ModelAlphabet,
     chunk: Chunk {
         limit: Limit::Chars(900),
@@ -88,7 +91,8 @@ pub static PIPER_PROFILE: TextProfile = TextProfile {
 ///
 /// Deliberately absent from [`profile_for`]: no engine ships with it. It exists
 /// so tests and the golden harness can exercise every gated path — a profile is
-/// data, so proving a gated block works needs no engine to implement it.
+/// data, so proving a gated block works needs no engine to implement it. It also
+/// declares [`Stress::Manual`] so the explicit-only stress path is covered.
 pub static NATIVE_EN_PROFILE: TextProfile = TextProfile {
     languages: &["ru", "en"],
     route: Route {
@@ -97,7 +101,7 @@ pub static NATIVE_EN_PROFILE: TextProfile = TextProfile {
     },
     digits: Digits::Native,
     units: Units::Native,
-    stress: Stress::None,
+    stress: Stress::Manual,
     charset: Charset::Any,
     chunk: Chunk {
         limit: Limit::Secs(25),
@@ -156,9 +160,17 @@ mod tests {
 
     #[test]
     fn every_engine_kind_profile_differs_only_where_engines_differ() {
+        // Stress is the only intended difference between the two Silero
+        // profiles: everything else (route, digits, units, charset, chunk,
+        // markup) stays in lockstep, so a silent drift in one of them fails
+        // here rather than in a fixture nobody reads.
         assert_eq!(
-            SILERO_PROFILE, SILERO_NATIVE_PROFILE,
-            "the two Silero engines share a model family and a frontend"
+            TextProfile {
+                stress: Stress::None,
+                ..SILERO_NATIVE_PROFILE
+            },
+            SILERO_PROFILE,
+            "the two Silero engines differ only in stress"
         );
         assert_ne!(
             PIPER_PROFILE.chunk, SILERO_PROFILE.chunk,
@@ -168,8 +180,26 @@ mod tests {
             PIPER_PROFILE.charset, SILERO_PROFILE.charset,
             "Piper is sanitized by its adapter while Silero is bound to its model alphabet"
         );
-        // `stress` is declared data with no behavior yet, so every profile says
-        // `None`; the stress change (#312) is what will make engines differ here.
+        assert_eq!(
+            SILERO_NATIVE_PROFILE.stress,
+            Stress::Auto,
+            "the native accentor honours an explicit mark, so the dictionary mark reaches it"
+        );
+        assert_eq!(
+            SILERO_PROFILE.stress,
+            Stress::None,
+            "the sidecar's handling of an explicit mark is unverified (#311)"
+        );
+        assert_eq!(
+            PIPER_PROFILE.stress,
+            Stress::None,
+            "eSpeak reads '+' as 'plus', so the mark must be stripped"
+        );
+        assert_eq!(
+            NATIVE_EN_PROFILE.stress,
+            Stress::Manual,
+            "the test profile covers the explicit-only path"
+        );
     }
 
     #[test]

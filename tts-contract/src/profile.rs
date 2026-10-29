@@ -66,10 +66,17 @@ pub enum Units {
 }
 
 /// Stress handling.
+///
+/// The pipeline is the renderer: a user-dictionary entry may carry one `+`
+/// before a vowel, and the pipeline keeps that mark in the replacement exactly
+/// when this value is not [`Stress::None`]. What the mark means afterwards is
+/// the engine's business — an [`Stress::Auto`] engine that predicts stress
+/// itself treats an explicit mark as an override, a [`Stress::Manual`] one
+/// reads only what it is given.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stress {
-    /// No stress control: the adapter adds nothing and an explicit mark from
-    /// the user dictionary is not rendered.
+    /// No stress control: the mark is removed from the replacement and the
+    /// adapter adds nothing.
     None,
     /// Automatic stress; an explicit mark from the user dictionary overtakes
     /// automatic stress for that word.

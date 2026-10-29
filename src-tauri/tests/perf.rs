@@ -15,7 +15,7 @@ use ruvox_tauri_lib::pipeline::TTSPipeline;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-/// Serializes the two timing tests: `cargo test` runs tests of one binary in
+/// Serializes the timing tests: `cargo test` runs tests of one binary in
 /// parallel threads, which would skew wall-time measurements.
 static PERF_LOCK: Mutex<()> = Mutex::new(());
 
@@ -62,7 +62,35 @@ fn dense_markup_1mb_normalizes_within_budget() {
     );
 }
 
+/// A Cyrillic dictionary entry adds one candidate scan over Cyrillic words.
+/// The input is a quarter of the main case so the suite does not pay a second
+/// full-size debug pass, but a quadratic scan still blows the budget.
+#[test]
+fn cyrillic_dictionary_entry_keeps_the_quarter_size_budget() {
+    let _guard = PERF_LOCK
+        .lock()
+        .expect("perf test serialization lock poisoned");
+    let mut pipeline = TTSPipeline::new();
+    let mut dict = ruvox_tauri_lib::dictionary::UserDictionary::default();
+    dict.insert(ruvox_tauri_lib::dictionary::DictionaryEntry {
+        from: "замок".to_string(),
+        to: "зам+ок".to_string(),
+    });
+    pipeline.set_user_dictionary(dict);
+    let input = dense_markup(256_000);
+
+    let start = Instant::now();
+    let _ = pipeline.process_with_char_mapping(&input);
+    let elapsed = start.elapsed();
+
+    assert!(
+        elapsed < Duration::from_secs(15),
+        "256 KB with a Cyrillic dictionary entry normalized in {elapsed:?}, budget is 15 s"
+    );
+}
+
 /// Spec scenario "Doubling the input scales near-linearly".
+
 #[test]
 fn dense_markup_scaling_is_near_linear() {
     let _guard = PERF_LOCK

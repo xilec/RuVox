@@ -178,6 +178,9 @@ pub struct URLPathNormalizer<'a> {
     pub numbers: &'a NumberNormalizer,
     english: Option<&'a EnglishNormalizer>,
     user_dictionary: Option<&'a UserDictionary>,
+    /// Whether an entry's explicit stress mark reaches the text (the active
+    /// profile decides; see `UserDictionary::resolve`).
+    mark_stress: bool,
 }
 
 impl<'a> URLPathNormalizer<'a> {
@@ -186,12 +189,14 @@ impl<'a> URLPathNormalizer<'a> {
             numbers,
             english: Some(english),
             user_dictionary: None,
+            mark_stress: false,
         }
     }
 
     /// Attach the user dictionary so URL word reading honors user entries
     /// before `IT_TERMS` (change `user-dictionary`).
-    pub fn with_user_dictionary(mut self, dict: &'a UserDictionary) -> Self {
+    pub fn with_user_dictionary(mut self, dict: &'a UserDictionary, mark_stress: bool) -> Self {
+        self.mark_stress = mark_stress;
         self.user_dictionary = Some(dict);
         self
     }
@@ -205,6 +210,7 @@ impl<'a> URLPathNormalizer<'a> {
             numbers,
             english: None,
             user_dictionary: None,
+            mark_stress: false,
         }
     }
 
@@ -245,8 +251,11 @@ impl<'a> URLPathNormalizer<'a> {
                 let lower = word.to_lowercase();
                 // User dictionary entries win over built-in IT_TERMS
                 // (change `user-dictionary`).
-                if let Some(to) = self.user_dictionary.and_then(|d| d.get(&lower)) {
-                    return to.to_string();
+                if let Some(to) = self
+                    .user_dictionary
+                    .and_then(|d| d.resolve(&lower, self.mark_stress))
+                {
+                    return to;
                 }
                 // Check IT_TERMS first (e.g. "github" → "гитхаб").
                 if let Some(v) = super::english::IT_TERMS.get(lower.as_str()) {
@@ -915,6 +924,25 @@ mod tests {
     // ---- User dictionary (change `user-dictionary`) ----
 
     #[test]
+    fn url_word_lookup_strips_a_mark_for_an_engine_without_stress() {
+        let (en, nn) = mk_normalizer();
+        let mut dict = crate::dictionary::UserDictionary::default();
+        dict.insert(crate::dictionary::DictionaryEntry {
+            from: "moskva".to_string(),
+            to: "М+осква".to_string(),
+        });
+        let stripped = URLPathNormalizer::new(&en, &nn)
+            .with_user_dictionary(&dict, false)
+            .normalize_url("https://moskva.ru/");
+        assert!(stripped.contains("Москва"), "stripped: {stripped}");
+        assert!(!stripped.contains('+'), "no mark leaks: {stripped}");
+        let marked = URLPathNormalizer::new(&en, &nn)
+            .with_user_dictionary(&dict, true)
+            .normalize_url("https://moskva.ru/");
+        assert!(marked.contains("М+осква"), "marked: {marked}");
+    }
+
+    #[test]
     fn user_entry_wins_over_it_terms_in_url_host() {
         // "github" is a built-in IT_TERMS entry ("гитхаб"); the user entry
         // must override it when the URL word is read.
@@ -924,7 +952,7 @@ mod tests {
             from: "github".to_string(),
             to: "хаб".to_string(),
         });
-        let n = URLPathNormalizer::new(&en, &nn).with_user_dictionary(&dict);
+        let n = URLPathNormalizer::new(&en, &nn).with_user_dictionary(&dict, false);
         let spoken = n.normalize_url("https://github.com/ruvox");
         assert!(
             spoken.contains("хаб"),

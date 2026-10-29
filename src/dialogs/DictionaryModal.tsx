@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ActionIcon,
   Badge,
   Button,
   Divider,
@@ -9,6 +10,7 @@ import {
   Table,
   Text,
   TextInput,
+  Tooltip,
 } from '@mantine/core';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
@@ -53,9 +55,17 @@ const VALIDATION_KEY: Record<DictionaryValidationReason, Parameters<ReturnType<t
   'from.charset': 'dictionary.form.error.from.charset',
   'from.too_long': 'dictionary.form.error.from.too_long',
   'to.required': 'dictionary.form.error.to.required',
+  'to.stress_malformed': 'dictionary.form.error.to.stress_malformed',
   'to.too_long': 'dictionary.form.error.to.too_long',
   'to.latin_warning': 'dictionary.form.warning.latin',
 };
+
+/** The dialog sits above Settings (z 200) and the floating preview window
+ *  (--ruvox-preview-z: 300); its tooltips have to clear the dialog itself,
+ *  because the Mantine default (popover, z 300) would land behind it. */
+const DIALOG_Z = 400;
+const NESTED_DIALOG_Z = 500;
+const TOOLTIP_Z = 600;
 
 /** True when the dropped file looks like a dictionary TOML (the AppShell
  *  global drop handler only claims importable text files, so a .toml lands
@@ -287,9 +297,7 @@ export function DictionaryModal({
       title={tt('dictionary.title')}
       size="lg"
       withinPortal
-      /* Above the Settings modal (z 200) and the floating preview window
-       * (--ruvox-preview-z: 300): the editor is opened from both. */
-      zIndex={400}
+      zIndex={DIALOG_Z}
     >
       <Stack gap="sm">
         <Group justify="space-between" wrap="nowrap">
@@ -308,6 +316,24 @@ export function DictionaryModal({
           <Stack gap="xs" p="sm" bd="1px solid var(--mantine-color-default-border)">
             <TextInput
               label={tt('dictionary.form.from')}
+              rightSection={
+                <Tooltip
+                  label={tt('dictionary.form.from.hint')}
+                  multiline
+                  w={260}
+                  withArrow
+                  zIndex={TOOLTIP_Z}
+                >
+                  <ActionIcon
+                    variant="subtle"
+                    size="sm"
+                    radius="xl"
+                    aria-label={tt('dictionary.form.from.help')}
+                  >
+                    ?
+                  </ActionIcon>
+                </Tooltip>
+              }
               placeholder={tt('dictionary.form.from.placeholder')}
               value={editor.from}
               data-autofocus
@@ -320,6 +346,24 @@ export function DictionaryModal({
             />
             <TextInput
               label={tt('dictionary.form.to')}
+              rightSection={
+                <Tooltip
+                  label={tt('dictionary.form.stress.hint')}
+                  multiline
+                  w={260}
+                  withArrow
+                  zIndex={TOOLTIP_Z}
+                >
+                  <ActionIcon
+                    variant="subtle"
+                    size="sm"
+                    radius="xl"
+                    aria-label={tt('dictionary.form.stress.help')}
+                  >
+                    ?
+                  </ActionIcon>
+                </Tooltip>
+              }
               placeholder={tt('dictionary.form.to.placeholder')}
               value={editor.to}
               onChange={(e) => setEditor({ ...editor, to: e.currentTarget.value })}
@@ -443,7 +487,7 @@ export function DictionaryModal({
         title={tt('dictionary.import.choose.title')}
         size="md"
         withinPortal
-        zIndex={500}
+        zIndex={NESTED_DIALOG_Z}
       >
         <Stack gap="sm">
           <Text size="sm">{tt('dictionary.import.choose.message', [pendingImport ?? ''])}</Text>
