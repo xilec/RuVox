@@ -320,6 +320,10 @@ pub struct TTSPipeline {
     /// User-authored pronunciation overrides (change `user-dictionary`).
     /// Single home for the map; lookup sites receive it by reference.
     user_dictionary: UserDictionary,
+    /// Whether an explicit dictionary stress mark reaches the text: derived
+    /// from the profile at the start of every `process_for_engine` run, so an
+    /// engine switch cannot inherit the previous run's decision.
+    mark_stress: bool,
 }
 
 impl TTSPipeline {
@@ -336,6 +340,7 @@ impl TTSPipeline {
             code_block_handler: CodeBlockHandler::new(),
             code_normalizer: CodeIdentifierNormalizer::new(),
             user_dictionary: UserDictionary::default(),
+            mark_stress: false,
         }
     }
 
@@ -419,8 +424,7 @@ impl TTSPipeline {
         // An explicit dictionary stress mark reaches the text only when the
         // active engine renders it; the dictionary carries the decision for the
         // lookup sites that never see the profile.
-        self.user_dictionary
-            .set_mark_stress(profile.stress != Stress::None);
+        self.mark_stress = profile.stress != Stress::None;
 
         // The language the engine reads a native fragment in — the same one a
         // `Native` span carries.
@@ -438,7 +442,8 @@ impl TTSPipeline {
 
         // ── Phase 1: Code blocks (must run before space/dash normalization) ───
         let user_dict = &self.user_dictionary;
-        self.code_block_handler.process(&mut tracked, user_dict);
+        self.code_block_handler
+            .process(&mut tracked, user_dict, self.mark_stress);
 
         // ── Phase 2: Quote normalization ─────────────────────────────────────
         tracked.replace("\u{ab}", "\""); // «
@@ -478,8 +483,8 @@ impl TTSPipeline {
         {
             let num = &self.number_normalizer;
             let eng = &self.english_normalizer;
-            let url_norm =
-                URLPathNormalizer::new(eng, num).with_user_dictionary(&self.user_dictionary);
+            let url_norm = URLPathNormalizer::new(eng, num)
+                .with_user_dictionary(&self.user_dictionary, self.mark_stress);
             tracked.sub(re_url(), |caps| {
                 let url = caps.get(0).unwrap().as_str();
                 let (core, suffix) = split_trailing_punct(url);
@@ -673,17 +678,18 @@ impl TTSPipeline {
         if narrate_identifiers {
             let code = &self.code_normalizer;
             let user_dict = &self.user_dictionary;
+            let mark_stress = self.mark_stress;
             tracked.sub(re_camel_lower(), |caps| {
-                code.normalize_camel_case(caps.get(0).unwrap().as_str(), user_dict)
+                code.normalize_camel_case(caps.get(0).unwrap().as_str(), user_dict, mark_stress)
             });
             tracked.sub(re_pascal(), |caps| {
-                code.normalize_camel_case(caps.get(0).unwrap().as_str(), user_dict)
+                code.normalize_camel_case(caps.get(0).unwrap().as_str(), user_dict, mark_stress)
             });
             tracked.sub(re_snake(), |caps| {
-                code.normalize_snake_case(caps.get(0).unwrap().as_str(), user_dict)
+                code.normalize_snake_case(caps.get(0).unwrap().as_str(), user_dict, mark_stress)
             });
             tracked.sub(re_kebab(), |caps| {
-                code.normalize_kebab_case(caps.get(0).unwrap().as_str(), user_dict)
+                code.normalize_kebab_case(caps.get(0).unwrap().as_str(), user_dict, mark_stress)
             });
         } else {
             // The identifiers stay for the engine: annotate them. The prose scan
@@ -824,15 +830,15 @@ impl TTSPipeline {
             let user_dict = &self.user_dictionary;
             if processed.contains('_') {
                 self.code_normalizer
-                    .normalize_snake_case(&processed, user_dict)
+                    .normalize_snake_case(&processed, user_dict, self.mark_stress)
             } else if processed.contains('-') && !processed.starts_with('-') {
                 self.code_normalizer
-                    .normalize_kebab_case(&processed, user_dict)
+                    .normalize_kebab_case(&processed, user_dict, self.mark_stress)
             } else if processed.chars().skip(1).any(|c| c.is_uppercase())
                 && processed.chars().any(|c| c.is_lowercase())
             {
                 self.code_normalizer
-                    .normalize_camel_case(&processed, user_dict)
+                    .normalize_camel_case(&processed, user_dict, self.mark_stress)
             } else {
                 self.normalize_code_words(&processed)
             }
@@ -846,8 +852,11 @@ impl TTSPipeline {
                 // CodeIdentifierNormalizer.normalize_snake_case handles single words
                 // (no underscores) correctly: it looks up the user dictionary,
                 // then the CODE_WORDS dict, then transliterates.
-                self.code_normalizer
-                    .normalize_snake_case(&lower, &self.user_dictionary)
+                self.code_normalizer.normalize_snake_case(
+                    &lower,
+                    &self.user_dictionary,
+                    self.mark_stress,
+                )
             })
             .collect::<Vec<_>>()
             .join(" ")
@@ -936,7 +945,7 @@ impl TTSPipeline {
                 let m = caps.get(0)?;
                 let word_lower = m.as_str().to_lowercase();
                 self.user_dictionary
-                    .resolve(&word_lower)
+                    .resolve(&word_lower, self.mark_stress)
                     .map(|to| (m.start(), m.end(), to.into_owned()))
             })
             .collect();
@@ -1929,24 +1938,30 @@ mod tests {
     }
 
     #[test]
-    fn stress_mark_is_stripped_for_a_profile_without_support() {
+    fn the_stress_decision_is_rederived_on_every_run() {
+        // Switching engines on one pipeline must not inherit the previous
+        // run's decision: the flag is set from the profile on each call.
         let mut p = TTSPipeline::new();
         p.set_user_dictionary(dictionary_with_mark());
-        let out = p.process_for_engine("в moskva сегодня", &crate::tts::profiles::SILERO_PROFILE);
-        assert_eq!(out.text, "в Москва сегодня");
-        assert!(!out.text.contains('+'), "no mark leaks: {:?}", out.text);
-    }
+        let input = "в moskva сегодня";
 
-    #[test]
-    fn the_mark_is_not_read_as_an_operator() {
-        // The dictionary pre-pass runs after the operator phase, so the '+' is
-        // part of the replacement rather than a symbol the pipeline narrates.
-        let mut p = TTSPipeline::new();
-        p.set_user_dictionary(dictionary_with_mark());
-        let out = p.process_for_engine(
-            "в moskva сегодня",
-            &crate::tts::profiles::SILERO_NATIVE_PROFILE,
+        let marked = p
+            .process_for_engine(input, &crate::tts::profiles::SILERO_NATIVE_PROFILE)
+            .text;
+        assert_eq!(marked, "в М+осква сегодня");
+
+        let stripped = p
+            .process_for_engine(input, &crate::tts::profiles::SILERO_PROFILE)
+            .text;
+        assert_eq!(stripped, "в Москва сегодня");
+        assert!(!stripped.contains('+'), "no mark leaks: {stripped:?}");
+
+        let marked_again = p
+            .process_for_engine(input, &crate::tts::profiles::SILERO_NATIVE_PROFILE)
+            .text;
+        assert_eq!(
+            marked_again, marked,
+            "the previous run's decision must not stick to the pipeline"
         );
-        assert!(!out.text.contains("плюс"), "text: {:?}", out.text);
     }
 }

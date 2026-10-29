@@ -160,13 +160,17 @@ mod tests {
 
     #[test]
     fn every_engine_kind_profile_differs_only_where_engines_differ() {
+        // Stress is the only intended difference between the two Silero
+        // profiles: everything else (route, digits, units, charset, chunk,
+        // markup) stays in lockstep, so a silent drift in one of them fails
+        // here rather than in a fixture nobody reads.
         assert_eq!(
-            SILERO_PROFILE.languages, SILERO_NATIVE_PROFILE.languages,
-            "the two Silero engines share a model family"
-        );
-        assert_eq!(
-            SILERO_PROFILE.chunk, SILERO_NATIVE_PROFILE.chunk,
-            "the two Silero engines share their model-bound chunk limit"
+            TextProfile {
+                stress: Stress::None,
+                ..SILERO_NATIVE_PROFILE
+            },
+            SILERO_PROFILE,
+            "the two Silero engines differ only in stress"
         );
         assert_ne!(
             PIPER_PROFILE.chunk, SILERO_PROFILE.chunk,

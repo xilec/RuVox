@@ -68,28 +68,29 @@ fn is_stressed_vowel(c: char) -> bool {
     STRESSED_VOWELS.contains(&c)
 }
 
-/// Split a spoken form into its text and the position (in characters) of the
-/// stressed vowel. At most one mark is allowed, it must sit immediately before
-/// a Russian vowel, and it never becomes part of the returned text: the mark is
-/// a pronunciation hint, not something the engine reads aloud.
-pub fn split_stress(to: &str) -> Result<(String, Option<usize>), DictionaryError> {
+/// The spoken form of `to` with the stress mark removed, or a validation error
+/// when the mark is malformed. At most one mark is allowed and it must sit
+/// immediately before a Russian vowel; the mark itself never becomes part of
+/// the returned text — it is a pronunciation hint, not something the engine
+/// reads aloud.
+pub fn spoken_form(to: &str) -> Result<String, DictionaryError> {
     let mut spoken = String::with_capacity(to.len());
-    let mut stress = None;
+    let mut stressed = false;
     let mut chars = to.chars().peekable();
     while let Some(c) = chars.next() {
         if c != STRESS_MARK {
             spoken.push(c);
             continue;
         }
-        if stress.is_some() {
+        if stressed {
             return Err(DictionaryError::InvalidStress);
         }
         match chars.peek() {
-            Some(&next) if is_stressed_vowel(next) => stress = Some(spoken.chars().count()),
+            Some(&next) if is_stressed_vowel(next) => stressed = true,
             _ => return Err(DictionaryError::InvalidStress),
         }
     }
-    Ok((spoken, stress))
+    Ok(spoken)
 }
 
 /// The spoken form with every stress mark removed. Entries that reach the
@@ -111,7 +112,7 @@ pub fn validate_entry(from: &str, to: &str) -> Result<(), DictionaryError> {
     if !from_ok {
         return Err(DictionaryError::InvalidFrom);
     }
-    let (spoken, _) = split_stress(to)?;
+    let spoken = spoken_form(to)?;
     if spoken.is_empty() || spoken.chars().count() > MAX_TO_LEN {
         return Err(DictionaryError::InvalidTo);
     }
@@ -123,9 +124,6 @@ pub fn validate_entry(from: &str, to: &str) -> Result<(), DictionaryError> {
 #[derive(Debug, Default, Clone)]
 pub struct UserDictionary {
     entries: BTreeMap<String, DictionaryEntry>,
-    /// Whether an explicit stress mark survives into the text: the active
-    /// profile's `Stress` decides, and the pipeline re-applies it every run.
-    mark_stress: bool,
 }
 
 impl UserDictionary {
@@ -143,23 +141,18 @@ impl UserDictionary {
     }
 
     /// The text to insert for a lowercased word, if the dictionary has an
-    /// entry: the stored `to` verbatim when the active engine renders stress
-    /// marks, its spoken form (marks removed) otherwise.
-    pub fn resolve(&self, word_lower: &str) -> Option<Cow<'_, str>> {
+    /// entry. `mark_stress` is the active engine's decision: when it is true the
+    /// stored `to` is returned as typed, mark included; when it is false the mark
+    /// is removed first. Borrowed when nothing has to change, so a mark-free
+    /// entry costs no allocation.
+    pub fn resolve(&self, word_lower: &str, mark_stress: bool) -> Option<Cow<'_, str>> {
         self.entries.get(word_lower).map(|entry| {
-            if self.mark_stress {
+            if mark_stress || !entry.to.contains(STRESS_MARK) {
                 Cow::Borrowed(entry.to.as_str())
             } else {
                 Cow::Owned(strip_stress(&entry.to))
             }
         })
-    }
-
-    /// Keep explicit stress marks in replacements (the active profile declares
-    /// stress support). Write-side of the `resolve` decision; the pipeline sets
-    /// it from the profile at the start of every normalization.
-    pub fn set_mark_stress(&mut self, mark: bool) {
-        self.mark_stress = mark;
     }
 
     pub fn contains(&self, word_lower: &str) -> bool {

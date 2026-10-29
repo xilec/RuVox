@@ -298,19 +298,14 @@ fn rejects_a_malformed_mark() {
 }
 
 #[test]
-fn stress_position_is_the_vowel_index_in_the_spoken_form() {
-    assert_eq!(
-        split_stress("М+осква").expect("valid"),
-        ("Москва".to_string(), Some(1))
-    );
-    assert_eq!(
-        split_stress("зам+ок").expect("valid"),
-        ("замок".to_string(), Some(3))
-    );
-    assert_eq!(
-        split_stress("Москва").expect("valid"),
-        ("Москва".to_string(), None)
-    );
+fn the_spoken_form_never_contains_the_mark() {
+    assert_eq!(spoken_form("М+осква").expect("valid"), "Москва");
+    assert_eq!(spoken_form("зам+ок").expect("valid"), "замок");
+    assert_eq!(spoken_form("Москва").expect("valid"), "Москва");
+    assert!(matches!(
+        spoken_form("Моск+ва"),
+        Err(DictionaryError::InvalidStress)
+    ));
 }
 
 #[test]
@@ -331,9 +326,8 @@ fn the_length_limit_counts_the_spoken_form() {
 fn resolve_keeps_the_mark_only_when_asked() {
     let mut dict = UserDictionary::default();
     dict.insert(entry("moskva", "М+осква"));
-    assert_eq!(dict.resolve("moskva").as_deref(), Some("Москва"));
-    dict.set_mark_stress(true);
-    assert_eq!(dict.resolve("moskva").as_deref(), Some("М+осква"));
+    assert_eq!(dict.resolve("moskva", false).as_deref(), Some("Москва"));
+    assert_eq!(dict.resolve("moskva", true).as_deref(), Some("М+осква"));
 }
 
 #[test]

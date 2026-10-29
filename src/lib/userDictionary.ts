@@ -35,24 +35,24 @@ export type DictionaryValidationReason =
   | 'to.too_long'
   | 'to.latin_warning';
 
-/** A spoken form split into the text the engine reads and the stressed
- *  vowel's index; null when the mark is malformed. Lives here so the editor
- *  and the preview explain the same rule the backend enforces. */
-export function splitStress(to: string): { spoken: string; stressIndex: number | null } | null {
+/** The spoken form with the stress mark removed, or null when the mark is
+ *  malformed. Mirrors the Rust `spoken_form`, so the editor rejects exactly
+ *  what the backend rejects. */
+export function spokenForm(to: string): string | null {
   let spoken = '';
-  let stressIndex: number | null = null;
+  let stressed = false;
   for (let i = 0; i < to.length; i += 1) {
     const ch = to[i];
     if (ch !== STRESS_MARK) {
       spoken += ch;
       continue;
     }
-    if (stressIndex !== null) return null;
+    if (stressed) return null;
     const next = to[i + 1];
     if (next === undefined || !STRESSED_VOWELS.includes(next.toLowerCase())) return null;
-    stressIndex = spoken.length;
+    stressed = true;
   }
-  return { spoken, stressIndex };
+  return spoken;
 }
 
 /** Validate a from/to pair. Returns the first hard failure, or null when
@@ -69,13 +69,13 @@ export function validateEntryInput(
   if (!SOURCE_TOKEN_RE.test(from)) return { reason: 'from.charset', blocking: true };
 
   if (to.length === 0) return { reason: 'to.required', blocking: true };
-  const parsed = splitStress(to);
-  if (parsed === null) return { reason: 'to.stress_malformed', blocking: true };
-  if ([...parsed.spoken].length > MAX_TO_LEN) return { reason: 'to.too_long', blocking: true };
+  const spoken = spokenForm(to);
+  if (spoken === null) return { reason: 'to.stress_malformed', blocking: true };
+  if ([...spoken].length > MAX_TO_LEN) return { reason: 'to.too_long', blocking: true };
 
   // Soft warning: Latin letters or digits inside `to` reach the TTS engine
   // verbatim — later phases do not re-normalize a dictionary replacement.
-  if (/[A-Za-z0-9]/.test(parsed.spoken)) return { reason: 'to.latin_warning', blocking: false };
+  if (/[A-Za-z0-9]/.test(spoken)) return { reason: 'to.latin_warning', blocking: false };
 
   return null;
 }

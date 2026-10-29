@@ -463,17 +463,27 @@ impl CodeIdentifierNormalizer {
     }
 
     /// Convert camelCase or PascalCase identifier to speakable Russian text.
-    pub fn normalize_camel_case(&self, identifier: &str, user_dict: &UserDictionary) -> String {
+    pub fn normalize_camel_case(
+        &self,
+        identifier: &str,
+        user_dict: &UserDictionary,
+        mark_stress: bool,
+    ) -> String {
         if identifier.is_empty() {
             return identifier.to_string();
         }
         let parts = self.split_camel_case(identifier);
-        self.transliterate_parts(&parts, user_dict)
+        self.transliterate_parts(&parts, user_dict, mark_stress)
     }
 
     /// Convert snake_case identifier to speakable Russian text.
     /// Handles dunder methods (__init__) and private prefixes (_name).
-    pub fn normalize_snake_case(&self, identifier: &str, user_dict: &UserDictionary) -> String {
+    pub fn normalize_snake_case(
+        &self,
+        identifier: &str,
+        user_dict: &UserDictionary,
+        mark_stress: bool,
+    ) -> String {
         if identifier.is_empty() {
             return identifier.to_string();
         }
@@ -482,16 +492,21 @@ impl CodeIdentifierNormalizer {
             return identifier.to_string();
         }
         let parts: Vec<&str> = stripped.split('_').filter(|p| !p.is_empty()).collect();
-        self.transliterate_parts(&parts, user_dict)
+        self.transliterate_parts(&parts, user_dict, mark_stress)
     }
 
     /// Convert kebab-case identifier to speakable Russian text.
-    pub fn normalize_kebab_case(&self, identifier: &str, user_dict: &UserDictionary) -> String {
+    pub fn normalize_kebab_case(
+        &self,
+        identifier: &str,
+        user_dict: &UserDictionary,
+        mark_stress: bool,
+    ) -> String {
         if identifier.is_empty() {
             return identifier.to_string();
         }
-        let parts: Vec<&str> = identifier.split('-').filter(|p| !p.is_empty()).collect();
-        self.transliterate_parts(&parts, user_dict)
+        let parts: Vec<&str> = identifier.split("-").filter(|p| !p.is_empty()).collect();
+        self.transliterate_parts(&parts, user_dict, mark_stress)
     }
 
     fn split_camel_case<'a>(&self, identifier: &'a str) -> Vec<&'a str> {
@@ -570,7 +585,12 @@ impl CodeIdentifierNormalizer {
         parts.into_iter().filter(|p| !p.is_empty()).collect()
     }
 
-    fn transliterate_parts(&self, parts: &[&str], user_dict: &UserDictionary) -> String {
+    fn transliterate_parts(
+        &self,
+        parts: &[&str],
+        user_dict: &UserDictionary,
+        mark_stress: bool,
+    ) -> String {
         let result: Vec<String> = parts
             .iter()
             .map(|part| {
@@ -580,7 +600,9 @@ impl CodeIdentifierNormalizer {
                     // Numeric part
                     let n: u64 = part.parse().unwrap_or(0);
                     number_to_russian(n)
-                } else if let Some(translation) = user_dict.resolve(part_lower.as_str()) {
+                } else if let Some(translation) =
+                    user_dict.resolve(part_lower.as_str(), mark_stress)
+                {
                     // User dictionary wins over every built-in table
                     // (change `user-dictionary`).
                     translation.to_string()
@@ -678,7 +700,7 @@ mod tests {
         // override it at the identifier-part lookup.
         let dict = dict_with("get", "джи ий ти");
         assert_eq!(
-            normalizer().normalize_snake_case("get_data", &dict),
+            normalizer().normalize_snake_case("get_data", &dict, false),
             "джи ий ти дата"
         );
     }
@@ -687,8 +709,24 @@ mod tests {
     fn user_entry_hits_identifier_part_after_split() {
         let dict = dict_with("kubectl", "куб контрол");
         assert_eq!(
-            normalizer().normalize_snake_case("kubectl_apply", &dict),
+            normalizer().normalize_snake_case("kubectl_apply", &dict, false),
             "куб контрол апплй"
+        );
+    }
+
+    #[test]
+    fn a_marked_entry_is_stripped_for_an_engine_without_stress() {
+        // The identifier-part lookup inserts text like the prose pre-pass, so
+        // it has to apply the same stress decision: a `Stress::None` engine
+        // must never receive a `+` from the dictionary.
+        let dict = dict_with("moskva", "М+осква");
+        assert_eq!(
+            normalizer().normalize_snake_case("moskva_id", &dict, false),
+            "Москва ай ди"
+        );
+        assert_eq!(
+            normalizer().normalize_snake_case("moskva_id", &dict, true),
+            "М+осква ай ди"
         );
     }
 
@@ -725,7 +763,7 @@ mod tests {
     #[test_case("FileManager" => "файл менеджер"; "pascal_file_manager")]
     #[test_case("ConfigLoader" => "конфиг лоудер"; "pascal_config_loader")]
     fn camel_case(input: &str) -> String {
-        normalizer().normalize_camel_case(input, &UserDictionary::default())
+        normalizer().normalize_camel_case(input, &UserDictionary::default(), false)
     }
 
     // --- SnakeCase / SCREAMING_SNAKE_CASE (normalize_snake_case) ---
@@ -752,7 +790,7 @@ mod tests {
     #[test_case("DEFAULT_TIMEOUT" => "дефолт таймаут"; "screaming_default_timeout")]
     #[test_case("API_BASE_URL" => "эй пи ай бейз ю ар эл"; "screaming_api_base_url")]
     fn snake_case(input: &str) -> String {
-        normalizer().normalize_snake_case(input, &UserDictionary::default())
+        normalizer().normalize_snake_case(input, &UserDictionary::default(), false)
     }
 
     // --- KebabCase (normalize_kebab_case) ---
@@ -771,6 +809,6 @@ mod tests {
     #[test_case("react-dom" => "риакт дом"; "react_dom")]
     #[test_case("vue-router" => "вью роутер"; "vue_router")]
     fn kebab_case(input: &str) -> String {
-        normalizer().normalize_kebab_case(input, &UserDictionary::default())
+        normalizer().normalize_kebab_case(input, &UserDictionary::default(), false)
     }
 }

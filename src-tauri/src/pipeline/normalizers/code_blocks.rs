@@ -181,13 +181,19 @@ impl CodeBlockHandler {
         code: &str,
         language: Option<&str>,
         user_dict: &UserDictionary,
+        mark_stress: bool,
     ) -> String {
-        self.process_block_with_mode(self.mode, code, language, user_dict)
+        self.process_block_with_mode(self.mode, code, language, user_dict, mark_stress)
     }
 
     /// In-place replacement of all fenced code blocks in `tracked`, each
     /// under the handler's mode (owned by the `code_block_mode` config).
-    pub fn process(&self, tracked: &mut TrackedText, user_dict: &UserDictionary) {
+    pub fn process(
+        &self,
+        tracked: &mut TrackedText,
+        user_dict: &UserDictionary,
+        mark_stress: bool,
+    ) {
         let snapshot = tracked.text().to_string();
         let blocks: Vec<(usize, usize, String)> = RE_FENCED_BLOCK
             .captures_iter(&snapshot)
@@ -205,7 +211,7 @@ impl CodeBlockHandler {
                 let replacement = if language.is_some_and(|l| l.eq_ignore_ascii_case("mermaid")) {
                     "Тут мермэйд диаграмма".to_string()
                 } else {
-                    self.process_block_with_mode(self.mode, code, language, user_dict)
+                    self.process_block_with_mode(self.mode, code, language, user_dict, mark_stress)
                 };
 
                 (m.start(), m.end(), replacement)
@@ -224,10 +230,11 @@ impl CodeBlockHandler {
         code: &str,
         language: Option<&str>,
         user_dict: &UserDictionary,
+        mark_stress: bool,
     ) -> String {
         match mode {
             CodeBlockMode::Brief => self.brief_description(language),
-            CodeBlockMode::Full => self.full_normalize(code, language, user_dict),
+            CodeBlockMode::Full => self.full_normalize(code, language, user_dict, mark_stress),
         }
     }
 
@@ -250,12 +257,13 @@ impl CodeBlockHandler {
         code: &str,
         _language: Option<&str>,
         user_dict: &UserDictionary,
+        mark_stress: bool,
     ) -> String {
         let tokens = self.tokenize(code);
         let normalized: Vec<String> = tokens
             .into_iter()
             .filter_map(|t| {
-                let n = self.normalize_token(t, user_dict);
+                let n = self.normalize_token(t, user_dict, mark_stress);
                 if n.is_empty() { None } else { Some(n) }
             })
             .collect();
@@ -297,7 +305,12 @@ impl CodeBlockHandler {
         RE_TOKENS.find_iter(code).map(|m| m.as_str()).collect()
     }
 
-    fn normalize_token(&self, token: &str, user_dict: &UserDictionary) -> String {
+    fn normalize_token(
+        &self,
+        token: &str,
+        user_dict: &UserDictionary,
+        mark_stress: bool,
+    ) -> String {
         if token.is_empty() {
             return String::new();
         }
@@ -322,7 +335,7 @@ impl CodeBlockHandler {
             }
             let lower = content.to_lowercase();
             // Try the user dictionary, then CODE_WORDS; fall back to basic transliterate
-            return self.normalize_simple_word(&lower, user_dict);
+            return self.normalize_simple_word(&lower, user_dict, mark_stress);
         }
 
         // Integer literals
@@ -340,15 +353,19 @@ impl CodeBlockHandler {
             && token.chars().all(|c| c.is_alphanumeric() || c == '_')
         {
             if token.contains('_') {
-                return self.code_normalizer.normalize_snake_case(token, user_dict);
+                return self
+                    .code_normalizer
+                    .normalize_snake_case(token, user_dict, mark_stress);
             }
             // CamelCase/PascalCase heuristic: has uppercase after first char
             if token.chars().skip(1).any(|c| c.is_ascii_uppercase()) {
-                return self.code_normalizer.normalize_camel_case(token, user_dict);
+                return self
+                    .code_normalizer
+                    .normalize_camel_case(token, user_dict, mark_stress);
             }
             // Plain lowercase (or all-caps)
             let lower = token.to_lowercase();
-            return self.normalize_simple_word(&lower, user_dict);
+            return self.normalize_simple_word(&lower, user_dict, mark_stress);
         }
 
         // Operators, brackets, and punctuation — look up in the shared SYMBOLS dictionary
@@ -365,11 +382,17 @@ impl CodeBlockHandler {
 
     /// Look up a lower-cased word in the user dictionary, then CODE_WORDS,
     /// and fall back to basic transliterate.
-    fn normalize_simple_word(&self, lower: &str, user_dict: &UserDictionary) -> String {
+    fn normalize_simple_word(
+        &self,
+        lower: &str,
+        user_dict: &UserDictionary,
+        mark_stress: bool,
+    ) -> String {
         // Delegate through the public method surface that is available.
         // CodeIdentifierNormalizer exposes normalize_snake_case which handles
         // single-segment inputs correctly (no underscores → single part).
-        self.code_normalizer.normalize_snake_case(lower, user_dict)
+        self.code_normalizer
+            .normalize_snake_case(lower, user_dict, mark_stress)
     }
 }
 
@@ -502,7 +525,7 @@ mod tests {
     #[test_case(None => "далее следует блок кода"; "no_language")]
     #[test_case(Some("") => "далее следует блок кода"; "empty_language")]
     fn brief_language(language: Option<&str>) -> String {
-        brief_handler().process_block("", language, &no_dict())
+        brief_handler().process_block("", language, &no_dict(), false)
     }
 
     // ── TestCodeBlockFullMode (3 cases) ────────────────────────────────
@@ -511,7 +534,7 @@ mod tests {
     #[test_case("const x = 42;", Some("javascript") => "конст икс равно сорок два точка с запятой"; "js_const_x")]
     #[test_case("getUserData(userId)", None => "гет юзер дата открывающая скобка юзер ай ди закрывающая скобка"; "function_call")]
     fn full_mode(code: &str, language: Option<&str>) -> String {
-        full_handler().process_block(code, language, &no_dict())
+        full_handler().process_block(code, language, &no_dict(), false)
     }
 
     // ── TestModeSwitch (4 cases) ────────────────────────────────────────
@@ -537,7 +560,7 @@ mod tests {
         let text = "<!-- ruvox-code: brief -->\n```python\nprint('hi')\n```";
         let mut tracked = TrackedText::new(text);
         let h = CodeBlockHandler::with_mode(CodeBlockMode::Full);
-        h.process(&mut tracked, &no_dict());
+        h.process(&mut tracked, &no_dict(), false);
         let result = tracked.text();
         // Full mode keeps reading the code; the comment survives as text for
         // the symbol phases (no directive interpretation, no removal).
@@ -571,7 +594,7 @@ mod tests {
         let text = "Смотри:\n```python\nprint('hi')\n```\nКонец.";
         let mut tracked = TrackedText::new(text);
         let h = CodeBlockHandler::with_mode(CodeBlockMode::Brief);
-        h.process(&mut tracked, &no_dict());
+        h.process(&mut tracked, &no_dict(), false);
         let result = tracked.text();
         // Exact form also proves the backticks are gone (no "```" substring).
         assert_eq!(
@@ -585,7 +608,7 @@ mod tests {
         let text = "Диаграмма:\n```mermaid\ngraph TD\nA-->B\n```\nКонец.";
         let mut tracked = TrackedText::new(text);
         let h = CodeBlockHandler::with_mode(CodeBlockMode::Brief);
-        h.process(&mut tracked, &no_dict());
+        h.process(&mut tracked, &no_dict(), false);
         let result = tracked.text();
         assert_eq!(result, "Диаграмма:\nТут мермэйд диаграмма\nКонец.");
     }
@@ -597,7 +620,7 @@ mod tests {
         let text = "```python\nprint('world')\n```\n```python\nprint('world')\n```";
         let mut tracked = TrackedText::new(text);
         let h = CodeBlockHandler::with_mode(CodeBlockMode::Full);
-        h.process(&mut tracked, &no_dict());
+        h.process(&mut tracked, &no_dict(), false);
         let reading = "принт открывающая скобка ворлд закрывающая скобка";
         assert_eq!(tracked.text(), format!("{reading}\n{reading}"));
     }

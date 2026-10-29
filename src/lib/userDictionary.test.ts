@@ -4,7 +4,7 @@ import {
   isDuplicateFrom,
   isSingleSourceToken,
   sortAndFilterEntries,
-  splitStress,
+  spokenForm,
   validateEntryInput,
 } from './userDictionary';
 
@@ -125,6 +125,8 @@ describe('stress marks', () => {
   it('accepts a mark before a vowel', () => {
     expect(validateEntryInput({ from: 'moskva', to: 'М+осква' })).toBeNull();
     expect(validateEntryInput({ from: 'zamok', to: 'зам+ок' })).toBeNull();
+    expect(validateEntryInput({ from: 'yolka', to: '+Ёлка' })).toBeNull();
+    expect(validateEntryInput({ from: 'moskva', to: 'Москв+а' })).toBeNull();
   });
 
   it('rejects a malformed mark', () => {
@@ -133,11 +135,11 @@ describe('stress marks', () => {
     }
   });
 
-  it('splits the spoken form and the stressed vowel', () => {
-    expect(splitStress('М+осква')).toEqual({ spoken: 'Москва', stressIndex: 1 });
-    expect(splitStress('зам+ок')).toEqual({ spoken: 'замок', stressIndex: 3 });
-    expect(splitStress('Москва')).toEqual({ spoken: 'Москва', stressIndex: null });
-    expect(splitStress('Моск+ва')).toBeNull();
+  it('strips the mark from the spoken form', () => {
+    expect(spokenForm('М+осква')).toBe('Москва');
+    expect(spokenForm('зам+ок')).toBe('замок');
+    expect(spokenForm('Москва')).toBe('Москва');
+    expect(spokenForm('Моск+ва')).toBeNull();
   });
 
   it('counts the length without the mark', () => {
