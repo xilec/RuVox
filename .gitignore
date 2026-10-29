@@ -74,6 +74,10 @@ src-tauri/target/
 # src-tauri/target). Lockfile is owned by the app (src-tauri/Cargo.lock).
 silero-native/target/
 silero-native/Cargo.lock
+# Shared contract crate: same rule — standalone builds get their own target,
+# and the lockfile is owned by the app.
+tts-contract/target/
+tts-contract/Cargo.lock
 src-tauri/gen/
 # Third-party Windows binaries fetched at release-build time by
 # scripts/fetch-windows-resources.sh. Placeholders (README/PLACEHOLDER,

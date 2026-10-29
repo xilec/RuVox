@@ -13,6 +13,7 @@ pub mod availability;
 pub mod chunking;
 pub mod engine;
 pub mod piper;
+pub mod profiles;
 pub mod silero_native;
 pub mod supervisor;
 pub mod switcher;

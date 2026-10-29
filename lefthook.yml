@@ -7,6 +7,9 @@ pre-commit:
     cargo-fmt:
       glob: "src-tauri/**/*.rs"
       run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+    cargo-fmt-contract:
+      glob: "tts-contract/**/*.rs"
+      run: cargo fmt --manifest-path tts-contract/Cargo.toml -- --check
     ruff:
       glob: "ttsd/**/*.py"
       run: bash -c "cd ttsd && uv run ruff check"
@@ -15,6 +18,8 @@ pre-push:
   commands:
     cargo-clippy:
       run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --no-deps -- -D warnings
+    cargo-clippy-contract:
+      run: cargo clippy --manifest-path tts-contract/Cargo.toml --all-targets --no-deps -- -D warnings
     typescript:
       run: pnpm typecheck
     eslint:

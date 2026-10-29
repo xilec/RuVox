@@ -2,21 +2,21 @@
 
 ## 1. Contract crate and registry
 
-- [ ] 1.1 Create the `tts-contract` crate (library, no external dependencies)
+- [x] 1.1 Create the `tts-contract` crate (library, no external dependencies)
   with the data types `TextProfile`, `Route`, `Markup`, `Digits`, `Units`,
   `Stress`, `Charset`, `Chunk`, `Pauses`, plus `Markup::wrap(lang, text)`.
   Verify: `cargo test --manifest-path tts-contract/Cargo.toml` covers each
   `Markup` variant; `cargo fmt --check` and `clippy -D warnings` clean.
-- [ ] 1.2 Move the splitter from `src-tauri/src/tts/chunking.rs` into
+- [x] 1.2 Move the splitter from `src-tauri/src/tts/chunking.rs` into
   `tts-contract` unchanged, carrying its unit tests over; leave
   `tts/chunking.rs` as a re-export shim so no caller breaks in this task.
   Verify: the moved tests pass unchanged and the diff of the algorithm body is
   empty apart from the module path.
-- [ ] 1.3 Wire the new crate into both cargo workspaces and the tooling
+- [x] 1.3 Wire the new crate into both cargo workspaces and the tooling
   (`flake.nix`, `justfile`, `lefthook.yml`, `.github/workflows/ci.yml`) so
   fmt, clippy and tests cover it. Verify: `nix develop -c just lint` and
   `nix develop -c just test` green, and the CI config lists the third crate.
-- [ ] 1.4 Add `src-tauri/src/tts/profiles.rs` with the Silero, Silero-native and
+- [x] 1.4 Add `src-tauri/src/tts/profiles.rs` with the Silero, Silero-native and
   Piper profiles and `profile_for(EngineKind)`, plus a test asserting every
   `EngineKind` variant resolves and that no profile routes a Latin fragment
   `Native` without a non-Russian language. Verify: the registry test fails when

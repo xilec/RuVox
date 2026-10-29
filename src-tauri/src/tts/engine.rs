@@ -29,6 +29,14 @@ pub enum EngineKind {
 }
 
 impl EngineKind {
+    /// Every variant. Exists so completeness (a profile per engine, an
+    /// availability probe per engine) is asserted rather than remembered.
+    pub const ALL: &'static [EngineKind] = &[
+        EngineKind::Silero,
+        EngineKind::Piper,
+        EngineKind::SileroNative,
+    ];
+
     pub fn as_str(self) -> &'static str {
         match self {
             EngineKind::Silero => "silero",

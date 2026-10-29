@@ -22,10 +22,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::super::chunking::split_with_limit;
 use crate::tts::TtsError;
+use crate::tts::profiles::PIPER_PROFILE;
 
 /// Silence inserted before a chunk that follows a paragraph break (blank
-/// line) in the source text, in seconds.
-pub const PARAGRAPH_PAUSE_SEC: f64 = 0.45;
+/// line) in the source text, in seconds — declared by the Piper text profile.
+fn paragraph_pause_sec() -> f64 {
+    PIPER_PROFILE.chunk.paragraph_pause_sec()
+}
 
 /// Per-chunk timeline: `(norm_start, norm_end, duration_sec)` in order —
 /// codepoint offsets into the full normalized text, matching the ttsd
@@ -85,7 +88,7 @@ pub fn synthesize_chunked(
         let pause = match prev_content_end {
             None => 0.0,
             Some(prev_end) if is_paragraph_break(text, prev_end, chunk_start) => {
-                PARAGRAPH_PAUSE_SEC
+                paragraph_pause_sec()
             }
             Some(_) => 0.0,
         };
@@ -200,11 +203,15 @@ mod tests {
         assert_eq!(fake.calls.len(), 2, "paragraph break forces a chunk split");
         assert_eq!(fake.calls[0].1, 0.0, "no pause before the first chunk");
         assert_eq!(
-            fake.calls[1].1, PARAGRAPH_PAUSE_SEC,
+            fake.calls[1].1,
+            paragraph_pause_sec(),
             "pause before the chunk after a blank line"
         );
         // First chunk's duration carries the pause; the second is its own.
-        assert_eq!(out.chunk_durations[0].2, 13.0 / 100.0 + PARAGRAPH_PAUSE_SEC);
+        assert_eq!(
+            out.chunk_durations[0].2,
+            13.0 / 100.0 + paragraph_pause_sec()
+        );
         assert_eq!(out.chunk_durations[1].2, 13.0 / 100.0);
     }
 

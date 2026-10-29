@@ -39,20 +39,26 @@ use tracing::{info, warn};
 /// model's own duration prediction, not a post-process resample).
 const PIPER_LENGTH_SCALE: f32 = 0.8;
 
-/// Maximum codepoints per synthesis chunk. Piper's VITS encoder grows
-/// activation memory quadratically with input length (#155): a single
-/// unchunked inference over ~22 KB of text requests multi-GB tensors and can
-/// freeze the machine. Measured peak process RSS per single-chunk inference
-/// (`piper_chunk_limit_probe`, ruslan voice): 300 cp → ~0.5 GB, 600 cp →
-/// ~0.9 GB, 1800 cp → ~3 GB, while per-codepoint synthesis time is nearly
-/// flat across that range. 500 cp (≈3-5 sentences) sits safely below the
-/// 600-point ~0.9 GB peak while keeping chunks big enough for natural
-/// sentence grouping.
-const PIPER_MAX_CHUNK_CHARS: usize = 500;
+/// Maximum codepoints per synthesis chunk, from the Piper text profile. Piper's
+/// VITS encoder grows activation memory quadratically with input length (#155):
+/// a single unchunked inference over ~22 KB of text requests multi-GB tensors
+/// and can freeze the machine. Measured peak process RSS per single-chunk
+/// inference (`piper_chunk_limit_probe`, ruslan voice): 300 cp → ~0.5 GB,
+/// 600 cp → ~0.9 GB, 1800 cp → ~3 GB, while per-codepoint synthesis time is
+/// nearly flat across that range. The profile's 500 cp (≈3-5 sentences) sits
+/// safely below the 600-point ~0.9 GB peak while keeping chunks big enough for
+/// natural sentence grouping.
+fn max_chunk_chars() -> usize {
+    PIPER_PROFILE
+        .chunk
+        .char_limit()
+        .expect("piper profile declares a codepoint chunk limit")
+}
 
 use super::chunked::{ChunkedTimeline, synthesize_chunked};
 use super::timestamps::estimate_timestamps_chunked;
 use crate::tts::engine::{EngineKind, TtsEngine};
+use crate::tts::profiles::PIPER_PROFILE;
 use crate::tts::supervisor::Emitter;
 use crate::tts::{CharMappingEntry, ModelInfo, SynthesizeOutput, TtsError};
 
@@ -313,7 +319,7 @@ impl TtsEngine for PiperEngine {
                 .map_err(map_hound_err)?;
             let result = synthesize_chunked(
                 &text_for_blocking,
-                PIPER_MAX_CHUNK_CHARS,
+                max_chunk_chars(),
                 &cancelled,
                 |chunk, pause_before| {
                     if pause_before > 0.0 {
