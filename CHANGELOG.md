@@ -6,6 +6,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 
 ## [Unreleased]
 
+### Added
+- **Ударение в словаре** — в словаре произношения теперь можно указать ударение знаком `+` перед гласной (`М+осква`), и оно доедет до движка, который это умеет: пока это встроенный Silero, где автоматическое ударение перекрывается явной меткой. Движок `ttsd` и Piper метку отбрасывают; форма словаря показывает значок справки и проверяет синтаксис (#312).
+
 ### Changed
 - **Curated reading audit** — acronyms now use the letter name `эл` that the spelling fallback already produces (`HTML` → `эйч ти эм эл`, `XML` → `икс эм эл`, `SQL` → `эс кью эл`, `GRAPHQL` → `граф кью эл`), `JPG` reads `джейпег` like `JPEG`, `PNG` reads `пи эн джи` instead of the unpronounceable `пнг`, `succ` reads `сак`, and code identifiers read `hello`, `image`, and `node` exactly like prose (`хеллоу`, `имидж`, `нод`), with `node` now reading `нод`; a test now fails when two dictionaries disagree on a shared word (#282).
 - **`IT_TERMS` keeps pronunciation only** — semantic translations and redundant entries are gone from the curated reading table: `function`, `string`, `array`, `object`, `repository`, `boolean`, and `refactor` now read as English words (`функшн`, `стринг`, `аррэй`, `обджект`, `репоситори`, `булин`, `рефактор`) instead of Russian translations, `method` reads `месод`, and 38 entries that only repeated the transliteration (`commit`, `index`, `docker`, `query`, …) no longer shadow it; the entries that keep an uppercase token from being spelled out (`TEST`, `DATA`, `APP`, `STRING`, …) stay, so every other reading is unchanged (#292).
