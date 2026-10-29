@@ -424,3 +424,15 @@ fn script_of_the_keys_is_reported() {
     assert!(dict.has_keys_in(KeyScript::Latin));
     assert!(dict.has_keys_in(KeyScript::Cyrillic));
 }
+
+#[test]
+fn e_and_yo_are_different_keys() {
+    let mut dict = UserDictionary::default();
+    dict.insert(entry("все", "вс+е"));
+    assert_eq!(dict.resolve("все", true).as_deref(), Some("вс+е"));
+    assert_eq!(
+        dict.resolve("всё", true),
+        None,
+        "ё is a different letter, so the entry must not fire on it"
+    );
+}

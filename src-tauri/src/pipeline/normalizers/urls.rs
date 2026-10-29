@@ -255,7 +255,7 @@ impl<'a> URLPathNormalizer<'a> {
                     .user_dictionary
                     .and_then(|d| d.resolve(&lower, self.mark_stress))
                 {
-                    return to.to_string();
+                    return to;
                 }
                 // Check IT_TERMS first (e.g. "github" → "гитхаб").
                 if let Some(v) = super::english::IT_TERMS.get(lower.as_str()) {

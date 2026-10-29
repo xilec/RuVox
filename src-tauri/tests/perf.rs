@@ -15,7 +15,7 @@ use ruvox_tauri_lib::pipeline::TTSPipeline;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-/// Serializes the two timing tests: `cargo test` runs tests of one binary in
+/// Serializes the timing tests: `cargo test` runs tests of one binary in
 /// parallel threads, which would skew wall-time measurements.
 static PERF_LOCK: Mutex<()> = Mutex::new(());
 

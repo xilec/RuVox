@@ -1,7 +1,8 @@
 /**
  * Pure helpers for the user dictionary editor (change `user-dictionary`).
  * Mirrors the backend validation contract (src-tauri/src/dictionary): a
- * source token is Latin letters and digits with at least one letter; the
+ * source token is one word of Latin or Russian Cyrillic letters and digits
+ * with at least one letter; the
  * spoken form is a non-empty free-form string that may carry one `+` before
  * a Russian vowel to fix the stress. The Rust side stays the source of truth —
  * these checks exist to give the form instant feedback.

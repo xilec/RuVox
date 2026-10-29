@@ -88,6 +88,9 @@ fn write_fixture_case() {
     pipeline.set_user_dictionary(common::read_dict_sidecar(&format!(
         "{profile_name}/{case_name}"
     )));
+    if let Some(mode) = common::read_mode_sidecar(&format!("{profile_name}/{case_name}")) {
+        pipeline.set_code_block_mode(mode);
+    }
     let out = pipeline.process_for_engine(&input, common::profile_by_name(profile_name));
 
     let dir = common::fixtures_dir().join(profile_name);

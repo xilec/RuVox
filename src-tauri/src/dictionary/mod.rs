@@ -1,8 +1,9 @@
 //! User dictionary: user-authored pronunciation overrides that win over every
 //! built-in pipeline table (change `user-dictionary`, issue #10).
 //!
-//! An entry maps one source token (`from`, Latin letters and digits with at
-//! least one letter) to its spoken form (`to`). Matching is case-insensitive;
+//! An entry maps one source token (`from`, one word of Latin or Russian
+//! Cyrillic letters and digits, one script) to its spoken form (`to`).
+//! Matching is case-insensitive and exact;
 //! the in-memory map is keyed by the lowercased `from` while the typed case is
 //! preserved for display and TOML serialization. `to` may carry one `+` before
 //! a Russian vowel to fix the stress; whether that mark reaches the text is the
@@ -13,10 +14,9 @@ mod store;
 pub use store::{DictionaryStore, export_to, parse_import};
 
 use serde::{Deserialize, Serialize};
-use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-/// Longest accepted `from` (ASCII, so chars == bytes).
+/// Longest accepted `from`, in characters.
 pub const MAX_FROM_LEN: usize = 64;
 /// Longest accepted `to`, in characters.
 pub const MAX_TO_LEN: usize = 256;
@@ -95,7 +95,7 @@ pub fn spoken_form(to: &str) -> Result<String, DictionaryError> {
 
 /// The spoken form with every stress mark removed. Entries that reach the
 /// dictionary are validated, so this only ever strips a well-formed mark.
-pub fn strip_stress(to: &str) -> String {
+fn strip_stress(to: &str) -> String {
     to.chars().filter(|c| *c != STRESS_MARK).collect()
 }
 
@@ -182,14 +182,14 @@ impl UserDictionary {
     /// The text to insert for a lowercased word, if the dictionary has an
     /// entry. `mark_stress` is the active engine's decision: when it is true the
     /// stored `to` is returned as typed, mark included; when it is false the mark
-    /// is removed first. Borrowed when nothing has to change, so a mark-free
-    /// entry costs no allocation.
-    pub fn resolve(&self, word_lower: &str, mark_stress: bool) -> Option<Cow<'_, str>> {
+    /// is removed first. Every caller turns the result into the replacement text
+    /// of a match, so the value is owned rather than borrowed.
+    pub fn resolve(&self, word_lower: &str, mark_stress: bool) -> Option<String> {
         self.entries.get(word_lower).map(|entry| {
             if mark_stress || !entry.to.contains(STRESS_MARK) {
-                Cow::Borrowed(entry.to.as_str())
+                entry.to.clone()
             } else {
-                Cow::Owned(strip_stress(&entry.to))
+                strip_stress(&entry.to)
             }
         })
     }

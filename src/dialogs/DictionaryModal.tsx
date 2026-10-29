@@ -310,20 +310,18 @@ export function DictionaryModal({
         {editor !== null && (
           <Stack gap="xs" p="sm" bd="1px solid var(--mantine-color-default-border)">
             <TextInput
-              label={
-                <Group gap="xs" wrap="nowrap">
-                  {tt('dictionary.form.from')}
-                  <Tooltip label={tt('dictionary.form.from.hint')} multiline w={260} withArrow>
-                    <ActionIcon
-                      variant="subtle"
-                      size="xs"
-                      radius="xl"
-                      aria-label={tt('dictionary.form.from.help')}
-                    >
-                      ?
-                    </ActionIcon>
-                  </Tooltip>
-                </Group>
+              label={tt('dictionary.form.from')}
+              rightSection={
+                <Tooltip label={tt('dictionary.form.from.hint')} multiline w={260} withArrow>
+                  <ActionIcon
+                    variant="subtle"
+                    size="sm"
+                    radius="xl"
+                    aria-label={tt('dictionary.form.from.help')}
+                  >
+                    ?
+                  </ActionIcon>
+                </Tooltip>
               }
               placeholder={tt('dictionary.form.from.placeholder')}
               value={editor.from}
@@ -336,20 +334,18 @@ export function DictionaryModal({
               }
             />
             <TextInput
-              label={
-                <Group gap="xs" wrap="nowrap">
-                  {tt('dictionary.form.to')}
-                  <Tooltip label={tt('dictionary.form.stress.hint')} multiline w={260} withArrow>
-                    <ActionIcon
-                      variant="subtle"
-                      size="xs"
-                      radius="xl"
-                      aria-label={tt('dictionary.form.stress.help')}
-                    >
-                      ?
-                    </ActionIcon>
-                  </Tooltip>
-                </Group>
+              label={tt('dictionary.form.to')}
+              rightSection={
+                <Tooltip label={tt('dictionary.form.stress.hint')} multiline w={260} withArrow>
+                  <ActionIcon
+                    variant="subtle"
+                    size="sm"
+                    radius="xl"
+                    aria-label={tt('dictionary.form.stress.help')}
+                  >
+                    ?
+                  </ActionIcon>
+                </Tooltip>
               }
               placeholder={tt('dictionary.form.to.placeholder')}
               value={editor.to}

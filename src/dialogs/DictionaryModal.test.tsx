@@ -50,9 +50,9 @@ async function renderModal() {
       </MantineProvider>,
     );
   });
-  // The dictionary load is a promise; let it settle before interacting.
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
+  // The dictionary load is a promise; wait for the form that follows it.
+  await vi.waitFor(() => {
+    expect(document.body.textContent).toContain('Добавить слово');
   });
 }
 
@@ -63,6 +63,22 @@ function clickButton(label: string) {
   );
   if (!button) throw new Error(`button ${label} not found`);
   act(() => button.click());
+}
+
+/** Type into the input whose label is `label`. */
+function typeInto(label: string, value: string) {
+  const field = [...document.querySelectorAll('input')].find((input) =>
+    input.closest('div')?.parentElement?.textContent?.includes(label),
+  );
+  if (!field) throw new Error(`field ${label} not found`);
+  act(() => {
+    const setValue = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )?.set;
+    setValue?.call(field, value);
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+  });
 }
 
 describe('DictionaryModal field help', () => {
@@ -82,6 +98,17 @@ describe('DictionaryModal field help', () => {
     const help = document.querySelector('[aria-label="Справка о поиске слова"]');
     expect(help).not.toBeNull();
     expect(help?.textContent).toBe('?');
+  });
+
+  it('shows the inline error for a malformed mark', async () => {
+    await renderModal();
+    clickButton('Добавить слово');
+    typeInto('Слово', 'moskva');
+    typeInto('Как произносить', 'Моск+ва');
+
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain(translate('ru', 'dictionary.form.error.to.stress_malformed'));
+    });
   });
 
   it('describes the mark and its engine dependency in the tooltip', () => {

@@ -161,7 +161,7 @@ export function PreviewDialog({
   const [syncScroll, setSyncScroll] = useState(false);
   const [helpOpened, setHelpOpened] = useState(false);
   // Text selected in either pane; gates the quick-add dictionary action
-  // (single valid Latin token only — user-dictionary spec).
+  // (one Latin or Russian word — user-dictionary spec).
   const [selection, setSelection] = useState('');
   const locale = useLocaleStore((s) => s.locale);
   const [position, setPosition] = useState<{ x: number; y: number }>(() =>

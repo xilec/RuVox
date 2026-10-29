@@ -605,7 +605,7 @@ impl CodeIdentifierNormalizer {
                 {
                     // User dictionary wins over every built-in table
                     // (change `user-dictionary`).
-                    translation.to_string()
+                    translation
                 } else if let Some(&translation) = self.code_words.get(part_lower.as_str()) {
                     translation.to_string()
                 } else if part.len() >= 2 && part.chars().all(|c| c.is_ascii_uppercase()) {

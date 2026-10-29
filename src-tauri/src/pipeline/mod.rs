@@ -987,7 +987,7 @@ impl TTSPipeline {
                 let word_lower = m.as_str().to_lowercase();
                 self.user_dictionary
                     .resolve(&word_lower, self.mark_stress)
-                    .map(|to| (m.start(), m.end(), to.into_owned()))
+                    .map(|to| (m.start(), m.end(), to))
             })
             .collect()
     }
@@ -2050,8 +2050,13 @@ mod tests {
         let mut p = TTSPipeline::new();
         p.set_user_dictionary(dictionary_with_cyrillic_mark());
         let out = p.process_for_engine("старый замок стоит", &crate::tts::profiles::SILERO_PROFILE);
+        // Stripping a mark from the entry's own word yields the input text, so
+        // the recorded span is what proves the entry fired at all.
         assert_eq!(out.text, "старый замок стоит");
         assert!(!out.text.contains('+'), "no mark leaks: {:?}", out.text);
+        assert_eq!(out.spans.len(), 1, "spans: {:?}", out.spans);
+        assert_eq!(out.spans[0].kind, SpanKind::DictionaryOverride);
+        assert_eq!(span_text(&out.text, &out.spans[0]), "замок");
     }
 
     #[test]
@@ -2099,5 +2104,41 @@ mod tests {
             &crate::tts::profiles::SILERO_NATIVE_PROFILE,
         );
         assert_eq!(latin_first.text, "доккер и старый зам+ок");
+    }
+
+    #[test]
+    fn the_pre_pass_pattern_covers_every_letter_the_validator_accepts() {
+        // The validator, the pre-pass regex, and the TS mirror each spell out
+        // the Russian alphabet; this pins the two Rust copies to one another,
+        // so a letter cannot be accepted and then never matched.
+        for c in ('а'..='я').chain(['ё', 'Ё']).chain('А'..='Я') {
+            let word = format!("{c}{c}{c}");
+            assert!(
+                crate::dictionary::validate_entry(&word, &word).is_ok(),
+                "the validator rejects {c:?}"
+            );
+            assert_eq!(
+                re_user_dict_token_cyrillic()
+                    .find(&word)
+                    .map(|m| m.as_str()),
+                Some(word.as_str()),
+                "the pre-pass does not match a word built from {c:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn e_and_yo_are_different_keys() {
+        let mut dict = UserDictionary::default();
+        dict.insert(DictionaryEntry {
+            from: "все".to_string(),
+            to: "вс+е".to_string(),
+        });
+        assert_eq!(dict.resolve("все", true).as_deref(), Some("вс+е"));
+        assert_eq!(
+            dict.resolve("всё", true),
+            None,
+            "ё is a different letter, so the entry must not fire on it"
+        );
     }
 }
