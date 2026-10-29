@@ -445,7 +445,7 @@ export const ru = {
   'dictionary.export.failed.title': 'Не удалось экспортировать словарь',
   'dictionary.save.failed.title': 'Не удалось сохранить словарь',
   'dictionary.quickadd.button': 'В словарь',
-  'dictionary.quickadd.hint': 'Выделите одно латинское слово',
+  'dictionary.quickadd.hint': 'Выделите одно слово латиницей или по-русски',
 } as const;
 
 export type MessageKey = keyof typeof ru;

@@ -441,5 +441,5 @@ export const en: Record<MessageKey, string> = {
   'dictionary.export.failed.title': 'Failed to export the dictionary',
   'dictionary.save.failed.title': 'Failed to save the dictionary',
   'dictionary.quickadd.button': 'To dictionary',
-  'dictionary.quickadd.hint': 'Select a single Latin word',
+  'dictionary.quickadd.hint': 'Select a single Latin or Russian word',
 };

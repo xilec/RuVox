@@ -48,7 +48,15 @@ replacement.
 - THEN the Cyrillic candidate pattern is not run and the output matches the
   output of the same document under the previous implementation
 
+#### Scenario: Entry overrides letter spelling of an abbreviation
+
+- GIVEN the entry `SQL → эс ку эль`
+- WHEN the input "запрос к SQL" is processed
+- THEN the output reads "эс ку эль" instead of the built-in letter-by-letter
+  reading
+
 #### Scenario: Alnum token is normalized via the dictionary
+
 
 - GIVEN the entry `IPv6 → айпи ви шесть` and the input "сеть IPv6 работает"
 - WHEN the pipeline processes it

@@ -960,11 +960,16 @@ User dictionary entries SHALL win over every built-in table at every lookup
 site: the prose pre-pass (before English-word resolution), code-identifier
 parts (before `CODE_WORDS`), URL word reading (before `IT_TERMS`), and code
 blocks read aloud (through the identifier path). The pre-pass SHALL match
-tokens of Latin letters and digits containing at least one letter —
-including alnum tokens no other phase captures, such as "IPv6" or "mp3" —
-and replace only exact case-insensitive key hits; non-hits SHALL flow into
-the English-word phase unchanged. Lookups in identifiers and URLs SHALL use
-the split parts/words those phases already produce.
+tokens of Latin letters and digits containing at least one Latin letter —
+including alnum tokens no other phase captures, such as "IPv6" or "mp3" — and,
+when the dictionary holds at least one Cyrillic key, tokens of Russian Cyrillic
+letters and digits containing at least one Cyrillic letter. Each candidate
+pattern SHALL run only when the dictionary has a key of its script, and the two
+patterns SHALL be disjoint, so one text token is matched by at most one of
+them. Replacement SHALL apply only to exact case-insensitive key hits;
+non-hits SHALL flow into the English-word phase unchanged. Lookups in
+identifiers and URLs SHALL use the split parts/words those phases already
+produce.
 
 The replacement SHALL be the entry's `to` as typed. When the profile declares
 `Stress::None`, the replacement SHALL be the spoken form instead — the same
@@ -981,6 +986,20 @@ replacement.
 - WHEN the input "запусти docker" is processed
 - THEN the output reads "докер"
 
+#### Scenario: Entry applies to a Russian word
+
+- GIVEN the entry `замок → зам+ок` and a profile declaring `Stress::Auto`
+- WHEN the input "старый замок стоит" is processed
+- THEN the output reads "старый зам+ок стоит" and every other Russian word is
+  untouched
+
+#### Scenario: Latin-only dictionary skips the Cyrillic scan
+
+- GIVEN a dictionary whose keys are all Latin
+- WHEN a Russian document is processed
+- THEN the Cyrillic candidate pattern is not run and the output matches the
+  output of the same document under the previous implementation
+
 #### Scenario: Entry overrides letter spelling of an abbreviation
 
 - GIVEN the entry `SQL → эс ку эль`
@@ -992,8 +1011,7 @@ replacement.
 
 - GIVEN the entry `IPv6 → айпи ви шесть` and the input "сеть IPv6 работает"
 - WHEN the pipeline processes it
-- THEN the output reads "айпи ви шесть" — before this feature no phase
-  captured alnum tokens and raw Latin reached the TTS engine
+- THEN the output reads "айпи ви шесть"
 
 #### Scenario: Entry applies to a part of a code identifier
 
