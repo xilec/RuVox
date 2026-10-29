@@ -4,53 +4,78 @@
 //! non-overlapping, non-empty, inside the normalized text, carrying a language
 //! exactly when the engine reads them, and no markup leaking into the text.
 //!
+//! Shared fixtures run under every harness profile; a fixture inside
+//! `tests/fixtures/pipeline/<profile>/` runs under that profile only.
+//!
 //! Run with:
 //!   cargo test --manifest-path src-tauri/Cargo.toml --test span_invariants
 
-use ruvox_tauri_lib::pipeline::{SpanKind, TTSPipeline};
+use ruvox_tauri_lib::pipeline::{Span, SpanKind, TTSPipeline};
 use ruvox_tauri_lib::tts::profiles::{NATIVE_EN_PROFILE, SILERO_PROFILE};
 
 mod common;
 
-/// Every profile the pipeline is expected to handle: the reference
-/// Russian-only engine and the most permissive one.
-const PROFILE_NAMES: [&str; 2] = ["silero", "native_en"];
+/// `(case path, profiles it must hold under)`.
+fn cases_with_profiles() -> Vec<(String, Vec<&'static str>)> {
+    let selected = common::selected_profile_names();
+    let mut cases: Vec<(String, Vec<&'static str>)> = common::collect_case_names()
+        .into_iter()
+        .map(|path| (path, selected.clone()))
+        .collect();
+    cases.extend(
+        common::collect_profile_cases()
+            .into_iter()
+            .map(|(profile, path)| (path, vec![profile_by_name(&profile)])),
+    );
+    cases
+}
+
+/// The fixture folder owns the profile name; the profile list is typed by the
+/// same string, so this is the only place the two are joined.
+fn profile_by_name(name: &str) -> &'static str {
+    common::all_profiles()
+        .into_iter()
+        .find(|(known, _)| *known == name)
+        .map(|(known, _)| known)
+        .unwrap_or_else(|| panic!("unknown golden profile {name:?}"))
+}
 
 #[test]
-fn span_invariants_hold_for_every_fixture_under_every_profile() {
-    let cases = common::collect_case_names();
+fn span_invariants_hold_for_every_fixture_under_its_profiles() {
+    let cases = cases_with_profiles();
     assert!(!cases.is_empty(), "no golden fixtures found");
 
     let mut checked = 0;
-    for case in &cases {
+    for (case, profiles) in &cases {
         let input = common::read_fixture_text(case, "input.txt");
         let dict = common::read_dict_sidecar(case);
         let mode = common::read_mode_sidecar(case);
 
-        for profile in PROFILE_NAMES {
+        for profile_name in profiles {
             let mut pipeline = TTSPipeline::new();
             if let Some(mode) = mode {
                 pipeline.set_code_block_mode(mode);
             }
             pipeline.set_user_dictionary(dict.clone());
-            let out = match profile {
-                "silero" => pipeline.process_for_engine(&input, &SILERO_PROFILE),
-                _ => pipeline.process_for_engine(&input, &NATIVE_EN_PROFILE),
-            };
-            let label = format!("{case}/{profile}");
+            let out = pipeline.process_for_engine(&input, profile_of(profile_name));
+            let label = format!("{case}/{profile_name}");
             assert_span_invariants(&out.text, &out.spans, &out.mapping.char_map, &label);
             checked += 1;
         }
     }
-    assert_eq!(checked, cases.len() * PROFILE_NAMES.len());
+    assert!(checked >= cases.len());
 }
 
-fn assert_span_invariants(
-    text: &str,
-    spans: &[ruvox_tauri_lib::pipeline::Span],
-    char_map: &[(usize, usize)],
-    label: &str,
-) {
+/// Maps a harness name to the profile value the pipeline takes.
+fn profile_of(name: &str) -> &'static tts_contract::TextProfile {
+    match name {
+        "silero" => &SILERO_PROFILE,
+        "native_en" => &NATIVE_EN_PROFILE,
+        other => panic!("unknown golden profile {other:?}"),
+    }
+}
+
+fn assert_span_invariants(text: &str, spans: &[Span], char_map: &[(usize, usize)], label: &str) {
     let len = text.chars().count();
     assert_eq!(
         char_map.len(),

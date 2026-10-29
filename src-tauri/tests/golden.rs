@@ -91,9 +91,35 @@ fn char_map_diff(expected: &[[usize; 2]], actual: &[(usize, usize)], limit: usiz
 
 // ── Main harness ───────────────────────────────────────────────────────────────
 
+/// One run of the corpus: which profile, and which fixture case.
+///
+/// A case under `tests/fixtures/pipeline/<profile>/` runs only under that
+/// profile; a case at the top level is profile-invariant and therefore runs
+/// under every profile in [`common::selected_profile_names`].
+struct GoldenCase {
+    path: String,
+    profile: String,
+}
+
+fn collect_cases() -> Vec<GoldenCase> {
+    let mut cases = Vec::new();
+    for profile in common::selected_profile_names() {
+        for path in common::collect_case_names() {
+            cases.push(GoldenCase {
+                path,
+                profile: profile.to_string(),
+            });
+        }
+    }
+    for (profile, path) in common::collect_profile_cases() {
+        cases.push(GoldenCase { path, profile });
+    }
+    cases
+}
+
 #[test]
 fn golden_fixtures() {
-    let cases = common::collect_case_names();
+    let cases = collect_cases();
     assert!(
         !cases.is_empty(),
         "no fixture cases found in {}",
@@ -102,7 +128,9 @@ fn golden_fixtures() {
 
     let mut failures: Vec<String> = Vec::new();
 
-    for case_name in &cases {
+    for case in &cases {
+        let case_name = &case.path;
+        let profile = common::profile_by_name(&case.profile);
         let input = common::read_fixture_text(case_name, "input.txt");
         let expected_text = common::read_fixture_text(case_name, "expected.txt");
         let expected_map = read_char_map_fixture(case_name);
@@ -112,7 +140,9 @@ fn golden_fixtures() {
             pipeline.set_code_block_mode(mode);
         }
         pipeline.set_user_dictionary(common::read_dict_sidecar(case_name));
-        let (actual_text, actual_mapping) = pipeline.process_with_char_mapping(&input);
+        let processed = pipeline.process_for_engine(&input, profile);
+        let actual_text = processed.text;
+        let actual_mapping = processed.mapping;
 
         let mut case_errors: Vec<String> = Vec::new();
 
@@ -160,8 +190,9 @@ fn golden_fixtures() {
 
         if !case_errors.is_empty() {
             failures.push(format!(
-                "\n=== FAIL: {} ===\n{}",
+                "\n=== FAIL: {} under {} ===\n{}",
                 case_name,
+                case.profile,
                 case_errors.join("\n")
             ));
         }

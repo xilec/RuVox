@@ -84,6 +84,7 @@ def _handle_synthesize(req: SynthesizeRequest) -> OkSynthesize | ErrResponse:
             sample_rate=req.sample_rate,
             out_wav=Path(req.out_wav),
             char_mapping=char_mapping,
+            chunk_limit=req.chunk_limit,
         )
     except ValueError as exc:
         return ErrResponse(error="bad_input", message=str(exc))

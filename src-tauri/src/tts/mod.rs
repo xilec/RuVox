@@ -10,7 +10,6 @@
 //! [`TtsError::Died`]. Crash recovery is layered on top in [`supervisor`].
 
 pub mod availability;
-pub mod chunking;
 pub mod engine;
 pub mod piper;
 pub mod profiles;
@@ -34,6 +33,7 @@ use thiserror::Error;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::{mpsc, oneshot, watch};
+
 use tokio::time::timeout;
 use tracing::{info, warn};
 
@@ -91,6 +91,10 @@ pub enum TtsRequest {
         /// Optional char mapping from the Rust pipeline for precise `original_pos` mapping.
         #[serde(skip_serializing_if = "Option::is_none")]
         char_mapping: Option<Arc<[CharMappingEntry]>>,
+        /// Per-chunk char limit from the engine's text profile. Omitted means
+        /// the sidecar's own default, so an older ttsd still works.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        chunk_limit: Option<u32>,
     },
     Shutdown,
 }
@@ -335,12 +339,19 @@ impl TtsSubprocess {
     ) -> Result<SynthesizeOutput, TtsError> {
         const SYNTHESIZE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
+        // The sidecar splits long text itself, so it needs the engine's limit
+        // from the profile rather than a constant on the Python side.
+        let chunk_limit = profiles::SILERO_PROFILE
+            .chunk
+            .char_limit()
+            .map(|limit| limit as u32);
         let req = TtsRequest::Synthesize {
             text,
             speaker,
             sample_rate,
             out_wav,
             char_mapping,
+            chunk_limit,
         };
         let resp = timeout(SYNTHESIZE_TIMEOUT, self.send(req))
             .await
@@ -635,6 +646,7 @@ mod tests {
             sample_rate: 48000,
             out_wav: Arc::from("/tmp/test.wav"),
             char_mapping: None,
+            chunk_limit: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         let v: Value = serde_json::from_str(&json).unwrap();
@@ -644,8 +656,9 @@ mod tests {
         assert_eq!(v["speaker"], "xenia");
         assert_eq!(v["sample_rate"], 48000);
         assert_eq!(v["out_wav"], "/tmp/test.wav");
-        // char_mapping is None → must be absent (skip_serializing_if)
+        // char_mapping and chunk_limit are None → must be absent (skip_serializing_if)
         assert!(v.get("char_mapping").is_none());
+        assert!(v.get("chunk_limit").is_none());
     }
 
     #[test]
@@ -662,11 +675,13 @@ mod tests {
             sample_rate: 48000,
             out_wav: Arc::from("/tmp/test.wav"),
             char_mapping: Some(mapping),
+            chunk_limit: Some(900),
         };
         let json = serde_json::to_string(&req).unwrap();
         let v: Value = serde_json::from_str(&json).unwrap();
 
         assert_eq!(v["cmd"], "synthesize");
+        assert_eq!(v["chunk_limit"], 900);
         let cm = v["char_mapping"]
             .as_array()
             .expect("char_mapping should be present");

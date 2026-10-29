@@ -86,3 +86,77 @@ pub fn read_dict_sidecar(case: &str) -> UserDictionary {
     }
     dict
 }
+
+/// Every profile the golden harness knows, keyed by the name used both in
+/// `RUVOX_GOLDEN_PROFILES` and in `tests/fixtures/pipeline/<profile>/`.
+pub fn all_profiles() -> Vec<(&'static str, &'static tts_contract::TextProfile)> {
+    vec![
+        ("silero", &ruvox_tauri_lib::tts::profiles::SILERO_PROFILE),
+        (
+            "native_en",
+            &ruvox_tauri_lib::tts::profiles::NATIVE_EN_PROFILE,
+        ),
+    ]
+}
+
+/// Profile names the profile-invariant fixtures run under:
+/// `RUVOX_GOLDEN_PROFILES` (comma-separated) or every known profile.
+pub fn selected_profile_names() -> Vec<&'static str> {
+    let known = all_profiles();
+    let Ok(raw) = std::env::var("RUVOX_GOLDEN_PROFILES") else {
+        return known.into_iter().map(|(name, _)| name).collect();
+    };
+    let mut names = Vec::new();
+    for name in raw.split(',').map(str::trim).filter(|n| !n.is_empty()) {
+        let Some((known_name, _)) = known.iter().find(|(known, _)| *known == name) else {
+            let available: Vec<&str> = known.iter().map(|(known, _)| *known).collect();
+            panic!("unknown golden profile {name:?}; available: {available:?}");
+        };
+        names.push(*known_name);
+    }
+    names
+}
+
+/// The profile behind a harness name.
+pub fn profile_by_name(name: &str) -> &'static tts_contract::TextProfile {
+    let known = all_profiles();
+    match known.iter().find(|(known, _)| *known == name) {
+        Some((_, profile)) => profile,
+        None => panic!("unknown golden profile {name:?}"),
+    }
+}
+
+/// Cases pinned to one profile: `tests/fixtures/pipeline/<profile>/<case>.*`.
+///
+/// Returns `(profile, case path relative to the fixtures dir)`.
+pub fn collect_profile_cases() -> Vec<(String, String)> {
+    let dir = fixtures_dir();
+    let known: Vec<&str> = all_profiles().into_iter().map(|(name, _)| name).collect();
+    let mut cases = Vec::new();
+    let entries = match fs::read_dir(&dir) {
+        Ok(entries) => entries,
+        Err(_) => return cases,
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !known.contains(&name.as_str()) || !entry.path().is_dir() {
+            continue;
+        }
+        let nested = match fs::read_dir(entry.path()) {
+            Ok(nested) => nested,
+            Err(_) => continue,
+        };
+        let mut names: Vec<String> = nested
+            .flatten()
+            .filter_map(|nested_entry| {
+                let file = nested_entry.file_name().to_string_lossy().to_string();
+                file.ends_with(".input.txt")
+                    .then(|| format!("{name}/{}", file.trim_end_matches(".input.txt")))
+            })
+            .collect();
+        names.sort();
+        cases.extend(names.into_iter().map(|case| (name.clone(), case)));
+    }
+    cases.sort();
+    cases
+}

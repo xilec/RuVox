@@ -43,9 +43,11 @@ nix develop -c pnpm tauri dev
 │   │   ├── state.rs        # AppState
 │   │   └── lib.rs          # Tauri::Builder entry point
 │   └── tests/
-│       ├── fixtures/pipeline/          # Golden fixtures (37 cases × 3 files)
+│       ├── fixtures/pipeline/          # Golden corpus; <profile>/ pins a profile
 │       ├── fixtures/transliteration/   # dictionary_baseline.csv + inflected_forms.csv
-│       ├── golden.rs                   # Golden integration test
+│       ├── golden.rs                   # Golden integration test (profile-aware)
+│       ├── golden_profiles.rs          # Corpus classifier per text profile
+│       ├── span_invariants.rs          # Span invariants across the corpus
 │       ├── dictionary_baseline.rs      # Vocabulary snapshot (UPDATE_BASELINE=1)
 │       └── inflected_forms.rs          # Curated inflected-form readings
 ├── ttsd/                   # Python subprocess (Silero TTS sidecar)
@@ -80,6 +82,22 @@ nix develop -c cargo test --manifest-path src-tauri/Cargo.toml --test golden    
 nix develop -c pnpm typecheck                                                   # TypeScript strict
 nix develop -c bash -c "cd ttsd && uv run python -m pytest"                     # Python subprocess
 ```
+
+### Golden fixtures and text profiles
+
+Every `tests/fixtures/pipeline/*.input.txt` has an expected text and a char map.
+Shared cases are profile-invariant: they run under every profile listed in
+`RUVOX_GOLDEN_PROFILES` (default: all known ones). A case inside
+`tests/fixtures/pipeline/<profile>/` pins that profile and runs only there.
+When a pipeline change alters a shared case under some profile, the classifier
+reports the split:
+
+```bash
+nix develop -c cargo test --manifest-path src-tauri/Cargo.toml --test golden_profiles -- --ignored --nocapture
+```
+
+Move the reported cases into the `<profile>/` folder they belong to; the move
+list is reproducible.
 
 ### Production build
 

@@ -114,13 +114,23 @@ impl SileroNativeEngine {
         }
 
         let dir = bundle_dir.to_path_buf();
-        let engine = tokio::task::spawn_blocking(move || SileroNative::load(&dir))
-            .await
-            .map_err(|e| TtsError::Ttsd {
-                code: "silero_native_load_panic".to_string(),
-                message: format!("silero-native load task panicked: {e}"),
-            })?
-            .map_err(map_load_error)?;
+        // The chunk limit comes from the engine's text profile, so the profile
+        // remains the one place that decides how the text is cut.
+        let chunk_limit = crate::tts::profiles::SILERO_NATIVE_PROFILE
+            .chunk
+            .char_limit()
+            // The engine splits by characters; a seconds-based profile would
+            // need a duration estimate before the text could be cut.
+            .unwrap_or(silero_native::chunking::MAX_CHUNK_SIZE);
+        let engine = tokio::task::spawn_blocking(move || {
+            SileroNative::load(&dir).map(|engine| engine.with_chunk_limit(chunk_limit))
+        })
+        .await
+        .map_err(|e| TtsError::Ttsd {
+            code: "silero_native_load_panic".to_string(),
+            message: format!("silero-native load task panicked: {e}"),
+        })?
+        .map_err(map_load_error)?;
 
         let engine = Arc::new(engine);
         let mut guard = loaded.write().await;

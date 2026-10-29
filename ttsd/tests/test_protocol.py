@@ -158,3 +158,40 @@ class TestErrResponse:
     def test_err_response_invalid_error_code_raises(self) -> None:
         with pytest.raises(ValidationError):
             ErrResponse(error="unknown_code", message="test")  # type: ignore[arg-type]
+
+
+class TestChunkLimitValidation:
+    """`chunk_limit` is optional, positive, and rejected when nonsense."""
+
+    def test_absent_chunk_limit_is_the_default(self):
+        req = SynthesizeRequest(
+            cmd="synthesize",
+            text="привет",
+            speaker="eugene",
+            sample_rate=24000,
+            out_wav="/tmp/x.wav",
+        )
+        assert req.chunk_limit is None
+
+    def test_positive_chunk_limit_is_accepted(self):
+        req = SynthesizeRequest(
+            cmd="synthesize",
+            text="привет",
+            speaker="eugene",
+            sample_rate=24000,
+            out_wav="/tmp/x.wav",
+            chunk_limit=500,
+        )
+        assert req.chunk_limit == 500
+
+    @pytest.mark.parametrize("bad", [0, -1])
+    def test_non_positive_chunk_limit_is_rejected(self, bad):
+        with pytest.raises(ValidationError):
+            SynthesizeRequest(
+                cmd="synthesize",
+                text="привет",
+                speaker="eugene",
+                sample_rate=24000,
+                out_wav="/tmp/x.wav",
+                chunk_limit=bad,
+            )

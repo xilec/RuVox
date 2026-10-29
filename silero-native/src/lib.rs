@@ -59,6 +59,9 @@ impl std::fmt::Debug for SynthesisResult {
 /// Public engine handle: load once, synthesize many.
 pub struct SileroNative {
     engine: Engine,
+    /// Per-chunk char limit, taken from the engine's text profile. A constant
+    /// here would be a second source of truth for a number the profile owns.
+    chunk_limit: usize,
 }
 
 /// One synthesized (sub-)chunk: its text, char offset in the full input and
@@ -90,7 +93,16 @@ impl SileroNative {
     pub fn load(bundle_dir: impl AsRef<Path>) -> Result<Self> {
         Ok(Self {
             engine: Engine::load(bundle_dir.as_ref())?,
+            chunk_limit: chunking::MAX_CHUNK_SIZE,
         })
+    }
+
+    /// Overrides the per-chunk char limit with the one from the text profile
+    /// the caller normalizes for — the app passes the Silero-native profile's
+    /// limit, so the profile, not this crate, decides the chunk boundaries.
+    pub fn with_chunk_limit(mut self, limit: usize) -> Self {
+        self.chunk_limit = limit;
+        self
     }
 
     /// Synthesize one chunk, re-splitting it in half when the exported
@@ -140,7 +152,7 @@ impl SileroNative {
                     chars = text.chars().count(),
                     "chunk overflows the decoder positional table; re-splitting"
                 );
-                for (sub, sub_offset) in chunking::split_with_limit(text, half) {
+                for (sub, sub_offset) in tts_contract::chunk::split_with_limit(text, half) {
                     self.synthesize_with_fallback(
                         &sub,
                         offset + sub_offset,
@@ -176,7 +188,7 @@ impl SileroNative {
         // before chunking so chunk offsets and word timestamps are in
         // stripped-text coordinates. `Engine::prepare` does NOT strip again.
         let stripped = frontend::text::strip_unsupported_markup(text);
-        let chunks = chunking::split_into_chunks(&stripped);
+        let chunks = tts_contract::chunk::split_with_limit(&stripped, self.chunk_limit);
 
         let mut outputs: Vec<ChunkOutput> = Vec::new();
         for (chunk_text, chunk_start) in &chunks {

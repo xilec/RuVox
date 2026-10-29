@@ -3,7 +3,7 @@
 //! VITS encoder activation memory grows quadratically with input length, so a
 //! single `Piper::create` call over long text can request multi-GB tensors and
 //! freeze the machine (#155). [`synthesize_chunked`] splits the normalized
-//! text (via [`crate::tts::chunking`]) and drives the caller's synthesis
+//! text (via the shared splitter in `tts-contract`) and drives the caller's synthesis
 //! closure once per chunk; the closure synthesizes AND persists the chunk
 //! (the engine streams samples into the WAV file instead of accumulating the
 //! whole text in memory), and this module records each chunk's
@@ -20,9 +20,9 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use super::super::chunking::split_with_limit;
 use crate::tts::TtsError;
 use crate::tts::profiles::PIPER_PROFILE;
+use tts_contract::chunk::split_with_limit;
 
 /// Silence inserted before a chunk that follows a paragraph break (blank
 /// line) in the source text, in seconds — declared by the Piper text profile.

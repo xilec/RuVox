@@ -34,7 +34,10 @@ class FakeEngine:
             raise self._load_exc
         self._loaded = True
 
-    def synthesize(self, *, text, speaker, sample_rate, out_wav, char_mapping=None):
+    def synthesize(
+        self, *, text, speaker, sample_rate, out_wav, char_mapping=None,
+        chunk_limit=None,
+    ):
         self.synth_calls.append(
             {
                 "text": text,
@@ -42,6 +45,7 @@ class FakeEngine:
                 "sample_rate": sample_rate,
                 "out_wav": out_wav,
                 "char_mapping": char_mapping,
+                "chunk_limit": chunk_limit,
             }
         )
         if self._synth_exc is not None:

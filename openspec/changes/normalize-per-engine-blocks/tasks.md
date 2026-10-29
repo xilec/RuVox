@@ -79,26 +79,27 @@
 
 ## 5. Chunker, limits and profiles' consumers
 
-- [ ] 5.1 Piper: obtain the chunk limit and paragraph pause from its profile,
+- [x] 5.1 Piper: obtain the chunk limit and paragraph pause from its profile,
   call the shared splitter, and delete the re-export shim and the local copy.
   Verify: the chunked-synthesis tests pass with profile-provided values, and a
   test with a different profile limit changes the chunk boundaries without
   touching engine code.
-- [ ] 5.2 silero-native: replace the local splitter with the shared crate
+- [x] 5.2 silero-native: replace the local splitter with the shared crate
   parameterized by the Silero profile, keeping `sanitize_for_silero` as an
   engine-side step. Verify: chunk tests pass and the bundle-gated parity suite
   is unchanged when `SILERO_NATIVE_BUNDLE` is set.
-- [ ] 5.3 ttsd: accept optional `chunk_limit` (default 900), validate it
+- [x] 5.3 ttsd: accept optional `chunk_limit` (default 900), validate it
   (positive integer), and use it in the sidecar's chunker. Verify:
   `cd ttsd && uv run python -m pytest` covers the custom limit, the default and
   a rejected limit; the mock sidecars still satisfy the Tauri-side tests.
-- [ ] 5.4 Profile-parameterized golden harness: run the corpus under a list of
-  profiles from `RUVOX_GOLDEN_PROFILES`, add the `#[cfg(test)]` `native_en`
-  profile exercising every gated path, run the classifier once, and move
-  profile-specific fixtures into `tests/fixtures/pipeline/<profile>/` while
-  profile-invariant ones stay in place. Verify: the harness runs common
-  fixtures under every profile and each profile folder under its own; the
-  classification run is reproducible (same move list on a second run).
+- [x] 5.4 Profile-parameterized golden harness: run the corpus under a list of
+  profiles from `RUVOX_GOLDEN_PROFILES`, add the `native_en` profile exercising
+  every gated path (shipped in the crate but absent from the engine registry),
+  run the classifier once, and move profile-specific fixtures into
+  `tests/fixtures/pipeline/<profile>/` while profile-invariant ones stay in
+  place. Verify: shared fixtures run under every selected profile, each profile
+  folder only under its own, `tests/golden_profiles.rs` reproduces the same
+  move list on a second run, and `span_invariants` covers both kinds.
 
 ## 6. Integration checks
 

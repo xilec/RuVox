@@ -19,7 +19,7 @@
 //! ```
 
 use ruvox_tauri_lib::paths::voices_root;
-use ruvox_tauri_lib::tts::chunking::split_with_limit;
+use tts_contract::chunk::split_with_limit;
 
 /// Chunk sizes to probe, in codepoints. Spans the production constant (500)
 /// and the freeze threshold direction (the unchunked #155 reproduction was

@@ -95,10 +95,11 @@ structural ("точка", "слэш", block markers), not a transliteration of p
 `Route` is a struct with an explicit field per kind, so adding a kind is a code
 change, not a data change.
 
-Known gap, deferred to #311: URL narration still transliterates Latin path
+Known gaps, deferred to #311: URL narration still transliterates Latin path
 components ("example.com/path" → "экзампл точка ком слэш пат") even under a
-`Native` prose route, because the URL block owns that fragment. Leaving URLs
-verbatim is what the URL route will decide.
+`Native` prose route, and inline code still reads its Latin content in Russian
+("`getUserData()`" → "гет юзер дата"), because the URL and inline-code blocks
+own those fragments. Leaving them verbatim is what their routes will decide.
 
 - *Alternative — declare all five kinds and implement two:* rejected. An enum
   field whose `Native` value is unimplemented invites a caller to set it and
