@@ -4,9 +4,7 @@
 User-authored pronunciation overrides: a flat `from → to` dictionary that
 users edit at runtime (UI, import, or hand-editing the file) and that wins
 over every built-in pronunciation table at normalization time.
-
 ## Requirements
-
 ### Requirement: Dictionary entry semantics
 
 An entry SHALL map a single source token (`from`) to its spoken form (`to`).
@@ -15,9 +13,26 @@ letters-and-digits tokens like `IPv6` or `x86` are valid; pure numbers,
 Cyrillic, hyphens, and other punctuation are not. Matching SHALL be
 case-insensitive everywhere. The entry key SHALL be the lowercased `from`;
 one entry per word — re-adding an existing word replaces the entry. `to`
-SHALL be a non-empty free-form string of at most 256 characters; Latin
-letters or digits in `to` are permitted but the editor SHALL warn that the
-replacement is inserted verbatim and later phases will not re-normalize it.
+SHALL be a non-empty free-form string whose spoken form is at most 256
+characters; Latin letters or digits in `to` are permitted but the editor SHALL
+warn that the replacement is inserted verbatim and later phases will not
+re-normalize it.
+
+`to` MAY carry at most one explicit stress mark, written as `+` immediately
+before a Russian vowel (`а е ё и о у ы э ю я`, either case). The mark SHALL NOT
+be part of the spoken form: the pipeline inserts `to` with the mark for an
+engine whose profile declares stress support (`Auto` or `Manual`) and without
+it otherwise. A `+` that does not precede a vowel, a second `+`, or a mark at
+the end of `to` SHALL be rejected with an error naming the rule; an entry
+loaded from a hand-edited file with a malformed mark SHALL be skipped like any
+other invalid entry. The character limit SHALL count the spoken form, not the
+mark. Import and export SHALL preserve the mark verbatim, so a round trip
+through the file format is lossless.
+
+The editor SHALL explain the mark where the spoken form is entered: a help
+icon next to the field, whose tooltip states that `+` before a vowel sets the
+stress and that only engines with stress support apply it, and an inline error
+for a malformed mark. The help text SHALL NOT name specific engines.
 
 #### Scenario: Case-insensitive match
 
@@ -45,6 +60,33 @@ replacement is inserted verbatim and later phases will not re-normalize it.
 - THEN both entries exist (different keys), but two entries whose keys differ
   only by case ("Git" and "git") collapse into one — the last one in file
   order wins and a warning is logged
+
+#### Scenario: Stress is accepted before a vowel
+
+- GIVEN the entry `Москва → М+осква`
+- WHEN it is saved
+- THEN it is accepted, the spoken form is "Москва", and the mark is preserved
+  in the file
+
+#### Scenario: Malformed stress is rejected
+
+- GIVEN an entry whose `to` is "Моск+ва", "М+оск+ва", "+Москва" or "Москва+"
+- WHEN it is validated
+- THEN it is rejected with an error explaining that a stress mark goes before
+  a vowel and appears at most once
+
+#### Scenario: Stress survives import and export
+
+- GIVEN a dictionary containing `Москва → М+осква`
+- WHEN it is exported and imported again
+- THEN the entry is identical, mark included
+
+#### Scenario: Editor explains the mark
+
+- GIVEN the dictionary form is open
+- WHEN the user asks for help on the spoken-form field
+- THEN the tooltip states that `+` before a vowel sets the stress and that
+  only engines with stress support apply it
 
 ### Requirement: Storage format and location
 
@@ -146,3 +188,4 @@ entries that override built-in behavior.
 - GIVEN the entry `github → хаб` and "github" exists in `IT_TERMS`
 - WHEN the dictionary list is loaded in the UI
 - THEN the entry is marked as overriding a built-in
+

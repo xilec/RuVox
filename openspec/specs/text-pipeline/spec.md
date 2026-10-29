@@ -966,6 +966,15 @@ and replace only exact case-insensitive key hits; non-hits SHALL flow into
 the English-word phase unchanged. Lookups in identifiers and URLs SHALL use
 the split parts/words those phases already produce.
 
+The replacement SHALL be the entry's `to` as typed. When the profile declares
+`Stress::None`, the replacement SHALL be the spoken form instead — the same
+text with the stress mark removed; otherwise the mark SHALL stay, so the engine
+applies it. A malformed mark never reaches this phase: validation rejects it on
+save and skips it on load. The mark SHALL be inserted as part of the
+replacement region, so no later phase reads it as an operator or a symbol, and
+`CharMapping` SHALL map it to the original word like the rest of the
+replacement.
+
 #### Scenario: Entry overrides an IT term in prose
 
 - GIVEN the entry `docker → докер` ("docker" normally transliterates)
@@ -1003,6 +1012,18 @@ the split parts/words those phases already produce.
 - GIVEN the entry `user → юзер` and code block narration mode "full"
 - WHEN a fenced code block containing `user_id = 1` is processed
 - THEN the "user" part reads "юзер"
+
+#### Scenario: Stress mark reaches an engine that supports it
+
+- GIVEN the entry `Москва → М+осква` and a profile declaring `Stress::Auto`
+- WHEN the input "в Москва сегодня" is processed
+- THEN the output contains "М+осква" and no phase reads the `+` as an operator
+
+#### Scenario: Stress mark is dropped for an engine without support
+
+- GIVEN the same entry and a profile declaring `Stress::None`
+- WHEN the input is processed
+- THEN the output contains "Москва" without the mark
 
 ### Requirement: Canonical readings are consistent across dictionaries
 
