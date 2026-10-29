@@ -245,7 +245,7 @@ impl<'a> URLPathNormalizer<'a> {
                 let lower = word.to_lowercase();
                 // User dictionary entries win over built-in IT_TERMS
                 // (change `user-dictionary`).
-                if let Some(to) = self.user_dictionary.and_then(|d| d.get(&lower)) {
+                if let Some(to) = self.user_dictionary.and_then(|d| d.resolve(&lower)) {
                     return to.to_string();
                 }
                 // Check IT_TERMS first (e.g. "github" → "гитхаб").

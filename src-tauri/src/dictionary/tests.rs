@@ -270,3 +270,95 @@ fn export_writes_valid_dictionary_file() {
     let entries = store::parse_import(&fs::read_to_string(&out).expect("read")).expect("reparse");
     assert_eq!(entries, vec![entry("GitHub", "гитхаб")]);
 }
+
+// ── Stress marks ───────────────────────────────────────────────────────────
+
+#[test]
+fn accepts_a_mark_before_a_vowel() {
+    assert!(validate_entry("moskva", "М+осква").is_ok());
+    assert!(validate_entry("zamok", "зам+ок").is_ok(), "lowercase vowel");
+    assert!(
+        validate_entry("yolka", "+Ёлка").is_ok(),
+        "a mark at the start is fine before a vowel"
+    );
+}
+
+#[test]
+fn rejects_a_malformed_mark() {
+    for to in ["Моск+ва", "М+оск+ва", "+Москва", "Москва+", "М+осква+"]
+    {
+        assert!(
+            matches!(
+                validate_entry("moskva", to),
+                Err(DictionaryError::InvalidStress)
+            ),
+            "{to:?} must be rejected"
+        );
+    }
+}
+
+#[test]
+fn stress_position_is_the_vowel_index_in_the_spoken_form() {
+    assert_eq!(
+        split_stress("М+осква").expect("valid"),
+        ("Москва".to_string(), Some(1))
+    );
+    assert_eq!(
+        split_stress("зам+ок").expect("valid"),
+        ("замок".to_string(), Some(3))
+    );
+    assert_eq!(
+        split_stress("Москва").expect("valid"),
+        ("Москва".to_string(), None)
+    );
+}
+
+#[test]
+fn the_length_limit_counts_the_spoken_form() {
+    let spoken = "а".repeat(MAX_TO_LEN);
+    assert!(
+        validate_entry("x", &format!("{spoken}+а")).is_err(),
+        "over the limit"
+    );
+    let at_limit = "б".repeat(MAX_TO_LEN - 1);
+    assert!(
+        validate_entry("x", &format!("{at_limit}+а")).is_ok(),
+        "the mark itself does not count"
+    );
+}
+
+#[test]
+fn resolve_keeps_the_mark_only_when_asked() {
+    let mut dict = UserDictionary::default();
+    dict.insert(entry("moskva", "М+осква"));
+    assert_eq!(dict.resolve("moskva").as_deref(), Some("Москва"));
+    dict.set_mark_stress(true);
+    assert_eq!(dict.resolve("moskva").as_deref(), Some("М+осква"));
+}
+
+#[test]
+fn a_malformed_mark_in_the_file_is_skipped() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("user_dictionary.toml");
+    fs::write(
+        &path,
+        "version = 1\n\n[entries]\nmoskva = \"Моск+ва\"\nzamok = \"зам+ок\"\n",
+    )
+    .expect("write");
+    let dict = DictionaryStore::new(path).load();
+    assert_eq!(dict.len(), 1, "only the well-formed entry survives");
+    assert!(dict.contains("zamok"));
+}
+
+#[test]
+fn the_mark_survives_export_and_reimport() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut dict = UserDictionary::default();
+    dict.insert(entry("Москва", "М+осква"));
+    let out = dir.path().join("exported.toml");
+
+    store::export_to(&dict, &out).expect("export");
+    let entries = store::parse_import(&fs::read_to_string(&out).expect("read")).expect("reparse");
+
+    assert_eq!(entries, vec![entry("Москва", "М+осква")]);
+}

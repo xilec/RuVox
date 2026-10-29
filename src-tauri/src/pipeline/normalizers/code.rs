@@ -580,7 +580,7 @@ impl CodeIdentifierNormalizer {
                     // Numeric part
                     let n: u64 = part.parse().unwrap_or(0);
                     number_to_russian(n)
-                } else if let Some(translation) = user_dict.get(part_lower.as_str()) {
+                } else if let Some(translation) = user_dict.resolve(part_lower.as_str()) {
                     // User dictionary wins over every built-in table
                     // (change `user-dictionary`).
                     translation.to_string()
