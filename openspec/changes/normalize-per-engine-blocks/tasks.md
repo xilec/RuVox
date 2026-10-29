@@ -117,7 +117,8 @@
   errors (length warnings only).
 - [ ] 6.4 Manual pass: run the app, synthesize a mixed technical text with the
   default engine, and confirm audio and per-word highlighting match the
-  pre-change behavior.
+  pre-change behavior; repeat with Piper and ttsd so every engine's chunking
+  path is exercised.
 
 ## Workflow follow-up
 

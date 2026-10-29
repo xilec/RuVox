@@ -98,45 +98,33 @@ fn record_byte_ranges(
     }
 }
 
-/// Records what `find` selects over the current text as spans of `kind`, and
-/// returns those ranges in current codepoint coordinates so a later scan can
-/// skip the fragments already claimed.
+/// Records what `find` selects over the current text as spans of `kind`.
 fn record_native(
     tracked: &mut TrackedText,
     kind: SpanKind,
     lang: Option<&'static str>,
     find: impl FnOnce(&str) -> Vec<(usize, usize)>,
     recorded: &mut Vec<RecordedSpan>,
-) -> Vec<(usize, usize)> {
+) {
     let snapshot = tracked.text().to_string();
     let ranges = find(&snapshot);
     let offsets = byte_to_char_offsets(&snapshot);
     record_byte_ranges(tracked, &offsets, kind, lang, &ranges, recorded);
-    ranges
-        .iter()
-        .map(|&(start, end)| (offsets[start], offsets[end]))
-        .collect()
 }
 
 /// Resolves recorded spans from original into output coordinates in one pass.
 ///
 /// `char_map` is monotone in original position, so a single advancing cursor
 /// covers every span: no reverse index, no string search.
-fn resolve_spans(char_map: &[(usize, usize)], mut recorded: Vec<RecordedSpan>) -> Vec<Span> {
-    if recorded.is_empty() {
+fn resolve_spans(char_map: &[(usize, usize)], recorded: Vec<RecordedSpan>) -> Vec<Span> {
+    let kept = keep_specific_spans(recorded);
+    if kept.is_empty() {
         return Vec::new();
     }
-    // Dictionary overrides are the most specific decision, identifiers next;
-    // the narrowest record wins when records overlap.
-    recorded.sort_by_key(|span| (span.start, kind_priority(span.kind), span.end - span.start));
 
-    let mut resolved = Vec::with_capacity(recorded.len());
+    let mut resolved = Vec::with_capacity(kept.len());
     let mut cursor = 0usize;
-    let mut last_end = 0usize;
-    for span in recorded {
-        if span.start < last_end {
-            continue; // already covered by a more specific span
-        }
+    for span in kept {
         while cursor < char_map.len() && char_map[cursor].1 <= span.start {
             cursor += 1;
         }
@@ -147,7 +135,6 @@ fn resolve_spans(char_map: &[(usize, usize)], mut recorded: Vec<RecordedSpan>) -
             end = cursor;
         }
         if end > start {
-            last_end = span.end;
             resolved.push(Span {
                 kind: span.kind,
                 lang: span.lang,
@@ -157,6 +144,48 @@ fn resolve_spans(char_map: &[(usize, usize)], mut recorded: Vec<RecordedSpan>) -
         }
     }
     resolved
+}
+
+/// Drops overlapping records, keeping the most specific decision per region.
+///
+/// The overlap has to be resolved in original coordinates, not by comparing
+/// live ranges: a native identifier also matches the prose word pattern, and
+/// the dictionary pre-pass runs between the two recordings, so the current
+/// text at each recording differs.
+fn keep_specific_spans(recorded: Vec<RecordedSpan>) -> Vec<RecordedSpan> {
+    let mut specific: Vec<RecordedSpan> = recorded
+        .iter()
+        .filter(|span| span.kind != SpanKind::ProseLatin)
+        .cloned()
+        .collect();
+    specific.sort_by_key(|span| (span.start, kind_priority(span.kind), span.end - span.start));
+
+    let mut kept: Vec<RecordedSpan> = Vec::with_capacity(specific.len());
+    let mut last_end = 0usize;
+    for span in specific {
+        if span.start < last_end {
+            continue;
+        }
+        last_end = span.end;
+        kept.push(span);
+    }
+
+    let mut prose: Vec<RecordedSpan> = recorded
+        .into_iter()
+        .filter(|span| span.kind == SpanKind::ProseLatin)
+        .collect();
+    prose.sort_by_key(|span| (span.start, span.end));
+    for span in prose {
+        let claimed = kept
+            .iter()
+            .any(|kept| span.start < kept.end && kept.start < span.end);
+        if !claimed {
+            kept.push(span);
+        }
+    }
+
+    kept.sort_by_key(|span| span.start);
+    kept
 }
 
 /// Narrower wins when two records cover the same original range.
@@ -787,7 +816,6 @@ impl TTSPipeline {
         // A profile that routes identifiers `Native` keeps them verbatim for the
         // engine; the English phase below must not re-read them either, which is
         // why identifier routing implies prose routing (see `TextProfile`).
-        let mut identifier_ranges: Vec<(usize, usize)> = Vec::new();
         if narrate_identifiers {
             let code = &self.code_normalizer;
             let user_dict = &self.user_dictionary;
@@ -804,9 +832,10 @@ impl TTSPipeline {
                 code.normalize_kebab_case(caps.get(0).unwrap().as_str(), user_dict)
             });
         } else {
-            // The identifiers stay for the engine: annotate them, and remember
-            // their ranges so the prose scan does not claim them as prose.
-            identifier_ranges = record_native(
+            // The identifiers stay for the engine: annotate them. The prose scan
+            // below would claim the same fragment, and `keep_specific_spans`
+            // resolves that overlap in original coordinates.
+            record_native(
                 &mut tracked,
                 SpanKind::CodeIdentifier,
                 native_lang,
@@ -847,9 +876,6 @@ impl TTSPipeline {
                     re_english_words()
                         .find_iter(text)
                         .map(|m| (m.start(), m.end()))
-                        .filter(|&(start, end)| {
-                            !identifier_ranges.iter().any(|&(s, e)| start < e && s < end)
-                        })
                         .collect()
                 },
                 &mut recorded,
@@ -1877,5 +1903,23 @@ mod tests {
                 .spans
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn dictionary_override_wins_over_a_native_identifier_span() {
+        // The identifier and the dictionary both claim this fragment; the more
+        // specific decision must win and the overlap must not survive as two
+        // spans (the recordings happen on either side of the dictionary pass).
+        let mut p = TTSPipeline::new();
+        let mut dict = UserDictionary::default();
+        dict.insert(DictionaryEntry {
+            from: "getuserdata".to_string(),
+            to: "получить данные".to_string(),
+        });
+        p.set_user_dictionary(dict);
+        let out = p.process_for_engine("Вызови getUserData сейчас", native_profile());
+        assert_eq!(out.spans.len(), 1, "spans: {:?}", out.spans);
+        assert_eq!(out.spans[0].kind, SpanKind::DictionaryOverride);
+        assert_eq!(span_text(&out.text, &out.spans[0]), "получить данные");
     }
 }
