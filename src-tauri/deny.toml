@@ -56,6 +56,11 @@ allow = ["GPL-3.0-only"]
 crate = "silero-native"
 allow = ["GPL-3.0-only"]
 
+# Same policy for the shared text-contract crate (path dependency).
+[[licenses.exceptions]]
+crate = "tts-contract"
+allow = ["GPL-3.0-only"]
+
 [bans]
 multiple-versions = "warn"
 wildcards = "warn"

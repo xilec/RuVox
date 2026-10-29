@@ -73,9 +73,11 @@
   fixture under every harness profile: sorted, non-overlapping, within bounds,
   `start < end`, and `char_map` invariants untouched. Verify: the property test
   fails on a deliberately overlapping span in a scratch run.
-- [ ] 4.3 Add the span kinds to the pipeline result consumed by adapters, with
-  the language present only on native spans. Verify: serialization/diff test of
-  a `ProcessedText` value for a mixed input.
+- [x] 4.3 Add the span kinds to the pipeline result adapters receive, with the
+  language present only on native spans. The adapters consume them when they
+  render markup (`Markup::None` for all three shipping engines today, so they
+  ignore the list for now). Verify: unit tests diff a `ProcessedText` for a
+  mixed input, and `span_invariants` checks the language rule corpus-wide.
 
 ## 5. Chunker, limits and profiles' consumers
 
@@ -103,12 +105,15 @@
 
 ## 6. Integration checks
 
-- [ ] 6.1 Full gates: `nix develop -c just test` and `nix develop -c just lint`
-  green, including `cargo deny` and the Python suite.
-- [ ] 6.2 Non-regression: Silero, `ttsd` and Piper golden output byte-identical
+- [x] 6.1 Full gates: `nix develop -c just test` and `nix develop -c just lint`
+  green: Rust (three workspaces), TS (286 unit tests), Python (72), fmt, clippy
+  on every crate. `cargo deny` passes bans, licenses and sources; its advisory
+  check cannot run in this sandbox (read-only advisory DB), and the dependency
+  set changed only by the in-repo path crate.
+- [x] 6.2 Non-regression: Silero, `ttsd` and Piper golden output byte-identical
   (diff of every expected fixture empty) and the 1 MB performance budget
   unchanged in `tests/perf.rs`.
-- [ ] 6.3 `openspec validate normalize-per-engine-blocks --strict` reports no
+- [x] 6.3 `openspec validate normalize-per-engine-blocks --strict` reports no
   errors (length warnings only).
 - [ ] 6.4 Manual pass: run the app, synthesize a mixed technical text with the
   default engine, and confirm audio and per-word highlighting match the
