@@ -681,6 +681,7 @@ mod tests {
         dict.insert(crate::dictionary::DictionaryEntry {
             from: from.to_string(),
             to: to.to_string(),
+            forms: Vec::new(),
         });
         dict
     }

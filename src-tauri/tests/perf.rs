@@ -72,10 +72,11 @@ fn cyrillic_dictionary_entry_keeps_the_quarter_size_budget() {
         .expect("perf test serialization lock poisoned");
     let mut pipeline = TTSPipeline::new();
     let mut dict = ruvox_tauri_lib::dictionary::UserDictionary::default();
-    dict.insert(ruvox_tauri_lib::dictionary::DictionaryEntry {
-        from: "замок".to_string(),
-        to: "зам+ок".to_string(),
-    });
+    dict.insert(ruvox_tauri_lib::dictionary::DictionaryEntry::with_forms(
+        "замок",
+        "зам+ок",
+        ["замка"],
+    ));
     pipeline.set_user_dictionary(dict);
     let input = dense_markup(256_000);
 

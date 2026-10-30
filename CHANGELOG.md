@@ -21,8 +21,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 - **Russian words in the dictionary** — the source word may be a Russian
   Cyrillic token (`замок`), so a wrong stress can be fixed with `зам+ок`; the
   entry matches the exact word form, case-insensitively (#315).
+- **Inflected forms in the dictionary** — a Russian entry can list additional
+  exact word forms (`замка`, `замке`, …) that share its pronunciation, so one
+  entry covers the forms the user confirms without any runtime stemming; the
+  editor has a «Формы слова» field, forms persist in the TOML file, and an
+  unlisted inflection is still left alone (#316).
 - **Dictionary stress marks** — a pronunciation entry may now carry one `+`
-  immediately before a Russian vowel (`М+осква`), and the mark reaches an
+  immediately before a Russian vowel (`Москв+а`), and the mark reaches an
   engine that supports stress: today the in-process Silero, where it
   overrides the automatic accentuation. The `ttsd` sidecar and Piper strip
   the mark; the dictionary form shows a help icon and validates the syntax

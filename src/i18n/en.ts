@@ -431,19 +431,45 @@ export const en: Record<MessageKey, string> = {
   'dictionary.form.from.placeholder': 'e.g. IPv6, GitHub or замок',
   'dictionary.form.to': 'How to pronounce',
   'dictionary.form.to.placeholder': 'e.g. айпи ви шесть',
+  'dictionary.form.forms': 'Word forms',
+  'dictionary.form.forms.placeholder': 'e.g. замка, замке, замком',
+  'dictionary.form.forms.description':
+    'Additional exact forms that get the same pronunciation as the main word. Comma-separated; Russian entries only.',
+  'dictionary.form.forms.hint':
+    'Additional exact forms of the Russian source word that get the same pronunciation. Separate them with commas; adding "замка" does not add "замки".',
+  'dictionary.form.forms.help': 'Word forms help',
+  'dictionary.form.forms.details.open': 'How do forms work?',
+  'dictionary.form.forms.details.title': 'Word forms',
+  'dictionary.form.forms.details.intro':
+    'The dictionary matches an exact word. List other forms in the forms field when they should sound the same as the main word.',
+  'dictionary.form.forms.details.example':
+    'Example: "Петров" → "Петр+ов", forms "Петрова, Петрову, Петровым" — they share the same stress. If the stress differs ("Москва" → "Москв+а", but "Москвы" stresses "ы"), use separate entries.',
+  'dictionary.form.forms.details.rules':
+    'Forms are not generated automatically. Each form is one Russian word without spaces or punctuation; a form cannot belong to two entries. All forms share one pronunciation — if the stress differs, use separate entries.',
+  'dictionary.form.forms.details.stress':
+    'Set the stress with + before the stressed vowel: "Москв+а". Engines without stress support drop the mark.',
+  'dictionary.form.error.forms.requires_cyrillic':
+    'Forms are available for Russian entries only.',
+  'dictionary.form.error.forms.charset':
+    'Each form is one Russian word of letters and digits, without spaces or punctuation.',
+  'dictionary.form.error.forms.too_long': 'Form is too long (64 characters max).',
+  'dictionary.form.error.forms.duplicate':
+    'A form repeats the source word or another form in the list.',
+  'dictionary.form.error.forms.collision':
+    'Another dictionary entry already owns this form.',
   'dictionary.form.error.from.required': 'Enter a word: Latin or Russian letters and digits, at least one letter.',
   'dictionary.form.error.from.charset':
     'One word of Latin or Russian letters and digits, at least one letter (e.g. IPv6, x86, замок).',
   'dictionary.form.error.from.too_long': 'The word is too long (64 characters max).',
   'dictionary.form.error.to.required': 'Enter the spoken form.',
   'dictionary.form.error.to.stress_malformed':
-    'A stress mark goes once, immediately before a vowel: for example, М+осква.',
+    'A stress mark goes once, immediately before a vowel: for example, Москв+а.',
   'dictionary.form.error.to.too_long': 'The spoken form is too long (256 characters max).',
   'dictionary.form.stress.hint':
-    'Put + before a vowel to set the stress: М+осква. The stress applies only to engines that support it.',
+    'Put + before the stressed vowel to set the stress: Москв+а. The stress applies only to engines that support it.',
   'dictionary.form.stress.help': 'About stress marks',
   'dictionary.form.from.hint':
-    'A Russian word is matched by its exact form: a different inflection needs its own entry.',
+    'A Russian word is matched by its exact form: list "замка", "замке" in the forms field, otherwise each form needs its own entry.',
   'dictionary.form.from.help': 'Word matching help',
   'dictionary.form.warning.latin':
     'The spoken form contains Latin letters or digits — they will be read as-is.',

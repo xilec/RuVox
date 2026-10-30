@@ -204,6 +204,7 @@ export interface ClearCacheResult {
 export interface DictionaryEntryDto {
   from: string;
   to: string;
+  forms: string[];
   overridesBuiltin: boolean;
 }
 
@@ -211,6 +212,7 @@ export interface DictionaryEntryDto {
 export interface DictionaryEntryInput {
   from: string;
   to: string;
+  forms: string[];
 }
 
 /** Import outcome counts. */

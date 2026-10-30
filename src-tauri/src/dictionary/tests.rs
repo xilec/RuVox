@@ -5,10 +5,7 @@ use super::*;
 use std::fs;
 
 fn entry(from: &str, to: &str) -> DictionaryEntry {
-    DictionaryEntry {
-        from: from.to_string(),
-        to: to.to_string(),
-    }
+    DictionaryEntry::new(from, to)
 }
 
 // ── Validation ─────────────────────────────────────────────────────────────
@@ -117,6 +114,70 @@ fn rejects_overlong_to() {
     ));
 }
 
+#[test]
+fn accepts_russian_inflected_forms() {
+    let forms = vec!["замка".to_string(), "замке".to_string()];
+    assert!(validate_entry_with_forms("замок", "зам+ок", &forms).is_ok());
+}
+
+#[test]
+fn rejects_forms_on_a_latin_entry() {
+    assert!(matches!(
+        validate_entry_with_forms("docker", "докер", &["dockers".to_string()]),
+        Err(DictionaryError::InvalidForm)
+    ));
+}
+
+#[test]
+fn rejects_a_form_equal_to_the_primary_or_a_sibling() {
+    assert!(matches!(
+        validate_entry_with_forms("замок", "зам+ок", &["Замок".to_string()]),
+        Err(DictionaryError::InvalidForm)
+    ));
+    assert!(matches!(
+        validate_entry_with_forms(
+            "замок",
+            "зам+ок",
+            &["замка".to_string(), "Замка".to_string()]
+        ),
+        Err(DictionaryError::InvalidForm)
+    ));
+}
+
+#[test]
+fn rejects_a_non_russian_or_multi_word_form() {
+    for form in ["zamka", "замка дом", "кіт", "123"] {
+        assert!(
+            matches!(
+                validate_entry_with_forms("замок", "зам+ок", &[form.to_string()]),
+                Err(DictionaryError::InvalidForm)
+            ),
+            "form {form:?} must be rejected"
+        );
+    }
+}
+
+#[test]
+fn form_collisions_are_rejected_across_entries() {
+    let entries = vec![
+        DictionaryEntry::with_forms("замок", "зам+ок", ["замка"]),
+        DictionaryEntry::with_forms("замка", "зам+ка", ["замке"]),
+    ];
+    assert!(matches!(
+        validate_no_form_collisions(&entries),
+        Err(DictionaryError::FormCollision(form)) if form == "замка"
+    ));
+
+    let entries = vec![
+        DictionaryEntry::with_forms("замок", "зам+ок", ["замка"]),
+        DictionaryEntry::with_forms("дворец", "двор+ец", ["замка"]),
+    ];
+    assert!(matches!(
+        validate_no_form_collisions(&entries),
+        Err(DictionaryError::FormCollision(_))
+    ));
+}
+
 // ── Map semantics ──────────────────────────────────────────────────────────
 
 #[test]
@@ -136,6 +197,31 @@ fn lookup_expects_lowercased_word() {
     // `get` documents a lowercased word (call sites lower-case once); raw
     // mixed-case input is a caller contract violation and must not match.
     assert_eq!(dict.get("IPV6"), None);
+}
+
+#[test]
+fn inflected_forms_resolve_to_the_primary_spoken_form() {
+    let mut dict = UserDictionary::default();
+    dict.insert(DictionaryEntry::with_forms(
+        "замок",
+        "зам+ок",
+        ["замка", "замке", "замком"],
+    ));
+    for word in ["замок", "замка", "замке", "замком"] {
+        assert_eq!(
+            dict.resolve(word, true).as_deref(),
+            Some("зам+ок"),
+            "form {word} resolves"
+        );
+    }
+    assert_eq!(dict.resolve("замок", false).as_deref(), Some("замок"));
+    assert_eq!(
+        dict.resolve("замки", true),
+        None,
+        "unlisted form is left alone"
+    );
+    assert!(dict.contains("замка"));
+    assert_eq!(dict.len(), 1, "forms do not add primary entries");
 }
 
 #[test]
@@ -205,6 +291,54 @@ fn saved_file_has_version_and_entries_table() {
     assert!(raw.contains("version = 1"), "version field: {raw}");
     assert!(raw.contains("[entries]"), "entries table: {raw}");
     assert!(raw.contains("kubectl = \"куб контрол\""), "entry: {raw}");
+}
+
+#[test]
+fn forms_round_trip_through_the_store() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = DictionaryStore::new(dir.path().join("user_dictionary.toml"));
+    let mut dict = UserDictionary::default();
+    dict.insert(DictionaryEntry::with_forms(
+        "замок",
+        "зам+ок",
+        ["замка", "замке"],
+    ));
+    store.save(&dict).expect("save");
+
+    let raw = fs::read_to_string(store.path()).expect("read");
+    assert!(raw.contains("forms = ["), "forms in file: {raw}");
+    assert!(raw.contains("\"замка\""), "form in file: {raw}");
+    assert!(raw.contains("\"замке\""), "form in file: {raw}");
+    let loaded = store.load();
+    assert_eq!(
+        loaded.iter().next().expect("entry").forms,
+        ["замка", "замке"]
+    );
+    assert_eq!(loaded.resolve("замка", true).as_deref(), Some("зам+ок"));
+}
+
+#[test]
+fn legacy_string_entries_still_load() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("user_dictionary.toml");
+    fs::write(&path, "version = 1\n\n[entries]\n\"замок\" = \"зам+ок\"\n").expect("write fixture");
+    let dict = DictionaryStore::new(path).load();
+    assert_eq!(dict.resolve("замок", true).as_deref(), Some("зам+ок"));
+    assert!(dict.iter().next().expect("entry").forms.is_empty());
+}
+
+#[test]
+fn invalid_form_skips_the_entry_on_load() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("user_dictionary.toml");
+    fs::write(
+        &path,
+        "version = 1\n\n[entries]\n\"замок\" = { to = \"зам+ок\", forms = [\"zamka\"] }\n\"дворец\" = \"двор+ец\"\n",
+    )
+    .expect("write fixture");
+    let dict = DictionaryStore::new(path).load();
+    assert_eq!(dict.len(), 1);
+    assert_eq!(dict.get("дворец"), Some("двор+ец"));
 }
 
 // ── Store: dedupe and invalid entries on load ──────────────────────────────

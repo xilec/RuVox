@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  findFormCollision,
   isDuplicateFrom,
   isSingleSourceToken,
+  parseFormList,
   sortAndFilterEntries,
   spokenForm,
   validateEntryInput,
@@ -61,6 +63,52 @@ describe('validateEntryInput', () => {
   });
 });
 
+describe('inflected forms', () => {
+  it('accepts Russian forms on a Russian entry', () => {
+    expect(
+      validateEntryInput({ from: 'замок', to: 'зам+ок', forms: ['замка', 'замке'] }),
+    ).toBeNull();
+  });
+
+  it('rejects forms on a Latin entry', () => {
+    expect(
+      validateEntryInput({ from: 'docker', to: 'докер', forms: ['dockers'] })?.reason,
+    ).toBe('forms.requires_cyrillic');
+  });
+
+  it('rejects a non-Russian or multi-word form', () => {
+    for (const form of ['zamka', 'замка дом', 'кіт', '123']) {
+      expect(validateEntryInput({ from: 'замок', to: 'зам+ок', forms: [form] })?.reason).toBe(
+        'forms.charset',
+      );
+    }
+  });
+
+  it('rejects a form equal to the source or a sibling', () => {
+    expect(validateEntryInput({ from: 'замок', to: 'зам+ок', forms: ['Замок'] })?.reason).toBe(
+      'forms.duplicate',
+    );
+    expect(
+      validateEntryInput({ from: 'замок', to: 'зам+ок', forms: ['замка', 'Замка'] })?.reason,
+    ).toBe('forms.duplicate');
+  });
+
+  it('splits a comma-separated list and drops blank entries', () => {
+    expect(parseFormList(' замка, , замке , ')).toEqual(['замка', 'замке']);
+    expect(parseFormList('')).toEqual([]);
+  });
+
+  it('finds a form owned by another entry', () => {
+    const entries = [
+      { from: 'замок', to: 'зам+ок', forms: ['замка'] },
+      { from: 'дворец', to: 'двор+ец' },
+    ];
+    expect(findFormCollision(entries, 'дворец', ['замка'])).toBe('замка');
+    expect(findFormCollision(entries, 'дворец', ['замке'])).toBeNull();
+    expect(findFormCollision(entries, 'замок', ['замка'], 'замок')).toBeNull();
+  });
+});
+
 describe('isDuplicateFrom', () => {
   const entries = [
     { from: 'GitHub', to: 'гитхаб' },
@@ -98,6 +146,11 @@ describe('sortAndFilterEntries', () => {
 
   it('filters by a to substring too', () => {
     expect(sortAndFilterEntries(entries, 'докер').map((e) => e.from)).toEqual(['Docker']);
+  });
+
+  it('filters by an inflected form too', () => {
+    const withForms = [...entries, { from: 'замок', to: 'зам+ок', forms: ['замка'] }];
+    expect(sortAndFilterEntries(withForms, 'замка').map((e) => e.from)).toEqual(['замок']);
   });
 
   it('keeps everything for a blank query', () => {

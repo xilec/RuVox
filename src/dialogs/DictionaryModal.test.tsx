@@ -27,6 +27,7 @@ vi.mock('@mantine/modals', () => ({
 
 import { DictionaryModal } from './DictionaryModal';
 import { translate } from '../lib/i18n';
+import { commands } from '../lib/tauri';
 
 let container: HTMLDivElement;
 let root: Root;
@@ -89,6 +90,50 @@ describe('DictionaryModal field help', () => {
     const help = document.querySelector('[aria-label="Справка об ударении"]');
     expect(help).not.toBeNull();
     expect(help?.textContent).toBe('?');
+  });
+
+  it('offers a help affordance on the word-forms field', async () => {
+    await renderModal();
+    clickButton('Добавить слово');
+
+    const help = document.querySelector('[aria-label="Справка о формах слова"]');
+    expect(help).not.toBeNull();
+    expect(help?.textContent).toBe('?');
+    expect(document.body.textContent).toContain(
+      translate('ru', 'dictionary.form.forms.description'),
+    );
+    expect(document.body.textContent).toContain(
+      translate('ru', 'dictionary.form.forms.details.open'),
+    );
+  });
+
+  it('saves listed forms with the entry', async () => {
+    await renderModal();
+    clickButton('Добавить слово');
+    typeInto('Слово', 'замок');
+    typeInto('Как произносить', 'зам+ок');
+    typeInto('Формы слова', 'замка, замке');
+    clickButton('Сохранить');
+
+    await vi.waitFor(() => {
+      expect(commands.saveUserDictionary).toHaveBeenCalledWith([
+        { from: 'замок', to: 'зам+ок', forms: ['замка', 'замке'] },
+      ]);
+    });
+  });
+
+  it('shows the inline error for a form on a Latin entry', async () => {
+    await renderModal();
+    clickButton('Добавить слово');
+    typeInto('Слово', 'docker');
+    typeInto('Как произносить', 'докер');
+    typeInto('Формы слова', 'dockers');
+
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain(
+        translate('ru', 'dictionary.form.error.forms.requires_cyrillic'),
+      );
+    });
   });
 
   it('offers a help affordance on the word field', async () => {
