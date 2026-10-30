@@ -54,6 +54,6 @@
 - [ ] 5.3 `cargo fmt`, clippy (`src-tauri`, `teratts`), `cargo test`
   (src-tauri, teratts with `TERATTS_BUNDLE`), `pnpm typecheck`,
   `pnpm test:unit`, `pnpm lint`, `openspec validate --strict`.
-- [ ] 5.4 Manual pass: mixed article in the app (prose/brands/identifiers
+- [x] 5.4 Manual pass: mixed article in the app (prose/brands/identifiers
   read in English by the same voice, URL/email/code Russian, `IPv6`/`HTTP/2`
   correct, highlight continuous); archive the change.
