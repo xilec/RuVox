@@ -1693,6 +1693,18 @@ mod tests {
     }
 
     #[test]
+    fn pipeline_short_all_caps_guards_stay_words() {
+        // These four-letter tokens are too short for the word-like all-caps
+        // heuristic, so the curated entries are the only thing that keeps them
+        // from being spelled letter by letter (#306 review).
+        let mut p = TTSPipeline::new();
+        assert_eq!(
+            p.process_text("FILE PAGE TYPE BYTE SIZE LINE SITE MIME PIPE HOME LIVE SLACK"),
+            "файл пейдж тайп байт сайз лайн сайт майм пайп хоум лайв слэк"
+        );
+    }
+
+    #[test]
     fn pipeline_all_caps_inflected_it_terms_composed() {
         // Regression (#288): the all-uppercase abbreviation branch used to run
         // before inflection composition, so an all-caps inflected form of a
@@ -1701,7 +1713,7 @@ mod tests {
         let mut p = TTSPipeline::new();
         assert_eq!(p.process_text("SUPPORTING"), "саппортинг");
         assert_eq!(p.process_text("BUILDING"), "билдинг");
-        assert_eq!(p.process_text("FEATURES"), "фичас");
+        assert_eq!(p.process_text("PACKAGES"), "пэкэджес");
         // Composition is a curated lookup, not the transliteration fallback,
         // so the composed form must not enter the unknown-words map.
         assert!(p.english_normalizer.get_unknown_words().is_empty());

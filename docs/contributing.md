@@ -26,23 +26,25 @@ The normalization pipeline lives in `src-tauri/src/pipeline/normalizers/`. Each 
 
 **1. File:** `src-tauri/src/pipeline/normalizers/english.rs`
 
-An entry is a pronunciation fix, not a translation, and it must do work:
-add one only when the digraph transliteration reads the word wrong (`file` is
-read "филе" without the entry "файл"). If `transliterate_simple` already
-produces the right Cyrillic (`class`, `index`), do not add an entry — it would
-only repeat the fallback. A word with an English reading is never replaced by a
-Russian translation: `function` reads "функшн", not "функция". The one
-exception is an entry that must shadow a wrong inflection composition, such as
-`living` (`live` + "-ing" would read "лайвинг").
+An entry is a pronunciation fix, not a translation, and it must do work.
+`transliterate_simple` is a context-aware spelling-rule layer: silent/magic
+`e`, vowel digraphs, soft `c`/`g`, voiced `s`, `-tion`/`-sion`/`-ture`/
+`-cial`/`-tial`, `th`, and `ck`/`qu`/`x`/`-le` are already handled. Add an
+entry only when those rules read the word wrong (`kubernetes`, `nginx`,
+`queue`), when it keeps an all-caps token from being spelled letter by letter
+(`TEST`, `DATA`, `APP`), or when it supplies a stem whose inflected forms
+would otherwise degrade (`living`, `use`, `package`). If
+`transliterate_simple` already produces the right Cyrillic (`class`, `index`),
+do not add an entry — it would only repeat the fallback. A word with an English reading is never replaced by a
+Russian translation: `function` reads "фанкшин", not "функция".
+
+The rule layer is deliberately approximate; vowel reduction and stress
+placement are out of scope, so irregular English words stay curated.
 
 Find the `IT_TERMS` table and add an entry (keep alphabetical order within each section):
 
 ```rust
-pub static IT_TERMS: phf::Map<&'static str, &'static str> = phf::phf_map! {
-    // ... existing terms ...
-    "kubernetes" => "кубернетис",
-    "terraform"  => "терраформ",
-};
+m.insert("kubernetes", "кубернетис");
 ```
 
 **2. Golden fixture:** `src-tauri/tests/fixtures/pipeline/`

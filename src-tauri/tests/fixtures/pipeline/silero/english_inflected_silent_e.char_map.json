@@ -207,12 +207,8 @@
     [
       52,
       59
-    ],
-    [
-      52,
-      59
     ]
   ],
   "original": "using uses used caches cached repositories FEATURES species",
-  "transformed": "юзинг юзес юзед кэшес кэшед репоситорис фичас спесиес"
+  "transformed": "юзинг юзес юзед кэшес кэшед репозиторис фичес спесис"
 }

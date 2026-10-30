@@ -1,6 +1,4 @@
 {
-  "original": "Собрали FEATURES и SUPPORTING через API.",
-  "transformed": "Собрали фичас и саппортинг через эй пи ай.",
   "char_map": [
     [
       0,
@@ -170,5 +168,7 @@
       39,
       40
     ]
-  ]
+  ],
+  "original": "Собрали FEATURES и SUPPORTING через API.",
+  "transformed": "Собрали фичес и саппортинг через эй пи ай."
 }

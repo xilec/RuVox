@@ -6,6 +6,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 
 ## [Unreleased]
 
+### Changed
+- **English spelling rules** — the transliteration fallback now understands
+  silent `e`, vowel digraphs, soft `c`/`g`, voiced `s`, and the common
+  `-tion`/`-sion`/`-ture`/`-cial`/`-tial` endings, so words read closer to
+  English without a dictionary entry (`page` → «пейдж», `file` → «файл»,
+  `package` → «пэкэдж», `feature` → «фиче»); redundant `IT_TERMS` entries were
+  removed and the irregular/guard ones kept; listening-verified readings such
+  as `method` → «мэтод» and `function` → «фанкшин» are curated (#306).
+
 ### Added
 - **Engine-scoped dictionaries** — the dictionary file now holds named
   collections: a global one for every engine and optional per-engine ones.
