@@ -238,6 +238,19 @@ fn re_english_words() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"\b([A-Za-z]+)\b").expect("valid regex"))
 }
 
+fn re_mixed_alnum() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    // Letter+digit tokens such as `p95`, `v2`, `sha256` and `H264`. Mixed-case
+    // identifiers (`getUserData2`) are deliberately excluded: the identifier
+    // phase owns camelCase, and splitting one here would destroy its reading.
+    RE.get_or_init(|| {
+        Regex::new(
+            r"\b(?:[a-z]+\d+[a-z0-9]*|[A-Z]+\d+[A-Z0-9]*|\d+[a-z]+[a-z0-9]*|\d+[A-Z]+[A-Z0-9]*)\b",
+        )
+        .expect("valid regex")
+    })
+}
+
 fn re_user_dict_token() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     // Letters+digits with at least one letter: pure numbers stay with the
@@ -776,7 +789,7 @@ impl TTSPipeline {
         // built-in IT dictionary, abbreviation readings and single-letter names
         // are all the compensation a Russian-only engine needs.
         if narrate_latin {
-            self.process_english_tracked(&mut tracked);
+            self.process_english_tracked(&mut tracked, expand_digits);
         } else {
             record_native(
                 &mut tracked,
@@ -784,6 +797,20 @@ impl TTSPipeline {
                 native_lang,
                 |text| {
                     re_english_words()
+                        .find_iter(text)
+                        .map(|m| (m.start(), m.end()))
+                        .collect()
+                },
+                &mut recorded,
+            );
+            // A letter+digit token is identifier-like: the adapter sends it to
+            // the engine's native language, not to the Russian number phase.
+            record_native(
+                &mut tracked,
+                SpanKind::CodeIdentifier,
+                native_lang,
+                |text| {
+                    re_mixed_alnum()
                         .find_iter(text)
                         .map(|m| (m.start(), m.end()))
                         .collect()
@@ -1032,7 +1059,94 @@ impl TTSPipeline {
             .collect()
     }
 
-    fn process_english_tracked(&mut self, tracked: &mut TrackedText) {
+    /// Reading of one pure-letter English run, shared by the pure-word scan
+    /// and the letter/digit split so both paths resolve a run identically.
+    fn english_word_reading(&mut self, word: &str) -> String {
+        let word_lower = word.to_lowercase();
+
+        // Priority: single letter by name → IT_TERMS →
+        // composed inflection → abbreviations → transliterate
+        use crate::pipeline::normalizers::english::IT_TERMS;
+        if word.len() == 1 {
+            // Lone letters are read by English letter name via the same
+            // table as code identifiers ("x" → "икс"), not
+            // transliterated, and are not tracked as unknown words.
+            CodeIdentifierNormalizer::spell_abbreviation(word)
+        } else if let Some(v) = IT_TERMS.get(word_lower.as_str()) {
+            v.to_string()
+        } else if let Some(composed) = self.english_normalizer.compose_inflection(word) {
+            // Bounded inflection composition is attempted before the
+            // all-uppercase abbreviation rule, so an all-caps inflected
+            // form ("SUPPORTING") composes the curated stem reading
+            // instead of being spelled letter by letter. The helper
+            // fires only for a recognized suffix on a curated stem and
+            // never records unknown words, so pure abbreviations
+            // ("API", "HTML", "SQL", "JSON") keep their readings.
+            composed
+        } else if word.chars().all(|c| c.is_ascii_uppercase()) && word.len() >= 2 {
+            if self.abbrev_normalizer.reads_as_word(word) {
+                // Long vowel-rich all-caps tokens ("DEVELOPER",
+                // "JAVASCRIPT") are words, not initialisms: spelling
+                // them letter by letter is unreadable. They go through
+                // the digraph transliteration and are tracked as
+                // unknown, like any other transliterated word.
+                self.english_normalizer.normalize(word, true)
+            } else {
+                self.abbrev_normalizer.normalize(word)
+            }
+        } else if crate::pipeline::normalizers::abbreviations::as_word()
+            .contains_key(word_lower.as_str())
+        {
+            crate::pipeline::normalizers::abbreviations::as_word()[word_lower.as_str()].to_string()
+        } else {
+            self.english_normalizer.normalize(word, true)
+        }
+    }
+
+    /// Reading of a token that mixes letters and digits.
+    ///
+    /// A curated whole-token reading wins (`mp3` → "эм пэ три"); otherwise the
+    /// token is split into letter and digit runs and each run is resolved by
+    /// the normalizer that owns it. The split happens here, after the
+    /// identifier phase, so camelCase/snake_case identifiers are never torn
+    /// apart by it.
+    fn mixed_alnum_reading(&mut self, token: &str, expand_digits: bool) -> String {
+        use crate::pipeline::normalizers::english::IT_TERMS;
+        let lower = token.to_lowercase();
+        if let Some(v) = IT_TERMS.get(lower.as_str()) {
+            return v.to_string();
+        }
+
+        let chars: Vec<char> = token.chars().collect();
+        let mut parts = Vec::new();
+        let mut index = 0;
+        while index < chars.len() {
+            let digits = chars[index].is_ascii_digit();
+            let mut end = index + 1;
+            while end < chars.len() && chars[end].is_ascii_digit() == digits {
+                end += 1;
+            }
+            let run: String = chars[index..end].iter().collect();
+            if digits {
+                if expand_digits {
+                    parts.push(self.number_normalizer.normalize_number(&run));
+                } else {
+                    parts.push(run);
+                }
+            } else if run.len() == 1 {
+                parts.push(CodeIdentifierNormalizer::spell_abbreviation(&run));
+            } else if let Some(reading) = self.code_normalizer.builtin_reading(&run.to_lowercase())
+            {
+                parts.push(reading.to_string());
+            } else {
+                parts.push(self.english_normalizer.normalize(&run, true));
+            }
+            index = end;
+        }
+        parts.join(" ")
+    }
+
+    fn process_english_tracked(&mut self, tracked: &mut TrackedText, expand_digits: bool) {
         // Special programming language terms (C++, C#, F#) before general English processing.
         let special_terms: &[(&str, &str)] = &[
             ("C++", "си плюс плюс"),
@@ -1049,54 +1163,22 @@ impl TTSPipeline {
         // General English word handling via IT_TERMS, abbreviations, and transliteration.
         // Collect matches first, then process — avoids borrow issues with &mut self.
         let snapshot = tracked.text().to_string();
-        let matches: Vec<(usize, usize, String)> = re_english_words()
+        let mut matches: Vec<(usize, usize, String)> = re_english_words()
             .captures_iter(&snapshot)
             .map(|caps| {
                 let m = caps.get(0).unwrap();
-                let word = m.as_str();
-                let word_lower = word.to_lowercase();
-
-                // Priority: single letter by name → IT_TERMS →
-                // composed inflection → abbreviations → transliterate
-                use crate::pipeline::normalizers::english::IT_TERMS;
-                let replacement = if word.len() == 1 {
-                    // Lone letters are read by English letter name via the same
-                    // table as code identifiers ("x" → "икс"), not
-                    // transliterated, and are not tracked as unknown words.
-                    CodeIdentifierNormalizer::spell_abbreviation(word)
-                } else if let Some(v) = IT_TERMS.get(word_lower.as_str()) {
-                    v.to_string()
-                } else if let Some(composed) = self.english_normalizer.compose_inflection(word) {
-                    // Bounded inflection composition is attempted before the
-                    // all-uppercase abbreviation rule, so an all-caps inflected
-                    // form ("SUPPORTING") composes the curated stem reading
-                    // instead of being spelled letter by letter. The helper
-                    // fires only for a recognized suffix on a curated stem and
-                    // never records unknown words, so pure abbreviations
-                    // ("API", "HTML", "SQL", "JSON") keep their readings.
-                    composed
-                } else if word.chars().all(|c| c.is_ascii_uppercase()) && word.len() >= 2 {
-                    if self.abbrev_normalizer.reads_as_word(word) {
-                        // Long vowel-rich all-caps tokens ("DEVELOPER",
-                        // "JAVASCRIPT") are words, not initialisms: spelling
-                        // them letter by letter is unreadable. They go through
-                        // the digraph transliteration and are tracked as
-                        // unknown, like any other transliterated word.
-                        self.english_normalizer.normalize(word, true)
-                    } else {
-                        self.abbrev_normalizer.normalize(word)
-                    }
-                } else if crate::pipeline::normalizers::abbreviations::as_word()
-                    .contains_key(word_lower.as_str())
-                {
-                    crate::pipeline::normalizers::abbreviations::as_word()[word_lower.as_str()]
-                        .to_string()
-                } else {
-                    self.english_normalizer.normalize(word, true)
-                };
-                (m.start(), m.end(), replacement)
+                (m.start(), m.end(), self.english_word_reading(m.as_str()))
             })
             .collect();
+        matches.extend(re_mixed_alnum().captures_iter(&snapshot).map(|caps| {
+            let m = caps.get(0).unwrap();
+            (
+                m.start(),
+                m.end(),
+                self.mixed_alnum_reading(m.as_str(), expand_digits),
+            )
+        }));
+        matches.sort_unstable_by_key(|(start, _, _)| *start);
 
         tracked.replace_byte_ranges(matches);
     }
@@ -1357,16 +1439,15 @@ mod tests {
     }
 
     #[test]
-    fn pipeline_percentage_range_glued_to_letter_not_expanded() {
+    fn pipeline_percentage_range_glued_to_letter_is_not_a_range() {
         // A digit glued to a letter is not a range bound: "\b" rejects the
-        // percentage-range match, so no "от … до …" reading. The plain
-        // percentage phase still claims "20%" on its own (the "-" provides
-        // its boundary) — pre-existing semantics, pinned here so a future
-        // regex change cannot quietly turn this into a range.
+        // percentage-range match, so no "от … до …" reading. The letter-digit
+        // token is narrated as a whole and the plain percentage phase still
+        // claims "20%" on its own (the "-" provides its boundary).
         let mut p = TTSPipeline::new();
         assert_eq!(
             p.process_text("метрика x10-20%"),
-            "метрика x10-двадцать процентов"
+            "метрика икс десять-двадцать процентов"
         );
     }
 
@@ -1385,13 +1466,22 @@ mod tests {
     }
 
     #[test]
-    fn pipeline_number_adjacent_to_letter_not_expanded() {
-        // Digits glued to a Latin letter belong to the code-identifier phase,
-        // so the number phase must leave leftovers like v1 / x2 / app2 alone.
+    fn pipeline_number_adjacent_to_letter_is_narrated() {
+        // A letter+digit token is narrated by the English phase: the letter run
+        // and the digit run each get their existing reading (#313).
         let mut p = TTSPipeline::new();
-        assert_eq!(p.process_text("Запусти v1 сейчас"), "Запусти v1 сейчас");
-        assert_eq!(p.process_text("Координата x2 равна"), "Координата x2 равна");
-        assert_eq!(p.process_text("Файл app2 лежит тут"), "Файл app2 лежит тут");
+        assert_eq!(
+            p.process_text("Запусти v1 сейчас"),
+            "Запусти ви один сейчас"
+        );
+        assert_eq!(
+            p.process_text("Координата x2 равна"),
+            "Координата икс два равна"
+        );
+        assert_eq!(
+            p.process_text("Файл app2 лежит тут"),
+            "Файл апп два лежит тут"
+        );
     }
 
     #[test]
@@ -1857,6 +1947,51 @@ mod tests {
                 out.text
             );
         }
+    }
+
+    #[test]
+    fn letter_digit_tokens_are_narrated_with_the_profile_route() {
+        let mut p = TTSPipeline::new();
+        let cases = [
+            ("p95", "пи девяносто пять"),
+            ("v2", "ви два"),
+            ("x86", "икс восемьдесят шесть"),
+            ("sha256", "ша двести пятьдесят шесть"),
+            ("mp3", "эм пэ три"),
+            ("H264", "эйч двести шестьдесят четыре"),
+            ("3d", "три ди"),
+        ];
+        for (input, expected) in cases {
+            let out = p.process_for_engine(input, &crate::tts::profiles::SILERO_PROFILE);
+            assert_eq!(out.text, expected, "input: {input:?}");
+            assert!(
+                !out.text.chars().any(|c| c.is_ascii_alphabetic()),
+                "Latin left for a narrating profile: {:?}",
+                out.text
+            );
+        }
+
+        let native = p.process_for_engine("p95 и sha256", native_profile());
+        assert_eq!(native.text, "p95 и sha256");
+        let kinds: Vec<_> = native.spans.iter().map(|s| s.kind).collect();
+        assert_eq!(
+            kinds,
+            vec![SpanKind::CodeIdentifier, SpanKind::CodeIdentifier]
+        );
+        assert_eq!(span_text(&native.text, &native.spans[0]), "p95");
+        assert_eq!(span_text(&native.text, &native.spans[1]), "sha256");
+    }
+
+    #[test]
+    fn letter_digit_token_respects_the_digits_route() {
+        let mut p = TTSPipeline::new();
+        let profile = TextProfile {
+            digits: Digits::Native,
+            units: Units::Native,
+            ..crate::tts::profiles::SILERO_PROFILE
+        };
+        let out = p.process_for_engine("p95", &profile);
+        assert_eq!(out.text, "пи 95");
     }
 
     #[test]

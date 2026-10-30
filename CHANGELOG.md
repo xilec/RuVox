@@ -29,6 +29,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   (#312).
 
 ### Changed
+- **Letter-digit tokens are spoken** — `p95`, `v2`, `x86`, `sha256` and
+  similar tokens no longer disappear from the audio on Russian-only engines:
+  a curated whole-token reading wins (`mp3`), otherwise the letter and digit
+  runs are read by their existing normalizers (`p95` → `пи девяносто пять`);
+  a native engine keeps the token for its own reading (#313).
 - **`IPv6` and `HTTP/2` read correctly** — an alphanumeric abbreviation is now
   read as one Russian token (`ай пи ви шесть`, `эйч ти ти пи слэш два`) on
   every engine instead of dropping the digit or half-transliterating the
