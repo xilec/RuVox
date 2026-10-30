@@ -22,7 +22,7 @@ dictionary files (`ruaccent/dictionary/accents.json.gz`,
 license files (`LICENSE`, `LICENSE-OPENRAIL`, `RUACCENT_NOTICE.txt`).
 
 `manifest.json` SHALL contain: `format_version`, `bundle_version`, `model_id`,
-`model_version`, `upstream_repo`, `upstream_revision`, `opset`,
+`model_version`, `upstream_repo`, `upstream_revision`, `opset`, `sample_rate`,
 `created_at_utc`, `files[]` with `path`, `asset`, `size` and `sha256` per
 file, and `voices[]` with `id` and `language` per voice. `asset` SHALL be the
 flat GitHub release asset name, because release assets cannot contain `/`;

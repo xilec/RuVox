@@ -1,0 +1,12 @@
+[project]
+name = "teratts-export"
+version = "0.1.0"
+description = "Maintainer exporter: TeraSpace/TeraTTSv2 Hugging Face snapshot -> versioned RuVox model bundle"
+requires-python = ">=3.12"
+# Pinned so a re-run months later produces the same manifest from the same
+# upstream revision; `onnx` also validates the graph I/O and the opset.
+dependencies = [
+    "onnx==1.22.0",
+    "huggingface_hub>=0.30",
+    "numpy>=2.0",
+]

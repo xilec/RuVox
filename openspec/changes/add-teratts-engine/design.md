@@ -68,7 +68,7 @@ Tauri and UI types so #309 can extract or adapt it later.
 ### D2. A versioned bundle manifest, pinned to one release tag for now
 
 `manifest.json` carries `format_version`, `bundle_version`, `model_id`,
-`model_version`, `upstream_repo`, `upstream_revision`, `opset`,
+`model_version`, `upstream_repo`, `upstream_revision`, `opset`, `sample_rate`,
 `created_at_utc`, `files[]` (`path`, `asset`, `size`, `sha256`) and
 `voices[]` (`id`, `language`). The loader verifies size and sha256 for every
 file before opening a session and rejects an unsupported `format_version`.

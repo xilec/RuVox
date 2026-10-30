@@ -78,6 +78,10 @@ silero-native/Cargo.lock
 # and the lockfile is owned by the app.
 tts-contract/target/
 tts-contract/Cargo.lock
+# TeraTTSv2 engine crate: same rule. Its Python exporter keeps its own uv
+# environment below teratts/export.
+teratts/target/
+teratts/Cargo.lock
 src-tauri/gen/
 # Third-party Windows binaries fetched at release-build time by
 # scripts/fetch-windows-resources.sh. Placeholders (README/PLACEHOLDER,
