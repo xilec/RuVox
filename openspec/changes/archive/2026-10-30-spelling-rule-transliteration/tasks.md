@@ -24,6 +24,6 @@
 
 - [x] 3.1 `cargo fmt`, `cargo clippy`, `cargo test` (src-tauri), `pnpm
   typecheck`, `pnpm test:unit`, `pnpm lint`, `openspec validate --strict`.
-- [ ] 3.2 Manual listening pass over the rule-class sample and the changed
+- [x] 3.2 Manual listening pass over the rule-class sample and the changed
   readings; report the verdict on #306.
-- [ ] 3.3 Archive the change after the manual verdict.
+- [x] 3.3 Archive the change after the manual verdict.

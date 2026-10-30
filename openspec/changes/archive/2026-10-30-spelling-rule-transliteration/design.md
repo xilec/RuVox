@@ -16,12 +16,13 @@ and no way to express `-ture` or `-cial` without more table rows.
 it tries, in order:
 
 1. **Whole-suffix rules** — `-tion`, `-sion`, `-ture`, `-cial`/`-tial`,
-   `-sure`, `-gine`, `-ule`, and the unstressed `-age`/`-ive`/`-ate`/`-ade`
+   `-sure`, `-gine`, and the unstressed `-age`/`-ive`/`-ate`/`-ade`
    endings.
 2. **Digraphs** — `ck`, `qu`, `sh`, `ch`, `th`, `ph`, `wh`, `gh`, `ng`, then
    vowel digraphs (`ai/ay`, `ea/ee/ie`, `oa`, `oo`, `ou`, `ow`, `ue`, `ui`,
    `au/aw`, `ew`, `ey`, `oi/oy`).
-3. **Context letters** — soft `c`/`g` before `e/i/y`, voiced `s` between
+3. **Context letters** — soft `c`/`g` before `e/i/y` (with a curated hard-`g`
+   list for `get`/`target`/`begin`), voiced `s` between
    vowels, `x` as `кс` (or `кз` before a vowel), and the remaining consonants.
 
 The final silent `e` is removed before the scan and marks the nearest preceding
@@ -37,7 +38,11 @@ The rules are deliberately approximate. `IT_TERMS` keeps:
 - irregular readings (`kubernetes`, `nginx`, `queue`);
 - all-caps guards (`TEST`, `DATA`, `APP`, `STRING`) whose removal would make
   the all-caps heuristic spell the token;
-- composition guards (`living`, `use`, `feature`) needed by inflected forms.
+- composition guards (`living`, `use`, `package`) needed by inflected forms.
+
+The curated list also holds common magic-e exceptions (`have`, `give`, `love`,
+`come`, `some`, `move`, `prove`) and the listening-verified readings
+`method` → `мэтод`, `function` → `фанкшин`, `above` → `эбав`, `apple` → `эпл`.
 
 An entry whose exact reading the rules already produce is removed unless it is
 one of those guards. The policy is documented in `docs/contributing.md` and
@@ -45,9 +50,9 @@ checked by the dictionary baseline plus the existing all-caps tests.
 
 ### `th` decision table
 
-`th` is `с` before a back vowel (`method` → `месод`) and `т` otherwise
-(`thin` → `тин`). English function words are irregular and stay in the
-dictionary rather than growing a special-case branch.
+`th` is `с` before a back vowel and `т` otherwise (`thin` → `тин`).
+`method` is an irregular exception (`мэтод`) kept in `IT_TERMS`; English
+function words are not all curated yet, so their readings remain approximate.
 
 ## Risks
 
