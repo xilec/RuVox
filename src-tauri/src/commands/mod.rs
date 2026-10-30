@@ -18,8 +18,8 @@ use tauri_plugin_mpv::MpvExt;
 use tokio::task::AbortHandle;
 use tracing::{info, warn};
 
-use crate::pipeline::TTSPipeline;
 use crate::pipeline::tracked_text::CharMapping;
+use crate::pipeline::{Span, TTSPipeline};
 use crate::state::AppState;
 use crate::storage::schema::{
     EntryId, EntrySource, EntryStatus, GenerationParams, ModelParams, TextEntry, TextFormat,
@@ -306,12 +306,17 @@ async fn run_pipeline_normalization(
     pipeline: Arc<Mutex<TTSPipeline>>,
     text: String,
     profile: &'static TextProfile,
-) -> Result<(String, CharMapping, String), tokio::task::JoinError> {
+) -> Result<(String, CharMapping, Vec<Span>, String), tokio::task::JoinError> {
     tokio::task::spawn_blocking(move || {
         let mut p = pipeline.lock();
         let processed = p.process_for_engine(&text, profile);
         let code_block_mode = p.code_block_mode().as_config_str().to_string();
-        (processed.text, processed.mapping, code_block_mode)
+        (
+            processed.text,
+            processed.mapping,
+            processed.spans,
+            code_block_mode,
+        )
     })
     .await
 }
@@ -321,8 +326,8 @@ async fn run_normalization(
     pipeline: Arc<Mutex<TTSPipeline>>,
     original_text: String,
     profile: &'static TextProfile,
-) -> Result<(String, CharMapping, String), SynthesisError> {
-    let (normalized, mapping, code_block_mode) =
+) -> Result<(String, CharMapping, Vec<Span>, String), SynthesisError> {
+    let (normalized, mapping, spans, code_block_mode) =
         run_pipeline_normalization(pipeline, original_text, profile)
             .await
             .map_err(|e| SynthesisError::PipelinePanic(e.to_string()))?;
@@ -330,7 +335,7 @@ async fn run_normalization(
     if normalized.is_empty() {
         return Err(SynthesisError::EmptyText);
     }
-    Ok((normalized, mapping, code_block_mode))
+    Ok((normalized, mapping, spans, code_block_mode))
 }
 
 /// Phase 2: mark entry as `Processing` and emit `entry_updated`.
@@ -399,6 +404,7 @@ async fn synthesize_audio(
     synthesize_entered: &Mutex<HashSet<EntryId>>,
     entry_id: &EntryId,
     normalized: String,
+    spans: Vec<Span>,
     mapping: &CharMapping,
 ) -> Result<SynthOutcome, SynthesisError> {
     // ttsd writes WAV; finalize_audio_files transcodes it to Opus right after.
@@ -422,15 +428,18 @@ async fn synthesize_audio(
     // fallback swapped engines (e.g. silero_native without a bundle runs
     // Piper for the session), the active engine must get its own voice id.
     let voice = voice_for_engine(tts.kind(), &config);
+    let en_voice = (tts.kind() == EngineKind::TeraTts).then(|| config.teratts_en_voice.clone());
 
     // Track the entry as "inside the TTS stage" so `cancel_synthesis` knows
     // the ttsd subprocess must be killed. If the task is aborted at this
     // await, `cancel_synthesis` removes the marker itself.
     synthesize_entered.lock().insert(*entry_id);
     let attempt = tts
-        .synthesize(
+        .synthesize_spans(
             normalized.clone(),
+            spans.clone(),
             voice.clone(),
+            en_voice.clone(),
             config.sample_rate,
             out_wav.clone(),
             tts_char_mapping.clone(),
@@ -449,9 +458,11 @@ async fn synthesize_audio(
                 .map_err(|e| SynthesisError::TtsFailed(e.to_string()))?;
             synthesize_entered.lock().insert(*entry_id);
             let retry = tts
-                .synthesize(
+                .synthesize_spans(
                     normalized,
+                    spans,
                     voice.clone(),
+                    en_voice,
                     config.sample_rate,
                     out_wav,
                     tts_char_mapping,
@@ -737,7 +748,7 @@ pub fn spawn_synthesis<R: Runtime + 'static>(
             };
 
             let result: Result<(), SynthesisError> = async {
-                let (normalized, mapping, applied_code_block_mode) = run_normalization(
+                let (normalized, mapping, spans, applied_code_block_mode) = run_normalization(
                     Arc::clone(&pipeline),
                     entry.original_text.clone(),
                     tts.text_profile(),
@@ -753,6 +764,7 @@ pub fn spawn_synthesis<R: Runtime + 'static>(
                     &entered_for_task,
                     &entry_id,
                     normalized,
+                    spans,
                     &mapping,
                 )
                 .await?;
@@ -1034,7 +1046,7 @@ async fn preview_normalization(
     text: String,
     profile: &'static TextProfile,
 ) -> CmdResult<(String, CharMapping)> {
-    let (normalized, mapping, _code_block_mode) =
+    let (normalized, mapping, _spans, _code_block_mode) =
         run_pipeline_normalization(pipeline, text, profile)
             .await
             .map_err(|e| {
@@ -1981,6 +1993,9 @@ fn apply_config_patch(config: &mut UIConfig, patch: UIConfigPatch) {
     if let Some(v) = patch.teratts_voice {
         config.teratts_voice = v;
     }
+    if let Some(v) = patch.teratts_en_voice {
+        config.teratts_en_voice = v;
+    }
     if let Some(v) = patch.language {
         config.language = v;
     }
@@ -2077,7 +2092,7 @@ mod synthesis_tests {
     #[tokio::test]
     async fn run_normalization_returns_normalized_text_and_mapping() {
         let pipeline = Arc::new(Mutex::new(TTSPipeline::new()));
-        let (normalized, _mapping, _mode) = run_normalization(
+        let (normalized, _mapping, _spans, _mode) = run_normalization(
             pipeline,
             "Привет мир".to_string(),
             &crate::tts::profiles::SILERO_PROFILE,
@@ -2581,6 +2596,7 @@ mod tests {
             engine: _,
             piper_voice: _,
             teratts_voice: _,
+            teratts_en_voice: _,
             language: _,
         } = UIConfigPatch::default();
 
@@ -2783,6 +2799,7 @@ mod tests {
             engine: "silero".to_string(),
             piper_voice: "irina".to_string(),
             teratts_voice: "ru_m5".to_string(),
+            teratts_en_voice: "eng_f5".to_string(),
             language: "ru".to_string(),
         };
         let before = serde_json::to_value(&config).unwrap();
@@ -3199,6 +3216,7 @@ mod tests {
             &entered,
             &uuid::Uuid::new_v4(),
             "текст".to_string(),
+            Vec::new(),
             &empty_mapping(),
         )
         .await
@@ -3229,6 +3247,7 @@ mod tests {
             &entered,
             &uuid::Uuid::new_v4(),
             "текст".to_string(),
+            Vec::new(),
             &empty_mapping(),
         )
         .await
@@ -3266,6 +3285,7 @@ mod tests {
             &entered,
             &uuid::Uuid::new_v4(),
             "текст".to_string(),
+            Vec::new(),
             &empty_mapping(),
         )
         .await
@@ -3302,6 +3322,7 @@ mod tests {
             &entered,
             &uuid::Uuid::new_v4(),
             "текст".to_string(),
+            Vec::new(),
             &empty_mapping(),
         )
         .await
@@ -3342,6 +3363,7 @@ mod tests {
             &entered,
             &uuid::Uuid::new_v4(),
             "текст".to_string(),
+            Vec::new(),
             &empty_mapping(),
         )
         .await

@@ -12,8 +12,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   with four Russian voices (`ru_m5` default, `ru_f1`, `ru_f2`, `ru_m1`) and
   dictionary-based accentuation; its ~410 MB model bundle is downloaded on
   demand from Settings. Text-to-speech powered by TeraTTSv2 by TeraSpace
-  (Open RAIL-M; see `teratts/NOTICE`). The English voices and mixed
-  Russian/English routing ship separately (#308, #311).
+  (Open RAIL-M; see `teratts/NOTICE`).
+- **Mixed Russian/English narration on TeraTTSv2** — Latin prose, brands and
+  code identifiers are read by an English voice (`eng_f5` default; six voices
+  in Settings), while numbers, units, URLs, emails and code blocks stay with
+  the Russian pipeline; the engine synthesizes language segments into one
+  44.1 kHz file with continuous word highlighting (#308, #311).
+- **English TeraTTS voices** — `eng_f5`, `eng_m3`, `eng_f3`, `eng_m4`,
+  `eng_f4_whisper`, `eng_m2_whisper`; the English voice is a separate setting,
+  so switching it does not reload the model.
 - **Russian words in the dictionary** — the source word may be a Russian
   Cyrillic token (`замок`), so a wrong stress can be fixed with `зам+ок`; the
   entry matches the exact word form, case-insensitively (#315).
@@ -25,6 +32,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   (#312).
 
 ### Changed
+- **`IPv6` and `HTTP/2` read correctly** — an alphanumeric abbreviation is now
+  read as one Russian token (`ай пи ви шесть`, `эйч ти ти пи слэш два`) on
+  every engine instead of dropping the digit or half-transliterating the
+  token; a slash inside such a token is no longer mistaken for a file path.
 - **Curated reading audit** — acronyms now use the letter name `эл` that the spelling fallback already produces (`HTML` → `эйч ти эм эл`, `XML` → `икс эм эл`, `SQL` → `эс кью эл`, `GRAPHQL` → `граф кью эл`), `JPG` reads `джейпег` like `JPEG`, `PNG` reads `пи эн джи` instead of the unpronounceable `пнг`, `succ` reads `сак`, and code identifiers read `hello`, `image`, and `node` exactly like prose (`хеллоу`, `имидж`, `нод`), with `node` now reading `нод`; a test now fails when two dictionaries disagree on a shared word (#282).
 - **`IT_TERMS` keeps pronunciation only** — semantic translations and redundant entries are gone from the curated reading table: `function`, `string`, `array`, `object`, `repository`, `boolean`, and `refactor` now read as English words (`функшн`, `стринг`, `аррэй`, `обджект`, `репоситори`, `булин`, `рефактор`) instead of Russian translations, `method` reads `месод`, and 38 entries that only repeated the transliteration (`commit`, `index`, `docker`, `query`, …) no longer shadow it; the entries that keep an uppercase token from being spelled out (`TEST`, `DATA`, `APP`, `STRING`, …) stay, so every other reading is unchanged (#292).
 - **Long all-caps words are read as words, not spelled out** — `DEVELOPER`, `LINUX`, `UBUNTU`, `JAVASCRIPT`, and `SYSTEM` now read as `девелопер`, `линукс`, `убунту`, `джаваскрипт`, `систем` instead of letter by letter, while short or vowel-poor abbreviations (`API`, `HTML`, `SQL`, `JSON`) keep their letter-by-letter readings (#290).

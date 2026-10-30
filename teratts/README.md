@@ -5,9 +5,10 @@ ONNX model running on the ONNX Runtime the app already vendors, with no Python
 or PyTorch at synthesis time.
 
 The crate owns the model bundle format and verification, the four ONNX
-sessions, the Russian text frontend (language tags, RUAccent dictionary
-stress, codepoint gate), sentence chunking under the model's 25-second call
-limit, approximate word timestamps, and the 44.1 kHz WAV writer. The
+sessions, the language frontend (`<ru>`/`<en>` tags, RUAccent dictionary stress
+for Russian, codepoint gate), sentence chunking under the model's 25-second
+call limit, mixed-language segment joining, approximate word timestamps, and
+the 44.1 kHz WAV writer. The
 application adapter (`src-tauri/src/tts/teratts/`) maps it to `TtsEngine`.
 
 Check it with:

@@ -117,21 +117,40 @@ pub fn chunk_timestamps(
         let prefix: String = prepared_chars[..*end].iter().collect();
         predicted.push(predict(&prefix)?);
     }
-    let total = *predicted.last().unwrap_or(&0.0);
-    if !total.is_finite() || total <= 0.0 {
+    // The predictor returns a cumulative duration per prefix, not a duration
+    // per word; a longer prefix can even predict less than a shorter one.
+    // Turn the values into non-negative per-word durations, give every word a
+    // floor so the highlight never skips one, and scale the whole timeline to
+    // the actual speech range.
+    let mut durations = Vec::with_capacity(predicted.len());
+    let mut previous = 0.0;
+    for value in &predicted {
+        durations.push((*value - previous).max(0.0));
+        previous = *value;
+    }
+    let raw_total: f64 = durations.iter().sum();
+    if !raw_total.is_finite() || raw_total <= 0.0 {
         return Err(Error::Synthesis(format!(
-            "prefix predictor returned {total}"
+            "prefix predictor returned {raw_total}"
         )));
     }
-
     let speech = (audio_end - audio_start - leading_silence).max(0.001);
-    let scale = speech / total;
+    let floor = (speech / (durations.len() as f64 * 2.0)).min(0.05);
+    for duration in &mut durations {
+        *duration = duration.max(floor);
+    }
+    let adjusted_total: f64 = durations.iter().sum();
+    let scale = speech / adjusted_total;
     let mut result = Vec::with_capacity(source.len());
     let mut previous_end = audio_start + leading_silence;
     for (index, (word, start_char, end_char)) in source.into_iter().enumerate() {
-        let end = (audio_start + leading_silence + predicted[index] * scale).min(audio_end);
+        let end = (previous_end + durations[index] * scale).min(audio_end);
         let start = previous_end.min(audio_end);
-        let end = if end > start { end } else { start };
+        let end = if end > start {
+            end
+        } else {
+            (start + 0.001).min(audio_end)
+        };
         result.push(Word {
             word,
             start,
@@ -140,6 +159,11 @@ pub fn chunk_timestamps(
             end_char: chunk_start + end_char,
         });
         previous_end = end;
+    }
+    if let Some(last) = result.last_mut() {
+        if last.end < audio_end && last.start < audio_end {
+            last.end = audio_end;
+        }
     }
     Ok(result)
 }
@@ -205,7 +229,7 @@ mod tests {
         let mut previous = 0.0;
         for word in &words {
             assert!(word.start >= previous - 1e-9);
-            assert!(word.end >= word.start);
+            assert!(word.end > word.start);
             assert!(word.end <= 4.0 + 1e-9);
             previous = word.end;
         }

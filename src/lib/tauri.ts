@@ -129,8 +129,10 @@ export interface UIConfig {
   engine: EngineKind;
   /** Active Piper voice id (e.g. "ruslan", "irina"). See piperVoices.ts. */
   piper_voice: string;
-  /** Active TeraTTS voice id ("ru_m5" default; ru_f1, ru_f2, ru_m1). */
+  /** Active TeraTTS Russian voice id ("ru_m5" default; ru_f1, ru_f2, ru_m1). */
   teratts_voice: string;
+  /** Active TeraTTS English voice id ("eng_f5" default; see the bundle). */
+  teratts_en_voice: string;
 }
 
 export type UIConfigPatch = Partial<UIConfig>;

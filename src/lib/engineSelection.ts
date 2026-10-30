@@ -18,6 +18,9 @@ const DEFAULT_SILERO_SPEAKER = 'aidar';
 /** Default TeraTTS Russian voice. Matches the config default. */
 const DEFAULT_TERATTS_VOICE = 'ru_m5';
 
+/** Default TeraTTS English voice. Matches the config default. */
+const DEFAULT_TERATTS_EN_VOICE = 'eng_f5';
+
 /**
  * Map a speaker to one the given engine can serve. Currently only `random`
  * needs coercion: valid for ttsd (`silero`), rejected by `silero_native`.
@@ -36,9 +39,11 @@ export interface EngineFormState {
   /** Voice the user picked for Silero (`config.speaker`). Persisted across
    *  engine flips for the same reason. */
   sileroSpeaker: string;
-  /** Voice the user picked for TeraTTS (`config.teratts_voice`). Persisted
-   *  across engine flips for the same reason. */
+  /** Voice the user picked for TeraTTS Russian (`config.teratts_voice`).
+   *  Persisted across engine flips for the same reason. */
   terattsVoice: string;
+  /** Voice the user picked for TeraTTS English (`config.teratts_en_voice`). */
+  terattsEnVoice: string;
   /** When `true`, show an inline alert telling the user we coerced the form
    *  away from their saved engine because it's currently unavailable. */
   coercedAwayFromUnavailable: boolean;
@@ -51,7 +56,10 @@ export interface EngineFormState {
  * coercion so the UI can surface a one-shot alert.
  */
 export function computeEngineFormState(
-  config: Pick<UIConfig, 'engine' | 'piper_voice' | 'speaker' | 'teratts_voice'>,
+  config: Pick<
+    UIConfig,
+    'engine' | 'piper_voice' | 'speaker' | 'teratts_voice' | 'teratts_en_voice'
+  >,
   availability: AvailabilityMap,
 ): EngineFormState {
   const savedEngine = coerceEngineKind(config.engine);
@@ -65,6 +73,7 @@ export function computeEngineFormState(
     piperVoice: config.piper_voice || DEFAULT_PIPER_VOICE,
     sileroSpeaker: coerceSpeakerForEngine(engine, config.speaker || DEFAULT_SILERO_SPEAKER),
     terattsVoice: config.teratts_voice || DEFAULT_TERATTS_VOICE,
+    terattsEnVoice: config.teratts_en_voice || DEFAULT_TERATTS_EN_VOICE,
     coercedAwayFromUnavailable: !savedAvailable && engine !== savedEngine,
   };
 }

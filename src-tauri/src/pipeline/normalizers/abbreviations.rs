@@ -1,5 +1,21 @@
 use super::english::letter_name;
 use std::collections::HashMap;
+
+fn digit_name(c: char) -> Option<&'static str> {
+    Some(match c {
+        '0' => "ноль",
+        '1' => "один",
+        '2' => "два",
+        '3' => "три",
+        '4' => "четыре",
+        '5' => "пять",
+        '6' => "шесть",
+        '7' => "семь",
+        '8' => "восемь",
+        '9' => "девять",
+        _ => return None,
+    })
+}
 use std::sync::LazyLock;
 
 static AS_WORD: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
@@ -115,6 +131,12 @@ impl AbbreviationNormalizer {
             .map(|c| {
                 if let Some(pronunciation) = letter_name(c) {
                     pronunciation.to_string()
+                } else if let Some(pronunciation) = digit_name(c) {
+                    pronunciation.to_string()
+                } else if c == '/' {
+                    "слэш".to_string()
+                } else if c == '\\' {
+                    "бэкслэш".to_string()
                 } else {
                     c.to_string()
                 }
@@ -190,6 +212,7 @@ mod tests {
         normalizer().normalize(input)
     }
 
+    #[test_case("HTTP/2" => "эйч ти ти пи слэш два"; "http-slash-two")]
     #[test_case("HTTP" => "эйч ти ти пи"; "http")]
     #[test_case("HTTPS" => "эйч ти ти пи эс"; "https")]
     #[test_case("HTML" => "эйч ти эм эл"; "html")]

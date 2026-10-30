@@ -87,18 +87,20 @@ pub static PIPER_PROFILE: TextProfile = TextProfile {
     markup: Markup::None,
 };
 
-/// TeraTTSv2: the Russian MVP of the fourth engine. Every Latin fragment,
-/// number and unit is still rewritten by the pipeline (English-span routing is
-/// the follow-up change), but the engine owns stress: RUAccent dictionary marks
-/// fill the gaps while an explicit `+` from the user dictionary always wins,
-/// which is [`Stress::Manual`]. The 20-second limit is the model's decoder
-/// context; 250 ms and 200 ms separate paragraphs and chunks. `RuEnTags` is the
-/// markup the adapter wraps around the text; the profile never emits tags.
+/// TeraTTSv2: Russian and English in one engine. Latin prose and code
+/// identifiers stay for the engine (the `eng_f5` voice reads them natively),
+/// while numbers, units, URLs, emails and fenced code stay with the pipeline's
+/// Russian narration. The engine owns stress: RUAccent dictionary marks fill the
+/// gaps while an explicit `+` from the user dictionary always wins, which is
+/// [`Stress::Manual`]. The 20-second limit is the model's decoder context;
+/// 250 ms and 200 ms separate paragraphs and chunks. `RuEnTags` is the markup
+/// the adapter wraps around each language segment; the profile never emits
+/// tags.
 pub static TERATTS_PROFILE: TextProfile = TextProfile {
-    languages: &["ru"],
+    languages: &["ru", "en"],
     route: Route {
-        latin_prose: Reading::Narrate,
-        identifier: Reading::Narrate,
+        latin_prose: Reading::Native,
+        identifier: Reading::Native,
     },
     digits: Digits::Expanded,
     units: Units::Expanded,
@@ -231,12 +233,19 @@ mod tests {
     }
 
     #[test]
-    fn no_current_engine_routes_latin_natively() {
+    fn only_teratts_routes_latin_natively() {
         for kind in EngineKind::ALL {
-            assert!(
-                !profile_for(*kind).route.any_native(),
-                "{kind:?} cannot read Latin yet, so it must not route it Native"
-            );
+            let profile = profile_for(*kind);
+            if *kind == EngineKind::TeraTts {
+                assert_eq!(profile.route.latin_prose, Reading::Native);
+                assert_eq!(profile.route.identifier, Reading::Native);
+                assert!(profile.languages.contains(&"en"));
+            } else {
+                assert!(
+                    !profile.route.any_native(),
+                    "{kind:?} cannot read Latin, so it must not route it Native"
+                );
+            }
         }
     }
 

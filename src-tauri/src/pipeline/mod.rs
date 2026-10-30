@@ -219,6 +219,18 @@ fn re_kebab() -> &'static Regex {
     })
 }
 
+fn re_alnum_abbrev() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    // Alphanumeric tokens the model alphabet cannot read as one word:
+    // `IPv6`, `HTTP/2`. Pure letter runs stay prose; this phase
+    // exists so a Native prose route does not leave half-normalized fragments
+    // (`HTTPслэш два`) behind.
+    RE.get_or_init(|| {
+        Regex::new(r"\b(?:[A-Z]{2,}|IPv)[0-9]+(?:\.[0-9]+)*\b|\b[A-Z]{2,}/[0-9]+\b")
+            .expect("valid regex")
+    })
+}
+
 fn re_english_words() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     // Single letters included: a lone "x" or "I" must also become speakable
@@ -539,7 +551,18 @@ impl TTSPipeline {
             tracked.sub(re_ip(), |caps| {
                 url_norm.normalize_ip(caps.get(0).unwrap().as_str())
             });
+            // A slash inside a token (`HTTP/2`) is not a filesystem path:
+            // the path regex sees only the `/2` part, and normalizing it
+            // would leave a mixed-script `HTTPслэш два`. Skip matches whose
+            // preceding character is a word character; the alphanumeric
+            // abbreviation phase reads the whole token instead.
+            let path_snapshot = tracked.text().to_string();
             tracked.sub(re_path(), |caps| {
+                let matched = caps.get(0).unwrap();
+                let start = matched.start();
+                if start > 0 && path_snapshot.as_bytes()[start - 1].is_ascii_alphanumeric() {
+                    return matched.as_str().to_string();
+                }
                 let path = caps.get(1).unwrap().as_str();
                 if path.contains('/') && (path.starts_with('/') || path.starts_with('~')) {
                     url_norm.normalize_filepath(path)
@@ -663,6 +686,23 @@ impl TTSPipeline {
         for op in TRACKED_OPERATOR_KEYS {
             let replacement = format!(" {} ", self.symbol_normalizer.normalize(op));
             tracked.replace(op, &replacement);
+        }
+
+        // ── Phase 14.5: Alphanumeric abbreviations ────────────────────────────
+        // `IPv6` and `HTTP/2` are not prose words: the symbol and number phases
+        // would leave the Latin prefix untouched and speak the rest in Russian
+        // (`HTTPслэш два`). Read them as a whole, on both routes, so a Native
+        // prose profile never emits a mixed-script fragment.
+        {
+            let abbrev = &self.abbrev_normalizer;
+            let dictionary = &self.user_dictionary;
+            let mark_stress = self.mark_stress;
+            tracked.sub(re_alnum_abbrev(), |caps| {
+                let token = caps.get(0).unwrap().as_str();
+                dictionary
+                    .resolve(&token.to_lowercase(), mark_stress)
+                    .unwrap_or_else(|| abbrev.normalize(token))
+            });
         }
 
         // ── Phase 14: Special symbols (Greek, math, arrows, tilde) ───────────
@@ -1799,6 +1839,24 @@ mod tests {
             .skip(span.start)
             .take(span.end - span.start)
             .collect()
+    }
+
+    #[test]
+    fn alphanumeric_abbreviations_are_narrated_on_both_routes() {
+        let mut p = TTSPipeline::new();
+        for profile in [&crate::tts::profiles::TERATTS_PROFILE, native_profile()] {
+            let out = p.process_for_engine("IPv6 и HTTP/2", profile);
+            assert!(
+                !out.text.contains("IPv") && !out.text.contains("HTTP"),
+                "mixed-script fragment left: {:?}",
+                out.text
+            );
+            assert!(
+                out.text.contains("шесть") && out.text.contains("два"),
+                "digits missing: {:?}",
+                out.text
+            );
+        }
     }
 
     #[test]

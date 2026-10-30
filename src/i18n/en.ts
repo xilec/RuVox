@@ -193,6 +193,9 @@ export const en: Record<MessageKey, string> = {
     'The "Silero (native)" engine is now available.',
   'settings.bundle.finished.message_teratts':
     'The "TeraTTSv2" engine is now available.',
+  'settings.teratts_en_voice.label': 'TeraTTSv2 English voice',
+  'settings.teratts_en_voice.description':
+    'English voices from the bundle; eng_f5 is the default.',
   'settings.teratts_voice.label': 'TeraTTSv2 voice',
   'settings.teratts_voice.description':
     'Russian voices from the bundle; ru_m5 is the default.',

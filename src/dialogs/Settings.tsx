@@ -44,6 +44,7 @@ interface SettingsFormValues {
   engine: EngineKind;
   piper_voice: string;
   teratts_voice: string;
+  teratts_en_voice: string;
   speaker: string;
   sample_rate: number;
   notify_on_ready: boolean;
@@ -63,13 +64,21 @@ const ENGINE_OPTIONS: ReadonlyArray<{ value: EngineKind; key: MessageKey }> = [
   { value: 'teratts', key: 'settings.engine.teratts' },
 ];
 
-/** Russian voices shipped in the TeraTTS bundle (the English ones are listed
- *  by the follow-up routing change). Voice ids are the model's own names. */
+/** Voices shipped in the TeraTTS bundle; ids are the model's own names. */
 const TERATTS_VOICES: ReadonlyArray<{ value: string; label: string }> = [
   { value: 'ru_m5', label: 'ru_m5' },
   { value: 'ru_f1', label: 'ru_f1' },
   { value: 'ru_f2', label: 'ru_f2' },
   { value: 'ru_m1', label: 'ru_m1' },
+];
+
+const TERATTS_EN_VOICES: ReadonlyArray<{ value: string; label: string }> = [
+  { value: 'eng_f5', label: 'eng_f5' },
+  { value: 'eng_m3', label: 'eng_m3' },
+  { value: 'eng_f3', label: 'eng_f3' },
+  { value: 'eng_m4', label: 'eng_m4' },
+  { value: 'eng_f4_whisper', label: 'eng_f4_whisper' },
+  { value: 'eng_m2_whisper', label: 'eng_m2_whisper' },
 ];
 
 /// Pessimistic default used until `getAvailableEngines()` resolves: Piper
@@ -310,6 +319,7 @@ export function SettingsModal({
     engine: 'silero_native',
     piper_voice: 'ruslan',
     teratts_voice: 'ru_m5',
+    teratts_en_voice: 'eng_f5',
     speaker: 'aidar',
     sample_rate: 24000,
     notify_on_ready: true,
@@ -352,6 +362,7 @@ export function SettingsModal({
           engine: initial.engine,
           piper_voice: initial.piperVoice,
           teratts_voice: initial.terattsVoice,
+          teratts_en_voice: initial.terattsEnVoice,
           speaker: initial.sileroSpeaker,
           sample_rate: config.sample_rate,
           notify_on_ready: config.notify_on_ready,
@@ -413,11 +424,13 @@ export function SettingsModal({
       piperVoice: form.values.piper_voice,
       sileroSpeaker: form.values.speaker,
       terattsVoice: form.values.teratts_voice,
+      terattsEnVoice: form.values.teratts_en_voice,
       coercedAwayFromUnavailable: coercedAlert,
     };
     const updated = applyEngineChange(current, next, availability);
     form.setFieldValue('engine', updated.engine);
     form.setFieldValue('teratts_voice', updated.terattsVoice);
+    form.setFieldValue('teratts_en_voice', updated.terattsEnVoice);
     // applyEngineChange coerces ttsd-only speakers (e.g. 'random') away
     // when the native engine is picked.
     form.setFieldValue('speaker', updated.sileroSpeaker);
@@ -546,6 +559,7 @@ export function SettingsModal({
         engine: values.engine,
         piper_voice: values.piper_voice,
         teratts_voice: values.teratts_voice,
+        teratts_en_voice: values.teratts_en_voice,
         speaker: values.speaker,
         sample_rate: values.sample_rate,
         notify_on_ready: values.notify_on_ready,
@@ -696,13 +710,22 @@ export function SettingsModal({
             ))}
 
           {form.values.engine === 'teratts' && (
-            <Select
-              label={tt('settings.teratts_voice.label')}
-              description={tt('settings.teratts_voice.description')}
-              data={TERATTS_VOICES.map((v) => ({ value: v.value, label: v.label }))}
-              key={form.key('teratts_voice')}
-              {...form.getInputProps('teratts_voice')}
-            />
+            <Stack gap={6}>
+              <Select
+                label={tt('settings.teratts_voice.label')}
+                description={tt('settings.teratts_voice.description')}
+                data={TERATTS_VOICES.map((v) => ({ value: v.value, label: v.label }))}
+                key={form.key('teratts_voice')}
+                {...form.getInputProps('teratts_voice')}
+              />
+              <Select
+                label={tt('settings.teratts_en_voice.label')}
+                description={tt('settings.teratts_en_voice.description')}
+                data={TERATTS_EN_VOICES.map((v) => ({ value: v.value, label: v.label }))}
+                key={form.key('teratts_en_voice')}
+                {...form.getInputProps('teratts_en_voice')}
+              />
+            </Stack>
           )}
 
           {form.values.engine === 'piper' ? (

@@ -18,6 +18,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use super::{CharMappingEntry, ModelInfo, SynthesizeOutput, TtsError};
+use crate::pipeline::Span;
 
 use crate::tts::profiles;
 use tts_contract::TextProfile;
@@ -105,6 +106,27 @@ pub trait TtsEngine: Send + Sync {
         out_wav: String,
         char_mapping: Option<Vec<CharMappingEntry>>,
     ) -> Result<SynthesizeOutput, TtsError>;
+
+    /// Synthesize a text that carries pipeline spans, when the engine can use
+    /// them. The default ignores the spans and calls [`Self::synthesize`], so
+    /// engines that never receive `Native` spans (all Russian-only profiles)
+    /// need no override. `en_voice` is the voice for `lang == "en"` spans; it
+    /// is `None` when the caller has no secondary voice configured.
+    #[allow(clippy::too_many_arguments)]
+    async fn synthesize_spans(
+        &self,
+        text: String,
+        spans: Vec<Span>,
+        voice: String,
+        en_voice: Option<String>,
+        sample_rate: u32,
+        out_wav: String,
+        char_mapping: Option<Vec<CharMappingEntry>>,
+    ) -> Result<SynthesizeOutput, TtsError> {
+        let _ = (spans, en_voice);
+        self.synthesize(text, voice, sample_rate, out_wav, char_mapping)
+            .await
+    }
 
     /// Identity of the loaded model/voice, when the engine can report it
     /// cheaply (no file hashing on the synthesis path). `voice` is the same
