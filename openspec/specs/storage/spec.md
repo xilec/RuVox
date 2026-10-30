@@ -579,4 +579,3 @@ process cleanly with a non-zero exit code.
 - GIVEN the storage service cannot be opened during startup (e.g. the per-user data directory cannot be created)
 - WHEN the application starts
 - THEN no panic message is produced, an error entry with the cause is written to the application log, a native error dialog in Russian names the problem and points to the log directory, and after it is dismissed the process exits with a non-zero exit code
-

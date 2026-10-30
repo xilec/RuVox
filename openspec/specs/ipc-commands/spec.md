@@ -1129,4 +1129,3 @@ with `engine: "teratts"`.
 - WHEN verification runs
 - THEN the command fails with a typed error, the invalid file is removed, and
   `teratts.available` stays `false`
-

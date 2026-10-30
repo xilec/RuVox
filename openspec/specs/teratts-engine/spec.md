@@ -383,4 +383,3 @@ OpenRAIL-M, and RUAccent stays MIT with its notice.
 - GIVEN `README.md` and `README.en.md`
 - WHEN the attribution string is searched
 - THEN both contain it with a link to the TeraSpace model
-
