@@ -122,6 +122,10 @@ async-trait = "0.1"
 # feature unification keeps a single onnxruntime linkage for both engines.
 silero-native = { path = "../silero-native" }
 
+# In-process TeraTTSv2 engine (ONNX, flow matching). Same ort/ort-sys pins as
+# above, so feature unification keeps one onnxruntime linkage for all engines.
+teratts = { path = "../teratts" }
+
 # Per-engine text contract (profiles) and the splitter shared with the engine
 # crate — dependency-free, so it adds nothing to the runtime graph.
 tts-contract = { path = "../tts-contract" }

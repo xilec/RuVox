@@ -7,12 +7,14 @@ const BUNDLE_PRESENT: AvailableEngines = {
   piper: { available: true, reason: null },
   silero: { available: false, reason: { code: 'silero.uv_missing' } },
   silero_native: { available: true, reason: null },
+  teratts: { available: true, reason: null },
 };
 
 const BUNDLE_MISSING: AvailableEngines = {
   piper: { available: true, reason: null },
   silero: { available: false, reason: { code: 'silero.uv_missing' } },
   silero_native: { available: false, reason: { code: 'native.bundle_missing' } },
+  teratts: { available: false, reason: { code: 'teratts.bundle_missing' } },
 };
 
 describe('shouldOfferBundleDownload', () => {
@@ -30,6 +32,10 @@ describe('shouldOfferBundleDownload', () => {
 
   it('stays silent for an explicit Piper choice with the bundle present', () => {
     expect(shouldOfferBundleDownload({ engine: 'piper' }, BUNDLE_PRESENT)).toBe(false);
+  });
+
+  it('stays silent for the TeraTTS engine (Settings owns that download)', () => {
+    expect(shouldOfferBundleDownload({ engine: 'teratts' }, BUNDLE_MISSING)).toBe(false);
   });
 
   it('stays silent for the ttsd Silero engine', () => {

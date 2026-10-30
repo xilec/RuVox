@@ -16,7 +16,7 @@ Modern heavy TTS models, as a rule, natively read numbers, links, and English te
 
 RuVox takes the second path: normalization is a compensating layer that rewrites English terms, abbreviations, code, numbers, and URLs into a sounding Russian form, so the lightweight engine reads the text in full. `getUserData()` → «гет юзер дата», `API` → «эй пи ай», `/api/v2/users` — as a path, not letter by letter. The pronunciation remains approximate — a deliberate trade-off: instead of beautiful speech and powerful hardware, RuVox gives you speed of comprehension and a light resource footprint.
 
-Narration is performed by one of three TTS engines: Silero TTS v5 in-process on ONNX Runtime (the [`silero-native`](silero-native/) crate, default; model bundle downloaded on demand), [Piper](https://github.com/rhasspy/piper) (in-process via `piper-rs`, zero-dependency fallback), or, optionally, [Silero TTS](https://github.com/snakers4/silero-models) out-of-process via the `ttsd` Python sidecar (kept as a fallback).
+Narration is performed by one of four TTS engines: Silero TTS v5 in-process on ONNX Runtime (the [`silero-native`](silero-native/) crate, default; model bundle downloaded on demand), [Piper](https://github.com/rhasspy/piper) (in-process via `piper-rs`, zero-dependency fallback), [TeraTTSv2](https://huggingface.co/TeraSpace/TeraTTSv2) (in-process on ONNX Runtime, the [`teratts`](teratts/) crate, 44.1 kHz; ~410 MB bundle downloaded on demand), or, optionally, [Silero TTS](https://github.com/snakers4/silero-models) out-of-process via the `ttsd` Python sidecar (kept as a fallback).
 
 All synthesis runs locally on your machine — no cloud TTS, nothing is sent anywhere. The network is only used to download voice models on demand, check for app updates, and import text by URL.
 
@@ -34,7 +34,7 @@ Ready-made builds are published on [Releases](https://github.com/xilec/RuVox/rel
 | Debian / Ubuntu | `*.deb` | `sudo dpkg -i ./ruvox_*.deb`; the system `mpv` is installed automatically as a dependency; updates with the system |
 | Any Linux distribution | `*.AppImage` | runs directly (requires FUSE; where it is unavailable, use `--appimage-extract-and-run`); mpv is bundled; in-app auto-updates |
 
-The engine's voice model is downloaded on demand at first use (the Silero Native bundle is ~230 MB).
+The engine's voice model is downloaded on demand at first use (the Silero Native bundle is ~230 MB, the TeraTTSv2 bundle ~410 MB).
 
 ## Stack
 
@@ -133,6 +133,7 @@ pnpm test:unit                                                  # TS unit tests
 cargo test --manifest-path src-tauri/Cargo.toml                 # Rust (incl. pipeline golden tests)
 cargo test --manifest-path src-tauri/Cargo.toml --test golden   # golden tests only
 cargo test --manifest-path silero-native/Cargo.toml             # native Silero engine (bundle-gated tests skip without SILERO_NATIVE_BUNDLE)
+cargo test --manifest-path teratts/Cargo.toml                   # TeraTTSv2 engine (bundle-gated tests skip without TERATTS_BUNDLE)
 cd ttsd && uv run python -m pytest                              # Python subprocess
 ```
 
@@ -146,6 +147,7 @@ cd ttsd && uv run python -m pytest                              # Python subproc
 | [docs/development.md](docs/development.md) | Dev environment, commands, debugging |
 | [docs/contributing.md](docs/contributing.md) | Contributing: dictionaries, commit and style rules |
 | [silero-native/](silero-native/) | Native Silero v5 engine crate (ONNX Runtime): architecture, bundle export, parity tests |
+| [teratts/](teratts/) | TeraTTSv2 engine crate (ONNX Runtime, 44.1 kHz): bundle export, versioning and update procedure, licenses |
 | [openspec/specs/](openspec/specs/) | Behavior specs (OpenSpec): IPC, storage, pipeline, UI, playback |
 | [CHANGELOG.md](CHANGELOG.md) | Change history |
 
@@ -154,3 +156,5 @@ cd ttsd && uv run python -m pytest                              # Python subproc
 Application code is GPL-3.0 — see [LICENSE.md](LICENSE.md).
 
 > **Important:** the voice model of the default engine (Silero Native) is distributed under the CC BY-NC-SA 4.0 license and may be used for non-commercial purposes only. See [silero-native/NOTICE](silero-native/NOTICE) for details. For use without license restrictions, choose the Piper engine — both Piper itself and its voice models are MIT-licensed.
+
+> **TeraTTSv2:** the model is distributed under the TeraTTSv2 Model License (Open RAIL-M with a commercial attribution condition) and the BigScience Open RAIL-M License; commercial use is allowed when the attribution condition is met. Public use must carry the attribution "Text-to-speech powered by TeraTTSv2 by TeraSpace" with a link to the [model](https://huggingface.co/TeraSpace/TeraTTSv2). See [teratts/NOTICE](teratts/NOTICE) for details.

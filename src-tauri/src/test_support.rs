@@ -40,7 +40,9 @@ use crate::state::AppState;
 use crate::storage::service::StorageService;
 use crate::tts::engine::EngineKind;
 use crate::tts::supervisor::test_helpers::recording_emitter;
-use crate::tts::{CharMappingEntry, EngineSwitcher, SynthesizeOutput, TtsEngine, TtsError};
+use crate::tts::{
+    CharMappingEntry, EngineDirs, EngineSwitcher, SynthesizeOutput, TtsEngine, TtsError,
+};
 
 // The polling helper lives in `tts::supervisor::test_helpers`, shared with
 // the integration tests under `tests/`; re-exported so command tests import
@@ -375,9 +377,12 @@ pub fn build_test_app_with_kind(kind: EngineKind) -> TestApp {
         Arc::clone(&stub),
         kind,
         Some("stub-voice".to_string()),
-        voices_dir.path().to_path_buf(),
-        ttsd_dir.path().to_path_buf(),
-        bundle_dir.path().to_path_buf(),
+        EngineDirs {
+            piper_voices: voices_dir.path().to_path_buf(),
+            ttsd: ttsd_dir.path().to_path_buf(),
+            silero_native_bundle: bundle_dir.path().to_path_buf(),
+            teratts_bundle: bundle_dir.path().to_path_buf(),
+        },
         Arc::clone(&emitter),
     ));
     let player = Arc::new(FakePlayer::new());
@@ -389,6 +394,8 @@ pub fn build_test_app_with_kind(kind: EngineKind) -> TestApp {
         ttsd_dir: ttsd_dir.path().to_path_buf(),
         piper_voices_dir: voices_dir.path().to_path_buf(),
         silero_native_bundle_dir: bundle_dir.path().to_path_buf(),
+        teratts_bundle_dir: bundle_dir.path().to_path_buf(),
+        bundle_download_lock: tokio::sync::Mutex::new(()),
         emitter,
         player: player.clone(),
         pipeline: Arc::new(ParkingMutex::new(TTSPipeline::new())),

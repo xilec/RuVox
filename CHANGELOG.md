@@ -7,6 +7,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 ## [Unreleased]
 
 ### Added
+- **TeraTTSv2 engine (experimental)** — a fourth TTS engine runs the 99M
+  TeraTTSv2 flow-matching model fully in-process on ONNX Runtime at 44.1 kHz,
+  with four Russian voices (`ru_m5` default, `ru_f1`, `ru_f2`, `ru_m1`) and
+  dictionary-based accentuation; its ~410 MB model bundle is downloaded on
+  demand from Settings. Text-to-speech powered by TeraTTSv2 by TeraSpace
+  (Open RAIL-M; see `teratts/NOTICE`). The English voices and mixed
+  Russian/English routing ship separately (#308, #311).
 - **Russian words in the dictionary** — the source word may be a Russian
   Cyrillic token (`замок`), so a wrong stress can be fixed with `зам+ок`; the
   entry matches the exact word form, case-insensitively (#315).

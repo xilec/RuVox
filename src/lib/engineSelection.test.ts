@@ -7,40 +7,51 @@ import {
   type AvailabilityMap,
 } from './engineSelection';
 
+/// Config slice used by the form-state tests; `teratts_voice` is required by
+/// the reducer, so one helper keeps the cases about the engine, not the field.
+function cfg(engine: 'piper' | 'silero' | 'silero_native' | 'teratts', piper_voice: string, speaker: string) {
+  return { engine, piper_voice, speaker, teratts_voice: 'ru_m5' };
+}
+
 const BOTH_AVAILABLE: AvailabilityMap = {
   piper: { available: true, reason: null },
   silero: { available: true, reason: null },
   silero_native: { available: false, reason: { code: 'native.bundle_missing' } },
+  teratts: { available: false, reason: { code: 'teratts.bundle_missing' } },
 };
 
 const ALL_AVAILABLE: AvailabilityMap = {
   piper: { available: true, reason: null },
   silero: { available: true, reason: null },
   silero_native: { available: true, reason: null },
+  teratts: { available: true, reason: null },
 };
 
 const ONLY_PIPER: AvailabilityMap = {
   piper: { available: true, reason: null },
   silero: { available: false, reason: { code: 'silero.uv_missing' } },
   silero_native: { available: false, reason: { code: 'native.bundle_missing' } },
+  teratts: { available: false, reason: { code: 'teratts.bundle_missing' } },
 };
 
 const ONLY_SILERO: AvailabilityMap = {
   piper: { available: false, reason: { code: 'test.voice_missing' } },
   silero: { available: true, reason: null },
   silero_native: { available: false, reason: { code: 'native.bundle_missing' } },
+  teratts: { available: false, reason: { code: 'teratts.bundle_missing' } },
 };
 
 const NEITHER: AvailabilityMap = {
   piper: { available: false, reason: { code: 'test.oops' } },
   silero: { available: false, reason: { code: 'test.oops' } },
   silero_native: { available: false, reason: { code: 'test.oops' } },
+  teratts: { available: false, reason: { code: 'test.oops' } },
 };
 
 describe('computeEngineFormState', () => {
   it('preserves saved engine when both are available', () => {
     const s = computeEngineFormState(
-      { engine: 'silero', piper_voice: 'irina', speaker: 'baya' },
+      cfg('silero', 'irina', 'baya'),
       BOTH_AVAILABLE,
     );
     expect(s.engine).toBe('silero');
@@ -51,7 +62,7 @@ describe('computeEngineFormState', () => {
 
   it('coerces silero → piper when silero is unavailable', () => {
     const s = computeEngineFormState(
-      { engine: 'silero', piper_voice: 'ruslan', speaker: 'xenia' },
+      cfg('silero', 'ruslan', 'xenia'),
       ONLY_PIPER,
     );
     expect(s.engine).toBe('piper');
@@ -61,7 +72,7 @@ describe('computeEngineFormState', () => {
   it('does not flag coercion when saved engine matches forced fallback', () => {
     // piper is unavailable but the saved engine was already silero → no coercion.
     const s = computeEngineFormState(
-      { engine: 'silero', piper_voice: 'ruslan', speaker: 'baya' },
+      cfg('silero', 'ruslan', 'baya'),
       ONLY_SILERO,
     );
     expect(s.engine).toBe('silero');
@@ -70,7 +81,7 @@ describe('computeEngineFormState', () => {
 
   it('falls back to piper when both are unavailable', () => {
     const s = computeEngineFormState(
-      { engine: 'silero', piper_voice: 'ruslan', speaker: 'xenia' },
+      cfg('silero', 'ruslan', 'xenia'),
       NEITHER,
     );
     expect(s.engine).toBe('piper');
@@ -80,7 +91,7 @@ describe('computeEngineFormState', () => {
 
   it('uses defaults when config has empty voice fields', () => {
     const s = computeEngineFormState(
-      { engine: 'piper', piper_voice: '', speaker: '' },
+      cfg('piper', '', ''),
       BOTH_AVAILABLE,
     );
     expect(s.piperVoice).toBe('ruslan');
@@ -89,7 +100,7 @@ describe('computeEngineFormState', () => {
 
   it('preserves a saved silero_native engine when it is available', () => {
     const s = computeEngineFormState(
-      { engine: 'silero_native', piper_voice: 'ruslan', speaker: 'xenia' },
+      cfg('silero_native', 'ruslan', 'xenia'),
       ALL_AVAILABLE,
     );
     expect(s.engine).toBe('silero_native');
@@ -98,7 +109,7 @@ describe('computeEngineFormState', () => {
 
   it('coerces silero_native → piper when the bundle is not downloaded', () => {
     const s = computeEngineFormState(
-      { engine: 'silero_native', piper_voice: 'ruslan', speaker: 'xenia' },
+      cfg('silero_native', 'ruslan', 'xenia'),
       BOTH_AVAILABLE,
     );
     expect(s.engine).toBe('piper');
@@ -107,16 +118,37 @@ describe('computeEngineFormState', () => {
 
   it('replaces a saved random speaker when the saved engine is silero_native', () => {
     const s = computeEngineFormState(
-      { engine: 'silero_native', piper_voice: 'ruslan', speaker: 'random' },
+      cfg('silero_native', 'ruslan', 'random'),
       ALL_AVAILABLE,
     );
     expect(s.engine).toBe('silero_native');
     expect(s.sileroSpeaker).toBe('aidar');
   });
 
+  it('preserves a saved teratts engine and its voice', () => {
+    const s = computeEngineFormState(
+      { engine: 'teratts', piper_voice: 'ruslan', speaker: 'xenia', teratts_voice: 'ru_f1' },
+      ALL_AVAILABLE,
+    );
+    expect(s.engine).toBe('teratts');
+    expect(s.terattsVoice).toBe('ru_f1');
+    expect(s.coercedAwayFromUnavailable).toBe(false);
+  });
+
+  it('falls back from teratts when its bundle is missing', () => {
+    const s = computeEngineFormState(
+      { engine: 'teratts', piper_voice: 'ruslan', speaker: 'xenia', teratts_voice: 'ru_f1' },
+      BOTH_AVAILABLE,
+    );
+    expect(s.engine).toBe('piper');
+    expect(s.coercedAwayFromUnavailable).toBe(true);
+    // The saved TeraTTS voice survives the fallback for the next flip back.
+    expect(s.terattsVoice).toBe('ru_f1');
+  });
+
   it('keeps a saved random speaker for the ttsd engine', () => {
     const s = computeEngineFormState(
-      { engine: 'silero', piper_voice: 'ruslan', speaker: 'random' },
+      cfg('silero', 'ruslan', 'random'),
       ALL_AVAILABLE,
     );
     expect(s.sileroSpeaker).toBe('random');
@@ -125,7 +157,7 @@ describe('computeEngineFormState', () => {
 
 describe('applyEngineChange', () => {
   const start = computeEngineFormState(
-    { engine: 'piper', piper_voice: 'ruslan', speaker: 'xenia' },
+    cfg('piper', 'ruslan', 'xenia'),
     BOTH_AVAILABLE,
   );
 
@@ -144,7 +176,7 @@ describe('applyEngineChange', () => {
 
   it('clears the coercion alert after a manual change', () => {
     const coerced = computeEngineFormState(
-      { engine: 'silero', piper_voice: 'ruslan', speaker: 'xenia' },
+      cfg('silero', 'ruslan', 'xenia'),
       ONLY_PIPER,
     );
     expect(coerced.coercedAwayFromUnavailable).toBe(true);
@@ -154,7 +186,7 @@ describe('applyEngineChange', () => {
 
   it('coerces the random speaker away when switching to silero_native', () => {
     const onSilero = computeEngineFormState(
-      { engine: 'silero', piper_voice: 'ruslan', speaker: 'random' },
+      cfg('silero', 'ruslan', 'random'),
       ALL_AVAILABLE,
     );
     const next = applyEngineChange(onSilero, 'silero_native', ALL_AVAILABLE);

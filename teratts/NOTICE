@@ -1,0 +1,41 @@
+# NOTICE — upstream model attribution
+
+The model bundle published as the `teratts-models-v1` GitHub Release (the four
+`*.onnx` graphs, the voice style arrays, `unicode_indexer.json`, and the
+RUAccent dictionary assets) is a redistribution of the **TeraTTSv2** model by
+the TeraSpace team. TeraTTSv2 is the TeraSpace release of a 99M-parameter
+flow-matching TTS model; its fast path is an eight-step CFG-3 distilled
+student of the upstream Supertonic teacher. The bundle copies the published
+ONNX graphs, styles and indexer unchanged — no re-export, fine-tuning,
+quantization or other modification was made. Only the file layout and the
+manifest are RuVox's own work.
+
+- Upstream model: https://huggingface.co/TeraSpace/TeraTTSv2
+- Upstream revision used for `teratts-models-v1`:
+  `75983ac96062591d06ecd2ddb2aefb894104bc9e`
+
+## Licensing
+
+The TeraTTSv2 weights are distributed under the **TeraTTSv2 Model License**
+(an Open RAIL-M license with a commercial attribution condition) and the
+**BigScience Open RAIL-M License**; both license texts are shipped in the
+bundle as `LICENSE` and `LICENSE-OPENRAIL`.
+
+The RUAccent dictionary assets are distributed under the **MIT** license; the
+upstream notice is shipped as `RUACCENT_NOTICE.txt`.
+
+## Obligations
+
+- **Attribution.** Any public product or service that uses the model must
+  credit it as: *"Text-to-speech powered by TeraTTSv2 by TeraSpace"*. RuVox
+  carries this line, with a link to the upstream model, in `README.md` and
+  `README.en.md`.
+- **Use restrictions.** The Open RAIL-M terms apply to the model and its
+  outputs: no use for the restricted purposes listed in the license (e.g.
+  unlawful surveillance, disinformation, or harming minors).
+- **Redistribution.** Keep this notice and the license files together with the
+  bundle. A modified bundle must stay under the same terms.
+
+The Rust crate (`teratts/`) and the exporter (`teratts/export/`) are original
+work licensed under the repository license (GPL-3.0-only); the terms above
+apply to the model data, not to this code.

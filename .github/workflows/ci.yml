@@ -32,6 +32,8 @@ jobs:
             rust:
               - 'src-tauri/**'
               - 'silero-native/**'
+              - 'teratts/**'
+              - 'tts-contract/**'
               - '.github/workflows/ci.yml'
             typescript:
               - 'src/**'
@@ -57,12 +59,15 @@ jobs:
             windows:
               - 'src-tauri/**'
               - 'silero-native/**'
+              - 'teratts/**'
+              - 'tts-contract/**'
               - '.github/workflows/ci.yml'
               - '.github/workflows/release.yml'
               - 'scripts/fetch-windows-resources.sh'
             nonnix:
               - 'src-tauri/**'
               - 'silero-native/**'
+              - 'teratts/**'
               - 'src/**'
               - 'package.json'
               - 'pnpm-lock.yaml'
@@ -99,7 +104,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: "src-tauri\nsilero-native\ntts-contract"
+          workspaces: "src-tauri\nsilero-native\ntts-contract\nteratts"
           # Shared with the release.yml windows-installer job: without this the
           # cache key includes the job id, so the release rebuilt all ~600 deps
           # from scratch on every run (~8.5 min lost).
@@ -136,7 +141,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: "src-tauri\nsilero-native\ntts-contract"
+          workspaces: "src-tauri\nsilero-native\ntts-contract\nteratts"
       - uses: pnpm/action-setup@v6
         with:
           version: 10
@@ -181,13 +186,15 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: "src-tauri\nsilero-native\ntts-contract"
+          workspaces: "src-tauri\nsilero-native\ntts-contract\nteratts"
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
       - run: cargo fmt --manifest-path silero-native/Cargo.toml -- --check
       - run: cargo fmt --manifest-path tts-contract/Cargo.toml -- --check
+      - run: cargo fmt --manifest-path teratts/Cargo.toml -- --check
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --no-deps -- -D warnings
       - run: cargo clippy --manifest-path silero-native/Cargo.toml --all-targets --no-deps -- -D warnings
       - run: cargo clippy --manifest-path tts-contract/Cargo.toml --all-targets --no-deps -- -D warnings
+      - run: cargo clippy --manifest-path teratts/Cargo.toml --all-targets --no-deps -- -D warnings
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
@@ -195,6 +202,7 @@ jobs:
       - run: cargo test --manifest-path src-tauri/Cargo.toml --all-features
       - run: cargo test --manifest-path silero-native/Cargo.toml
       - run: cargo test --manifest-path tts-contract/Cargo.toml
+      - run: cargo test --manifest-path teratts/Cargo.toml
 
   typescript:
     name: TypeScript (typecheck + vitest)

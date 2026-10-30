@@ -15,6 +15,9 @@ export const RANDOM_SPEAKER = 'random';
  *  served by the active engine. Matches the config default. */
 const DEFAULT_SILERO_SPEAKER = 'aidar';
 
+/** Default TeraTTS Russian voice. Matches the config default. */
+const DEFAULT_TERATTS_VOICE = 'ru_m5';
+
 /**
  * Map a speaker to one the given engine can serve. Currently only `random`
  * needs coercion: valid for ttsd (`silero`), rejected by `silero_native`.
@@ -33,6 +36,9 @@ export interface EngineFormState {
   /** Voice the user picked for Silero (`config.speaker`). Persisted across
    *  engine flips for the same reason. */
   sileroSpeaker: string;
+  /** Voice the user picked for TeraTTS (`config.teratts_voice`). Persisted
+   *  across engine flips for the same reason. */
+  terattsVoice: string;
   /** When `true`, show an inline alert telling the user we coerced the form
    *  away from their saved engine because it's currently unavailable. */
   coercedAwayFromUnavailable: boolean;
@@ -45,7 +51,7 @@ export interface EngineFormState {
  * coercion so the UI can surface a one-shot alert.
  */
 export function computeEngineFormState(
-  config: Pick<UIConfig, 'engine' | 'piper_voice' | 'speaker'>,
+  config: Pick<UIConfig, 'engine' | 'piper_voice' | 'speaker' | 'teratts_voice'>,
   availability: AvailabilityMap,
 ): EngineFormState {
   const savedEngine = coerceEngineKind(config.engine);
@@ -58,13 +64,14 @@ export function computeEngineFormState(
     engine,
     piperVoice: config.piper_voice || DEFAULT_PIPER_VOICE,
     sileroSpeaker: coerceSpeakerForEngine(engine, config.speaker || DEFAULT_SILERO_SPEAKER),
+    terattsVoice: config.teratts_voice || DEFAULT_TERATTS_VOICE,
     coercedAwayFromUnavailable: !savedAvailable && engine !== savedEngine,
   };
 }
 
 /** Map a persisted (possibly stale / unknown) engine string to a known kind. */
 function coerceEngineKind(raw: string): EngineKind {
-  return raw === 'silero' || raw === 'silero_native' ? raw : 'piper';
+  return raw === 'silero' || raw === 'silero_native' || raw === 'teratts' ? raw : 'piper';
 }
 
 /**
@@ -93,7 +100,7 @@ export function applyEngineChange(
 function pickFallbackEngine(availability: AvailabilityMap): EngineKind {
   // Preference order for the automatic fallback: Piper first (in-process,
   // always available in practice), then the Silero engines.
-  const order: EngineKind[] = ['piper', 'silero', 'silero_native'];
+  const order: EngineKind[] = ['piper', 'silero', 'silero_native', 'teratts'];
   const found = order.find((e) => availability[e].available);
   // Nothing available — return Piper so the UI still has a value to render.
   // The save attempt will fail at the backend and the user gets the error.

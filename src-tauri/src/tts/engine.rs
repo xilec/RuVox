@@ -1,12 +1,14 @@
 //! Engine-agnostic interface for the TTS layer.
 //!
-//! Three concrete impls exist:
+//! Four concrete impls exist:
 //! - [`crate::tts::supervisor::TtsSupervisor`] — Silero, runs as a Python
 //!   `ttsd` sidecar that can die and respawn.
 //! - [`crate::tts::piper::PiperEngine`] — Piper, runs in-process via the
 //!   `piper-rs` ONNX wrapper.
 //! - [`crate::tts::silero_native::SileroNativeEngine`] — Silero v5, runs
 //!   in-process via the `silero-native` crate on ONNX Runtime.
+//! - [`crate::tts::teratts::TeraTtsEngine`] — TeraTTSv2, runs in-process via
+//!   the `teratts` crate on ONNX Runtime.
 //!
 //! [`crate::state::AppState::tts`] holds a `Arc<dyn TtsEngine>` so the rest of
 //! the codebase (commands, synthesis worker, tray) is engine-agnostic.
@@ -29,6 +31,8 @@ pub enum EngineKind {
     Silero,
     Piper,
     SileroNative,
+    #[serde(rename = "teratts")]
+    TeraTts,
 }
 
 impl EngineKind {
@@ -39,6 +43,7 @@ impl EngineKind {
         EngineKind::Silero,
         EngineKind::Piper,
         EngineKind::SileroNative,
+        EngineKind::TeraTts,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -46,6 +51,7 @@ impl EngineKind {
             EngineKind::Silero => "silero",
             EngineKind::Piper => "piper",
             EngineKind::SileroNative => "silero_native",
+            EngineKind::TeraTts => "teratts",
         }
     }
 }

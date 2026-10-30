@@ -9,10 +9,10 @@
 //! cheap on purpose: it only checks the directory + `uv --version` so app
 //! startup does not pay for a torch import. Failure to actually load the
 //! model still surfaces from `model_error` later.
-//! Silero Native needs the model bundle in the app data dir. Its probe is
-//! stat-only — manifest parses and every listed file exists with the
-//! recorded size — so `get_available_engines` stays cheap on every Settings
-//! open (no sha256 hashing; the full verification runs inside the
+//! Silero Native and TeraTTS need their model bundles in the app data dir.
+//! Their probes are stat-only — manifest parses and every listed file exists
+//! with the recorded size — so `get_available_engines` stays cheap on every
+//! Settings open (no sha256 hashing; the full verification runs inside the
 //! downloader and the engine's bundle loader).
 
 use std::path::Path;
@@ -68,14 +68,20 @@ pub struct AvailableEngines {
     pub piper: EngineAvailability,
     pub silero: EngineAvailability,
     pub silero_native: EngineAvailability,
+    pub teratts: EngineAvailability,
 }
 
 /// Probe the running environment for engine availability. `ttsd_dir` is
 /// the path resolved by `lib.rs::resolve_ttsd_dir` — the location at which
 /// the `ttsd/` Python package would live if shipped.
-/// `silero_native_bundle_dir` is the app-data directory the model bundle is
-/// downloaded into by `download_silero_native_bundle`.
-pub fn probe(ttsd_dir: &Path, silero_native_bundle_dir: &Path) -> AvailableEngines {
+/// `silero_native_bundle_dir` and `teratts_bundle_dir` are the app-data
+/// directories the model bundles are downloaded into by
+/// `download_silero_native_bundle` and `download_teratts_bundle`.
+pub fn probe(
+    ttsd_dir: &Path,
+    silero_native_bundle_dir: &Path,
+    teratts_bundle_dir: &Path,
+) -> AvailableEngines {
     AvailableEngines {
         piper: EngineAvailability {
             available: true,
@@ -83,6 +89,7 @@ pub fn probe(ttsd_dir: &Path, silero_native_bundle_dir: &Path) -> AvailableEngin
         },
         silero: probe_silero(ttsd_dir),
         silero_native: probe_silero_native(silero_native_bundle_dir),
+        teratts: probe_teratts(teratts_bundle_dir),
     }
 }
 
@@ -166,15 +173,56 @@ pub fn probe_silero_native(bundle_dir: &Path) -> EngineAvailability {
     }
 }
 
+/// Stat-only TeraTTS bundle probe: the manifest parses, its format version is
+/// supported, and every listed file is present with the recorded size.
+pub fn probe_teratts(bundle_dir: &Path) -> EngineAvailability {
+    let unavailable = |reason: LocalizedText| EngineAvailability {
+        available: false,
+        reason: Some(reason),
+    };
+
+    let manifest = match teratts::bundle::Manifest::load(bundle_dir) {
+        Ok(manifest) => manifest,
+        Err(teratts::Error::BundleNotInstalled(_)) => {
+            return unavailable(
+                LocalizedText::new("teratts.bundle_missing")
+                    .with_param(bundle_dir.display().to_string()),
+            );
+        }
+        Err(teratts::Error::BundleIncompatible { found, expected }) => {
+            return unavailable(
+                LocalizedText::new("teratts.bundle_incompatible")
+                    .with_param(found.to_string())
+                    .with_param(expected.to_string()),
+            );
+        }
+        Err(e) => {
+            return unavailable(
+                LocalizedText::new("teratts.bundle_corrupt").with_message(e.to_string()),
+            );
+        }
+    };
+    match manifest.check_sizes(bundle_dir) {
+        Ok(()) => EngineAvailability {
+            available: true,
+            reason: None,
+        },
+        Err(e) => {
+            unavailable(LocalizedText::new("teratts.bundle_corrupt").with_message(e.to_string()))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_support::write_fake_bundle;
+    use sha2::Digest;
 
     #[test]
     fn piper_is_always_available() {
         let dir = tempfile::TempDir::new().unwrap();
-        let res = probe(dir.path(), dir.path());
+        let res = probe(dir.path(), dir.path(), dir.path());
         assert!(res.piper.available);
         assert!(res.piper.reason.is_none());
     }
@@ -182,7 +230,7 @@ mod tests {
     #[test]
     fn silero_unavailable_when_ttsd_dir_missing_pyproject() {
         let dir = tempfile::TempDir::new().unwrap();
-        let probe_result = probe(dir.path(), dir.path());
+        let probe_result = probe(dir.path(), dir.path(), dir.path());
         assert!(!probe_result.silero.available);
         let reason = probe_result.silero.reason.expect("reason set");
         assert_eq!(reason.code, "silero.ttsd_missing");
@@ -203,7 +251,7 @@ mod tests {
     #[test]
     fn silero_native_unavailable_without_bundle() {
         let dir = tempfile::TempDir::new().unwrap();
-        let res = probe(dir.path(), dir.path());
+        let res = probe(dir.path(), dir.path(), dir.path());
         assert!(!res.silero_native.available);
         let reason = res.silero_native.reason.expect("reason set");
         assert_eq!(reason.code, "native.bundle_missing");
@@ -248,5 +296,80 @@ mod tests {
         let reason = res.reason.expect("reason set");
         assert_eq!(reason.code, "native.bundle_manifest_corrupt");
         assert!(reason.message.is_some());
+    }
+    fn write_teratts_bundle(dir: &Path) {
+        let contents = b"onnx bytes";
+        let file = serde_json::json!({
+            "path": "models/a.onnx",
+            "asset": "models__a.onnx",
+            "size": contents.len(),
+            "sha256": format!("{:x}", sha2::Sha256::new().chain_update(contents).finalize()),
+        });
+        let manifest = serde_json::json!({
+            "format_version": teratts::bundle::FORMAT_VERSION,
+            "bundle_version": 1,
+            "model_id": "test",
+            "model_version": "1",
+            "upstream_repo": "test/repo",
+            "upstream_revision": "abc",
+            "opset": 19,
+            "sample_rate": 44100,
+            "created_at_utc": "2026-01-01T00:00:00Z",
+            "voices": [{"id": "ru_m5", "language": "ru"}],
+            "files": [file],
+        });
+        std::fs::create_dir_all(dir.join("models")).unwrap();
+        std::fs::write(dir.join("models/a.onnx"), contents).unwrap();
+        std::fs::write(
+            dir.join("manifest.json"),
+            serde_json::to_vec_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn teratts_unavailable_without_bundle() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let res = probe_teratts(dir.path());
+        assert!(!res.available);
+        let reason = res.reason.expect("reason set");
+        assert_eq!(reason.code, "teratts.bundle_missing");
+    }
+
+    #[test]
+    fn teratts_available_with_a_complete_bundle() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_teratts_bundle(dir.path());
+        let res = probe_teratts(dir.path());
+        assert!(res.available, "{:?}", res.reason);
+    }
+
+    #[test]
+    fn teratts_unavailable_when_a_file_is_truncated() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_teratts_bundle(dir.path());
+        std::fs::write(dir.path().join("models/a.onnx"), b"onnx").unwrap();
+        let res = probe_teratts(dir.path());
+        assert!(!res.available);
+        assert_eq!(
+            res.reason.expect("reason set").code,
+            "teratts.bundle_corrupt"
+        );
+    }
+
+    #[test]
+    fn teratts_unavailable_with_an_incompatible_format() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_teratts_bundle(dir.path());
+        let path = dir.path().join("manifest.json");
+        let mut manifest: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        manifest["format_version"] = serde_json::json!(999);
+        std::fs::write(&path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
+        let res = probe_teratts(dir.path());
+        assert!(!res.available);
+        let reason = res.reason.expect("reason set");
+        assert_eq!(reason.code, "teratts.bundle_incompatible");
+        assert_eq!(reason.params, vec!["999".to_string(), "1".to_string()]);
     }
 }

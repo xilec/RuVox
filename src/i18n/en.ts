@@ -83,6 +83,7 @@ export const en: Record<MessageKey, string> = {
   'generation.engine.silero_native': 'Silero (native)',
   'generation.engine.piper': 'Piper',
   'generation.engine.silero': 'Silero (Python)',
+  'generation.engine.teratts': 'TeraTTSv2',
   'generation.voice': 'Voice',
   'generation.sample_rate': 'Sample rate',
   'generation.sample_rate.value': '{0} Hz',
@@ -177,16 +178,24 @@ export const en: Record<MessageKey, string> = {
   'settings.engine.silero_native': 'Silero (native, recommended)',
   'settings.engine.piper': 'Piper',
   'settings.engine.silero': 'Silero (Python)',
+  'settings.engine.teratts': 'TeraTTSv2',
   'settings.coerced_alert': 'The saved engine is unavailable — Piper was selected instead.',
   'settings.availability.probing_python': 'Checking for the Python stack…',
   'settings.availability.probing_bundle': 'Checking for the model bundle…',
   'settings.engine.reason_silero': 'Silero: {0}',
   'settings.engine.reason_silero_native': 'Silero (native): {0}',
+  'settings.engine.reason_teratts': 'TeraTTSv2: {0}',
   'settings.bundle.downloading': 'Downloading models: {0} ({1}%)',
   'settings.bundle.download_button': 'Download Silero models (~230 MB)',
+  'settings.bundle.download_teratts': 'Download TeraTTS models (~410 MB)',
   'settings.bundle.finished.title': 'Model bundle downloaded',
   'settings.bundle.finished.message':
     'The "Silero (native)" engine is now available.',
+  'settings.bundle.finished.message_teratts':
+    'The "TeraTTSv2" engine is now available.',
+  'settings.teratts_voice.label': 'TeraTTSv2 voice',
+  'settings.teratts_voice.description':
+    'Russian voices from the bundle; ru_m5 is the default.',
   'settings.bundle.failed.title': 'Failed to download the bundle',
   'settings.piper_voice.label': 'Piper voice',
   'settings.piper_voice.description':
@@ -313,6 +322,7 @@ export const en: Record<MessageKey, string> = {
   'errors.generic.internal': 'Internal error',
 
   // ── Backend error codes (CommandError.code) ─────────────────────────────
+  'errors.bundle.download_in_progress': 'A model download is already running',
   'errors.entry.not_found': 'Entry {0} not found',
   'errors.entry.id_invalid': 'Invalid entry id: {0}',
   'errors.entry.not_ready': 'Entry {0} is not ready for playback (status: {1})',
@@ -384,6 +394,23 @@ export const en: Record<MessageKey, string> = {
   'errors.native.bundle_missing': 'The Silero model bundle is not downloaded yet. Use the button below to download it.',
   'errors.native.bundle_manifest_corrupt': 'The Silero bundle manifest is corrupted. Download the bundle again.',
   'errors.native.bundle_incomplete': 'The Silero model bundle is incomplete ({0}). Download it again.',
+  'errors.teratts.bundle_missing':
+    'The TeraTTS model bundle is not downloaded yet. Download it in Settings (engine "TeraTTSv2").',
+  'errors.teratts.bundle_incompatible':
+    'The TeraTTS bundle format {0} is not supported (expected {1}). Update the app or download the bundle again.',
+  'errors.teratts.bundle_corrupt':
+    'The TeraTTS bundle is corrupted. Download it again in Settings.',
+  'errors.bundle_not_installed':
+    'The model bundle is not downloaded yet. Download it in Settings.',
+  'errors.bundle_corrupt':
+    'The model bundle is corrupted. Download it again in Settings.',
+  'errors.bundle_incompatible':
+    'The model bundle is not compatible with this app version.',
+  'errors.voice_unknown': 'Voice not found: {0}',
+  'errors.text_invalid_tags': 'The text is not suitable for this engine: {0}',
+  'errors.synthesis_failed': 'Speech synthesis failed: {0}',
+  'errors.teratts_cancelled': 'Synthesis cancelled',
+
   'errors.dictionary.error': 'Dictionary: {0}',
   'errors.dictionary.import_failed': 'Failed to read the dictionary file: {0}',
   'errors.dictionary.task_panicked': 'Internal error during a dictionary operation',

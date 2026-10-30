@@ -28,6 +28,8 @@ function displayEngine(engine: string, tt: T): string {
       return tt('generation.engine.piper');
     case 'silero':
       return tt('generation.engine.silero');
+    case 'teratts':
+      return tt('generation.engine.teratts');
     default:
       return engine;
   }

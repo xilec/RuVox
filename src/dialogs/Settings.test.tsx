@@ -72,6 +72,7 @@ function makeConfig(overrides: Partial<UIConfig> = {}): UIConfig {
     hide_to_tray_on_close: false,
     engine: 'silero_native',
     piper_voice: 'ruslan',
+    teratts_voice: 'ru_m5',
     ...overrides,
   };
 }
@@ -86,6 +87,7 @@ describe('SettingsModal code block narration', () => {
       piper: { available: true, reason: null },
       silero: { available: false, reason: null },
       silero_native: { available: true, reason: null },
+      teratts: { available: false, reason: { code: 'teratts.bundle_missing' } },
     });
   });
 

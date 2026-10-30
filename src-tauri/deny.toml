@@ -61,6 +61,11 @@ allow = ["GPL-3.0-only"]
 crate = "tts-contract"
 allow = ["GPL-3.0-only"]
 
+# Same policy for the TeraTTSv2 engine crate (path dependency).
+[[licenses.exceptions]]
+crate = "teratts"
+allow = ["GPL-3.0-only"]
+
 [bans]
 multiple-versions = "warn"
 wildcards = "warn"
