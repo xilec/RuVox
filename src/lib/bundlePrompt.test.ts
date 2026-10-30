@@ -34,6 +34,10 @@ describe('shouldOfferBundleDownload', () => {
     expect(shouldOfferBundleDownload({ engine: 'piper' }, BUNDLE_PRESENT)).toBe(false);
   });
 
+  it('stays silent for the TeraTTS engine (Settings owns that download)', () => {
+    expect(shouldOfferBundleDownload({ engine: 'teratts' }, BUNDLE_MISSING)).toBe(false);
+  });
+
   it('stays silent for the ttsd Silero engine', () => {
     expect(shouldOfferBundleDownload({ engine: 'silero' }, BUNDLE_MISSING)).toBe(false);
   });

@@ -192,6 +192,8 @@ export const ru = {
   'settings.bundle.finished.title': 'Бандл моделей скачан',
   'settings.bundle.finished.message':
     'Движок «Silero (нативный)» теперь доступен.',
+  'settings.bundle.finished.message_teratts':
+    'Движок «TeraTTSv2» теперь доступен.',
   'settings.teratts_voice.label': 'Голос TeraTTSv2',
   'settings.teratts_voice.description':
     'Русские голоса из бандла; ru_m5 — по умолчанию.',

@@ -125,6 +125,27 @@ describe('computeEngineFormState', () => {
     expect(s.sileroSpeaker).toBe('aidar');
   });
 
+  it('preserves a saved teratts engine and its voice', () => {
+    const s = computeEngineFormState(
+      { engine: 'teratts', piper_voice: 'ruslan', speaker: 'xenia', teratts_voice: 'ru_f1' },
+      ALL_AVAILABLE,
+    );
+    expect(s.engine).toBe('teratts');
+    expect(s.terattsVoice).toBe('ru_f1');
+    expect(s.coercedAwayFromUnavailable).toBe(false);
+  });
+
+  it('falls back from teratts when its bundle is missing', () => {
+    const s = computeEngineFormState(
+      { engine: 'teratts', piper_voice: 'ruslan', speaker: 'xenia', teratts_voice: 'ru_f1' },
+      BOTH_AVAILABLE,
+    );
+    expect(s.engine).toBe('piper');
+    expect(s.coercedAwayFromUnavailable).toBe(true);
+    // The saved TeraTTS voice survives the fallback for the next flip back.
+    expect(s.terattsVoice).toBe('ru_f1');
+  });
+
   it('keeps a saved random speaker for the ttsd engine', () => {
     const s = computeEngineFormState(
       cfg('silero', 'ruslan', 'random'),

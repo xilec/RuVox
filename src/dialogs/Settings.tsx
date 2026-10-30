@@ -447,7 +447,10 @@ export function SettingsModal({
         if (p.ok) {
           notifications.show({
             title: tt('settings.bundle.finished.title'),
-            message: tt('settings.bundle.finished.message'),
+            message:
+              p.engine === 'teratts'
+                ? tt('settings.bundle.finished.message_teratts')
+                : tt('settings.bundle.finished.message'),
             color: 'green',
           });
           // Re-probe so the engine option becomes selectable immediately.
@@ -651,6 +654,7 @@ export function SettingsModal({
                 <Button
                   variant="default"
                   size="xs"
+                  disabled={bundleDownload !== null}
                   onClick={() => handleBundleDownload('silero_native')}
                 >
                   {tt('settings.bundle.download_button')}
@@ -674,6 +678,7 @@ export function SettingsModal({
                 <Button
                   variant="default"
                   size="xs"
+                  disabled={bundleDownload !== null}
                   onClick={() => handleBundleDownload('teratts')}
                 >
                   {tt('settings.bundle.download_teratts')}
