@@ -27,4 +27,4 @@
 
 - [x] 4.1 `CHANGELOG.md` entry (user-visible dictionary feature).
 - [x] 4.2 `just test`, `just lint`, `openspec validate --all --strict`.
-- [ ] 4.3 Archive the change and sync the `user-dictionary` spec.
+- [x] 4.3 Archive the change and sync the `user-dictionary` spec.

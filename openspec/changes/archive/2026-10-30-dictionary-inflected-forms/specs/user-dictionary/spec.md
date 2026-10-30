@@ -82,11 +82,12 @@ form in the list.
 - WHEN the entry is validated
 - THEN it is rejected with the same error, because a token belongs to one script
 
-#### Scenario: Unlisted inflected form is left alone
+#### Scenario: Inflected form is a different key
 
 - GIVEN the entry `замок → зам+ок` with no listed forms
 - WHEN the text contains "замка"
-- THEN the word is left as it is — the entry matches one exact form
+- THEN the word is left as it is — without a listed form the entry matches one
+  exact form
 
 #### Scenario: Listed forms share the pronunciation
 
@@ -120,7 +121,7 @@ form in the list.
 - WHEN the entry is validated
 - THEN it is rejected with an error naming the conflicting form
 
-#### Scenario: Duplicate primary keys in the file
+#### Scenario: Duplicate keys in the file
 
 - GIVEN the dictionary file contains `Git = "гит"` and `GitHub = "гитхаб"`
 - WHEN the dictionary is loaded
@@ -190,7 +191,7 @@ only through the dictionary commands.
 - WHEN the app starts
 - THEN the dictionary is empty and no error is surfaced
 
-#### Scenario: Hand-edited string entry is picked up
+#### Scenario: Hand-edited entry is picked up
 
 - GIVEN the app is stopped and the user adds `nginx = "энджинкс"` to the file
 - WHEN the app starts
