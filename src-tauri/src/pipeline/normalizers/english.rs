@@ -1,4 +1,3 @@
-use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 
@@ -54,7 +53,6 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     m.insert("c++", "си плюс плюс");
     m.insert("c#", "си шарп");
     m.insert("f#", "эф шарп");
-    m.insert("erlang", "эрланг");
     m.insert("elixir", "эликсир");
     m.insert("clojure", "кложур");
     m.insert("pascal", "паскаль");
@@ -88,18 +86,15 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     m.insert("trait", "трейт");
     m.insert("traits", "трейтс");
     m.insert("await", "эвейт");
-    m.insert("override", "оверрайд");
     m.insert("private", "прайвит");
-    m.insert("generic", "дженерик");
     m.insert("template", "темплейт");
     // Git/VCS terms
-    m.insert("feature", "фича");
+    m.insert("feature", "фиче");
     m.insert("merge", "мёрдж");
     m.insert("rebase", "рибейз");
     m.insert("stash", "стэш");
     // Development process
     m.insert("review", "ревью");
-    m.insert("release", "релиз");
     m.insert("debug", "дебаг");
     m.insert("bug", "баг");
     m.insert("agile", "эджайл");
@@ -107,9 +102,6 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     // Architecture/Code
     m.insert("framework", "фреймворк");
     m.insert("library", "лайбрари");
-    m.insert("package", "пакет");
-    m.insert("module", "модуль");
-    m.insert("interface", "интерфейс");
     m.insert("callback", "коллбэк");
     m.insert("promise", "промис");
     m.insert("handler", "хендлер");
@@ -145,27 +137,25 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     m.insert("angular", "ангуляр");
     m.insert("vue", "вью");
     m.insert("svelte", "свелт");
-    m.insert("express", "экспресс");
     m.insert("django", "джанго");
     m.insert("fastapi", "фаст эй пи ай");
     m.insert("github", "гитхаб");
-    m.insert("slack", "слэк");
     // Additional common terms
-    m.insert("trace", "трейс");
     m.insert("daily", "дейли");
     m.insert("standup", "стендап");
     m.insert("tech", "тек");
     m.insert("debt", "дет");
     m.insert("code", "код");
     m.insert("practice", "практис");
-    m.insert("use", "юз");
     m.insert("case", "кейс");
+    // Composition guard: "uses"/"used"/"using" need the silent-e stem.
+    m.insert("use", "юз");
     // Deliberate exception to "no redundant entries": the raw transliteration
     // is already correct, but without an entry an uppercase token falls
     // through to letter-by-letter spelling ("TEST" -> "ти и эс ти"). Short and
     // vowel-poor upcased tokens are spelled out by design, so the curated
     // lookup is the only thing that keeps these words readable. Pinned by
-    // `every_noop_entry_keeps_its_all_caps_reading` (#292).
+    // the all-caps reading tests (#292).
     m.insert("app", "апп");
     m.insert("best", "бест");
     m.insert("branch", "бранч");
@@ -201,7 +191,6 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     // Words the retired multi-word phrase table used to fix up: curated here so
     // a phrase reads correctly however its words are separated (#287).
     m.insert("stack", "стэк");
-    m.insert("live", "лайв");
     // Not redundant with the raw transliteration, which is identical: without
     // this entry "living" would compose the "live" stem into "лайвинг", but
     // the word is /ˈlɪvɪŋ/. The entry shadows that composition (#292).
@@ -212,7 +201,6 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     // "living" is /ˈlɪvɪŋ/, not the adjective "live" (/laɪv/) that the curated
     // stem would compose through, so it is curated in its own right.
     // Common words in paths/URLs
-    m.insert("home", "хоум");
     m.insert("user", "юзер");
     m.insert("users", "юзерс");
     m.insert("support", "саппорт");
@@ -233,30 +221,30 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     m.insert("mp4", "эм пэ четыре");
     // Common words
     m.insert("hello", "хеллоу");
-    m.insert("example", "экзампл");
     m.insert("tutorial", "тьюториал");
-    // Common words that digraph transliteration misreads (silent "e",
-    // vowel digraphs it does not know) — issue #139
+    // Common words the spelling rules still misread (silent "e" contexts the
+    // rules cannot distinguish, irregular digraphs) — issues #139/#306
+    m.insert("above", "абав");
+    m.insert("acknowledge", "экнолидж");
+    m.insert("advance", "эдванс");
+    m.insert("anyone", "эниуан");
+    m.insert("anything", "энитинг");
+    m.insert("anywhere", "энивер");
+    m.insert("done", "дан");
+    m.insert("everyone", "эвриуан");
+    m.insert("gone", "гон");
+    m.insert("none", "нан");
+    m.insert("one", "уан");
+    m.insert("people", "пипл");
+    m.insert("someone", "самуан");
     m.insert("ascii", "аски");
     m.insert("browser", "браузэр");
-    m.insert("byte", "байт");
-    m.insert("change", "чейндж");
-    m.insert("device", "девайс");
-    m.insert("drive", "драйв");
     m.insert("false", "фолс");
-    m.insert("file", "файл");
     m.insert("guide", "гайд");
     m.insert("image", "имидж");
     m.insert("issue", "ишью");
-    m.insert("line", "лайн");
-    m.insert("mime", "майм");
     m.insert("mode", "мод");
-    m.insert("page", "пейдж");
-    m.insert("pipe", "пайп");
-    m.insert("site", "сайт");
-    m.insert("size", "сайз");
     m.insert("source", "сорс");
-    m.insert("stage", "стейдж");
     // Read as a word by the all-caps heuristic ("виндоус"), but the common
     // reading drops the "ow" digraph — curated here so the word-like rule
     // never reaches it (#290).
@@ -273,7 +261,6 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     m.insert("macos", "мак оу эс");
     m.insert("oauth", "о аус");
     m.insert("true", "тру");
-    m.insert("type", "тайп");
     m
 });
 
@@ -285,90 +272,328 @@ const INFLECTION_SUFFIXES: [&str; 12] = [
     "ation", "able", "ally", "ment", "ments", "ing", "ers", "er", "ies", "es", "ed", "s",
 ];
 
-/// Digraph-first transliteration patterns (longest-match via aho-corasick).
-///
-/// Digraphs must appear before single letters in the patterns list; aho-corasick
-/// is built with `MatchKind::LeftmostLongest` which picks the longest match at
-/// each position.
-static TRANSLIT_AC: Lazy<(AhoCorasick, Vec<&'static str>)> = Lazy::new(|| {
-    // Patterns ordered longest-first so LeftmostLongest works correctly for
-    // patterns of equal start position.
-    let patterns: &[(&str, &str)] = &[
-        // 4-char sequences
-        ("tion", "шн"),
-        ("sion", "жн"),
-        // Digraphs
-        ("sh", "ш"),
-        ("ch", "ч"),
-        ("th", "с"),
-        ("ph", "ф"),
-        ("wh", "в"),
-        ("ck", "к"),
-        ("gh", "г"),
-        ("ng", "нг"),
-        ("qu", "кв"),
-        ("ee", "и"),
-        ("oo", "у"),
-        ("ea", "и"),
-        ("ou", "ау"),
-        ("ow", "оу"),
-        ("ai", "эй"),
-        ("ay", "эй"),
-        ("ey", "эй"),
-        ("ei", "эй"),
-        ("ie", "и"),
-        ("oa", "оу"),
-        ("oi", "ой"),
-        ("oy", "ой"),
-        ("au", "о"),
-        ("aw", "о"),
-        ("ew", "ью"),
-        // Single letters
-        ("a", "а"),
-        ("b", "б"),
-        ("c", "к"),
-        ("d", "д"),
-        ("e", "е"),
-        ("f", "ф"),
-        ("g", "г"),
-        ("h", "х"),
-        ("i", "и"),
-        ("j", "дж"),
-        ("k", "к"),
-        ("l", "л"),
-        ("m", "м"),
-        ("n", "н"),
-        ("o", "о"),
-        ("p", "п"),
-        ("q", "к"),
-        ("r", "р"),
-        ("s", "с"),
-        ("t", "т"),
-        ("u", "у"),
-        ("v", "в"),
-        ("w", "в"),
-        ("x", "кс"),
-        ("y", "и"),
-        ("z", "з"),
-    ];
+fn is_vowel(c: char) -> bool {
+    matches!(c, 'a' | 'e' | 'i' | 'o' | 'u' | 'y')
+}
 
-    let (pats, repls): (Vec<&str>, Vec<&str>) = patterns.iter().cloned().unzip();
+fn is_back_vowel(c: char) -> bool {
+    matches!(c, 'a' | 'o' | 'u')
+}
 
-    let ac = AhoCorasickBuilder::new()
-        .match_kind(MatchKind::LeftmostLongest)
-        .ascii_case_insensitive(true)
-        .build(pats.clone())
-        .expect("valid aho-corasick patterns");
+fn short_vowel(c: char) -> &'static str {
+    match c {
+        'a' => "а",
+        'e' => "е",
+        'i' => "и",
+        'o' => "о",
+        'u' => "у",
+        'y' => "и",
+        _ => "",
+    }
+}
 
-    (ac, repls)
-});
+fn long_vowel(c: char) -> &'static str {
+    match c {
+        'a' => "ей",
+        'e' => "и",
+        'i' => "ай",
+        'o' => "оу",
+        'u' => "ю",
+        'y' => "ай",
+        _ => "",
+    }
+}
+
+/// Transliterate one lowercase ASCII alphabetic run with English spelling
+/// rules. The rules are intentionally approximate: English orthography is not
+/// regular, so `IT_TERMS` keeps the irregular readings the rules cannot
+/// express.
+fn transliterate_word(word: &str) -> String {
+    let chars: Vec<char> = word.chars().collect();
+    let n = chars.len();
+    if n == 0 {
+        return String::new();
+    }
+    // `-ate` must be recognized before the `ea` digraph inside it.
+    if n > 4 && word.ends_with("ate") {
+        return format!("{}эйт", transliterate_word(&word[..n - 3]));
+    }
+
+    // A final silent `e` makes the nearest preceding vowel long ("file",
+    // "page", "type"). `-mple` is short ("example"), and the suffix rules below
+    // handle `-age`, `-ule`, `-ive`, `-ate`, `-ade` before this fallback.
+    let silent_e = n >= 3 && chars[n - 1] == 'e' && !is_vowel(chars[n - 2]);
+    // A final "-le" after a consonant cluster keeps the preceding vowel short
+    // ("apple", "simple", "angle"); after a single consonant it is magic
+    // ("table", "cable", "able").
+    let le_cluster = n >= 5
+        && chars[n - 1] == 'e'
+        && chars[n - 2] == 'l'
+        && !is_vowel(chars[n - 3])
+        && !is_vowel(chars[n - 4]);
+    let magic_disabled = word.ends_with("mple") || le_cluster;
+    let mut long_at = None;
+    if silent_e && !magic_disabled {
+        if let Some((index, _)) = chars[..n - 1]
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, c)| is_vowel(**c))
+        {
+            long_at = Some(index);
+        }
+    }
+
+    let mut out = String::with_capacity(n * 2);
+    let mut i = 0;
+    while i < n {
+        let rest = &word[i..];
+
+        // ── Suffixes and multi-letter rules ─────────────────────────────────
+        if rest.starts_with("tion") {
+            out.push_str("шн");
+            i += 4;
+            continue;
+        }
+        if rest.starts_with("sion") {
+            out.push_str("жн");
+            i += 4;
+            continue;
+        }
+        if rest.starts_with("ture") {
+            out.push_str("че");
+            i += 4;
+            continue;
+        }
+        if rest.starts_with("cial") || rest.starts_with("tial") {
+            out.push_str("шл");
+            i += 4;
+            continue;
+        }
+        if rest.starts_with("sure") {
+            out.push_str("жер");
+            i += 4;
+            continue;
+        }
+        // "engine" is /ˈendʒɪn/, not the magic-e reading.
+        if rest.starts_with("gine") && i + 4 == n {
+            out.push_str("джин");
+            i += 4;
+            continue;
+        }
+        if rest.starts_with("ule") && i + 3 == n {
+            out.push_str("уль");
+            i += 3;
+            continue;
+        }
+        // `-age` after a long word is the unstressed /ɪdʒ/ ("package",
+        // "message"), while a short word keeps the magic-e /eɪdʒ/ ("page",
+        // "stage").
+        if rest.starts_with("age") && i + 3 == n && n > 5 {
+            out.push_str("эдж");
+            i += 3;
+            continue;
+        }
+        if rest.starts_with("ive") && i + 3 == n && n > 5 {
+            out.push_str("ив");
+            i += 3;
+            continue;
+        }
+        if rest.starts_with("ate") && i + 3 == n && n > 4 {
+            out.push_str("эйт");
+            i += 3;
+            continue;
+        }
+        if rest.starts_with("ade") && i + 3 == n && n > 4 {
+            out.push_str("эйд");
+            i += 3;
+            continue;
+        }
+        if rest.starts_with("le") && i + 2 == n && silent_e {
+            out.push('л');
+            i += 2;
+            continue;
+        }
+        if rest.starts_with("ck") {
+            out.push('к');
+            i += 2;
+            continue;
+        }
+        if rest.starts_with("qu") {
+            out.push_str("кв");
+            i += 2;
+            continue;
+        }
+        if rest.starts_with("sh") {
+            out.push('ш');
+            i += 2;
+            continue;
+        }
+        if rest.starts_with("ch") {
+            out.push('ч');
+            i += 2;
+            continue;
+        }
+        if rest.starts_with("ph") {
+            out.push('ф');
+            i += 2;
+            continue;
+        }
+        if rest.starts_with("wh") {
+            out.push('в');
+            i += 2;
+            continue;
+        }
+        if rest.starts_with("gh") {
+            out.push('г');
+            i += 2;
+            continue;
+        }
+        if rest.starts_with("ng")
+            && !chars
+                .get(i + 2)
+                .is_some_and(|next| matches!(next, 'e' | 'i' | 'y'))
+        {
+            out.push_str("нг");
+            i += 2;
+            continue;
+        }
+        if rest.starts_with("th") {
+            // Decision table from #306: "с" before a back vowel ("method"),
+            // "т" elsewhere. Common function words are irregular and stay
+            // curated in `IT_TERMS`.
+            let next = chars.get(i + 2).copied();
+            out.push(if next.is_some_and(is_back_vowel) {
+                'с'
+            } else {
+                'т'
+            });
+            i += 2;
+            continue;
+        }
+
+        // ── Vowel digraphs ─────────────────────────────────────────────────
+        let digraph = if rest.starts_with("ai") || rest.starts_with("ay") {
+            Some(("эй", 2))
+        } else if rest.starts_with("ea") || rest.starts_with("ee") || rest.starts_with("ie") {
+            Some(("и", 2))
+        } else if rest.starts_with("oa") {
+            Some(("оу", 2))
+        } else if rest.starts_with("oo") {
+            Some(("у", 2))
+        } else if rest.starts_with("ou") {
+            Some(("ау", 2))
+        } else if rest.starts_with("ow") {
+            Some(("оу", 2))
+        } else if rest.starts_with("ue") {
+            Some(("ю", 2))
+        } else if rest.starts_with("ui") {
+            Some(("уи", 2))
+        } else if rest.starts_with("au") || rest.starts_with("aw") {
+            Some(("о", 2))
+        } else if rest.starts_with("ew") {
+            Some(("ью", 2))
+        } else if rest.starts_with("ey") {
+            Some(("эй", 2))
+        } else if rest.starts_with("oi") || rest.starts_with("oy") {
+            Some(("ой", 2))
+        } else {
+            None
+        };
+        if let Some((reading, len)) = digraph {
+            out.push_str(reading);
+            i += len;
+            continue;
+        }
+
+        let c = chars[i];
+
+        // Final silent e (not consumed by a suffix above).
+        if c == 'e' && i + 1 == n && silent_e {
+            i += 1;
+            continue;
+        }
+
+        if is_vowel(c) {
+            if long_at == Some(i) {
+                if c == 'a' && i == 0 {
+                    out.push_str("эй");
+                } else {
+                    out.push_str(long_vowel(c));
+                }
+            } else if c == 'a' && rest.starts_with("ack") {
+                // "black", "package": the checked vowel is short /æ/.
+                out.push('э');
+            } else if c == 'e' && i == 0 && matches!(chars.get(1), Some('n' | 'x' | 'r')) {
+                // Word-initial "en-/ex-/er-" reads /e/ ("engine", "example").
+                out.push('э');
+            } else {
+                out.push_str(short_vowel(c));
+            }
+            i += 1;
+            continue;
+        }
+
+        match c {
+            'c' => {
+                let soft = chars
+                    .get(i + 1)
+                    .is_some_and(|next| matches!(next, 'e' | 'i' | 'y'));
+                out.push(if soft { 'с' } else { 'к' });
+            }
+            'g' => {
+                let hard_g_e =
+                    matches!(word, "anger" | "finger" | "longer" | "stronger" | "younger");
+                let soft = chars.get(i + 1).is_some_and(|next| match next {
+                    'e' | 'y' => !hard_g_e,
+                    // Soft "g" before "i" is the default, but these common
+                    // hard-g words are exceptions ("gitlab", not "джитлаб").
+                    'i' => !["git", "give", "girl", "gift", "giga", "gizmo"]
+                        .iter()
+                        .any(|prefix| word.starts_with(prefix)),
+                    _ => false,
+                });
+                out.push_str(if soft { "дж" } else { "г" });
+            }
+            's' => {
+                let prev_vowel = i > 0 && is_vowel(chars[i - 1]);
+                let next_vowel = chars.get(i + 1).is_some_and(|next| is_vowel(*next));
+                out.push(if prev_vowel && next_vowel { 'з' } else { 'с' });
+            }
+            'x' => out.push_str(if chars.get(i + 1).is_some_and(|next| is_vowel(*next)) {
+                "кз"
+            } else {
+                "кс"
+            }),
+            'b' => out.push('б'),
+            'd' => out.push('д'),
+            'f' => out.push('ф'),
+            'h' => out.push('х'),
+            'j' => out.push_str("дж"),
+            'k' => out.push('к'),
+            'l' => out.push('л'),
+            'm' => out.push('м'),
+            'n' => out.push('н'),
+            'p' => out.push('п'),
+            'q' => out.push('к'),
+            'r' => out.push('р'),
+            't' => out.push('т'),
+            'v' => out.push('в'),
+            'w' => out.push('в'),
+            'z' => out.push('з'),
+            _ => out.push(c),
+        }
+        i += 1;
+    }
+    out
+}
 
 /// Normalizes an English word to Russian phonetic spelling.
 ///
 /// Lookup order:
 /// 1. Built-in `IT_TERMS` dictionary.
 /// 2. Bounded inflection composition for known `IT_TERMS` stems.
-/// 3. Simple character-by-character transliteration via `TRANSLIT_AC`.
+/// 3. Spelling-rule transliteration via `transliterate_simple`.
 ///
 /// Multi-word input has no reading of its own: the pipeline's per-word pass
 /// feeds this function one `\b([A-Za-z]+)\b` token at a time, so every reading
@@ -471,7 +696,7 @@ impl EnglishNormalizer {
             // already-working forms are untouched.
             if stem.len() >= 3 {
                 if let Some(base) = IT_TERMS.get(stem) {
-                    return Some(format!("{}{}", base, transliterate_simple(suffix)));
+                    return Some(format!("{}{}", base, inflection_suffix_reading(suffix)));
                 }
             }
 
@@ -489,12 +714,12 @@ impl EnglishNormalizer {
             };
             // English spells a syllabic "es" only after a sibilant stem
             // ("uses" → "юзес", "caches" → "кэшес"); a non-sibilant stem takes
-            // the plain "s" plural ("features" → "фичас"), which a shorter
+            // the plain "s" plural ("features" → "фичес"), which a shorter
             // suffix composes.
             if suffix == "es" && !es_reading_is_syllabic(stem) {
                 continue;
             }
-            return Some(format!("{}{}", base, transliterate_simple(suffix)));
+            return Some(format!("{}{}", base, inflection_suffix_reading(suffix)));
         }
         None
     }
@@ -510,25 +735,39 @@ impl EnglishNormalizer {
     }
 }
 
+/// Read a recognized inflection suffix in composition.
+///
+/// The standalone spelling rules read "able" as "эйбл", but the unstressed
+/// suffix in a derived form is /əbl/ ("nullable" → "наллабле", not
+/// "наллэйбл"). Keep that established composition reading here rather than
+/// teaching the general rules a context they cannot see.
+fn inflection_suffix_reading(suffix: &str) -> String {
+    if suffix == "able" {
+        "абле".to_string()
+    } else {
+        transliterate_simple(suffix)
+    }
+}
+
 /// Whether the English "-es" plural of a curated base that dropped a silent "e"
 /// (`stem`, without that "e") is spelled with a syllabic "ес".
 ///
 /// The plural is syllabic only after a sibilant ("uses" → "юзес", "caches" →
-/// "кэшес"); any other stem takes a plain "s" ("features" → "фичас").
+/// "кэшес"); any other stem takes a plain "s" ("features" → "фичес").
 fn es_reading_is_syllabic(stem: &str) -> bool {
     ["ch", "sh", "s", "z", "x", "c", "g"]
         .iter()
         .any(|ending| stem.ends_with(ending))
 }
 
-/// Transliterate an ASCII lowercase string to Russian using digraph-first rules.
+/// Transliterate an ASCII lowercase string to Russian using English spelling
+/// rules.
 ///
-/// Non-ASCII / non-alpha characters (digits, punctuation) are passed through as-is.
+/// Non-ASCII / non-alpha characters (digits, punctuation) are passed through
+/// as-is. The rules cover silent/magic `e`, vowel digraphs, soft `c`/`g`,
+/// voiced `s` between vowels, `-tion`/`-sion`/`-ture`/`-cial`/`-tial`, `th`,
+/// `ck`/`qu`/`x`/`-le`, and the common `-age`/`-ive`/`-ate`/`-ade` endings.
 pub fn transliterate_simple(input: &str) -> String {
-    let (ac, repls) = &*TRANSLIT_AC;
-
-    // Process only the ASCII-alphabetic prefix; preserve other chars verbatim.
-    // We iterate byte-by-byte and let aho-corasick handle the alpha runs.
     let input_lower = input.to_lowercase();
     let bytes = input_lower.as_bytes();
     let mut result = String::with_capacity(input_lower.len() * 2);
@@ -536,27 +775,12 @@ pub fn transliterate_simple(input: &str) -> String {
 
     while i < bytes.len() {
         if bytes[i].is_ascii_alphabetic() {
-            // Find the end of this alpha run
             let start = i;
             while i < bytes.len() && bytes[i].is_ascii_alphabetic() {
                 i += 1;
             }
-            let mut segment = input_lower[start..i].to_string();
-            for (old, new) in [("ce", "се"), ("ci", "си"), ("cy", "си")] {
-                segment = segment.replace(old, new);
-            }
-            // Replace using aho-corasick (leftmost-longest)
-            let mut last = 0usize;
-            for m in ac.find_iter(&segment) {
-                // Pass through any gap before this match (should not happen for
-                // pure alpha input, but be defensive)
-                result.push_str(&segment[last..m.start()]);
-                result.push_str(repls[m.pattern().as_usize()]);
-                last = m.end();
-            }
-            result.push_str(&segment[last..]);
+            result.push_str(&transliterate_word(&input_lower[start..i]));
         } else {
-            // Non-alpha character: pass through verbatim
             result.push(bytes[i] as char);
             i += 1;
         }
@@ -576,7 +800,7 @@ mod tests {
 
     // ── IT_TERMS dictionary ───────────────────────────────────────────────────
 
-    #[test_case("feature" => "фича"; "feature")]
+    #[test_case("feature" => "фиче"; "feature")]
     #[test_case("branch" => "бранч"; "branch")]
     #[test_case("merge" => "мёрдж"; "merge")]
     #[test_case("commit" => "коммит"; "commit")]
@@ -601,7 +825,7 @@ mod tests {
 
     #[test_case("framework" => "фреймворк"; "framework")]
     #[test_case("library" => "лайбрари"; "library")]
-    #[test_case("package" => "пакет"; "package")]
+    #[test_case("package" => "пэкэдж"; "package")]
     #[test_case("module" => "модуль"; "module")]
     #[test_case("interface" => "интерфейс"; "interface")]
     #[test_case("callback" => "коллбэк"; "callback")]
@@ -633,7 +857,7 @@ mod tests {
     #[test_case("function" => "функшн"; "function")]
     #[test_case("array" => "аррэй"; "array")]
     #[test_case("object" => "обджект"; "object")]
-    #[test_case("repository" => "репоситори"; "repository")]
+    #[test_case("repository" => "репозитори"; "repository")]
     #[test_case("boolean" => "булин"; "boolean")]
     #[test_case("refactor" => "рефактор"; "refactor")]
     #[test_case("method" => "месод"; "method")]
@@ -643,7 +867,7 @@ mod tests {
     fn pruned_it_terms_read_by_transliteration(word: &str) -> String {
         // IT_TERMS holds pronunciation only: semantic translations and
         // redundant entries are gone, so these words fall through to the
-        // digraph transliteration (#292).
+        // spelling-rule transliteration (#292).
         normalizer().normalize(word, false)
     }
 
@@ -661,7 +885,7 @@ mod tests {
         }
     }
 
-    // Words that digraph transliteration misreads (silent "e" etc.) — #139.
+    // Words that spelling-rule transliteration still misreads (silent "e" etc.) — #139.
     // "file" is the reported case: it was read "филе" while "files" already
     // had the correct "файлс" entry.
     #[test_case("file" => "файл"; "file")]
@@ -748,7 +972,7 @@ mod tests {
     #[test_case("build" => "билд"; "build")]
     #[test_case("bundle" => "бандл"; "bundle")]
     #[test_case("compile" => "компайл"; "compile")]
-    #[test_case("webpack" => "вебпак"; "webpack")]
+    #[test_case("webpack" => "вебпэк"; "webpack")]
     fn it_terms_testing_and_build(word: &str) -> String {
         normalizer().normalize(word, false)
     }
@@ -792,7 +1016,7 @@ mod tests {
 
     // ── Case insensitivity ────────────────────────────────────────────────────
 
-    #[test_case("Feature" => "фича"; "feature")]
+    #[test_case("Feature" => "фиче"; "feature")]
     #[test_case("BRANCH" => "бранч"; "branch")]
     #[test_case("Merge" => "мёрдж"; "merge")]
     #[test_case("COMMIT" => "коммит"; "commit")]
@@ -820,7 +1044,7 @@ mod tests {
     #[test_case("pull request" => "пулл реквест"; "pull_request")]
     #[test_case("merge request" => "мёрдж реквест"; "merge_request")]
     #[test_case("code review" => "код ревью"; "code_review")]
-    #[test_case("feature branch" => "фича бранч"; "feature_branch")]
+    #[test_case("feature branch" => "фиче бранч"; "feature_branch")]
     #[test_case("stack trace" => "стэк трейс"; "stack_trace")]
     #[test_case("daily standup" => "дейли стендап"; "daily_standup")]
     #[test_case("hot fix" => "хот фикс"; "hot_fix")]
@@ -859,8 +1083,8 @@ mod tests {
     #[test_case("ship" => "шип"; "ship")]
     #[test_case("chip" => "чип"; "chip")]
     #[test_case("sing" => "синг"; "sing")]
-    #[test_case("back" => "бак"; "back")]
-    #[test_case("phone" => "фоне"; "phone")]
+    #[test_case("back" => "бэк"; "back")]
+    #[test_case("phone" => "фоун"; "phone")]
     #[test_case("see" => "си"; "see")]
     #[test_case("moon" => "мун"; "moon")]
     #[test_case("rain" => "рэйн"; "rain")]
@@ -870,6 +1094,59 @@ mod tests {
     #[test_case("" => ""; "empty")]
     fn translit_only(word: &str) -> String {
         transliterate_simple(word)
+    }
+
+    // ── Spelling rules (#306) ────────────────────────────────────────────────
+
+    #[test_case("file" => "файл"; "silent_e_file")]
+    #[test_case("page" => "пейдж"; "silent_e_page")]
+    #[test_case("size" => "сайз"; "silent_e_size")]
+    #[test_case("type" => "тайп"; "silent_e_type")]
+    #[test_case("use" => "юз"; "silent_e_use")]
+    #[test_case("name" => "нейм"; "silent_e_name")]
+    #[test_case("compose" => "компоуз"; "silent_e_compose")]
+    #[test_case("drive" => "драйв"; "silent_e_drive")]
+    #[test_case("table" => "тейбл"; "final_le_table")]
+    #[test_case("example" => "экзампл"; "final_le_example")]
+    #[test_case("rain" => "рэйн"; "digraph_ai")]
+    #[test_case("see" => "си"; "digraph_ee")]
+    #[test_case("moon" => "мун"; "digraph_oo")]
+    #[test_case("boy" => "бой"; "digraph_oy")]
+    #[test_case("cow" => "коу"; "digraph_ow")]
+    #[test_case("boat" => "боут"; "digraph_oa")]
+    #[test_case("city" => "сити"; "soft_c")]
+    #[test_case("generic" => "дженерик"; "soft_g")]
+    #[test_case("engine" => "энджин"; "soft_g_engine")]
+    #[test_case("gitlab" => "гитлаб"; "hard_g_gitlab")]
+    #[test_case("music" => "музик"; "voiced_s_music")]
+    #[test_case("repository" => "репозитори"; "voiced_s_repository")]
+    #[test_case("system" => "систем"; "unvoiced_s_system")]
+    #[test_case("version" => "вержн"; "suffix_sion")]
+    #[test_case("function" => "функшн"; "suffix_tion")]
+    #[test_case("special" => "спешл"; "suffix_cial")]
+    #[test_case("partial" => "паршл"; "suffix_tial")]
+    #[test_case("feature" => "фиче"; "suffix_ture")]
+    #[test_case("method" => "месод"; "th_back_vowel")]
+    #[test_case("thin" => "тин"; "th_front_vowel")]
+    #[test_case("black" => "блэк"; "checked_a_ck")]
+    #[test_case("quick" => "квик"; "qu_and_ck")]
+    #[test_case("box" => "бокс"; "x_ks")]
+    #[test_case("package" => "пэкэдж"; "target_package")]
+    #[test_case("module" => "модуль"; "final_ule")]
+    fn spelling_rules(word: &str) -> String {
+        transliterate_simple(word)
+    }
+
+    #[test]
+    fn rule_readings_are_used_without_dictionary_entries() {
+        // #292 named these two semantic translations. "package" is now read
+        // entirely by the rules; "feature" keeps an entry only as a
+        // composition guard for "features", and the entry itself uses the
+        // phonetic rule reading.
+        assert!(!IT_TERMS.contains_key("package"));
+        assert_eq!(IT_TERMS.get("feature"), Some(&"фиче"));
+        assert_eq!(normalizer().normalize("package", false), "пэкэдж");
+        assert_eq!(normalizer().normalize("feature", false), "фиче");
     }
 
     // ── Transliteration fallback: dedup of two call paths ────────────────────
@@ -1011,9 +1288,9 @@ mod tests {
     #[test_case("supports" => "саппортс"; "supports")]
     #[test_case("supported" => "саппортед"; "supported")]
     #[test_case("supporting" => "саппортинг"; "supporting")]
-    #[test_case("supporter" => "саппортер"; "supporter")]
-    #[test_case("feature" => "фича"; "feature")]
-    #[test_case("features" => "фичас"; "features")]
+    #[test_case("supporter" => "саппортэр"; "supporter")]
+    #[test_case("feature" => "фиче"; "feature")]
+    #[test_case("features" => "фичес"; "features")]
     #[test_case("using" => "юзинг"; "using")]
     #[test_case("uses" => "юзес"; "uses")]
     #[test_case("used" => "юзед"; "used")]
@@ -1046,7 +1323,7 @@ mod tests {
             en.compose_inflection("building").as_deref(),
             Some("билдинг")
         );
-        assert_eq!(en.compose_inflection("features").as_deref(), Some("фичас"));
+        assert_eq!(en.compose_inflection("features").as_deref(), Some("фичес"));
     }
 
     #[test]
@@ -1082,7 +1359,7 @@ mod tests {
         // A restored stem that is not sibilant takes the plain "s" plural: the
         // shorter suffix composes "feature" rather than "фичаес".
         let en = EnglishNormalizer::new();
-        assert_eq!(en.compose_inflection("features").as_deref(), Some("фичас"));
+        assert_eq!(en.compose_inflection("features").as_deref(), Some("фичес"));
         assert_eq!(
             en.compose_inflection("supports").as_deref(),
             Some("саппортс")

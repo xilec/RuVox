@@ -891,18 +891,18 @@ mod tests {
     #[test_case("https://example.com/%D1%84%D0%B0%D0%B9%D0%BB" => "эйч ти ти пи эс двоеточие слэш слэш экзампл точка ком слэш файл"; "encoded_cyrillic_name")]
     #[test_case("https://example.com/search?q=hello+world" => "эйч ти ти пи эс двоеточие слэш слэш экзампл точка ком слэш сирч вопросительный знак к равно хеллоу ворлд"; "plus_in_query_is_space")]
     #[test_case("https://example.com/a+b" => "эйч ти ти пи эс двоеточие слэш слэш экзампл точка ком слэш а плюс б"; "plus_in_path_is_word")]
-    #[test_case("https://example.com/100%25done%2" => "эйч ти ти пи эс двоеточие слэш слэш экзампл точка ком слэш сто процент доне процент два"; "encoded_percent_and_truncated")]
+    #[test_case("https://example.com/100%25done%2" => "эйч ти ти пи эс двоеточие слэш слэш экзампл точка ком слэш сто процент дан процент два"; "encoded_percent_and_truncated")]
     #[test_case("https://example.com/x%2Fy" => "эйч ти ти пи эс двоеточие слэш слэш экзампл точка ком слэш кс слэш и"; "decoded_slash_is_not_path_separator")]
     #[test_case("https://example.com/%FF%FE" => "эйч ти ти пи эс двоеточие слэш слэш экзампл точка ком слэш процент фф процент фе"; "invalid_utf8_run")]
     #[test_case("https://example.com/x#a+b" => "эйч ти ти пи эс двоеточие слэш слэш экзампл точка ком слэш кс решётка а плюс б"; "plus_in_fragment_is_word")]
-    #[test_case("https://exa%2Emple.com/x" => "эйч ти ти пи эс двоеточие слэш слэш екса точка мпле точка ком слэш кс"; "encoded_dot_in_host_label")]
+    #[test_case("https://exa%2Emple.com/x" => "эйч ти ти пи эс двоеточие слэш слэш экза точка мпл точка ком слэш кс"; "encoded_dot_in_host_label")]
     fn url_percent_decoding(input: &str) -> String {
         let (en, nn) = mk_normalizer();
         norm(&en, &nn).normalize_url(input)
     }
 
     #[test_case("user+tag@example.com" => "юзер плюс таг собака экзампл точка ком"; "plus_in_local_part")]
-    #[test_case("user%20name@example.com" => "юзер наме собака экзампл точка ком"; "encoded_space_in_local_part")]
+    #[test_case("user%20name@example.com" => "юзер нейм собака экзампл точка ком"; "encoded_space_in_local_part")]
     #[test_case("user%28tag@example.com" => "юзер открывающая скобка таг собака экзампл точка ком"; "decoded_punctuation_in_local_part")]
     #[test_case("user%F0%9F%98%80@example.com" => "юзер собака экзампл точка ком"; "encoded_emoji_in_local_part_dropped")]
     fn email_percent_decoding(input: &str) -> String {
@@ -1084,7 +1084,7 @@ mod tests {
     }
 
     #[test_case("john.doe@company.org" => "джохн точка дое собака компани точка орг"; "email_local_and_domain")]
-    #[test_case("name_123@test.io" => "наме андерскор сто двадцать три собака тест точка ай оу"; "email_underscore_and_digits")]
+    #[test_case("name_123@test.io" => "нейм андерскор сто двадцать три собака тест точка ай оу"; "email_underscore_and_digits")]
     #[test_case("john2doe@test.com" => "джохн два дое собака тест точка ком"; "email_digit_run_in_word")]
     #[test_case("user@mail.123.com" => "юзер собака мэйл точка сто двадцать три точка ком"; "email_digit_only_domain_label")]
     fn email_production_path(email: &str) -> String {
@@ -1093,7 +1093,7 @@ mod tests {
     }
 
     #[test_case("/home/user/file.txt" => "слэш хоум слэш юзер слэш файл точка тэкст"; "unix_path")]
-    #[test_case("docker-compose.yml" => "докер дефис компосе точка имл"; "hyphenated_filename")]
+    #[test_case("docker-compose.yml" => "докер дефис компоуз точка имл"; "hyphenated_filename")]
     #[test_case("~/my_file.txt" => "тильда слэш ми файл точка тэкст"; "underscore_in_filename")]
     fn filepath_production_path(path: &str) -> String {
         let (en, nn) = mk_normalizer();

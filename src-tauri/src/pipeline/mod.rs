@@ -1701,7 +1701,7 @@ mod tests {
         let mut p = TTSPipeline::new();
         assert_eq!(p.process_text("SUPPORTING"), "саппортинг");
         assert_eq!(p.process_text("BUILDING"), "билдинг");
-        assert_eq!(p.process_text("FEATURES"), "фичас");
+        assert_eq!(p.process_text("FEATURES"), "фичес");
         // Composition is a curated lookup, not the transliteration fallback,
         // so the composed form must not enter the unknown-words map.
         assert!(p.english_normalizer.get_unknown_words().is_empty());
