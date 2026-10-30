@@ -206,10 +206,6 @@ pub struct UIConfig {
     /// manifest; `ru_f1`, `ru_f2`, `ru_m1` are the other Russian voices).
     #[serde(default = "UIConfig::default_teratts_voice")]
     pub teratts_voice: String,
-    /// Active TeraTTS English voice id (`"eng_f5"` by default — see the
-    /// bundle manifest; used for `<en>` spans when Latin prose is native).
-    #[serde(default = "UIConfig::default_teratts_en_voice")]
-    pub teratts_en_voice: String,
     /// UI language: `"ru"` (default) | `"en"`.
     #[serde(default = "UIConfig::default_language")]
     pub language: String,
@@ -230,9 +226,6 @@ impl UIConfig {
     }
     fn default_teratts_voice() -> String {
         "ru_m5".to_string()
-    }
-    fn default_teratts_en_voice() -> String {
-        "eng_f5".to_string()
     }
     fn default_speech_rate() -> f64 {
         1.0
@@ -300,7 +293,6 @@ impl Default for UIConfig {
             engine: Self::default_engine(),
             piper_voice: Self::default_piper_voice(),
             teratts_voice: Self::default_teratts_voice(),
-            teratts_en_voice: Self::default_teratts_en_voice(),
             language: Self::default_language(),
         }
     }
@@ -326,7 +318,6 @@ pub struct UIConfigPatch {
     pub engine: Option<String>,
     pub piper_voice: Option<String>,
     pub teratts_voice: Option<String>,
-    pub teratts_en_voice: Option<String>,
     pub language: Option<String>,
 }
 
@@ -404,7 +395,6 @@ mod tests {
         assert_eq!(c.engine, "silero_native");
         assert_eq!(c.piper_voice, "ruslan");
         assert_eq!(c.teratts_voice, "ru_m5");
-        assert_eq!(c.teratts_en_voice, "eng_f5");
         assert!(!c.hide_to_tray_on_close);
     }
 
@@ -426,7 +416,6 @@ mod tests {
         assert_eq!(c.engine, "silero_native");
         assert_eq!(c.piper_voice, "ruslan");
         assert_eq!(c.teratts_voice, "ru_m5");
-        assert_eq!(c.teratts_en_voice, "eng_f5");
     }
 
     #[test]
@@ -452,7 +441,6 @@ mod tests {
         assert!(p.sample_rate.is_none());
         assert!(p.theme.is_none());
         assert!(p.teratts_voice.is_none());
-        assert!(p.teratts_en_voice.is_none());
     }
 
     #[test]

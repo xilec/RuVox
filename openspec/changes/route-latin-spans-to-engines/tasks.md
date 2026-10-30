@@ -32,22 +32,22 @@
 
 - [x] 4.1 `TtsEngine::synthesize_spans` default; switcher delegates; adapter
   overrides and builds segments from spans.
-- [x] 4.2 Pipeline normalization returns spans; synthesis passes them and
-  `config.teratts_en_voice`.
+- [x] 4.2 Pipeline normalization returns spans; synthesis passes them and uses
+  the configured `teratts_voice` for every segment.
 - [x] 4.3 Adapter unit tests: prose span splits into RU/EN/RU with absolute
   offsets; no spans -> one RU segment; dictionary override stays RU.
-- [x] 4.4 Config `teratts_en_voice` (default `eng_f5`) in schema/patch/
-  defaults/tests; Settings second voice selector; i18n.
+- [x] 4.4 One voice for both languages: no English voice config or selector;
+  `Language` changes only the tag and accentuation.
 - [ ] 4.5 Word highlighting: mixed timestamps map through `char_mapping`;
   verify no gap/overlap regression in the bundle-gated mixed smoke.
 
 ## 5. Docs and validation
 
-- [x] 5.1 README/README.en: mixed RU/EN reading, English voices, `IPv6` fix.
+- [x] 5.1 README/README.en: mixed RU/EN reading with one voice, `IPv6` fix.
 - [x] 5.2 CHANGELOG `[Unreleased]` entry.
 - [ ] 5.3 `cargo fmt`, clippy (`src-tauri`, `teratts`), `cargo test`
   (src-tauri, teratts with `TERATTS_BUNDLE`), `pnpm typecheck`,
   `pnpm test:unit`, `pnpm lint`, `openspec validate --strict`.
 - [ ] 5.4 Manual pass: mixed article in the app (prose/brands/identifiers
-  English voice, URL/email/code Russian, `IPv6`/`HTTP/2` correct, highlight
-  continuous); archive the change.
+  read in English by the same voice, URL/email/code Russian, `IPv6`/`HTTP/2`
+  correct, highlight continuous); archive the change.

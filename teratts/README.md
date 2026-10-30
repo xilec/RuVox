@@ -7,8 +7,8 @@ or PyTorch at synthesis time.
 The crate owns the model bundle format and verification, the four ONNX
 sessions, the language frontend (`<ru>`/`<en>` tags, RUAccent dictionary stress
 for Russian, codepoint gate), sentence chunking under the model's 25-second
-call limit, mixed-language segment joining, approximate word timestamps, and
-the 44.1 kHz WAV writer. The
+call limit, mixed-language segment joining with one voice for both languages,
+approximate word timestamps, and the 44.1 kHz WAV writer. The
 application adapter (`src-tauri/src/tts/teratts/`) maps it to `TtsEngine`.
 
 Check it with:

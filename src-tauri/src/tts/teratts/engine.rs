@@ -159,7 +159,6 @@ impl TeraTtsEngine {
         text: String,
         spans: Vec<Span>,
         voice: String,
-        en_voice: Option<String>,
         _sample_rate: u32,
         out_wav: String,
         char_mapping: Option<Vec<CharMappingEntry>>,
@@ -172,9 +171,14 @@ impl TeraTtsEngine {
         let cancel = Arc::clone(&self.cancel);
         let policy = profiles::profile_for(EngineKind::TeraTts).chunk;
         let result = tokio::task::spawn_blocking(move || {
-            let en_voice = en_voice.as_deref().unwrap_or(&voice);
-            let segments = segments_for(&text, &spans, &voice, en_voice);
-            engine.synthesize_segments(&segments, &policy, &cancel, policy.pauses.segment_ms)
+            let segments = segments_for(&text, &spans);
+            engine.synthesize_segments(
+                &segments,
+                &voice,
+                &policy,
+                &cancel,
+                policy.pauses.segment_ms,
+            )
         })
         .await
         .map_err(|e| TtsError::Ttsd {
@@ -237,12 +241,7 @@ fn map_error(e: teratts::Error) -> TtsError {
 /// English, and any other span (a dictionary override, or a `ru` tag) stays
 /// Russian. Empty and whitespace-only segments are skipped; `text_start`
 /// keeps every timestamp in whole-text codepoint coordinates.
-fn segments_for<'a>(
-    text: &'a str,
-    spans: &[Span],
-    ru_voice: &'a str,
-    en_voice: &'a str,
-) -> Vec<teratts::Segment<'a>> {
+fn segments_for<'a>(text: &'a str, spans: &[Span]) -> Vec<teratts::Segment<'a>> {
     let char_count = text.chars().count();
     let byte_offsets: Vec<usize> = text
         .char_indices()
@@ -262,11 +261,6 @@ fn segments_for<'a>(
         }
         segments.push(teratts::Segment {
             text: part,
-            voice: if language == teratts::Language::En {
-                en_voice
-            } else {
-                ru_voice
-            },
             language,
             text_start: start,
         });
@@ -293,7 +287,6 @@ fn segments_for<'a>(
     if segments.is_empty() {
         segments.push(teratts::Segment {
             text,
-            voice: ru_voice,
             language: teratts::Language::Ru,
             text_start: 0,
         });
@@ -388,16 +381,8 @@ impl TtsEngine for TeraTtsEngine {
         out_wav: String,
         char_mapping: Option<Vec<CharMappingEntry>>,
     ) -> Result<SynthesizeOutput, TtsError> {
-        self.run_synthesis(
-            text,
-            Vec::new(),
-            voice,
-            None,
-            sample_rate,
-            out_wav,
-            char_mapping,
-        )
-        .await
+        self.run_synthesis(text, Vec::new(), voice, sample_rate, out_wav, char_mapping)
+            .await
     }
 
     async fn synthesize_spans(
@@ -405,21 +390,12 @@ impl TtsEngine for TeraTtsEngine {
         text: String,
         spans: Vec<Span>,
         voice: String,
-        en_voice: Option<String>,
         sample_rate: u32,
         out_wav: String,
         char_mapping: Option<Vec<CharMappingEntry>>,
     ) -> Result<SynthesizeOutput, TtsError> {
-        self.run_synthesis(
-            text,
-            spans,
-            voice,
-            en_voice,
-            sample_rate,
-            out_wav,
-            char_mapping,
-        )
-        .await
+        self.run_synthesis(text, spans, voice, sample_rate, out_wav, char_mapping)
+            .await
     }
 
     async fn kill_current(&self) {
@@ -448,14 +424,13 @@ mod tests {
             start: 7,
             end: 17,
         }];
-        let segments = segments_for(text, &spans, "ru_m5", "eng_f5");
+        let segments = segments_for(text, &spans);
         assert_eq!(segments.len(), 3);
         assert_eq!(segments[0].text, "Привет ");
         assert_eq!(segments[0].language, teratts::Language::Ru);
         assert_eq!(segments[0].text_start, 0);
         assert_eq!(segments[1].text, "Kubernetes");
         assert_eq!(segments[1].language, teratts::Language::En);
-        assert_eq!(segments[1].voice, "eng_f5");
         assert_eq!(segments[1].text_start, 7);
         assert_eq!(segments[2].text, " мир");
         assert_eq!(segments[2].text_start, 17);
@@ -463,10 +438,9 @@ mod tests {
 
     #[test]
     fn segments_without_spans_are_one_russian_segment() {
-        let segments = segments_for("Привет мир", &[], "ru_m5", "eng_f5");
+        let segments = segments_for("Привет мир", &[]);
         assert_eq!(segments.len(), 1);
         assert_eq!(segments[0].language, teratts::Language::Ru);
-        assert_eq!(segments[0].voice, "ru_m5");
         assert_eq!(segments[0].text, "Привет мир");
     }
 
@@ -479,7 +453,7 @@ mod tests {
             start: 0,
             end: 6,
         }];
-        let segments = segments_for(text, &spans, "ru_m5", "eng_f5");
+        let segments = segments_for(text, &spans);
         assert_eq!(segments.len(), 1);
         assert_eq!(segments[0].language, teratts::Language::Ru);
     }

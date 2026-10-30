@@ -45,8 +45,6 @@ pub struct Synthesis {
 pub struct Segment<'a> {
     /// Segment text in the normalized utterance.
     pub text: &'a str,
-    /// Voice id for this segment.
-    pub voice: &'a str,
     pub language: Language,
     /// Codepoint offset of the segment in the normalized utterance; added to
     /// every timestamp so the caller maps ranges against the whole text.
@@ -176,6 +174,7 @@ impl Engine {
     pub fn synthesize_segments(
         &self,
         segments: &[Segment<'_>],
+        voice: &str,
         policy: &ChunkPolicy,
         cancelled: &AtomicBool,
         segment_pause_ms: u32,
@@ -189,13 +188,8 @@ impl Engine {
             if cancelled.load(Ordering::Relaxed) {
                 return Err(Error::Cancelled);
             }
-            let (mut part, mut words) = self.synthesize_samples(
-                segment.text,
-                segment.voice,
-                segment.language,
-                policy,
-                cancelled,
-            )?;
+            let (mut part, mut words) =
+                self.synthesize_samples(segment.text, voice, segment.language, policy, cancelled)?;
             let audio_offset = samples.len() as f64 / synth::SAMPLE_RATE as f64;
             for word in &mut words {
                 word.start += audio_offset;

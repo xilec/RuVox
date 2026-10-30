@@ -1,4 +1,4 @@
-# Design: route Latin spans to the TeraTTS English voice
+# Design: route Latin spans to the TeraTTS English frontend
 
 ## Context
 
@@ -45,12 +45,27 @@ every timestamp in whole-text codepoint coordinates.
 Rejected: teaching the pipeline to emit tags. It would put engine-specific
 markup into shared normalization and break the "spans are decisions" rule.
 
-### D3. One engine call for the whole utterance
+### D3. One voice for every segment
+
+TeraTTSv2 voices are cross-lingual: an English reference voice can speak
+Russian and a Russian voice can speak English (the upstream model card
+documents cross-language prompts and suggests a lower `duration_scale` for an
+English voice on Russian). The engine therefore keeps the configured
+`teratts_voice` for every segment; `Language` changes only the tag and whether
+RUAccent runs. No English voice setting exists, and the voice never changes at
+a language boundary.
+
+Rejected: a separate `teratts_en_voice` with automatic switching. It makes one
+utterance change timbre mid-sentence and doubles the voice configuration for
+no model need; the upstream probe used `eng_f5` only to make the comparison
+unambiguous.
+
+### D4. One engine call for the whole utterance
 
 `TtsEngine::synthesize_spans` defaults to the existing `synthesize`, so the
 three Russian-only engines and their tests are untouched. TeraTTS overrides it
 and calls `teratts::Engine::synthesize_segments`, which:
-- synthesizes each segment with its own language and voice;
+- synthesizes each segment with its own language frontend and the shared voice;
 - inserts `pauses.segment_ms` between segments (no pause after the last);
 - offsets word timestamps by the accumulated audio and adds `text_start` to
   `start_char`/`end_char`;
@@ -60,7 +75,7 @@ Rejected: concatenating per-segment WAVs in the adapter. It would duplicate
 WAV parsing/encoding and make timestamp offsets easy to get wrong; the crate
 already owns the audio timeline.
 
-### D4. English frontend is the Russian frontend minus accentuation
+### D5. English frontend is the Russian frontend minus accentuation
 
 `text::prepare` takes a `Language`. `Ru` keeps RUAccent dictionary stress and
 `<ru>`; `En` skips accentuation and wraps `<en>`. Both run NFKD and the counted
@@ -70,16 +85,6 @@ arrays.
 
 Rejected: a separate English preparation path. The only difference is the
 accentizer and the tag; a second path would drift on the gate and NFKD rules.
-
-### D5. English voice is a separate config field
-
-`teratts_en_voice` (default `eng_f5`) joins `teratts_voice` (`ru_m5`). The
-adapter receives it through `synthesize_spans`'s `en_voice` argument, so a
-runtime voice change needs no engine rebuild. An unknown EN voice surfaces the
-existing `voice_unknown` error.
-
-Rejected: one `teratts_voice` holding `ru_m5+eng_f5`. It complicates the UI,
-the fallback logic and the generation snapshot for no benefit.
 
 ### D6. Alphanumeric tokens are narrated on every route
 
@@ -98,7 +103,7 @@ fragment class needs, and the probe did not ask for native abbreviations.
 
 | Risk | Mitigation |
 |------|------------|
-| English voice reads a fragment worse than Russian narration | The #311 probe verdict; native limited to prose/identifiers; URL/email/code stay narrated |
+| The selected voice reads a fragment worse than Russian narration | The #311 probe verdict; native limited to prose/identifiers; URL/email/code stay narrated; the user can pick another voice |
 | Mixed timestamps drift at segment boundaries | `synthesize_segments` offsets by actual sample counts; bundle-gated mixed test asserts monotonicity and absolute char ranges |
 | A Native profile emits mixed-script text | The alphanumeric phase runs on both routes; a pipeline test asserts no `IPv`/`HTTP` remains |
 | Other engines accidentally receive spans | `synthesize_spans` defaults to `synthesize`; only TeraTTS overrides it |

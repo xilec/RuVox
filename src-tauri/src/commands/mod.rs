@@ -428,7 +428,6 @@ async fn synthesize_audio(
     // fallback swapped engines (e.g. silero_native without a bundle runs
     // Piper for the session), the active engine must get its own voice id.
     let voice = voice_for_engine(tts.kind(), &config);
-    let en_voice = (tts.kind() == EngineKind::TeraTts).then(|| config.teratts_en_voice.clone());
 
     // Track the entry as "inside the TTS stage" so `cancel_synthesis` knows
     // the ttsd subprocess must be killed. If the task is aborted at this
@@ -439,7 +438,6 @@ async fn synthesize_audio(
             normalized.clone(),
             spans.clone(),
             voice.clone(),
-            en_voice.clone(),
             config.sample_rate,
             out_wav.clone(),
             tts_char_mapping.clone(),
@@ -462,7 +460,6 @@ async fn synthesize_audio(
                     normalized,
                     spans,
                     voice.clone(),
-                    en_voice,
                     config.sample_rate,
                     out_wav,
                     tts_char_mapping,
@@ -1993,9 +1990,6 @@ fn apply_config_patch(config: &mut UIConfig, patch: UIConfigPatch) {
     if let Some(v) = patch.teratts_voice {
         config.teratts_voice = v;
     }
-    if let Some(v) = patch.teratts_en_voice {
-        config.teratts_en_voice = v;
-    }
     if let Some(v) = patch.language {
         config.language = v;
     }
@@ -2596,7 +2590,6 @@ mod tests {
             engine: _,
             piper_voice: _,
             teratts_voice: _,
-            teratts_en_voice: _,
             language: _,
         } = UIConfigPatch::default();
 
@@ -2799,7 +2792,6 @@ mod tests {
             engine: "silero".to_string(),
             piper_voice: "irina".to_string(),
             teratts_voice: "ru_m5".to_string(),
-            teratts_en_voice: "eng_f5".to_string(),
             language: "ru".to_string(),
         };
         let before = serde_json::to_value(&config).unwrap();

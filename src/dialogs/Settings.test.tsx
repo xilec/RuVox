@@ -73,7 +73,6 @@ function makeConfig(overrides: Partial<UIConfig> = {}): UIConfig {
     engine: 'silero_native',
     piper_voice: 'ruslan',
     teratts_voice: 'ru_m5',
-    teratts_en_voice: 'eng_f5',
     ...overrides,
   };
 }
@@ -207,26 +206,4 @@ describe('SettingsModal code block narration', () => {
     });
     expect(traySwitch!.checked).toBe(false);
   });
-  it('shows and submits the TeraTTS English voice', async () => {
-    getConfig.mockResolvedValue(
-      makeConfig({ engine: 'teratts', teratts_voice: 'ru_f1', teratts_en_voice: 'eng_m3' }),
-    );
-    getAvailableEngines.mockResolvedValue({
-      piper: { available: true, reason: null },
-      silero: { available: false, reason: null },
-      silero_native: { available: true, reason: null },
-      teratts: { available: true, reason: null },
-    });
-    await renderDialog();
-
-    const label = [...document.querySelectorAll('label')].find((node) =>
-      (node.textContent ?? '').includes('Голос TeraTTSv2 (английский)'),
-    );
-    expect(label, 'English voice label rendered').toBeTruthy();
-    expect(document.querySelector<HTMLInputElement>('input[value="eng_m3"]')).toBeTruthy();
-
-    await clickSave();
-    expect(updateConfig.mock.calls[0][0].teratts_en_voice).toBe('eng_m3');
-  });
-
 });

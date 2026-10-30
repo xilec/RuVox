@@ -1,4 +1,4 @@
-# Change: route Latin spans to the TeraTTS English voice
+# Change: route Latin spans to the TeraTTS English frontend
 
 ## Why
 
@@ -26,12 +26,11 @@ the engine can read them itself instead of the transliteration crutch.
   RUAccent vs `<en>` without accentuation), `synthesize_lang`, and
   `synthesize_segments` that concatenates language segments with the profile's
   segment pause, offsets timestamps into one timeline, and keeps codepoint
-  ranges in whole-text coordinates.
-- **App adapter**: spans become `Segment`s (Russian gaps and English spans,
-  voice per language), synthesis runs once, and the resulting timestamps map
-  back through the existing `char_mapping`.
-- **Config/UI**: `teratts_en_voice` (default `eng_f5`) with the six English
-  voices; the Settings dialog shows a second voice selector for TeraTTS.
+  ranges in whole-text coordinates. One selected voice reads both languages;
+  only the language tag and the accentuation change.
+- **App adapter**: spans become `Segment`s (Russian gaps and English spans),
+  synthesis runs once with the configured `teratts_voice`, and the resulting
+  timestamps map back through the existing `char_mapping`.
 - **Tests**: pipeline span/normalization tests, adapter segment tests, a
   bundle-gated mixed RU/EN synthesis test, and the #311 probe harness.
 
@@ -47,9 +46,8 @@ the engine can read them itself instead of the transliteration crutch.
 ## Impact
 
 - Affected specs: `multi-language-synthesis` (new), `teratts-engine`,
-  `text-pipeline`, `word-highlight`, `storage`, `ui`.
+  `text-pipeline`, `word-highlight`.
 - Affected code: `teratts/` (text/engine API), `src-tauri/src/pipeline`,
-  `src-tauri/src/tts/{engine,switcher,profiles,teratts}`, `commands`,
-  `storage/schema`, Settings/i18n.
-- User-visible: mixed RU/EN articles read with the English voice; `IPv6` and
-  `HTTP/2` now read correctly; a new English voice selector.
+  `src-tauri/src/tts/{engine,switcher,profiles,teratts}`, `commands`.
+- User-visible: mixed RU/EN articles read by the same selected voice with
+  correct English pronunciation; `IPv6` and `HTTP/2` now read correctly.

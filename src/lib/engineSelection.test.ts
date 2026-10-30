@@ -15,7 +15,6 @@ function cfg(engine: 'piper' | 'silero' | 'silero_native' | 'teratts', piper_voi
     piper_voice,
     speaker,
     teratts_voice: 'ru_m5',
-    teratts_en_voice: 'eng_f5',
   };
 }
 
@@ -138,13 +137,11 @@ describe('computeEngineFormState', () => {
         piper_voice: 'ruslan',
         speaker: 'xenia',
         teratts_voice: 'ru_f1',
-        teratts_en_voice: 'eng_f5',
-      },
+          },
       ALL_AVAILABLE,
     );
     expect(s.engine).toBe('teratts');
     expect(s.terattsVoice).toBe('ru_f1');
-    expect(s.terattsEnVoice).toBe('eng_f5');
     expect(s.coercedAwayFromUnavailable).toBe(false);
   });
 
@@ -155,8 +152,7 @@ describe('computeEngineFormState', () => {
         piper_voice: 'ruslan',
         speaker: 'xenia',
         teratts_voice: 'ru_f1',
-        teratts_en_voice: 'eng_f5',
-      },
+          },
       BOTH_AVAILABLE,
     );
     expect(s.engine).toBe('piper');

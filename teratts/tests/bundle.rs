@@ -100,25 +100,22 @@ fn synthesizes_mixed_language_segments() {
     let segments = [
         Segment {
             text: "Привет. ",
-            voice: "ru_m5",
             language: Language::Ru,
             text_start: 0,
         },
         Segment {
             text: "Kubernetes cluster",
-            voice: "eng_f5",
             language: Language::En,
             text_start: 8,
         },
         Segment {
             text: " готов.",
-            voice: "ru_m5",
             language: Language::Ru,
             text_start: 26,
         },
     ];
     let out = engine
-        .synthesize_segments(&segments, &policy(), &cancelled, 200)
+        .synthesize_segments(&segments, "ru_m5", &policy(), &cancelled, 200)
         .expect("synthesize mixed");
 
     assert!(out.duration_sec > 2.0, "duration {}", out.duration_sec);

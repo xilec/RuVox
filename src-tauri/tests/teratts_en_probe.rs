@@ -101,7 +101,6 @@ async fn teratts_mixed_app() {
             processed.text,
             processed.spans,
             "ru_m5".to_string(),
-            Some("eng_f5".to_string()),
             44_100,
             out.join("mixed-app.wav").display().to_string(),
             None,

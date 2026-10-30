@@ -14,13 +14,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   demand from Settings. Text-to-speech powered by TeraTTSv2 by TeraSpace
   (Open RAIL-M; see `teratts/NOTICE`).
 - **Mixed Russian/English narration on TeraTTSv2** — Latin prose, brands and
-  code identifiers are read by an English voice (`eng_f5` default; six voices
-  in Settings), while numbers, units, URLs, emails and code blocks stay with
-  the Russian pipeline; the engine synthesizes language segments into one
+  code identifiers stay for the engine, which reads them in English with the
+  same selected voice, while numbers, units, URLs, emails and code blocks stay
+  with the Russian pipeline; the engine synthesizes language segments into one
   44.1 kHz file with continuous word highlighting (#308, #311).
-- **English TeraTTS voices** — `eng_f5`, `eng_m3`, `eng_f3`, `eng_m4`,
-  `eng_f4_whisper`, `eng_m2_whisper`; the English voice is a separate setting,
-  so switching it does not reload the model.
 - **Russian words in the dictionary** — the source word may be a Russian
   Cyrillic token (`замок`), so a wrong stress can be fixed with `зам+ок`; the
   entry matches the exact word form, case-insensitively (#315).

@@ -13,8 +13,8 @@ timeline and in original-document coordinates.
 ### Requirement: Language segment contract
 
 A mixed-language utterance SHALL be represented as an ordered list of
-`Segment`s. Each segment SHALL carry its text, its language, its voice id, and
-its codepoint offset in the normalized utterance. Segments SHALL be derived
+`Segment`s. Each segment SHALL carry its text, its language, and its codepoint
+offset in the normalized utterance. Segments SHALL be derived
 from the pipeline's span annotations: an English span becomes an English
 segment, and every gap between, before or after spans becomes a Russian
 segment. A span without a language (a dictionary override) SHALL stay Russian.
@@ -41,7 +41,7 @@ the utterance.
 
 - GIVEN a dictionary-override span with no language
 - WHEN the adapter builds segments
-- THEN that range is synthesized by the Russian voice
+- THEN that range is synthesized by the Russian frontend
 
 ### Requirement: Native routing is per engine profile
 
@@ -53,7 +53,7 @@ and URLs, emails and fenced code blocks SHALL stay narrated, for every
 profile including TeraTTS.
 
 A `Native` fragment SHALL NOT be rewritten by a narrating phase, and a
-narrated fragment SHALL NOT be handed to the English voice.
+narrated fragment SHALL NOT be handed to the English frontend.
 
 #### Scenario: TeraTTS reads prose and identifiers natively
 
@@ -76,8 +76,10 @@ narrated fragment SHALL NOT be handed to the English voice.
 ### Requirement: Segment synthesis and joining
 
 The engine SHALL synthesize each language segment with its own language
-frontend and its own voice, and SHALL concatenate the segment audio into one
-44.1 kHz mono WAV. Segments SHALL be separated by the profile's segment pause
+frontend and the configured voice, and SHALL concatenate the segment audio
+into one 44.1 kHz mono WAV. The voice SHALL NOT change at a language boundary:
+TeraTTSv2 voices are cross-lingual, so one selected voice reads both Russian
+and English. Segments SHALL be separated by the profile's segment pause
 (200 ms for TeraTTS) and SHALL NOT have a pause appended after the last
 segment. Chunking SHALL apply inside a segment, never across segments.
 
@@ -91,11 +93,11 @@ NOT write a partial file.
 - WHEN the engine synthesizes them
 - THEN one WAV contains all three, with 200 ms of silence between them and none after the last
 
-#### Scenario: Each segment uses its own voice
+#### Scenario: One voice reads both languages
 
-- GIVEN `ru_m5` for Russian and `eng_f5` for English
+- GIVEN the configured voice `ru_m5`
 - WHEN a mixed utterance is synthesized
-- THEN the Russian segments use the Russian style tensors and the English segment uses the English ones
+- THEN every segment uses the `ru_m5` style tensors, and only the language tag and the Russian accentuation differ
 
 #### Scenario: Cancellation leaves no file
 
@@ -121,34 +123,6 @@ existing `char_mapping` to original-document offsets.
 
 #### Scenario: Highlight crosses the language boundary
 
-- GIVEN a mixed entry with timestamps from both voices
+- GIVEN a mixed entry with timestamps from both languages
 - WHEN playback moves from a Russian word to the English word
 - THEN the active word advances without a gap, overlap or reset
-
-### Requirement: English voice configuration
-
-The configuration SHALL carry a separate English TeraTTS voice id,
-`teratts_en_voice`, defaulting to `eng_f5`. The Settings dialog SHALL offer the
-six English voices from the bundle manifest (`eng_f5`, `eng_m3`, `eng_f3`,
-`eng_m4`, `eng_f4_whisper`, `eng_m2_whisper`) and SHALL persist the choice
-through `updateConfig`. Changing the English voice SHALL NOT reload the ONNX
-graphs. An unknown English voice SHALL fail with the typed `voice_unknown`
-error.
-
-#### Scenario: Default English voice
-
-- GIVEN no `teratts_en_voice` in the config
-- WHEN a mixed utterance is synthesized
-- THEN the English segments use `eng_f5`
-
-#### Scenario: English voice round-trips
-
-- GIVEN a configuration with `teratts_en_voice: "eng_m3"`
-- WHEN it is saved and loaded again
-- THEN the loaded value is `eng_m3`
-
-#### Scenario: Unknown English voice is rejected
-
-- GIVEN `teratts_en_voice: "eng_m9"`
-- WHEN a mixed utterance is synthesized
-- THEN it fails with `voice_unknown` and the message lists the available voices

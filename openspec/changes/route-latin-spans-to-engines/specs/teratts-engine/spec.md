@@ -126,13 +126,12 @@ by 0.2–0.4 s.
 ### Requirement: Voices and defaults
 
 The voice catalogue SHALL come from the manifest `voices[]` and the
-`styles/<voice>/` directories. The Russian voices SHALL be `ru_m5` (default),
-`ru_f1`, `ru_f2` and `ru_m1`; the English voices SHALL be `eng_f5` (default
-for English segments), `eng_m3`, `eng_f3`, `eng_m4`, `eng_f4_whisper` and
-`eng_m2_whisper`. Selecting a different voice, including switching between a
-Russian and an English voice, SHALL NOT reload the ONNX graphs. An unknown
-voice MUST fail with a typed `voice_unknown` error listing the available
-voices.
+`styles/<voice>/` directories. The voices SHALL be `ru_m5` (default), `ru_f1`,
+`ru_f2`, `ru_m1`, `eng_f5`, `eng_m3`, `eng_f3`, `eng_m4`, `eng_f4_whisper`
+and `eng_m2_whisper`. Every voice SHALL be usable for both languages: a
+segment's language selects the tag and whether RUAccent runs, never the voice.
+Selecting a different voice SHALL NOT reload the ONNX graphs. An unknown voice
+MUST fail with a typed `voice_unknown` error listing the available voices.
 
 #### Scenario: The default voice is ru_m5
 
@@ -140,17 +139,17 @@ voices.
 - WHEN a synthesis runs
 - THEN the `ru_m5` style tensors are used
 
-#### Scenario: The default English voice is eng_f5
-
-- GIVEN no `teratts_en_voice` in the config
-- WHEN an English segment is synthesized
-- THEN the `eng_f5` style tensors are used
-
 #### Scenario: Unknown voice is rejected
 
 - GIVEN the voice id `ru_m9`
 - WHEN synthesis is requested
 - THEN it fails with `voice_unknown` and the message lists the available voices
+
+#### Scenario: The selected voice reads an English segment
+
+- GIVEN the configured voice `ru_m5`
+- WHEN an English segment is synthesized
+- THEN the `ru_m5` style tensors are used, not an English voice
 
 #### Scenario: A voice change keeps the graphs loaded
 
