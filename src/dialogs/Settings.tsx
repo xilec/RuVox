@@ -63,8 +63,7 @@ const ENGINE_OPTIONS: ReadonlyArray<{ value: EngineKind; key: MessageKey }> = [
   { value: 'teratts', key: 'settings.engine.teratts' },
 ];
 
-/** Russian voices shipped in the TeraTTS bundle (the English ones are listed
- *  by the follow-up routing change). Voice ids are the model's own names. */
+/** Voices shipped in the TeraTTS bundle; ids are the model's own names. */
 const TERATTS_VOICES: ReadonlyArray<{ value: string; label: string }> = [
   { value: 'ru_m5', label: 'ru_m5' },
   { value: 'ru_f1', label: 'ru_f1' },

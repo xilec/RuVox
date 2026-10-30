@@ -36,6 +36,7 @@ use serde_json::json;
 use tokio::sync::{Mutex, RwLock};
 use tracing::{info, warn};
 
+use crate::pipeline::Span;
 use crate::tts::engine::{EngineKind, TtsEngine};
 use crate::tts::map_via_spans;
 use crate::tts::profiles;
@@ -150,6 +151,48 @@ impl TeraTtsEngine {
             sha256,
         })
     }
+
+    /// Shared synthesis path for the plain and span-aware entry points.
+    #[allow(clippy::too_many_arguments)]
+    async fn run_synthesis(
+        &self,
+        text: String,
+        spans: Vec<Span>,
+        voice: String,
+        _sample_rate: u32,
+        out_wav: String,
+        char_mapping: Option<Vec<CharMappingEntry>>,
+    ) -> Result<SynthesizeOutput, TtsError> {
+        let engine = self.ensure_loaded().await?;
+
+        // A new call starts uncancelled; `kill_current` flips this flag and the
+        // crate stops before the next chunk.
+        self.cancel.store(false, Ordering::SeqCst);
+        let cancel = Arc::clone(&self.cancel);
+        let policy = profiles::profile_for(EngineKind::TeraTts).chunk;
+        let result = tokio::task::spawn_blocking(move || {
+            let segments = segments_for(&text, &spans);
+            engine.synthesize_segments(
+                &segments,
+                &voice,
+                &policy,
+                &cancel,
+                policy.pauses.segment_ms,
+            )
+        })
+        .await
+        .map_err(|e| TtsError::Ttsd {
+            code: "synthesis_failed".to_string(),
+            message: format!("задача синтеза TeraTTS прервана: {e}"),
+        })?
+        .map_err(map_error)?;
+
+        write_wav(&out_wav, &result.wav).await?;
+        Ok(SynthesizeOutput {
+            timestamps: map_timestamps(result.timestamps, char_mapping.as_deref()),
+            duration_sec: result.duration_sec,
+        })
+    }
 }
 
 /// Map a crate error to the user-facing code/message pair. One mapper for
@@ -189,6 +232,89 @@ fn map_error(e: teratts::Error) -> TtsError {
             message: "Синтез отменён.".to_string(),
         },
     }
+}
+
+/// Split the normalized text into language segments at the pipeline spans.
+///
+/// Spans are sorted and non-overlapping, so a linear walk suffices: text
+/// before, between and after spans is Russian, a span with `lang == "en"` is
+/// English, and any other span (a dictionary override, or a `ru` tag) stays
+/// Russian. Empty and whitespace-only segments are skipped; `text_start`
+/// keeps every timestamp in whole-text codepoint coordinates.
+fn segments_for<'a>(text: &'a str, spans: &[Span]) -> Vec<teratts::Segment<'a>> {
+    let char_count = text.chars().count();
+    let byte_offsets: Vec<usize> = text
+        .char_indices()
+        .map(|(byte, _)| byte)
+        .chain(std::iter::once(text.len()))
+        .collect();
+    let slice = |start: usize, end: usize| &text[byte_offsets[start]..byte_offsets[end]];
+
+    let mut segments = Vec::new();
+    let mut push = |start: usize, end: usize, language: teratts::Language| {
+        if start >= end {
+            return;
+        }
+        let part = slice(start, end);
+        // Whitespace and punctuation-only gaps carry no words; synthesizing
+        // them alone makes the model vocalize the punctuation. A word-bearing
+        // segment may still start with the previous sentence's punctuation
+        // (an English span ends before its period), so drop that prefix too.
+        let Some(prefix) = part
+            .char_indices()
+            .find(|(_, character)| character.is_alphanumeric())
+            .map(|(byte, _)| byte)
+        else {
+            return;
+        };
+        let text = &part[prefix..];
+        let text_start = start + part[..prefix].chars().count();
+        segments.push(teratts::Segment {
+            text,
+            language,
+            text_start,
+        });
+    };
+
+    let mut cursor = 0usize;
+    for span in spans {
+        let start = span.start.min(char_count);
+        let end = span.end.min(char_count);
+        if start > cursor {
+            push(cursor, start, teratts::Language::Ru);
+        }
+        let language = if span.lang == Some("en") {
+            teratts::Language::En
+        } else {
+            teratts::Language::Ru
+        };
+        push(cursor.max(start), end, language);
+        cursor = cursor.max(end);
+    }
+    if cursor < char_count {
+        push(cursor, char_count, teratts::Language::Ru);
+    }
+    if segments.is_empty() {
+        segments.push(teratts::Segment {
+            text,
+            language: teratts::Language::Ru,
+            text_start: 0,
+        });
+    }
+    segments
+}
+
+/// Write the engine's WAV bytes to `out_wav`, creating the parent directory.
+async fn write_wav(out_wav: &str, wav: &[u8]) -> Result<(), TtsError> {
+    let out_path = PathBuf::from(out_wav);
+    if let Some(parent) = out_path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(TtsError::Ipc)?;
+    }
+    tokio::fs::write(&out_path, wav)
+        .await
+        .map_err(TtsError::Ipc)
 }
 
 /// Map engine word timestamps (offsets in the synthesized text) back to
@@ -261,40 +387,25 @@ impl TtsEngine for TeraTtsEngine {
         &self,
         text: String,
         voice: String,
-        _sample_rate: u32,
+        sample_rate: u32,
         out_wav: String,
         char_mapping: Option<Vec<CharMappingEntry>>,
     ) -> Result<SynthesizeOutput, TtsError> {
-        let engine = self.ensure_loaded().await?;
-
-        // A new call starts uncancelled; `kill_current` flips this flag and the
-        // crate stops before the next chunk.
-        self.cancel.store(false, Ordering::SeqCst);
-        let cancel = Arc::clone(&self.cancel);
-        let policy = profiles::profile_for(EngineKind::TeraTts).chunk;
-        let result =
-            tokio::task::spawn_blocking(move || engine.synthesize(&text, &voice, &policy, &cancel))
-                .await
-                .map_err(|e| TtsError::Ttsd {
-                    code: "synthesis_failed".to_string(),
-                    message: format!("задача синтеза TeraTTS прервана: {e}"),
-                })?
-                .map_err(map_error)?;
-
-        let out_path = PathBuf::from(&out_wav);
-        if let Some(parent) = out_path.parent() {
-            tokio::fs::create_dir_all(parent)
-                .await
-                .map_err(TtsError::Ipc)?;
-        }
-        tokio::fs::write(&out_path, &result.wav)
+        self.run_synthesis(text, Vec::new(), voice, sample_rate, out_wav, char_mapping)
             .await
-            .map_err(TtsError::Ipc)?;
+    }
 
-        Ok(SynthesizeOutput {
-            timestamps: map_timestamps(result.timestamps, char_mapping.as_deref()),
-            duration_sec: result.duration_sec,
-        })
+    async fn synthesize_spans(
+        &self,
+        text: String,
+        spans: Vec<Span>,
+        voice: String,
+        sample_rate: u32,
+        out_wav: String,
+        char_mapping: Option<Vec<CharMappingEntry>>,
+    ) -> Result<SynthesizeOutput, TtsError> {
+        self.run_synthesis(text, spans, voice, sample_rate, out_wav, char_mapping)
+            .await
     }
 
     async fn kill_current(&self) {
@@ -313,6 +424,65 @@ impl TtsEngine for TeraTtsEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn segments_follow_prose_spans_and_keep_absolute_offsets() {
+        let text = "Привет Kubernetes мир";
+        let spans = [Span {
+            kind: crate::pipeline::SpanKind::ProseLatin,
+            lang: Some("en"),
+            start: 7,
+            end: 17,
+        }];
+        let segments = segments_for(text, &spans);
+        assert_eq!(segments.len(), 3);
+        assert_eq!(segments[0].text, "Привет ");
+        assert_eq!(segments[0].language, teratts::Language::Ru);
+        assert_eq!(segments[0].text_start, 0);
+        assert_eq!(segments[1].text, "Kubernetes");
+        assert_eq!(segments[1].language, teratts::Language::En);
+        assert_eq!(segments[1].text_start, 7);
+        assert_eq!(segments[2].text, "мир");
+        assert_eq!(segments[2].text_start, 18);
+    }
+
+    #[test]
+    fn leading_punctuation_is_trimmed_from_a_segment() {
+        let text = "API. Привет";
+        let spans = [Span {
+            kind: crate::pipeline::SpanKind::ProseLatin,
+            lang: Some("en"),
+            start: 0,
+            end: 3,
+        }];
+        let segments = segments_for(text, &spans);
+        assert_eq!(segments.len(), 2);
+        assert_eq!(segments[0].text, "API");
+        assert_eq!(segments[1].text, "Привет");
+        assert_eq!(segments[1].text_start, 5);
+    }
+
+    #[test]
+    fn segments_without_spans_are_one_russian_segment() {
+        let segments = segments_for("Привет мир", &[]);
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].language, teratts::Language::Ru);
+        assert_eq!(segments[0].text, "Привет мир");
+    }
+
+    #[test]
+    fn dictionary_override_spans_stay_russian() {
+        let text = "молоко";
+        let spans = [Span {
+            kind: crate::pipeline::SpanKind::DictionaryOverride,
+            lang: None,
+            start: 0,
+            end: 6,
+        }];
+        let segments = segments_for(text, &spans);
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].language, teratts::Language::Ru);
+    }
 
     #[test]
     fn error_mapping_keeps_the_codes_stable() {

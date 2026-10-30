@@ -18,8 +18,8 @@ use tauri_plugin_mpv::MpvExt;
 use tokio::task::AbortHandle;
 use tracing::{info, warn};
 
-use crate::pipeline::TTSPipeline;
 use crate::pipeline::tracked_text::CharMapping;
+use crate::pipeline::{Span, TTSPipeline};
 use crate::state::AppState;
 use crate::storage::schema::{
     EntryId, EntrySource, EntryStatus, GenerationParams, ModelParams, TextEntry, TextFormat,
@@ -306,12 +306,17 @@ async fn run_pipeline_normalization(
     pipeline: Arc<Mutex<TTSPipeline>>,
     text: String,
     profile: &'static TextProfile,
-) -> Result<(String, CharMapping, String), tokio::task::JoinError> {
+) -> Result<(String, CharMapping, Vec<Span>, String), tokio::task::JoinError> {
     tokio::task::spawn_blocking(move || {
         let mut p = pipeline.lock();
         let processed = p.process_for_engine(&text, profile);
         let code_block_mode = p.code_block_mode().as_config_str().to_string();
-        (processed.text, processed.mapping, code_block_mode)
+        (
+            processed.text,
+            processed.mapping,
+            processed.spans,
+            code_block_mode,
+        )
     })
     .await
 }
@@ -321,8 +326,8 @@ async fn run_normalization(
     pipeline: Arc<Mutex<TTSPipeline>>,
     original_text: String,
     profile: &'static TextProfile,
-) -> Result<(String, CharMapping, String), SynthesisError> {
-    let (normalized, mapping, code_block_mode) =
+) -> Result<(String, CharMapping, Vec<Span>, String), SynthesisError> {
+    let (normalized, mapping, spans, code_block_mode) =
         run_pipeline_normalization(pipeline, original_text, profile)
             .await
             .map_err(|e| SynthesisError::PipelinePanic(e.to_string()))?;
@@ -330,7 +335,7 @@ async fn run_normalization(
     if normalized.is_empty() {
         return Err(SynthesisError::EmptyText);
     }
-    Ok((normalized, mapping, code_block_mode))
+    Ok((normalized, mapping, spans, code_block_mode))
 }
 
 /// Phase 2: mark entry as `Processing` and emit `entry_updated`.
@@ -399,6 +404,7 @@ async fn synthesize_audio(
     synthesize_entered: &Mutex<HashSet<EntryId>>,
     entry_id: &EntryId,
     normalized: String,
+    spans: Vec<Span>,
     mapping: &CharMapping,
 ) -> Result<SynthOutcome, SynthesisError> {
     // ttsd writes WAV; finalize_audio_files transcodes it to Opus right after.
@@ -428,8 +434,9 @@ async fn synthesize_audio(
     // await, `cancel_synthesis` removes the marker itself.
     synthesize_entered.lock().insert(*entry_id);
     let attempt = tts
-        .synthesize(
+        .synthesize_spans(
             normalized.clone(),
+            spans.clone(),
             voice.clone(),
             config.sample_rate,
             out_wav.clone(),
@@ -449,8 +456,9 @@ async fn synthesize_audio(
                 .map_err(|e| SynthesisError::TtsFailed(e.to_string()))?;
             synthesize_entered.lock().insert(*entry_id);
             let retry = tts
-                .synthesize(
+                .synthesize_spans(
                     normalized,
+                    spans,
                     voice.clone(),
                     config.sample_rate,
                     out_wav,
@@ -737,7 +745,7 @@ pub fn spawn_synthesis<R: Runtime + 'static>(
             };
 
             let result: Result<(), SynthesisError> = async {
-                let (normalized, mapping, applied_code_block_mode) = run_normalization(
+                let (normalized, mapping, spans, applied_code_block_mode) = run_normalization(
                     Arc::clone(&pipeline),
                     entry.original_text.clone(),
                     tts.text_profile(),
@@ -753,6 +761,7 @@ pub fn spawn_synthesis<R: Runtime + 'static>(
                     &entered_for_task,
                     &entry_id,
                     normalized,
+                    spans,
                     &mapping,
                 )
                 .await?;
@@ -1034,7 +1043,7 @@ async fn preview_normalization(
     text: String,
     profile: &'static TextProfile,
 ) -> CmdResult<(String, CharMapping)> {
-    let (normalized, mapping, _code_block_mode) =
+    let (normalized, mapping, _spans, _code_block_mode) =
         run_pipeline_normalization(pipeline, text, profile)
             .await
             .map_err(|e| {
@@ -2077,7 +2086,7 @@ mod synthesis_tests {
     #[tokio::test]
     async fn run_normalization_returns_normalized_text_and_mapping() {
         let pipeline = Arc::new(Mutex::new(TTSPipeline::new()));
-        let (normalized, _mapping, _mode) = run_normalization(
+        let (normalized, _mapping, _spans, _mode) = run_normalization(
             pipeline,
             "Привет мир".to_string(),
             &crate::tts::profiles::SILERO_PROFILE,
@@ -3199,6 +3208,7 @@ mod tests {
             &entered,
             &uuid::Uuid::new_v4(),
             "текст".to_string(),
+            Vec::new(),
             &empty_mapping(),
         )
         .await
@@ -3229,6 +3239,7 @@ mod tests {
             &entered,
             &uuid::Uuid::new_v4(),
             "текст".to_string(),
+            Vec::new(),
             &empty_mapping(),
         )
         .await
@@ -3266,6 +3277,7 @@ mod tests {
             &entered,
             &uuid::Uuid::new_v4(),
             "текст".to_string(),
+            Vec::new(),
             &empty_mapping(),
         )
         .await
@@ -3302,6 +3314,7 @@ mod tests {
             &entered,
             &uuid::Uuid::new_v4(),
             "текст".to_string(),
+            Vec::new(),
             &empty_mapping(),
         )
         .await
@@ -3342,6 +3355,7 @@ mod tests {
             &entered,
             &uuid::Uuid::new_v4(),
             "текст".to_string(),
+            Vec::new(),
             &empty_mapping(),
         )
         .await

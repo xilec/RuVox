@@ -313,6 +313,21 @@ impl TtsEngine for EngineSwitcher {
             .await
     }
 
+    async fn synthesize_spans(
+        &self,
+        text: String,
+        spans: Vec<crate::pipeline::Span>,
+        voice: String,
+        sample_rate: u32,
+        out_wav: String,
+        char_mapping: Option<Vec<CharMappingEntry>>,
+    ) -> Result<SynthesizeOutput, TtsError> {
+        self.current_engine()
+            .await
+            .synthesize_spans(text, spans, voice, sample_rate, out_wav, char_mapping)
+            .await
+    }
+
     async fn shutdown(&self) -> Result<(), TtsError> {
         self.current_engine().await.shutdown().await
     }

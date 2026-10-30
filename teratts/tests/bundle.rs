@@ -8,7 +8,7 @@ use std::io::Cursor;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
-use teratts::{Engine, Error, SAMPLE_RATE};
+use teratts::{Engine, Error, Language, SAMPLE_RATE, Segment};
 use tts_contract::{Chunk, Limit, Pauses};
 
 fn bundle() -> Option<PathBuf> {
@@ -87,6 +87,91 @@ fn synthesizes_raw_text_with_tokens_dropped_by_the_alphabet() {
 
     assert!(out.duration_sec > 0.5, "duration {}", out.duration_sec);
     assert!(!out.timestamps.is_empty());
+}
+
+#[test]
+fn synthesizes_mixed_language_segments() {
+    let Some(dir) = bundle() else {
+        eprintln!("skipping: TERATTS_BUNDLE is not set");
+        return;
+    };
+    let engine = Engine::load(&dir).expect("load bundle");
+    let cancelled = AtomicBool::new(false);
+    let segments = [
+        Segment {
+            text: "Привет. ",
+            language: Language::Ru,
+            text_start: 0,
+        },
+        Segment {
+            text: "Kubernetes cluster",
+            language: Language::En,
+            text_start: 8,
+        },
+        Segment {
+            text: " готов.",
+            language: Language::Ru,
+            text_start: 26,
+        },
+    ];
+    let out = engine
+        .synthesize_segments(&segments, "ru_m5", &policy(), &cancelled, 200)
+        .expect("synthesize mixed");
+
+    assert!(out.duration_sec > 2.0, "duration {}", out.duration_sec);
+    assert!(!out.samples.is_empty());
+    let english = out
+        .timestamps
+        .iter()
+        .find(|word| word.word.contains("Kubernetes"))
+        .expect("english word timestamp");
+    assert!(english.start_char >= 8, "{english:?}");
+    assert!(english.start > 0.0, "{english:?}");
+    let mut previous = 0.0;
+    for word in &out.timestamps {
+        assert!(word.start >= previous - 1e-9, "{word:?}");
+        previous = word.end;
+    }
+}
+
+#[test]
+fn short_russian_connector_between_english_segments_is_not_stretched() {
+    let Some(dir) = bundle() else {
+        eprintln!("skipping: TERATTS_BUNDLE is not set");
+        return;
+    };
+    let engine = Engine::load(&dir).expect("load bundle");
+    let cancelled = AtomicBool::new(false);
+    let segments = [
+        Segment {
+            text: "Kubernetes",
+            language: Language::En,
+            text_start: 0,
+        },
+        Segment {
+            text: " и ",
+            language: Language::Ru,
+            text_start: 10,
+        },
+        Segment {
+            text: "API",
+            language: Language::En,
+            text_start: 13,
+        },
+    ];
+    let out = engine
+        .synthesize_segments(&segments, "ru_m5", &policy(), &cancelled, 200)
+        .expect("synthesize mixed");
+    let conjunction = out
+        .timestamps
+        .iter()
+        .find(|word| word.word == "и")
+        .expect("connector timestamp");
+    let duration = conjunction.end - conjunction.start;
+    assert!(
+        duration < 0.6,
+        "one-letter connector is stretched: {duration:.2}s"
+    );
 }
 
 #[test]

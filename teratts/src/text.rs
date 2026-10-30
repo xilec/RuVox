@@ -125,6 +125,22 @@ fn load_json_gz<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
         .map_err(|e| Error::BundleCorrupt(format!("{}: {e}", path.display())))
 }
 
+/// Language of one synthesis segment; selects the tag and the accent frontend.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Language {
+    Ru,
+    En,
+}
+
+impl Language {
+    pub fn tag(self) -> &'static str {
+        match self {
+            Self::Ru => "ru",
+            Self::En => "en",
+        }
+    }
+}
+
 /// Text ready for the indexer, plus what the alphabet rejected.
 #[derive(Debug, Clone)]
 pub struct PreparedText {
@@ -153,15 +169,24 @@ pub fn validate_no_markup(text: &str) -> Result<()> {
     Ok(())
 }
 
-/// Wrap, accentuate, normalize and gate a Russian text.
-pub fn prepare(text: &str, accentizer: &Accentizer, indexer: &Indexer) -> Result<PreparedText> {
+/// Wrap, (for Russian) accentuate, normalize and gate a text segment.
+pub fn prepare(
+    text: &str,
+    accentizer: &Accentizer,
+    indexer: &Indexer,
+    language: Language,
+) -> Result<PreparedText> {
     validate_no_markup(text)?;
     let text = text.trim();
     if text.is_empty() {
         return Err(Error::InvalidText("empty text".into()));
     }
-    let accented = accentizer.accentuate(text);
-    let wrapped = format!("<ru>{accented}</ru>");
+    let body = match language {
+        Language::Ru => accentizer.accentuate(text),
+        Language::En => text.to_string(),
+    };
+    let tag = language.tag();
+    let wrapped = format!("<{tag}>{body}</{tag}>");
     let normalized: String = wrapped.nfkd().collect();
 
     let mut kept = String::with_capacity(normalized.len());
@@ -174,9 +199,11 @@ pub fn prepare(text: &str, accentizer: &Accentizer, indexer: &Indexer) -> Result
         }
     }
 
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
     let content = kept
-        .strip_prefix("<ru>")
-        .and_then(|rest| rest.strip_suffix("</ru>"))
+        .strip_prefix(&open)
+        .and_then(|rest| rest.strip_suffix(&close))
         .unwrap_or("");
     if content.trim().is_empty() {
         return Err(Error::InvalidText(
@@ -305,6 +332,11 @@ mod tests {
             ('\u{0306}', 50),
             ('\u{0308}', 51),
             ('М', 60),
+            ('<', 61),
+            ('>', 62),
+            ('/', 63),
+            ('e', 64),
+            ('n', 65),
         ] {
             table[code as usize] = id;
         }
@@ -314,14 +346,25 @@ mod tests {
     #[test]
     fn wraps_and_accentuates_a_dictionary_word() {
         let tmp = tempfile::tempdir().unwrap();
-        let prepared = prepare("молоко", &accentizer(tmp.path()), &indexer()).unwrap();
+        let prepared =
+            prepare("молоко", &accentizer(tmp.path()), &indexer(), Language::Ru).unwrap();
         assert_eq!(prepared.text, "<ru>молок+о</ru>");
+    }
+
+    #[test]
+    fn english_segments_are_tagged_en_and_skip_accentuation() {
+        let tmp = tempfile::tempdir().unwrap();
+        let prepared =
+            prepare("молоко", &accentizer(tmp.path()), &indexer(), Language::En).unwrap();
+        assert_eq!(prepared.text, "<en>молоко</en>");
+        assert!(!prepared.text.contains('+'));
     }
 
     #[test]
     fn explicit_stress_wins() {
         let tmp = tempfile::tempdir().unwrap();
-        let prepared = prepare("молок+о", &accentizer(tmp.path()), &indexer()).unwrap();
+        let prepared =
+            prepare("молок+о", &accentizer(tmp.path()), &indexer(), Language::Ru).unwrap();
         assert_eq!(prepared.text, "<ru>молок+о</ru>");
         assert_eq!(prepared.text.matches('+').count(), 1);
     }
@@ -329,14 +372,14 @@ mod tests {
     #[test]
     fn unknown_words_are_untouched() {
         let tmp = tempfile::tempdir().unwrap();
-        let prepared = prepare("кот", &accentizer(tmp.path()), &indexer()).unwrap();
+        let prepared = prepare("кот", &accentizer(tmp.path()), &indexer(), Language::Ru).unwrap();
         assert_eq!(prepared.text, "<ru>кот</ru>");
     }
 
     #[test]
     fn yo_words_are_applied() {
         let tmp = tempfile::tempdir().unwrap();
-        let prepared = prepare("елка", &accentizer(tmp.path()), &indexer()).unwrap();
+        let prepared = prepare("елка", &accentizer(tmp.path()), &indexer(), Language::Ru).unwrap();
         let expected: String = "<ru>ёлка</ru>".nfkd().collect();
         assert_eq!(prepared.text, expected);
     }
@@ -344,14 +387,21 @@ mod tests {
     #[test]
     fn casing_is_preserved() {
         let tmp = tempfile::tempdir().unwrap();
-        let prepared = prepare("Молоко", &accentizer(tmp.path()), &indexer()).unwrap();
+        let prepared =
+            prepare("Молоко", &accentizer(tmp.path()), &indexer(), Language::Ru).unwrap();
         assert_eq!(prepared.text, "<ru>Молок+о</ru>");
     }
 
     #[test]
     fn unsupported_characters_are_dropped_with_a_warning() {
         let tmp = tempfile::tempdir().unwrap();
-        let prepared = prepare("молоко — привет", &accentizer(tmp.path()), &indexer()).unwrap();
+        let prepared = prepare(
+            "молоко — привет",
+            &accentizer(tmp.path()),
+            &indexer(),
+            Language::Ru,
+        )
+        .unwrap();
         assert!(!prepared.text.contains('—'));
         assert_eq!(prepared.dropped, vec!['—']);
         assert!(prepared.text.contains("молок+о"));
@@ -360,7 +410,13 @@ mod tests {
     #[test]
     fn digits_are_reported_as_a_normalization_gap() {
         let tmp = tempfile::tempdir().unwrap();
-        let prepared = prepare("молоко 5", &accentizer(tmp.path()), &indexer()).unwrap();
+        let prepared = prepare(
+            "молоко 5",
+            &accentizer(tmp.path()),
+            &indexer(),
+            Language::Ru,
+        )
+        .unwrap();
         assert_eq!(prepared.dropped, vec!['5']);
     }
 
@@ -369,19 +425,19 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let accentizer = accentizer(tmp.path());
         let indexer = indexer();
-        assert!(prepare("привет < мир", &accentizer, &indexer).is_err());
-        assert!(prepare("<ru>привет</ru>", &accentizer, &indexer).is_err());
+        assert!(prepare("привет < мир", &accentizer, &indexer, Language::Ru).is_err());
+        assert!(prepare("<ru>привет</ru>", &accentizer, &indexer, Language::Ru).is_err());
     }
 
     #[test]
     fn empty_text_is_rejected() {
         let tmp = tempfile::tempdir().unwrap();
-        assert!(prepare("   ", &accentizer(tmp.path()), &indexer()).is_err());
+        assert!(prepare("   ", &accentizer(tmp.path()), &indexer(), Language::Ru).is_err());
     }
 
     #[test]
     fn text_of_only_unsupported_characters_is_rejected() {
         let tmp = tempfile::tempdir().unwrap();
-        assert!(prepare("—", &accentizer(tmp.path()), &indexer()).is_err());
+        assert!(prepare("—", &accentizer(tmp.path()), &indexer(), Language::Ru).is_err());
     }
 }

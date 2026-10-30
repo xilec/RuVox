@@ -18,8 +18,13 @@ use crate::error::{Error, Result};
 use crate::indexer::Indexer;
 use crate::styles::Styles;
 use crate::synth::{self, Sessions, SynthOptions};
-use crate::text::{self, Accentizer};
+use crate::text::{self, Accentizer, Language};
 use crate::timestamps::{self, Word};
+
+/// Duration-scale multiplier for isolated one- or two-letter Russian words.
+/// The predictor treats them as a whole utterance and returns ~0.9 s; 0.3
+/// brings a conjunction to a natural ~0.25 s.
+const SHORT_RU_SEGMENT_SCALE: f32 = 0.3;
 
 /// Model identity for the generation snapshot.
 #[derive(Debug, Clone)]
@@ -33,8 +38,22 @@ pub struct ModelInfo {
 pub struct Synthesis {
     /// Mono PCM16 WAV at 44 100 Hz.
     pub wav: Vec<u8>,
+    /// Raw mono samples (44 100 Hz, -1.0..=1.0) before WAV encoding; used to
+    /// concatenate language segments without re-parsing the WAV.
+    pub samples: Vec<f32>,
     pub timestamps: Vec<Word>,
     pub duration_sec: f64,
+}
+
+/// One language segment of a mixed utterance.
+#[derive(Debug, Clone, Copy)]
+pub struct Segment<'a> {
+    /// Segment text in the normalized utterance.
+    pub text: &'a str,
+    pub language: Language,
+    /// Codepoint offset of the segment in the normalized utterance; added to
+    /// every timestamp so the caller maps ranges against the whole text.
+    pub text_start: usize,
 }
 
 /// In-process TeraTTSv2 engine.
@@ -131,8 +150,97 @@ impl Engine {
         policy: &ChunkPolicy,
         cancelled: &AtomicBool,
     ) -> Result<Synthesis> {
+        self.synthesize_lang(text, voice, Language::Ru, policy, cancelled)
+    }
+
+    /// Synthesize one segment in an explicit language.
+    pub fn synthesize_lang(
+        &self,
+        text: &str,
+        voice: &str,
+        language: Language,
+        policy: &ChunkPolicy,
+        cancelled: &AtomicBool,
+    ) -> Result<Synthesis> {
+        let (samples, timestamps) =
+            self.synthesize_samples(text, voice, language, policy, cancelled)?;
+        let wav = synth::encode_wav(&samples)?;
+        Ok(Synthesis {
+            wav,
+            duration_sec: samples.len() as f64 / synth::SAMPLE_RATE as f64,
+            samples,
+            timestamps,
+        })
+    }
+
+    /// Synthesize a mixed utterance segment by segment, joining them with
+    /// `segment_pause_ms` of silence. Timestamps stay in one timeline and in
+    /// codepoint coordinates of the whole normalized text.
+    pub fn synthesize_segments(
+        &self,
+        segments: &[Segment<'_>],
+        voice: &str,
+        policy: &ChunkPolicy,
+        cancelled: &AtomicBool,
+        segment_pause_ms: u32,
+    ) -> Result<Synthesis> {
+        if segments.is_empty() {
+            return Err(Error::InvalidText("empty text".into()));
+        }
+        let mut samples: Vec<f32> = Vec::new();
+        let mut timestamps: Vec<Word> = Vec::new();
+        for (index, segment) in segments.iter().enumerate() {
+            if cancelled.load(Ordering::Relaxed) {
+                return Err(Error::Cancelled);
+            }
+            let (mut part, mut words) =
+                self.synthesize_samples(segment.text, voice, segment.language, policy, cancelled)?;
+            let audio_offset = samples.len() as f64 / synth::SAMPLE_RATE as f64;
+            for word in &mut words {
+                word.start += audio_offset;
+                word.end += audio_offset;
+                word.start_char += segment.text_start;
+                word.end_char += segment.text_start;
+            }
+            samples.append(&mut part);
+            timestamps.append(&mut words);
+            if index + 1 < segments.len() {
+                let count =
+                    (segment_pause_ms as f64 / 1000.0 * synth::SAMPLE_RATE as f64).round() as usize;
+                samples.extend(std::iter::repeat_n(0.0, count));
+            }
+        }
+        if cancelled.load(Ordering::Relaxed) {
+            return Err(Error::Cancelled);
+        }
+        let wav = synth::encode_wav(&samples)?;
+        Ok(Synthesis {
+            wav,
+            duration_sec: samples.len() as f64 / synth::SAMPLE_RATE as f64,
+            samples,
+            timestamps,
+        })
+    }
+
+    fn synthesize_samples(
+        &self,
+        text: &str,
+        voice: &str,
+        language: Language,
+        policy: &ChunkPolicy,
+        cancelled: &AtomicBool,
+    ) -> Result<(Vec<f32>, Vec<Word>)> {
         let styles = self.styles_for(voice)?;
-        let estimate = |part: &str| self.estimate(part, &styles);
+        // An isolated one- or two-letter Russian word (a conjunction or a
+        // preposition between English fragments) makes the duration predictor
+        // return a nearly fixed ~0.9 s, which sounds stretched. Scale only
+        // such short Russian segments down; longer text keeps the measured
+        // optimum.
+        let mut options = self.options;
+        if language == Language::Ru && text.trim().chars().count() <= 2 {
+            options.duration_scale *= SHORT_RU_SEGMENT_SCALE;
+        }
+        let estimate = |part: &str| self.estimate(part, &styles, language);
         let chunks = chunk::split(text, policy, estimate)?;
 
         let mut samples: Vec<f32> = Vec::new();
@@ -141,7 +249,7 @@ impl Engine {
             if cancelled.load(Ordering::Relaxed) {
                 return Err(Error::Cancelled);
             }
-            let prepared = text::prepare(&chunk.text, &self.accentizer, &self.indexer)?;
+            let prepared = text::prepare(&chunk.text, &self.accentizer, &self.indexer, language)?;
             let ids = self.indexer.encode(&prepared.text);
             let duration_text = prepared.text.replace('+', "");
             let duration_ids = self.indexer.encode(&duration_text);
@@ -152,16 +260,18 @@ impl Engine {
                 ids.mask,
                 duration_ids.ids,
                 duration_ids.mask,
-                &self.options,
+                &options,
             )?;
 
             let audio_start = samples.len() as f64 / synth::SAMPLE_RATE as f64;
             let audio_end = audio_start + wave.duration_sec;
             let silence = timestamps::leading_silence(&wave.samples);
+            let open = format!("<{}>", language.tag());
+            let close = format!("</{}>", language.tag());
             let inner = prepared
                 .text
-                .strip_prefix("<ru>")
-                .and_then(|rest| rest.strip_suffix("</ru>"))
+                .strip_prefix(&open)
+                .and_then(|rest| rest.strip_suffix(&close))
                 .unwrap_or(&prepared.text);
             let predict = |prefix: &str| {
                 let encoded = self.indexer.encode(&prefix.replace('+', ""));
@@ -196,12 +306,7 @@ impl Engine {
         if cancelled.load(Ordering::Relaxed) {
             return Err(Error::Cancelled);
         }
-        let wav = synth::encode_wav(&samples)?;
-        Ok(Synthesis {
-            wav,
-            timestamps,
-            duration_sec: samples.len() as f64 / synth::SAMPLE_RATE as f64,
-        })
+        Ok((samples, timestamps))
     }
 
     fn styles_for(&self, voice: &str) -> Result<Arc<Styles>> {
@@ -215,8 +320,8 @@ impl Engine {
         Ok(styles)
     }
 
-    fn estimate(&self, part: &str, styles: &Styles) -> Result<f64> {
-        let prepared = text::prepare(part, &self.accentizer, &self.indexer)?;
+    fn estimate(&self, part: &str, styles: &Styles, language: Language) -> Result<f64> {
+        let prepared = text::prepare(part, &self.accentizer, &self.indexer, language)?;
         let duration_text = prepared.text.replace('+', "");
         let encoded = self.indexer.encode(&duration_text);
         let raw = synth::predict_raw(&self.sessions, encoded.ids, encoded.mask, &styles.dp)?;

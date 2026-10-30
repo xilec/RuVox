@@ -151,6 +151,12 @@ synthesized as its own bounded chunk, so its audio range is known); word
 boundaries inside a sentence MAY be approximate, and the producing engine's
 capability spec SHALL document the approximation and its typical lag.
 
+A mixed-language utterance SHALL produce one timestamp list for the whole
+utterance: the engine offsets each language segment's words by the audio and
+codepoint position already produced, so the highlight crosses a language
+boundary without a reset, gap or overlap. The mapped `original_pos` ranges
+SHALL stay inside the original document.
+
 The highlighting behavior SHALL NOT change: the active word is still found by
 binary search over `start`, a position in a gap still resolves to the closest
 upcoming word, and a position at or past the last word's `end` still produces
@@ -176,4 +182,11 @@ no active word.
 - WHEN the position falls inside a word's interval or in the pause after it
 - THEN the word stays highlighted while it is spoken, and the next word is
   highlighted ahead of its interval in the pause
+
+#### Scenario: Highlight crosses a language boundary
+
+- GIVEN an entry with Russian, English and Russian segments
+- WHEN playback moves from the last Russian word into the English word
+- THEN the English word is highlighted at its absolute timestamp and the
+  following Russian word continues without a gap or overlap
 

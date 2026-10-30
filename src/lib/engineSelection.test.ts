@@ -10,7 +10,12 @@ import {
 /// Config slice used by the form-state tests; `teratts_voice` is required by
 /// the reducer, so one helper keeps the cases about the engine, not the field.
 function cfg(engine: 'piper' | 'silero' | 'silero_native' | 'teratts', piper_voice: string, speaker: string) {
-  return { engine, piper_voice, speaker, teratts_voice: 'ru_m5' };
+  return {
+    engine,
+    piper_voice,
+    speaker,
+    teratts_voice: 'ru_m5',
+  };
 }
 
 const BOTH_AVAILABLE: AvailabilityMap = {
@@ -127,7 +132,12 @@ describe('computeEngineFormState', () => {
 
   it('preserves a saved teratts engine and its voice', () => {
     const s = computeEngineFormState(
-      { engine: 'teratts', piper_voice: 'ruslan', speaker: 'xenia', teratts_voice: 'ru_f1' },
+      {
+        engine: 'teratts',
+        piper_voice: 'ruslan',
+        speaker: 'xenia',
+        teratts_voice: 'ru_f1',
+          },
       ALL_AVAILABLE,
     );
     expect(s.engine).toBe('teratts');
@@ -137,7 +147,12 @@ describe('computeEngineFormState', () => {
 
   it('falls back from teratts when its bundle is missing', () => {
     const s = computeEngineFormState(
-      { engine: 'teratts', piper_voice: 'ruslan', speaker: 'xenia', teratts_voice: 'ru_f1' },
+      {
+        engine: 'teratts',
+        piper_voice: 'ruslan',
+        speaker: 'xenia',
+        teratts_voice: 'ru_f1',
+          },
       BOTH_AVAILABLE,
     );
     expect(s.engine).toBe('piper');
