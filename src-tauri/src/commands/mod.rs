@@ -1578,6 +1578,7 @@ pub async fn update_config<R: Runtime>(
     patch: UIConfigPatch,
 ) -> CmdResult<()> {
     let mut config = state.storage.load_config().unwrap_or_default();
+    let previous_engine = state.engine_switcher.kind();
     let code_block_mode_patch = patch.code_block_mode.clone();
     // Remembered to roll the setting back when the tray icon cannot be
     // created: the persisted flag must match what the app can actually do.
@@ -1604,6 +1605,15 @@ pub async fn update_config<R: Runtime>(
         .storage
         .save_config(&config)
         .map_err(CommandError::from)?;
+
+    // The merged user dictionary is engine-scoped: only a real engine switch
+    // needs a rebuild, and the pipeline lock keeps it atomic with the
+    // dictionary commands. Other patches must not touch the dictionary.
+    if state.engine_switcher.kind() != previous_engine {
+        let mut pipeline = state.pipeline.lock();
+        let book = state.dictionary_store.load_book();
+        pipeline.set_user_dictionary(book.merged_for(state.engine_switcher.kind()));
+    }
 
     if code_block_mode_patch.is_some() {
         let mode = crate::pipeline::normalizers::code_blocks::CodeBlockMode::from_config(
@@ -1851,8 +1861,8 @@ pub use export::{export_audio, pick_export_audio_path};
 // User dictionary commands live in commands/dictionary.rs (same seam split).
 mod dictionary;
 pub use dictionary::{
-    export_user_dictionary, get_user_dictionary, import_user_dictionary,
-    pick_dictionary_export_path, pick_dictionary_import_path, save_user_dictionary,
+    export_dictionary, get_dictionaries, import_dictionary, pick_dictionary_export_path,
+    pick_dictionary_import_path, save_dictionary,
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────────

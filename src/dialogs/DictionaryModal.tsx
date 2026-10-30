@@ -7,6 +7,7 @@ import {
   Group,
   Modal,
   Popover,
+  Select,
   Stack,
   Table,
   Text,
@@ -19,7 +20,12 @@ import { getCurrentWebview } from '@tauri-apps/api/webview';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 
 import { commands } from '../lib/tauri';
-import type { DictionaryEntryDto, DictionaryImportMode } from '../lib/tauri';
+import type {
+  DictionaryCollectionDto,
+  DictionaryEntryDto,
+  DictionaryImportMode,
+  DictionaryScope,
+} from '../lib/tauri';
 import { formatError } from '../lib/errors';
 import { useT } from '../lib/i18n';
 import {
@@ -91,6 +97,8 @@ export function DictionaryModal({
   onInitialFromConsumed,
 }: DictionaryModalProps) {
   const tt = useT();
+  const [collections, setCollections] = useState<DictionaryCollectionDto[]>([]);
+  const [scope, setScope] = useState<DictionaryScope>('global');
   const [entries, setEntries] = useState<DictionaryEntryDto[]>([]);
   const [search, setSearch] = useState('');
   const [editor, setEditor] = useState<EditorState | null>(null);
@@ -103,10 +111,22 @@ export function DictionaryModal({
     setStatus(next);
   }, []);
 
-  const refreshEntries = useCallback(async () => {
-    const fresh = await commands.getUserDictionary();
-    setEntries(fresh);
-  }, []);
+  const applyCollections = useCallback(
+    (fresh: DictionaryCollectionDto[], target: DictionaryScope) => {
+      setCollections(fresh);
+      const selected = fresh.find((c) => c.scope === target);
+      setEntries(selected?.entries ?? []);
+    },
+    [],
+  );
+
+  const refreshCollections = useCallback(
+    async (target: DictionaryScope) => {
+      const fresh = await commands.getDictionaries();
+      applyCollections(fresh, target);
+    },
+    [applyCollections],
+  );
 
   // Load on every open; reset transient editor state so a stale form from a
   // previous session never survives.
@@ -116,10 +136,11 @@ export function DictionaryModal({
     setEditor(null);
     setPendingImport(null);
     setStatusSafe('saved');
+    setScope('global');
     commands
-      .getUserDictionary()
+      .getDictionaries()
       .then((list) => {
-        setEntries(list);
+        applyCollections(list, 'global');
         if (initialFrom) {
           setEditor({ mode: 'add', from: initialFrom, to: '', forms: '' });
           onInitialFromConsumed?.();
@@ -143,16 +164,19 @@ export function DictionaryModal({
   const persist = useCallback(
     async (next: DictionaryEntryDto[]) => {
       setEntries(next);
+      setCollections((prev) =>
+        prev.some((c) => c.scope === scope)
+          ? prev.map((c) => (c.scope === scope ? { ...c, entries: next } : c))
+          : [...prev, { scope, name: scope, entries: next }],
+      );
       setStatusSafe('saving');
       try {
-        await commands.saveUserDictionary(
+        await commands.saveDictionary(
+          scope,
           next.map(({ from, to, forms }) => ({ from, to, forms })),
         );
         setStatusSafe('saved');
-        commands
-          .getUserDictionary()
-          .then((fresh) => setEntries(fresh))
-          .catch(() => {});
+        refreshCollections(scope).catch(() => {});
       } catch (e) {
         setStatusSafe('error');
         notifications.show({
@@ -162,7 +186,7 @@ export function DictionaryModal({
         });
       }
     },
-    [setStatusSafe, tt],
+    [refreshCollections, scope, setStatusSafe, tt],
   );
 
   const retrySave = useCallback(() => {
@@ -261,8 +285,8 @@ export function DictionaryModal({
       setPendingImport(null);
       if (!path) return;
       try {
-        const report = await commands.importUserDictionary(path, mode);
-        await refreshEntries();
+        const report = await commands.importDictionary(path, mode, scope);
+        await refreshCollections(scope);
         setStatusSafe('saved');
         notifications.show({
           title: tt('dictionary.import.done.title'),
@@ -281,14 +305,14 @@ export function DictionaryModal({
         });
       }
     },
-    [pendingImport, refreshEntries, setStatusSafe, tt],
+    [pendingImport, refreshCollections, scope, setStatusSafe, tt],
   );
 
   const handleExport = useCallback(async () => {
     const path = await commands.pickDictionaryExportPath();
     if (!path) return;
     try {
-      await commands.exportUserDictionary(path);
+      await commands.exportDictionary(path, scope);
       notifications.show({
         title: tt('dictionary.export.done.title'),
         message: path,
@@ -301,7 +325,19 @@ export function DictionaryModal({
         color: 'red',
       });
     }
-  }, [tt]);
+  }, [scope, tt]);
+
+  const changeScope = useCallback(
+    (next: DictionaryScope | null) => {
+      if (!next) return;
+      setScope(next);
+      setEntries(collections.find((c) => c.scope === next)?.entries ?? []);
+      setEditor(null);
+      setSearch('');
+      setPendingImport(null);
+    },
+    [collections],
+  );
 
   const editorInput = editor
     ? {
@@ -338,6 +374,24 @@ export function DictionaryModal({
       zIndex={DIALOG_Z}
     >
       <Stack gap="sm">
+        <Select
+          label={tt('dictionary.scope.label')}
+          description={tt('dictionary.scope.description')}
+          value={scope}
+          onChange={(value) => changeScope(value as DictionaryScope | null)}
+          data={[
+            { value: 'global', label: tt('dictionary.scope.global') },
+            { value: 'silero_native', label: tt('dictionary.scope.silero_native') },
+            { value: 'silero', label: tt('dictionary.scope.silero') },
+            { value: 'piper', label: tt('dictionary.scope.piper') },
+            { value: 'teratts', label: tt('dictionary.scope.teratts') },
+          ]}
+          allowDeselect={false}
+          // The modal sits at DIALOG_Z; Mantine's default popover z-index
+          // (300) would put the dropdown behind the overlay, making the
+          // select look unresponsive.
+          comboboxProps={{ zIndex: NESTED_DIALOG_Z }}
+        />
         <Group justify="space-between" wrap="nowrap">
           <TextInput
             placeholder={tt('dictionary.search.placeholder')}

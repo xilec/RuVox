@@ -335,8 +335,10 @@ export function SettingsModal({
   useEffect(() => {
     if (!opened) return;
     commands
-      .getUserDictionary()
-      .then((entries) => setDictionaryCount(entries.length))
+      .getDictionaries()
+      .then((collections) =>
+        setDictionaryCount(collections.reduce((sum, c) => sum + c.entries.length, 0)),
+      )
       .catch(() => setDictionaryCount(null));
   }, [opened, dictionaryRevision]);
 

@@ -570,3 +570,147 @@ fn e_and_yo_are_different_keys() {
         "ё is a different letter, so the entry must not fire on it"
     );
 }
+
+// ── Scoped collections (version 2) ────────────────────────────────────────
+
+#[test]
+fn version_one_file_migrates_into_the_global_collection() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("user_dictionary.toml");
+    fs::write(&path, "version = 1\n\n[entries]\nnginx = \"энджинкс\"\n").expect("write");
+
+    let book = DictionaryStore::new(path.clone()).load_book();
+    let global = book
+        .collection(DictionaryScope::Global)
+        .expect("global collection");
+    assert_eq!(global.entries.get("nginx"), Some("энджинкс"));
+    assert_eq!(book.iter().count(), 1, "only the global collection exists");
+
+    DictionaryStore::new(path.clone())
+        .save_book(&book)
+        .expect("save version 2");
+    let raw = fs::read_to_string(&path).expect("read");
+    assert!(raw.contains("version = 2"), "{raw}");
+    assert!(raw.contains("[[dictionaries]]"), "{raw}");
+    assert!(raw.contains("scope = \"global\""), "{raw}");
+}
+
+#[test]
+fn scoped_collections_round_trip_and_merge_in_order() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("user_dictionary.toml");
+    let mut book = DictionaryBook::with_global();
+    let mut global = UserDictionary::default();
+    global.insert(entry("docker", "докер"));
+    book.upsert("Global", DictionaryScope::Global, global);
+    let mut piper = UserDictionary::default();
+    piper.insert(entry("docker", "докка"));
+    book.upsert("Piper", DictionaryScope::Engine(EngineKind::Piper), piper);
+
+    let store = DictionaryStore::new(path.clone());
+    store.save_book(&book).expect("save");
+    let loaded = store.load_book();
+    assert_eq!(
+        loaded
+            .collection(DictionaryScope::Engine(EngineKind::Piper))
+            .expect("piper")
+            .entries
+            .get("docker"),
+        Some("докка")
+    );
+    assert_eq!(
+        loaded.merged_for(EngineKind::Piper).get("docker"),
+        Some("докка"),
+        "engine collection wins"
+    );
+    assert_eq!(
+        loaded.merged_for(EngineKind::TeraTts).get("docker"),
+        Some("докер"),
+        "other engines see the global entry"
+    );
+}
+
+#[test]
+fn empty_engine_collection_is_not_written() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("user_dictionary.toml");
+    let mut book = DictionaryBook::with_global();
+    book.upsert(
+        "Piper",
+        DictionaryScope::Engine(EngineKind::Piper),
+        UserDictionary::default(),
+    );
+    DictionaryStore::new(path.clone())
+        .save_book(&book)
+        .expect("save");
+    let raw = fs::read_to_string(&path).expect("read");
+    assert!(
+        !raw.contains("piper"),
+        "empty engine collection omitted: {raw}"
+    );
+}
+
+#[test]
+fn unknown_scope_is_skipped_on_load() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("user_dictionary.toml");
+    fs::write(
+        &path,
+        "version = 2\n\n[[dictionaries]]\nname = \"Mystery\"\nscope = \"mystery\"\n\n[dictionaries.entries]\nfoo = \"bar\"\n",
+    )
+    .expect("write");
+
+    let book = DictionaryStore::new(path.clone()).load_book();
+    assert_eq!(book.iter().count(), 1);
+    assert!(book.collection(DictionaryScope::Global).is_some());
+    assert_eq!(
+        book.unknown_collections().len(),
+        1,
+        "an unknown scope is preserved for the next save"
+    );
+    let raw = store::serialize_book(&book).expect("serialize");
+    assert!(raw.contains("scope = \"mystery\""), "{raw}");
+}
+
+#[test]
+fn serializing_a_book_without_a_global_collection_still_writes_one() {
+    let raw = store::serialize_book(&DictionaryBook::default()).expect("serialize");
+    assert!(raw.contains("version = 2"), "{raw}");
+    assert!(raw.contains("scope = \"global\""), "{raw}");
+}
+
+#[test]
+fn version_two_round_trip_keeps_forms_and_cyrillic_keys() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("user_dictionary.toml");
+    let mut book = DictionaryBook::with_global();
+    let mut global = UserDictionary::default();
+    global.insert(DictionaryEntry {
+        from: "замок".to_string(),
+        to: "зам+ок".to_string(),
+        forms: vec!["замка".to_string(), "замке".to_string()],
+    });
+    book.upsert("Global", DictionaryScope::Global, global);
+    DictionaryStore::new(path.clone())
+        .save_book(&book)
+        .expect("save");
+    let loaded = DictionaryStore::new(path).load_book();
+    let entry = loaded
+        .collection(DictionaryScope::Global)
+        .expect("global")
+        .entries
+        .iter()
+        .find(|entry| entry.key() == "замок")
+        .expect("entry");
+    assert_eq!(entry.to, "зам+ок");
+    assert_eq!(entry.forms, vec!["замка", "замке"]);
+}
+
+#[test]
+fn version_two_import_without_global_is_rejected() {
+    let raw = "version = 2\n\n[[dictionaries]]\nname = \"Piper\"\nscope = \"piper\"\n\n[dictionaries.entries]\nfoo = \"bar\"\n";
+    assert!(matches!(
+        store::parse_import(raw),
+        Err(DictionaryError::InvalidImport(_))
+    ));
+}

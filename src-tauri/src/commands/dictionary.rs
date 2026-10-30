@@ -1,17 +1,23 @@
 //! User dictionary commands (change `user-dictionary`): CRUD over the
-//! persisted TOML file plus immediate pipeline refresh. Import supports two
-//! modes (merge / replace) chosen by the user; save is all-or-nothing.
+//! persisted TOML file plus immediate pipeline refresh. The file stores named
+//! collections scoped to global or one engine; the pipeline receives the
+//! merged map for the active engine. Import supports two modes (merge /
+//! replace) chosen by the user; save is all-or-nothing.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
+use tts_contract::TextProfile;
 
 use super::{CmdResult, CommandError};
-use crate::dictionary::{self, DictionaryEntry, DictionaryError, UserDictionary};
+use crate::dictionary::{self, DictionaryEntry, DictionaryError, DictionaryScope, UserDictionary};
 use crate::pipeline::TTSPipeline;
 use crate::state::AppState;
+use crate::tts::EngineKind;
+use crate::tts::TtsEngine;
+use crate::tts::profiles;
 
 /// Entry as the UI sees it: the mapping plus the built-in override marker
 /// (backend-computed so the editor can badge entries shadowing built-ins
@@ -25,6 +31,16 @@ pub struct DictionaryEntryDto {
     pub overrides_builtin: bool,
 }
 
+/// One named collection as the editor sees it.
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DictionaryCollectionDto {
+    /// Stable scope id (`global`, `piper`, `silero`, `silero_native`, `teratts`).
+    pub scope: String,
+    pub name: String,
+    pub entries: Vec<DictionaryEntryDto>,
+}
+
 /// Import outcome counts.
 #[derive(Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -34,13 +50,13 @@ pub struct ImportReport {
     pub skipped: u32,
 }
 
-/// How an import interacts with the current dictionary.
+/// How an import interacts with the selected collection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ImportMode {
     /// Imported entries win on key collisions; invalid entries are skipped.
     Merge,
-    /// Validated entries fully replace the current dictionary.
+    /// Validated entries fully replace the selected collection.
     Replace,
 }
 
@@ -50,37 +66,77 @@ fn to_command_error(e: DictionaryError) -> CommandError {
     CommandError::config("dictionary.error", vec![e.to_string()])
 }
 
-fn dto_list(pipeline: &TTSPipeline) -> Vec<DictionaryEntryDto> {
-    pipeline
-        .user_dictionary()
-        .iter()
+fn parse_scope(scope: &str) -> Result<DictionaryScope, CommandError> {
+    DictionaryScope::parse(scope)
+        .ok_or_else(|| to_command_error(DictionaryError::InvalidScope(scope.to_string())))
+}
+
+fn active_kind(state: &AppState) -> EngineKind {
+    state.engine_switcher.kind()
+}
+
+/// The profile whose built-ins the selected collection can override: the
+/// engine's own profile for an engine collection, the active engine's profile
+/// for the global one.
+fn scope_profile(scope: DictionaryScope, active: EngineKind) -> &'static TextProfile {
+    match scope {
+        DictionaryScope::Global => profiles::profile_for(active),
+        DictionaryScope::Engine(kind) => profiles::profile_for(kind),
+    }
+}
+
+fn dto_list(
+    pipeline: &TTSPipeline,
+    dict: &UserDictionary,
+    profile: &TextProfile,
+) -> Vec<DictionaryEntryDto> {
+    dict.iter()
         .map(|entry| DictionaryEntryDto {
             from: entry.from.clone(),
             to: entry.to.clone(),
             forms: entry.forms.clone(),
-            overrides_builtin: pipeline.builtin_contains(&entry.key()),
+            overrides_builtin: pipeline.builtin_contains_for(profile, &entry.key()),
         })
         .collect()
 }
 
-/// Sorted entry list with the built-in override marker for the editor.
+/// All collections with their entries and the built-in marker for each
+/// collection's profile. The global collection is always present.
 #[tauri::command]
-pub async fn get_user_dictionary(state: State<'_, AppState>) -> CmdResult<Vec<DictionaryEntryDto>> {
+pub async fn get_dictionaries(
+    state: State<'_, AppState>,
+) -> CmdResult<Vec<DictionaryCollectionDto>> {
+    // The pipeline lock is the dictionary-wide lock: read the file under it
+    // so a concurrent save cannot replace the map between load and DTO build.
     let pipeline = state.pipeline.lock();
-    Ok(dto_list(&pipeline))
+    let book = state.dictionary_store.load_book();
+    let active = active_kind(&state);
+    Ok(book
+        .iter()
+        .map(|collection| DictionaryCollectionDto {
+            scope: collection.scope.as_str().to_string(),
+            name: collection.name.clone(),
+            entries: dto_list(
+                &pipeline,
+                &collection.entries,
+                scope_profile(collection.scope, active),
+            ),
+        })
+        .collect())
 }
 
-/// Validate every entry, atomically replace the whole dictionary, persist,
-/// and refresh the active pipeline. All-or-nothing: any invalid entry rejects
+/// Validate every entry, atomically replace one collection, persist, and
+/// refresh the active merged map. All-or-nothing: any invalid entry rejects
 /// the save and leaves the file unchanged. The pipeline lock is held across
 /// compute + file write + refresh so concurrent commands can never leave the
-/// file and the active map diverging (the lock is sync and never crosses an
-/// await; the file is tiny).
+/// file and the active map diverging.
 #[tauri::command]
-pub async fn save_user_dictionary(
+pub async fn save_dictionary(
     state: State<'_, AppState>,
+    scope: String,
     entries: Vec<DictionaryEntry>,
 ) -> CmdResult<()> {
+    let scope = parse_scope(&scope)?;
     for entry in &entries {
         dictionary::validate_entry_with_forms(&entry.from, &entry.to, &entry.forms)
             .map_err(to_command_error)?;
@@ -94,11 +150,19 @@ pub async fn save_user_dictionary(
 
     let store = Arc::clone(&state.dictionary_store);
     let pipeline = Arc::clone(&state.pipeline);
+    let active = active_kind(&state);
     tokio::task::spawn_blocking(move || {
-        // File I/O is blocking by nature — keep the async runtime free
-        // (same pattern as read_text_file in commands/import.rs).
-        store.save(&dict).map_err(to_command_error)?;
-        pipeline.lock().set_user_dictionary(dict);
+        // Hold the pipeline lock across load + write + refresh: it is the
+        // single serialization point for dictionary mutations.
+        let mut pipeline = pipeline.lock();
+        let mut book = store.load_book();
+        let name = book
+            .collection(scope)
+            .map(|c| c.name.clone())
+            .unwrap_or_else(|| scope.default_name().to_string());
+        book.upsert(name, scope, dict);
+        store.save_book(&book).map_err(to_command_error)?;
+        pipeline.set_user_dictionary(book.merged_for(active));
         Ok(())
     })
     .await
@@ -200,28 +264,41 @@ pub async fn pick_dictionary_export_path() -> CmdResult<Option<String>> {
     })
 }
 
-/// Read a dictionary TOML file and apply it in the chosen mode, persist, and
-/// refresh the active pipeline. An unreadable or unparsable file rejects with
-/// a typed error and changes nothing; invalid entries never abort a merge.
-/// Like `save_user_dictionary`, the pipeline lock spans compute + write +
-/// refresh so concurrent commands cannot interleave.
+/// Read a dictionary TOML file and apply it to the selected collection in the
+/// chosen mode, persist, and refresh the active merged map. An unreadable or
+/// unparsable file rejects with a typed error and changes nothing; invalid
+/// entries never abort a merge. Like `save_dictionary`, the pipeline lock
+/// spans compute + write + refresh so concurrent commands cannot interleave.
 #[tauri::command]
-pub async fn import_user_dictionary(
+pub async fn import_dictionary(
     state: State<'_, AppState>,
     path: PathBuf,
     mode: ImportMode,
+    scope: String,
 ) -> CmdResult<ImportReport> {
+    let scope = parse_scope(&scope)?;
     let store = Arc::clone(&state.dictionary_store);
     let pipeline = Arc::clone(&state.pipeline);
+    let active = active_kind(&state);
     tokio::task::spawn_blocking(move || {
         let raw = std::fs::read_to_string(&path)
             .map_err(|e| CommandError::config("dictionary.import_failed", vec![e.to_string()]))?;
         let imported = dictionary::parse_import(&raw).map_err(to_command_error)?;
 
-        let mut guard = pipeline.lock();
-        let (dict, report) = apply_import(guard.user_dictionary(), imported, mode);
-        store.save(&dict).map_err(to_command_error)?;
-        guard.set_user_dictionary(dict);
+        let mut pipeline = pipeline.lock();
+        let mut book = store.load_book();
+        let name = book
+            .collection(scope)
+            .map(|c| c.name.clone())
+            .unwrap_or_else(|| scope.default_name().to_string());
+        let current = book
+            .collection(scope)
+            .map(|c| c.entries.clone())
+            .unwrap_or_default();
+        let (dict, report) = apply_import(&current, imported, mode);
+        book.upsert(name, scope, dict);
+        store.save_book(&book).map_err(to_command_error)?;
+        pipeline.set_user_dictionary(book.merged_for(active));
         Ok(report)
     })
     .await
@@ -230,10 +307,24 @@ pub async fn import_user_dictionary(
     })?
 }
 
-/// Write the current entries as valid dictionary TOML to a user-chosen path.
+/// Write the selected collection as valid dictionary TOML to a user-chosen
+/// path.
 #[tauri::command]
-pub async fn export_user_dictionary(state: State<'_, AppState>, path: PathBuf) -> CmdResult<()> {
-    let dict = state.pipeline.lock().user_dictionary().clone();
+pub async fn export_dictionary(
+    state: State<'_, AppState>,
+    path: PathBuf,
+    scope: String,
+) -> CmdResult<()> {
+    let scope = parse_scope(&scope)?;
+    let dict = {
+        let _pipeline = state.pipeline.lock();
+        state
+            .dictionary_store
+            .load_book()
+            .collection(scope)
+            .map(|c| c.entries.clone())
+            .unwrap_or_default()
+    };
     tokio::task::spawn_blocking(move || {
         dictionary::export_to(&dict, &path).map_err(to_command_error)
     })
@@ -246,6 +337,7 @@ pub async fn export_user_dictionary(state: State<'_, AppState>, path: PathBuf) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dictionary::DictionaryBook;
 
     fn entry(from: &str, to: &str) -> DictionaryEntry {
         DictionaryEntry::new(from, to)
@@ -340,7 +432,11 @@ mod tests {
         let mut pipeline = pipeline;
         pipeline.set_user_dictionary(dict);
 
-        let dtos = dto_list(&pipeline);
+        let dtos = dto_list(
+            &pipeline,
+            pipeline.user_dictionary(),
+            &profiles::SILERO_PROFILE,
+        );
         assert_eq!(dtos.len(), 3);
         let nginx = dtos.iter().find(|d| d.from == "nginx").expect("nginx");
         let ios = dtos.iter().find(|d| d.from == "ios").expect("ios");
@@ -348,5 +444,58 @@ mod tests {
         assert!(nginx.overrides_builtin);
         assert!(ios.overrides_builtin);
         assert!(!zabbix.overrides_builtin);
+    }
+
+    #[test]
+    fn native_profile_does_not_mark_english_builtins() {
+        let pipeline = TTSPipeline::new();
+        let mut dict = UserDictionary::default();
+        dict.insert(entry("nginx", "энджинкс-кастом"));
+        dict.insert(entry("getUserData", "гет юзер дата"));
+        let mut pipeline = pipeline;
+        pipeline.set_user_dictionary(dict);
+
+        let dtos = dto_list(
+            &pipeline,
+            pipeline.user_dictionary(),
+            &profiles::NATIVE_EN_PROFILE,
+        );
+        assert!(dtos.iter().all(|d| !d.overrides_builtin));
+    }
+
+    #[test]
+    fn native_profile_still_marks_mixed_alnum_builtins() {
+        let pipeline = TTSPipeline::new();
+        let mut dict = UserDictionary::default();
+        dict.insert(entry("IPv6", "айпи ви шесть"));
+        let mut pipeline = pipeline;
+        pipeline.set_user_dictionary(dict);
+
+        let dtos = dto_list(
+            &pipeline,
+            pipeline.user_dictionary(),
+            &profiles::NATIVE_EN_PROFILE,
+        );
+        assert!(dtos[0].overrides_builtin);
+    }
+
+    #[test]
+    fn book_merge_prefers_engine_entries() {
+        let mut book = DictionaryBook::with_global();
+        let mut global = UserDictionary::default();
+        global.insert(entry("docker", "докер"));
+        book.upsert("Global", DictionaryScope::Global, global);
+        let mut piper = UserDictionary::default();
+        piper.insert(entry("docker", "докка"));
+        book.upsert("Piper", DictionaryScope::Engine(EngineKind::Piper), piper);
+
+        assert_eq!(
+            book.merged_for(EngineKind::Piper).get("docker"),
+            Some("докка")
+        );
+        assert_eq!(
+            book.merged_for(EngineKind::TeraTts).get("docker"),
+            Some("докер")
+        );
     }
 }

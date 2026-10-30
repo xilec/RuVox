@@ -7,6 +7,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 ## [Unreleased]
 
 ### Added
+- **Engine-scoped dictionaries** — the dictionary file now holds named
+  collections: a global one for every engine and optional per-engine ones.
+  Engine entries win on the same source word, the editor has a scope selector,
+  and import/export work on the selected collection; existing files migrate
+  losslessly into the global collection (#310).
 - **TeraTTSv2 engine (experimental)** — a fourth TTS engine runs the 99M
   TeraTTSv2 flow-matching model fully in-process on ONNX Runtime at 44.1 kHz,
   with four Russian voices (`ru_m5` default, `ru_f1`, `ru_f2`, `ru_m1`) and
