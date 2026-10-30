@@ -133,11 +133,13 @@
   typecheck`, `pnpm test:unit`, and the bundle-gated teratts suite with
   `TERATTS_BUNDLE`. Verify: all green; the perf smoke stays inside the RTF and
   RSS budgets.
-- [ ] 4.2 Manual listening pass (the agent runs the app or the example and hands
+- [x] 4.2 Manual listening pass (the agent runs the app or the example and hands
   the user a checklist): a paragraph with numbers, abbreviations, a URL and a
   code identifier; a three-minute text with chunk joins; `ru_m5` vs `ru_f1`; a
   dictionary word with `+`. Verify: the user accepts the sound or names the
-  defect; fixes land on the same branch.
+  defect; fixes land on the same branch. Accepted 2026-10-30 on `ru_m5`,
+  `ru_f1`, the mixed paragraph, stress words and the 4-minute text; the
+  `IPv6` reading is deferred to the EN-routing work (#311).
 - [ ] 4.3 Reviewer pass (`ruvox-reviewer`) over the branch diff, fix loop, then
   archive the change and sync the delta specs. Verify: the reviewer's accepted
   findings are committed, the archive commit contains the synced specs, and
