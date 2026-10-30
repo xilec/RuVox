@@ -1512,6 +1512,10 @@ pub async fn get_available_engines(state: State<'_, AppState>) -> CmdResult<Avai
 /// final outcome so the frontend can show one final notification.
 #[tauri::command]
 pub async fn download_silero_native_bundle(state: State<'_, AppState>) -> CmdResult<()> {
+    let _guard = state
+        .bundle_download_lock
+        .try_lock()
+        .map_err(|_| CommandError::internal("bundle.download_in_progress", vec![]))?;
     let bundle_dir = state.silero_native_bundle_dir.clone();
     let emitter = Arc::clone(&state.emitter);
     crate::tts::silero_native::download::download_bundle(&bundle_dir, &emitter)
@@ -1527,6 +1531,10 @@ pub async fn download_silero_native_bundle(state: State<'_, AppState>) -> CmdRes
 /// notification.
 #[tauri::command]
 pub async fn download_teratts_bundle(state: State<'_, AppState>) -> CmdResult<()> {
+    let _guard = state
+        .bundle_download_lock
+        .try_lock()
+        .map_err(|_| CommandError::internal("bundle.download_in_progress", vec![]))?;
     let bundle_dir = state.teratts_bundle_dir.clone();
     let emitter = Arc::clone(&state.emitter);
     crate::tts::teratts::download::download_bundle(&bundle_dir, &emitter)

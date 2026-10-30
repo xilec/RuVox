@@ -1004,6 +1004,7 @@ pub fn run() {
                 piper_voices_dir,
                 silero_native_bundle_dir,
                 teratts_bundle_dir,
+                bundle_download_lock: tokio::sync::Mutex::new(()),
                 emitter,
                 player,
                 pipeline,

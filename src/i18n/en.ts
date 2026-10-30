@@ -322,6 +322,7 @@ export const en: Record<MessageKey, string> = {
   'errors.generic.internal': 'Internal error',
 
   // ── Backend error codes (CommandError.code) ─────────────────────────────
+  'errors.bundle.download_in_progress': 'A model download is already running',
   'errors.entry.not_found': 'Entry {0} not found',
   'errors.entry.id_invalid': 'Invalid entry id: {0}',
   'errors.entry.not_ready': 'Entry {0} is not ready for playback (status: {1})',

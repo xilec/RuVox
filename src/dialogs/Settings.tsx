@@ -496,6 +496,15 @@ export function SettingsModal({
     });
   };
 
+  // A download can outlive the dialog: clear the local progress when it
+  // closes so reopening does not show a stale bar (the backend serializes
+  // downloads and reports a second attempt as in-progress).
+  useEffect(() => {
+    if (opened) return;
+    setBundleDownload(null);
+    downloadActiveRef.current = false;
+  }, [opened]);
+
   // Reset the nested cleanup modal's visibility when Settings closes, so
   // reopening Settings does not resurrect a stale nested-open state.
   useEffect(() => {

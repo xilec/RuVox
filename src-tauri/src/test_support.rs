@@ -395,6 +395,7 @@ pub fn build_test_app_with_kind(kind: EngineKind) -> TestApp {
         piper_voices_dir: voices_dir.path().to_path_buf(),
         silero_native_bundle_dir: bundle_dir.path().to_path_buf(),
         teratts_bundle_dir: bundle_dir.path().to_path_buf(),
+        bundle_download_lock: tokio::sync::Mutex::new(()),
         emitter,
         player: player.clone(),
         pipeline: Arc::new(ParkingMutex::new(TTSPipeline::new())),

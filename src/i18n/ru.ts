@@ -323,6 +323,7 @@ export const ru = {
   'errors.generic.internal': 'Внутренняя ошибка',
 
   // ── Backend error codes (CommandError.code) ─────────────────────────────
+  'errors.bundle.download_in_progress': 'Скачивание моделей уже идёт',
   'errors.entry.not_found': 'Запись {0} не найдена',
   'errors.entry.id_invalid': 'Некорректный идентификатор записи: {0}',
   'errors.entry.not_ready': 'Запись {0} не готова к воспроизведению (статус: {1})',
