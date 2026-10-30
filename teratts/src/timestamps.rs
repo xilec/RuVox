@@ -58,11 +58,25 @@ pub fn leading_silence(samples: &[f32]) -> f64 {
 
 /// Build timestamps for one chunk.
 ///
+/// Where a chunk sits in the utterance and in the audio timeline.
+#[derive(Debug, Clone, Copy)]
+pub struct ChunkTiming {
+    /// Codepoint offset of the chunk in the normalized text.
+    pub chunk_start: usize,
+    /// Audio start of the chunk, seconds from the beginning of the utterance.
+    pub audio_start: f64,
+    /// Audio end of the chunk, seconds.
+    pub audio_end: f64,
+    /// Leading silence inside the chunk's audio, seconds.
+    pub leading_silence: f64,
+}
+
 /// `original` is the pipeline text of the chunk (used for the highlighted word
 /// strings and char ranges), `prepared_inner` is the same chunk after tags,
 /// stress and NFKD (used for the predictor prefixes, which must match what the
-/// model saw), `dropped` lists the characters the alphabet gate removed, and
-/// `predict` returns raw predicted seconds for a prefix.
+/// model saw), `dropped` lists the characters the alphabet gate removed,
+/// `timing` places the chunk in the text and audio, and `predict` returns raw
+/// predicted seconds for a prefix.
 ///
 /// Tokens made only of dropped characters (a standalone em dash, a number when
 /// the caller bypassed the pipeline) disappear from the prepared text, so they
@@ -72,12 +86,15 @@ pub fn chunk_timestamps(
     original: &str,
     prepared_inner: &str,
     dropped: &[char],
-    chunk_start: usize,
-    audio_start: f64,
-    audio_end: f64,
-    leading_silence: f64,
+    timing: ChunkTiming,
     predict: impl Fn(&str) -> Result<f64>,
 ) -> Result<Vec<Word>> {
+    let ChunkTiming {
+        chunk_start,
+        audio_start,
+        audio_end,
+        leading_silence,
+    } = timing;
     let source: Vec<_> = words(original)
         .into_iter()
         .filter(|(word, _, _)| !word.chars().all(|character| dropped.contains(&character)))
@@ -154,10 +171,12 @@ mod tests {
             original,
             prepared,
             &['—', '1', '5'],
-            0,
-            0.0,
-            2.0,
-            0.0,
+            ChunkTiming {
+                chunk_start: 0,
+                audio_start: 0.0,
+                audio_end: 2.0,
+                leading_silence: 0.0,
+            },
             fake_predict,
         )
         .unwrap();
@@ -169,8 +188,19 @@ mod tests {
     fn timestamps_are_monotonic_and_inside_the_audio() {
         let original = "первое предложение здесь. второе предложение тут.";
         let prepared = original;
-        let words =
-            chunk_timestamps(original, prepared, &[], 0, 0.0, 4.0, 0.1, fake_predict).unwrap();
+        let words = chunk_timestamps(
+            original,
+            prepared,
+            &[],
+            ChunkTiming {
+                chunk_start: 0,
+                audio_start: 0.0,
+                audio_end: 4.0,
+                leading_silence: 0.1,
+            },
+            fake_predict,
+        )
+        .unwrap();
         assert_eq!(words.len(), 6);
         let mut previous = 0.0;
         for word in &words {
@@ -184,7 +214,19 @@ mod tests {
 
     #[test]
     fn char_ranges_are_shifted_by_the_chunk_offset() {
-        let words = chunk_timestamps("мир", "мир", &[], 100, 0.0, 1.0, 0.0, fake_predict).unwrap();
+        let words = chunk_timestamps(
+            "мир",
+            "мир",
+            &[],
+            ChunkTiming {
+                chunk_start: 100,
+                audio_start: 0.0,
+                audio_end: 1.0,
+                leading_silence: 0.0,
+            },
+            fake_predict,
+        )
+        .unwrap();
         assert_eq!(words[0].start_char, 100);
         assert_eq!(words[0].end_char, 103);
     }
@@ -200,7 +242,19 @@ mod tests {
     #[test]
     fn a_word_count_mismatch_is_an_error() {
         assert!(
-            chunk_timestamps("два слова", "одно", &[], 0, 0.0, 1.0, 0.0, fake_predict).is_err()
+            chunk_timestamps(
+                "два слова",
+                "одно",
+                &[],
+                ChunkTiming {
+                    chunk_start: 0,
+                    audio_start: 0.0,
+                    audio_end: 1.0,
+                    leading_silence: 0.0
+                },
+                fake_predict
+            )
+            .is_err()
         );
     }
 }

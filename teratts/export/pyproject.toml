@@ -9,4 +9,7 @@ dependencies = [
     "onnx==1.22.0",
     "huggingface_hub>=0.30",
     "numpy>=2.0",
+    # parity_fixtures.py runs the four graphs against the upstream reference;
+    # export.py itself only needs onnx.
+    "onnxruntime>=1.20",
 ]

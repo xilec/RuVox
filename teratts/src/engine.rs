@@ -171,10 +171,12 @@ impl Engine {
                 &chunk.text,
                 inner,
                 &prepared.dropped,
-                chunk.start,
-                audio_start,
-                audio_end,
-                silence,
+                timestamps::ChunkTiming {
+                    chunk_start: chunk.start,
+                    audio_start,
+                    audio_end,
+                    leading_silence: silence,
+                },
                 predict,
             )?;
             timestamps.extend(words);

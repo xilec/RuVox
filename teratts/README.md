@@ -48,11 +48,31 @@ Runtime 1.26):
 | Metric | Value |
 |--------|-------|
 | Model load (cold) | ~5.1 s |
-| Synthesis RTF (12 s of audio) | ~0.049 |
+| Synthesis RTF, 4 threads | 0.063 (17 s of audio) |
+| Synthesis RTF, 12 threads | 0.049–0.071 |
+| Peak RSS (4 threads) | ~1.3 GiB (weights + activations + RUAccent dictionaries) |
 
 The RTF leaves ample headroom under the plan's ≤ 0.15 target; a long article
 is synthesized faster than real time. Memory is the known cost of the
 dictionary-mode accentizer and is the reason the bundle is optional.
+
+## Parity with the Python reference
+
+`export/parity_fixtures.py` runs the pinned upstream `teratts.py` on a fixed
+text and writes `tests/fixtures/` (text embedding, raw duration, sampled
+latent, the first 8 192 audio samples). The bundle-gated test
+`synth::parity::matches_python_fixtures` replays the same arrays through the
+Rust sessions and compares them; it skips when `TERATTS_BUNDLE` is unset.
+Regenerate the fixtures only when the upstream revision or the bundle changes.
+
+```bash
+cd teratts/export
+uv run python parity_fixtures.py \
+  --snapshot /path/to/hf/snapshot \
+  --bundle ../../tmp/teratts-bundle \
+  --out ../tests/fixtures
+TERATTS_BUNDLE=../../tmp/teratts-bundle cargo test --manifest-path ../../teratts/Cargo.toml parity
+```
 
 ## Licensing
 

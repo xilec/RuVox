@@ -63,6 +63,19 @@ given.
    `src-tauri/src/tts/teratts/download.rs`; update it when the bundle is meant
    to ship. Version discovery, in-app update and deletion are issue #317.
 
+## Parity fixtures
+
+`parity_fixtures.py` runs the pinned upstream `teratts.py` against the bundle
+and writes the arrays the Rust parity test compares (`teratts/tests/fixtures/`).
+It needs the upstream snapshot directory in addition to the bundle:
+
+```bash
+nix develop -c uv run python parity_fixtures.py \
+  --snapshot /path/to/hf/snapshot \
+  --bundle ../../tmp/teratts-bundle \
+  --out ../tests/fixtures
+```
+
 ## License
 
 The bundle redistributes TeraTTSv2 weights under the TeraTTSv2 Model License
