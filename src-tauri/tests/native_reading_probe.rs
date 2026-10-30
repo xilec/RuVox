@@ -16,7 +16,7 @@
 //!   --test native_reading_probe -- --ignored --nocapture
 //! ```
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use ruvox_tauri_lib::paths::voices_root;
@@ -155,6 +155,3 @@ async fn native_reading_probe() {
     println!("wrote probe samples to {}", out.display());
     println!("listen per kind: raw vs narrated for each available engine");
 }
-
-#[allow(dead_code)]
-fn _assert_paths(_: &Path) {}
