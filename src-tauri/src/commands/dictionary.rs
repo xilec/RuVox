@@ -106,9 +106,11 @@ fn dto_list(
 pub async fn get_dictionaries(
     state: State<'_, AppState>,
 ) -> CmdResult<Vec<DictionaryCollectionDto>> {
+    // The pipeline lock is the dictionary-wide lock: read the file under it
+    // so a concurrent save cannot replace the map between load and DTO build.
+    let pipeline = state.pipeline.lock();
     let book = state.dictionary_store.load_book();
     let active = active_kind(&state);
-    let pipeline = state.pipeline.lock();
     Ok(book
         .iter()
         .map(|collection| DictionaryCollectionDto {
@@ -150,6 +152,9 @@ pub async fn save_dictionary(
     let pipeline = Arc::clone(&state.pipeline);
     let active = active_kind(&state);
     tokio::task::spawn_blocking(move || {
+        // Hold the pipeline lock across load + write + refresh: it is the
+        // single serialization point for dictionary mutations.
+        let mut pipeline = pipeline.lock();
         let mut book = store.load_book();
         let name = book
             .collection(scope)
@@ -157,7 +162,7 @@ pub async fn save_dictionary(
             .unwrap_or_else(|| scope.default_name().to_string());
         book.upsert(name, scope, dict);
         store.save_book(&book).map_err(to_command_error)?;
-        pipeline.lock().set_user_dictionary(book.merged_for(active));
+        pipeline.set_user_dictionary(book.merged_for(active));
         Ok(())
     })
     .await
@@ -280,6 +285,7 @@ pub async fn import_dictionary(
             .map_err(|e| CommandError::config("dictionary.import_failed", vec![e.to_string()]))?;
         let imported = dictionary::parse_import(&raw).map_err(to_command_error)?;
 
+        let mut pipeline = pipeline.lock();
         let mut book = store.load_book();
         let name = book
             .collection(scope)
@@ -292,7 +298,7 @@ pub async fn import_dictionary(
         let (dict, report) = apply_import(&current, imported, mode);
         book.upsert(name, scope, dict);
         store.save_book(&book).map_err(to_command_error)?;
-        pipeline.lock().set_user_dictionary(book.merged_for(active));
+        pipeline.set_user_dictionary(book.merged_for(active));
         Ok(report)
     })
     .await
@@ -310,12 +316,15 @@ pub async fn export_dictionary(
     scope: String,
 ) -> CmdResult<()> {
     let scope = parse_scope(&scope)?;
-    let dict = state
-        .dictionary_store
-        .load_book()
-        .collection(scope)
-        .map(|c| c.entries.clone())
-        .unwrap_or_default();
+    let dict = {
+        let _pipeline = state.pipeline.lock();
+        state
+            .dictionary_store
+            .load_book()
+            .collection(scope)
+            .map(|c| c.entries.clone())
+            .unwrap_or_default()
+    };
     tokio::task::spawn_blocking(move || {
         dictionary::export_to(&dict, &path).map_err(to_command_error)
     })

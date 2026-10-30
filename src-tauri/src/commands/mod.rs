@@ -1578,6 +1578,7 @@ pub async fn update_config<R: Runtime>(
     patch: UIConfigPatch,
 ) -> CmdResult<()> {
     let mut config = state.storage.load_config().unwrap_or_default();
+    let previous_engine = state.engine_switcher.kind();
     let code_block_mode_patch = patch.code_block_mode.clone();
     // Remembered to roll the setting back when the tray icon cannot be
     // created: the persisted flag must match what the app can actually do.
@@ -1605,14 +1606,14 @@ pub async fn update_config<R: Runtime>(
         .save_config(&config)
         .map_err(CommandError::from)?;
 
-    // The merged user dictionary is engine-scoped: after a successful switch,
-    // rebuild it for the new active engine. A missing/unreadable file degrades
-    // to an empty global map inside the store.
-    let book = state.dictionary_store.load_book();
-    state
-        .pipeline
-        .lock()
-        .set_user_dictionary(book.merged_for(state.engine_switcher.kind()));
+    // The merged user dictionary is engine-scoped: only a real engine switch
+    // needs a rebuild, and the pipeline lock keeps it atomic with the
+    // dictionary commands. Other patches must not touch the dictionary.
+    if state.engine_switcher.kind() != previous_engine {
+        let mut pipeline = state.pipeline.lock();
+        let book = state.dictionary_store.load_book();
+        pipeline.set_user_dictionary(book.merged_for(state.engine_switcher.kind()));
+    }
 
     if code_block_mode_patch.is_some() {
         let mode = crate::pipeline::normalizers::code_blocks::CodeBlockMode::from_config(

@@ -26,28 +26,15 @@ struct DictionaryFileRaw {
     version: Option<u32>,
     /// Version 1 layout.
     entries: Option<toml::Table>,
-    /// Version 2 layout.
-    dictionaries: Option<Vec<RawCollection>>,
-}
-
-#[derive(Deserialize)]
-struct RawCollection {
-    name: Option<String>,
-    scope: String,
-    entries: Option<toml::Table>,
+    /// Version 2 layout. Kept as raw tables so a collection whose scope this
+    /// build does not know survives a load/save round-trip.
+    dictionaries: Option<Vec<toml::Table>>,
 }
 
 #[derive(Serialize)]
 struct DictionaryFileOut {
     version: u32,
-    dictionaries: Vec<OutCollection>,
-}
-
-#[derive(Serialize)]
-struct OutCollection {
-    name: String,
-    scope: String,
-    entries: toml::Table,
+    dictionaries: Vec<toml::Value>,
 }
 
 /// Owns the canonical dictionary file path and its load/save.
@@ -104,19 +91,30 @@ impl DictionaryStore {
         let mut book = DictionaryBook::with_global();
         if file.version == Some(2) || file.dictionaries.is_some() {
             for raw_collection in file.dictionaries.unwrap_or_default() {
-                let Some(scope) = DictionaryScope::parse(&raw_collection.scope) else {
+                let scope_id = raw_collection
+                    .get("scope")
+                    .and_then(toml::Value::as_str)
+                    .unwrap_or_default();
+                let Some(scope) = DictionaryScope::parse(scope_id) else {
                     tracing::warn!(
-                        "{}: unknown dictionary scope {:?}, skipping collection",
+                        "{}: unknown dictionary scope {:?}, preserving the collection as-is",
                         self.path.display(),
-                        raw_collection.scope
+                        scope_id
                     );
+                    book.push_unknown(raw_collection);
                     continue;
                 };
                 let name = raw_collection
-                    .name
-                    .unwrap_or_else(|| scope.default_name().to_string());
+                    .get("name")
+                    .and_then(toml::Value::as_str)
+                    .unwrap_or(scope.default_name())
+                    .to_string();
                 let entries = parse_entries(
-                    raw_collection.entries.unwrap_or_default(),
+                    raw_collection
+                        .get("entries")
+                        .and_then(toml::Value::as_table)
+                        .cloned()
+                        .unwrap_or_default(),
                     &self.path,
                     &format!("collection {name:?}"),
                 );
@@ -200,16 +198,32 @@ fn parse_entries(table: toml::Table, path: &Path, source: &str) -> UserDictionar
 
 /// Serialize all collections to the version 2 dictionary TOML.
 pub fn serialize_book(book: &DictionaryBook) -> Result<String, DictionaryError> {
+    // The global collection is the invariant a hand-built book can miss;
+    // never persist a file without it.
+    let mut book = book.clone();
+    book.ensure_global();
     let mut dictionaries = Vec::new();
     for collection in book.iter() {
         if collection.scope != DictionaryScope::Global && collection.entries.is_empty() {
             continue;
         }
-        dictionaries.push(OutCollection {
-            name: collection.name.clone(),
-            scope: collection.scope.as_str().to_string(),
-            entries: entries_table(&collection.entries),
-        });
+        let mut table = toml::Table::new();
+        table.insert(
+            "name".to_string(),
+            toml::Value::String(collection.name.clone()),
+        );
+        table.insert(
+            "scope".to_string(),
+            toml::Value::String(collection.scope.as_str().to_string()),
+        );
+        table.insert(
+            "entries".to_string(),
+            toml::Value::Table(entries_table(&collection.entries)),
+        );
+        dictionaries.push(toml::Value::Table(table));
+    }
+    for unknown in book.unknown_collections() {
+        dictionaries.push(toml::Value::Table(unknown.clone()));
     }
     let file = DictionaryFileOut {
         version: FORMAT_VERSION,
@@ -295,12 +309,19 @@ pub fn parse_import(raw: &str) -> Result<Vec<DictionaryEntry>, DictionaryError> 
         entries
     } else {
         let mut collections = file.dictionaries.unwrap_or_default();
-        let index = collections
+        let Some(index) = collections
             .iter()
-            .position(|c| c.scope == "global")
-            .or_else(|| (!collections.is_empty()).then_some(0));
-        index
-            .and_then(|index| collections.remove(index).entries)
+            .position(|c| c.get("scope").and_then(toml::Value::as_str) == Some("global"))
+        else {
+            return Err(DictionaryError::InvalidImport(
+                "version 2 dictionary has no global collection".to_string(),
+            ));
+        };
+        collections
+            .remove(index)
+            .get("entries")
+            .and_then(toml::Value::as_table)
+            .cloned()
             .unwrap_or_default()
     };
     Ok(table

@@ -660,7 +660,57 @@ fn unknown_scope_is_skipped_on_load() {
     )
     .expect("write");
 
-    let book = DictionaryStore::new(path).load_book();
+    let book = DictionaryStore::new(path.clone()).load_book();
     assert_eq!(book.iter().count(), 1);
     assert!(book.collection(DictionaryScope::Global).is_some());
+    assert_eq!(
+        book.unknown_collections().len(),
+        1,
+        "an unknown scope is preserved for the next save"
+    );
+    let raw = store::serialize_book(&book).expect("serialize");
+    assert!(raw.contains("scope = \"mystery\""), "{raw}");
+}
+
+#[test]
+fn serializing_a_book_without_a_global_collection_still_writes_one() {
+    let raw = store::serialize_book(&DictionaryBook::default()).expect("serialize");
+    assert!(raw.contains("version = 2"), "{raw}");
+    assert!(raw.contains("scope = \"global\""), "{raw}");
+}
+
+#[test]
+fn version_two_round_trip_keeps_forms_and_cyrillic_keys() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("user_dictionary.toml");
+    let mut book = DictionaryBook::with_global();
+    let mut global = UserDictionary::default();
+    global.insert(DictionaryEntry {
+        from: "замок".to_string(),
+        to: "зам+ок".to_string(),
+        forms: vec!["замка".to_string(), "замке".to_string()],
+    });
+    book.upsert("Global", DictionaryScope::Global, global);
+    DictionaryStore::new(path.clone())
+        .save_book(&book)
+        .expect("save");
+    let loaded = DictionaryStore::new(path).load_book();
+    let entry = loaded
+        .collection(DictionaryScope::Global)
+        .expect("global")
+        .entries
+        .iter()
+        .find(|entry| entry.key() == "замок")
+        .expect("entry");
+    assert_eq!(entry.to, "зам+ок");
+    assert_eq!(entry.forms, vec!["замка", "замке"]);
+}
+
+#[test]
+fn version_two_import_without_global_is_rejected() {
+    let raw = "version = 2\n\n[[dictionaries]]\nname = \"Piper\"\nscope = \"piper\"\n\n[dictionaries.entries]\nfoo = \"bar\"\n";
+    assert!(matches!(
+        store::parse_import(raw),
+        Err(DictionaryError::InvalidImport(_))
+    ));
 }

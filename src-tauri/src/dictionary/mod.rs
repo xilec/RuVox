@@ -83,6 +83,8 @@ pub enum DictionaryError {
     FormCollision(String),
     #[error("unknown dictionary scope {0:?}")]
     InvalidScope(String),
+    #[error("invalid dictionary import: {0}")]
+    InvalidImport(String),
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
     #[error("TOML serialization error: {0}")]
@@ -315,6 +317,9 @@ impl DictionaryCollection {
 #[derive(Debug, Clone, Default)]
 pub struct DictionaryBook {
     collections: Vec<DictionaryCollection>,
+    /// Collections whose `scope` this build does not know, kept verbatim so
+    /// saving the file never drops a collection written by a newer build.
+    unknown: Vec<toml::Table>,
 }
 
 impl DictionaryBook {
@@ -391,8 +396,17 @@ impl DictionaryBook {
         self.collections.iter()
     }
 
+    /// Raw collections this build cannot interpret (forward compatibility).
+    pub fn unknown_collections(&self) -> &[toml::Table] {
+        &self.unknown
+    }
+
+    pub(crate) fn push_unknown(&mut self, table: toml::Table) {
+        self.unknown.push(table);
+    }
+
     pub fn is_empty(&self) -> bool {
-        self.collections.iter().all(|c| c.entries.is_empty())
+        self.unknown.is_empty() && self.collections.iter().all(|c| c.entries.is_empty())
     }
 }
 
