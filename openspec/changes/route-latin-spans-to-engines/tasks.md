@@ -27,6 +27,12 @@
 - [x] 3.3 Bundle-gated mixed test: RU + EN + RU, monotonic timestamps,
   absolute English char range, 44.1 kHz WAV.
 - [x] 3.4 Parity test still passes for the RU path (no audio change).
+- [x] 3.5 Short Russian connector segments use a reduced duration scale so a
+  one-letter word between English fragments is not stretched; bundle-gated
+  regression test.
+- [x] 3.6 Punctuation-only chunks and leading punctuation are not synthesized:
+  the chunker merges a wordless part into the previous chunk and the adapter
+  trims a segment's leading punctuation; regression tests.
 
 ## 4. App integration
 

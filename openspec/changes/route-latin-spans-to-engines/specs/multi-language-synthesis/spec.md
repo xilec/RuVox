@@ -79,7 +79,13 @@ The engine SHALL synthesize each language segment with its own language
 frontend and the configured voice, and SHALL concatenate the segment audio
 into one 44.1 kHz mono WAV. The voice SHALL NOT change at a language boundary:
 TeraTTSv2 voices are cross-lingual, so one selected voice reads both Russian
-and English. Segments SHALL be separated by the profile's segment pause
+and English. An isolated Russian segment of at most two letters (a conjunction
+or preposition between English fragments) SHALL use a reduced duration scale
+(0.3× the configured scale) so the duration predictor does not stretch it to
+about a second; longer segments keep the configured scale. A segment with no
+alphanumeric character SHALL be skipped, and leading punctuation before a
+segment's first word SHALL be trimmed with its codepoint offset accounted for,
+so a lone period is never synthesized as a standalone vocalization. Segments SHALL be separated by the profile's segment pause
 (200 ms for TeraTTS) and SHALL NOT have a pause appended after the last
 segment. Chunking SHALL apply inside a segment, never across segments.
 
@@ -98,6 +104,18 @@ NOT write a partial file.
 - GIVEN the configured voice `ru_m5`
 - WHEN a mixed utterance is synthesized
 - THEN every segment uses the `ru_m5` style tensors, and only the language tag and the Russian accentuation differ
+
+#### Scenario: Leading punctuation is not synthesized
+
+- GIVEN a Russian segment `".\n\nДокументация..."` after an English span
+- WHEN the adapter builds segments
+- THEN the leading period is trimmed, the segment starts at `Документация`, and no standalone period audio is produced
+
+#### Scenario: One-letter connector is not stretched
+
+- GIVEN the segments `Kubernetes` (English), ` и ` (Russian) and `API` (English)
+- WHEN the mixed utterance is synthesized
+- THEN the `и` timestamp lasts about 0.28 s instead of the predictor's ~0.9 s
 
 #### Scenario: Cancellation leaves no file
 

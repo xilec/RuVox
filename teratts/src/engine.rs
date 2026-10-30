@@ -21,6 +21,11 @@ use crate::synth::{self, Sessions, SynthOptions};
 use crate::text::{self, Accentizer, Language};
 use crate::timestamps::{self, Word};
 
+/// Duration-scale multiplier for isolated one- or two-letter Russian words.
+/// The predictor treats them as a whole utterance and returns ~0.9 s; 0.3
+/// brings a conjunction to a natural ~0.25 s.
+const SHORT_RU_SEGMENT_SCALE: f32 = 0.3;
+
 /// Model identity for the generation snapshot.
 #[derive(Debug, Clone)]
 pub struct ModelInfo {
@@ -226,6 +231,15 @@ impl Engine {
         cancelled: &AtomicBool,
     ) -> Result<(Vec<f32>, Vec<Word>)> {
         let styles = self.styles_for(voice)?;
+        // An isolated one- or two-letter Russian word (a conjunction or a
+        // preposition between English fragments) makes the duration predictor
+        // return a nearly fixed ~0.9 s, which sounds stretched. Scale only
+        // such short Russian segments down; longer text keeps the measured
+        // optimum.
+        let mut options = self.options;
+        if language == Language::Ru && text.trim().chars().count() <= 2 {
+            options.duration_scale *= SHORT_RU_SEGMENT_SCALE;
+        }
         let estimate = |part: &str| self.estimate(part, &styles, language);
         let chunks = chunk::split(text, policy, estimate)?;
 
@@ -246,7 +260,7 @@ impl Engine {
                 ids.mask,
                 duration_ids.ids,
                 duration_ids.mask,
-                &self.options,
+                &options,
             )?;
 
             let audio_start = samples.len() as f64 / synth::SAMPLE_RATE as f64;

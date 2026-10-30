@@ -112,7 +112,7 @@ async fn teratts_mixed_app() {
         result.duration_sec,
         result.timestamps.len()
     );
-    for word in result.timestamps.iter().take(12) {
+    for word in &result.timestamps {
         println!(
             "  {:?} {:.2}-{:.2} orig={:?}",
             word.word, word.start, word.end, word.original_pos

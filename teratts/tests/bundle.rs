@@ -135,6 +135,46 @@ fn synthesizes_mixed_language_segments() {
 }
 
 #[test]
+fn short_russian_connector_between_english_segments_is_not_stretched() {
+    let Some(dir) = bundle() else {
+        eprintln!("skipping: TERATTS_BUNDLE is not set");
+        return;
+    };
+    let engine = Engine::load(&dir).expect("load bundle");
+    let cancelled = AtomicBool::new(false);
+    let segments = [
+        Segment {
+            text: "Kubernetes",
+            language: Language::En,
+            text_start: 0,
+        },
+        Segment {
+            text: " и ",
+            language: Language::Ru,
+            text_start: 10,
+        },
+        Segment {
+            text: "API",
+            language: Language::En,
+            text_start: 13,
+        },
+    ];
+    let out = engine
+        .synthesize_segments(&segments, "ru_m5", &policy(), &cancelled, 200)
+        .expect("synthesize mixed");
+    let conjunction = out
+        .timestamps
+        .iter()
+        .find(|word| word.word == "и")
+        .expect("connector timestamp");
+    let duration = conjunction.end - conjunction.start;
+    assert!(
+        duration < 0.6,
+        "one-letter connector is stretched: {duration:.2}s"
+    );
+}
+
+#[test]
 fn cancels_before_synthesis() {
     let Some(dir) = bundle() else {
         eprintln!("skipping: TERATTS_BUNDLE is not set");

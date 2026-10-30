@@ -256,13 +256,23 @@ fn segments_for<'a>(text: &'a str, spans: &[Span]) -> Vec<teratts::Segment<'a>> 
             return;
         }
         let part = slice(start, end);
-        if part.trim().is_empty() {
+        // Whitespace and punctuation-only gaps carry no words; synthesizing
+        // them alone makes the model vocalize the punctuation. A word-bearing
+        // segment may still start with the previous sentence's punctuation
+        // (an English span ends before its period), so drop that prefix too.
+        let Some(prefix) = part
+            .char_indices()
+            .find(|(_, character)| character.is_alphanumeric())
+            .map(|(byte, _)| byte)
+        else {
             return;
-        }
+        };
+        let text = &part[prefix..];
+        let text_start = start + part[..prefix].chars().count();
         segments.push(teratts::Segment {
-            text: part,
+            text,
             language,
-            text_start: start,
+            text_start,
         });
     };
 
@@ -432,8 +442,24 @@ mod tests {
         assert_eq!(segments[1].text, "Kubernetes");
         assert_eq!(segments[1].language, teratts::Language::En);
         assert_eq!(segments[1].text_start, 7);
-        assert_eq!(segments[2].text, " мир");
-        assert_eq!(segments[2].text_start, 17);
+        assert_eq!(segments[2].text, "мир");
+        assert_eq!(segments[2].text_start, 18);
+    }
+
+    #[test]
+    fn leading_punctuation_is_trimmed_from_a_segment() {
+        let text = "API. Привет";
+        let spans = [Span {
+            kind: crate::pipeline::SpanKind::ProseLatin,
+            lang: Some("en"),
+            start: 0,
+            end: 3,
+        }];
+        let segments = segments_for(text, &spans);
+        assert_eq!(segments.len(), 2);
+        assert_eq!(segments[0].text, "API");
+        assert_eq!(segments[1].text, "Привет");
+        assert_eq!(segments[1].text_start, 5);
     }
 
     #[test]

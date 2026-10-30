@@ -43,6 +43,20 @@ pub fn split(
     for (part, start) in tts_contract::split_with_limit(text, budget) {
         split_validated(&part, start, budget, &estimate, &mut parts, 0)?;
     }
+    // A sentence split can leave a punctuation-only part (the period after an
+    // English fragment, followed by a paragraph break). Synthesizing it alone
+    // makes the model vocalize the punctuation (an audible "пмснееер" between
+    // sentences), so attach it to the previous word-bearing chunk and drop a
+    // leading one.
+    let mut merged: Vec<Chunk> = Vec::with_capacity(parts.len());
+    for chunk in parts {
+        if chunk.text.chars().any(char::is_alphanumeric) {
+            merged.push(chunk);
+        } else if let Some(previous) = merged.last_mut() {
+            previous.text.push_str(&chunk.text);
+        }
+    }
+    let mut parts = merged;
     if parts.is_empty() {
         return Err(Error::InvalidText("text produced no chunks".into()));
     }
@@ -167,6 +181,22 @@ mod tests {
         for chunk in &chunks {
             assert!(chunk.text.chars().count() <= 100);
         }
+    }
+
+    #[test]
+    fn punctuation_only_parts_are_merged_into_a_neighbour() {
+        let chunks = split(
+            ".\n\nДокументация.",
+            &policy(Limit::Chars(1000)),
+            short_estimate,
+        )
+        .unwrap();
+        assert!(
+            chunks
+                .iter()
+                .all(|chunk| chunk.text.chars().any(char::is_alphanumeric)),
+            "wordless chunk survived: {chunks:?}"
+        );
     }
 
     #[test]

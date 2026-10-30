@@ -53,7 +53,11 @@ documents cross-language prompts and suggests a lower `duration_scale` for an
 English voice on Russian). The engine therefore keeps the configured
 `teratts_voice` for every segment; `Language` changes only the tag and whether
 RUAccent runs. No English voice setting exists, and the voice never changes at
-a language boundary.
+a language boundary. An isolated one- or two-letter Russian segment (the
+conjunction `и`, the preposition `в`) makes the duration predictor return a
+nearly fixed ~0.9 s, which sounds stretched between English fragments; such a
+segment uses 0.3× the configured duration scale, while longer text keeps the
+measured optimum.
 
 Rejected: a separate `teratts_en_voice` with automatic switching. It makes one
 utterance change timbre mid-sentence and doubles the voice configuration for
