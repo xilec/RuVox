@@ -3,7 +3,12 @@
 The model bundle published as the `teratts-models-v1` GitHub Release (the four
 `*.onnx` graphs, the voice style arrays, `unicode_indexer.json`, and the
 RUAccent dictionary assets) is a redistribution of the **TeraTTSv2** model by
-the TeraSpace team:
+the TeraSpace team. TeraTTSv2 is the TeraSpace release of a 99M-parameter
+flow-matching TTS model; its fast path is an eight-step CFG-3 distilled
+student of the upstream Supertonic teacher. The bundle copies the published
+ONNX graphs, styles and indexer unchanged — no re-export, fine-tuning,
+quantization or other modification was made. Only the file layout and the
+manifest are RuVox's own work.
 
 - Upstream model: https://huggingface.co/TeraSpace/TeraTTSv2
 - Upstream revision used for `teratts-models-v1`:
