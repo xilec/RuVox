@@ -482,6 +482,69 @@ mod tests {
         assert!(!file_is_valid(&dest, &entry).await);
     }
 
+    fn test_emitter() -> Emitter {
+        std::sync::Arc::new(|_, _| {})
+    }
+
+    /// A complete `.partial` file from an interrupted run is verified and
+    /// renamed without any HTTP request; the unreachable URL proves the
+    /// network is never touched on this path.
+    #[tokio::test]
+    async fn complete_partial_file_is_verified_and_renamed_without_a_request() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let dest = dir.path().join("model.onnx");
+        let contents = b"already downloaded";
+        let entry = entry_for("model.onnx", contents);
+        fs::write(partial_path(&dest), contents).await.unwrap();
+
+        let client = reqwest::Client::new();
+        download_one(
+            &client,
+            "http://127.0.0.1:1/never",
+            &dest,
+            &entry,
+            "teratts",
+            0,
+            1,
+            &test_emitter(),
+        )
+        .await
+        .expect("verified partial is promoted");
+
+        assert_eq!(fs::read(&dest).await.unwrap(), contents);
+        assert!(!partial_path(&dest).exists());
+    }
+
+    /// A complete but corrupt `.partial` file is removed and the download
+    /// restarts (here it fails on the unreachable URL, so no stale partial
+    /// survives to be mistaken for an installed file).
+    #[tokio::test]
+    async fn corrupt_partial_file_is_removed_before_restarting() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let dest = dir.path().join("model.onnx");
+        let entry = entry_for("model.onnx", b"expected bytes");
+        fs::write(partial_path(&dest), b"wrong bytes!!!!!")
+            .await
+            .unwrap();
+
+        let client = reqwest::Client::new();
+        let result = download_one(
+            &client,
+            "http://127.0.0.1:1/never",
+            &dest,
+            &entry,
+            "teratts",
+            0,
+            1,
+            &test_emitter(),
+        )
+        .await;
+
+        assert!(result.is_err());
+        assert!(!partial_path(&dest).exists());
+        assert!(!dest.exists());
+    }
+
     #[test]
     fn partial_path_uses_partial_extension() {
         assert_eq!(
