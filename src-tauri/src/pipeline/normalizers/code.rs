@@ -625,6 +625,11 @@ impl CodeIdentifierNormalizer {
         self.code_words.contains_key(part_lower)
     }
 
+    /// The curated reading of a built-in code word, if any.
+    pub fn builtin_reading(&self, part_lower: &str) -> Option<&'static str> {
+        self.code_words.get(part_lower).copied()
+    }
+
     /// Spell abbreviation letter-by-letter using English letter names.
     ///
     /// Also used by the pipeline's English phase for lone single letters in
