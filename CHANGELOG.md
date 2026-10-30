@@ -12,7 +12,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   `-tion`/`-sion`/`-ture`/`-cial`/`-tial` endings, so words read closer to
   English without a dictionary entry (`page` → «пейдж», `file` → «файл»,
   `package` → «пэкэдж», `feature` → «фиче»); redundant `IT_TERMS` entries were
-  removed and the irregular/guard ones kept (#306).
+  removed and the irregular/guard ones kept; listening-verified readings such
+  as `method` → «мэтод» and `function` → «фанкшин» are curated (#306).
 
 ### Added
 - **Engine-scoped dictionaries** — the dictionary file now holds named

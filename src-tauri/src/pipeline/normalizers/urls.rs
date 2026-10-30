@@ -895,7 +895,7 @@ mod tests {
     #[test_case("https://example.com/x%2Fy" => "эйч ти ти пи эс двоеточие слэш слэш экзампл точка ком слэш кс слэш и"; "decoded_slash_is_not_path_separator")]
     #[test_case("https://example.com/%FF%FE" => "эйч ти ти пи эс двоеточие слэш слэш экзампл точка ком слэш процент фф процент фе"; "invalid_utf8_run")]
     #[test_case("https://example.com/x#a+b" => "эйч ти ти пи эс двоеточие слэш слэш экзампл точка ком слэш кс решётка а плюс б"; "plus_in_fragment_is_word")]
-    #[test_case("https://exa%2Emple.com/x" => "эйч ти ти пи эс двоеточие слэш слэш экза точка мпл точка ком слэш кс"; "encoded_dot_in_host_label")]
+    #[test_case("https://exa%2Emple.com/x" => "эйч ти ти пи эс двоеточие слэш слэш экза точка мпле точка ком слэш кс"; "encoded_dot_in_host_label")]
     fn url_percent_decoding(input: &str) -> String {
         let (en, nn) = mk_normalizer();
         norm(&en, &nn).normalize_url(input)

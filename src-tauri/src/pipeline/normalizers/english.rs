@@ -89,7 +89,6 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     m.insert("private", "прайвит");
     m.insert("template", "темплейт");
     // Git/VCS terms
-    m.insert("feature", "фиче");
     m.insert("merge", "мёрдж");
     m.insert("rebase", "рибейз");
     m.insert("stash", "стэш");
@@ -191,15 +190,12 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     // Words the retired multi-word phrase table used to fix up: curated here so
     // a phrase reads correctly however its words are separated (#287).
     m.insert("stack", "стэк");
-    // Not redundant with the raw transliteration, which is identical: without
-    // this entry "living" would compose the "live" stem into "лайвинг", but
-    // the word is /ˈlɪvɪŋ/. The entry shadows that composition (#292).
+    // "live" is a guard for inflections, but "living" is /ˈlɪvɪŋ/, not the
+    // adjective stem; this entry shadows the wrong composition.
     m.insert("living", "ливинг");
     m.insert("dry", "драй");
     m.insert("run", "ран");
     m.insert("edge", "эдж");
-    // "living" is /ˈlɪvɪŋ/, not the adjective "live" (/laɪv/) that the curated
-    // stem would compose through, so it is curated in its own right.
     // Common words in paths/URLs
     m.insert("user", "юзер");
     m.insert("users", "юзерс");
@@ -222,19 +218,57 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     // Common words
     m.insert("hello", "хеллоу");
     m.insert("tutorial", "тьюториал");
+    // Composition and all-caps guards: the exact reading is rule-equivalent,
+    // but these stems are needed by inflected forms (`driving`, `types`,
+    // `pages`, ...) and keep short all-caps tokens from being spelled out.
+    m.insert("byte", "байт");
+    m.insert("change", "чейндж");
+    m.insert("device", "девайс");
+    m.insert("drive", "драйв");
+    m.insert("example", "экзампл");
+    m.insert("file", "файл");
+    m.insert("home", "хоум");
+    m.insert("interface", "интерфейс");
+    m.insert("line", "лайн");
+    m.insert("live", "лайв");
+    m.insert("mime", "майм");
+    m.insert("module", "модуль");
+    m.insert("override", "оверрайд");
+    m.insert("page", "пейдж");
+    m.insert("package", "пэкэдж");
+    m.insert("pipe", "пайп");
+    m.insert("release", "релиз");
+    m.insert("site", "сайт");
+    m.insert("size", "сайз");
+    m.insert("slack", "слэк");
+    m.insert("stage", "стейдж");
+    m.insert("trace", "трейс");
+    m.insert("type", "тайп");
+    // Common magic-e exceptions the rules cannot distinguish.
+    m.insert("come", "кам");
+    m.insert("give", "гив");
+    m.insert("have", "хэв");
+    m.insert("love", "лав");
+    m.insert("move", "мув");
+    m.insert("prove", "прув");
+    m.insert("rule", "рул");
+    m.insert("some", "сам");
     // Common words the spelling rules still misread (silent "e" contexts the
     // rules cannot distinguish, irregular digraphs) — issues #139/#306
-    m.insert("above", "абав");
+    m.insert("above", "эбав");
     m.insert("acknowledge", "экнолидж");
     m.insert("advance", "эдванс");
     m.insert("anyone", "эниуан");
     m.insert("anything", "энитинг");
     m.insert("anywhere", "энивер");
+    m.insert("apple", "эпл");
     m.insert("done", "дан");
+    m.insert("function", "фанкшин");
     m.insert("everyone", "эвриуан");
     m.insert("gone", "гон");
     m.insert("none", "нан");
     m.insert("one", "уан");
+    m.insert("method", "мэтод");
     m.insert("people", "пипл");
     m.insert("someone", "самуан");
     m.insert("ascii", "аски");
@@ -314,6 +348,14 @@ fn transliterate_word(word: &str) -> String {
     if n == 0 {
         return String::new();
     }
+    // `-able`/`-ible` after a long stem are unstressed suffixes; standalone
+    // "able" keeps the magic-e reading.
+    if n > 6 && word.ends_with("able") {
+        return format!("{}абле", transliterate_word(&word[..n - 4]));
+    }
+    if n > 6 && word.ends_with("ible") {
+        return format!("{}ибле", transliterate_word(&word[..n - 4]));
+    }
     // `-ate` must be recognized before the `ea` digraph inside it.
     if n > 4 && word.ends_with("ate") {
         return format!("{}эйт", transliterate_word(&word[..n - 3]));
@@ -321,8 +363,11 @@ fn transliterate_word(word: &str) -> String {
 
     // A final silent `e` makes the nearest preceding vowel long ("file",
     // "page", "type"). `-mple` is short ("example"), and the suffix rules below
-    // handle `-age`, `-ule`, `-ive`, `-ate`, `-ade` before this fallback.
-    let silent_e = n >= 3 && chars[n - 1] == 'e' && !is_vowel(chars[n - 2]);
+    // handle `-age`, `-ive`, `-ate`, `-ade` before this fallback.
+    let silent_e = n >= 3
+        && chars[n - 1] == 'e'
+        && !is_vowel(chars[n - 2])
+        && chars[..n - 1].iter().any(|c| is_vowel(*c));
     // A final "-le" after a consonant cluster keeps the preceding vowel short
     // ("apple", "simple", "angle"); after a single consonant it is magic
     // ("table", "cable", "able").
@@ -371,7 +416,11 @@ fn transliterate_word(word: &str) -> String {
             continue;
         }
         if rest.starts_with("sure") {
-            out.push_str("жер");
+            out.push_str(if i > 0 && is_vowel(chars[i - 1]) {
+                "жер"
+            } else {
+                "шер"
+            });
             i += 4;
             continue;
         }
@@ -379,11 +428,6 @@ fn transliterate_word(word: &str) -> String {
         if rest.starts_with("gine") && i + 4 == n {
             out.push_str("джин");
             i += 4;
-            continue;
-        }
-        if rest.starts_with("ule") && i + 3 == n {
-            out.push_str("уль");
-            i += 3;
             continue;
         }
         // `-age` after a long word is the unstressed /ɪdʒ/ ("package",
@@ -394,18 +438,21 @@ fn transliterate_word(word: &str) -> String {
             i += 3;
             continue;
         }
-        if rest.starts_with("ive") && i + 3 == n && n > 5 {
+        if rest.starts_with("ive")
+            && i + 3 == n
+            && n > 5
+            && ![
+                "arrive", "derive", "survive", "archive", "revive", "contrive", "strive",
+                "deprive", "connive", "thrive",
+            ]
+            .contains(&word)
+        {
             out.push_str("ив");
             i += 3;
             continue;
         }
-        if rest.starts_with("ate") && i + 3 == n && n > 4 {
-            out.push_str("эйт");
-            i += 3;
-            continue;
-        }
         if rest.starts_with("ade") && i + 3 == n && n > 4 {
-            out.push_str("эйд");
+            out.push_str("ейд");
             i += 3;
             continue;
         }
@@ -459,9 +506,9 @@ fn transliterate_word(word: &str) -> String {
             continue;
         }
         if rest.starts_with("th") {
-            // Decision table from #306: "с" before a back vowel ("method"),
-            // "т" elsewhere. Common function words are irregular and stay
-            // curated in `IT_TERMS`.
+            // Decision table from #306: "с" before a back vowel, "т"
+            // elsewhere. "method" and common function words are irregular and
+            // stay curated in `IT_TERMS`.
             let next = chars.get(i + 2).copied();
             out.push(if next.is_some_and(is_back_vowel) {
                 'с'
@@ -542,15 +589,47 @@ fn transliterate_word(word: &str) -> String {
                 out.push(if soft { 'с' } else { 'к' });
             }
             'g' => {
-                let hard_g_e =
-                    matches!(word, "anger" | "finger" | "longer" | "stronger" | "younger");
+                let hard_g = [
+                    "anger",
+                    "beget",
+                    "begin",
+                    "began",
+                    "begun",
+                    "bigger",
+                    "biggest",
+                    "budget",
+                    "digger",
+                    "eager",
+                    "finger",
+                    "forget",
+                    "forgotten",
+                    "gadget",
+                    "get",
+                    "gift",
+                    "git",
+                    "giga",
+                    "girl",
+                    "give",
+                    "given",
+                    "giver",
+                    "giving",
+                    "gizmo",
+                    "hunger",
+                    "longer",
+                    "stronger",
+                    "suggest",
+                    "target",
+                    "tiger",
+                    "together",
+                    "trigger",
+                    "widget",
+                    "younger",
+                ]
+                .iter()
+                .any(|prefix| word.starts_with(prefix));
                 let soft = chars.get(i + 1).is_some_and(|next| match next {
-                    'e' | 'y' => !hard_g_e,
-                    // Soft "g" before "i" is the default, but these common
-                    // hard-g words are exceptions ("gitlab", not "джитлаб").
-                    'i' => !["git", "give", "girl", "gift", "giga", "gizmo"]
-                        .iter()
-                        .any(|prefix| word.starts_with(prefix)),
+                    'e' | 'i' => !hard_g,
+                    'y' => true,
                     _ => false,
                 });
                 out.push_str(if soft { "дж" } else { "г" });
@@ -714,7 +793,7 @@ impl EnglishNormalizer {
             };
             // English spells a syllabic "es" only after a sibilant stem
             // ("uses" → "юзес", "caches" → "кэшес"); a non-sibilant stem takes
-            // the plain "s" plural ("features" → "фичес"), which a shorter
+            // the plain "s" plural ("packages" → "пэкэджес"), which a shorter
             // suffix composes.
             if suffix == "es" && !es_reading_is_syllabic(stem) {
                 continue;
@@ -742,10 +821,12 @@ impl EnglishNormalizer {
 /// "наллэйбл"). Keep that established composition reading here rather than
 /// teaching the general rules a context they cannot see.
 fn inflection_suffix_reading(suffix: &str) -> String {
-    if suffix == "able" {
-        "абле".to_string()
-    } else {
-        transliterate_simple(suffix)
+    match suffix {
+        "able" => "абле".to_string(),
+        // The suffix is unstressed; word-initial "er-" would read "эр".
+        "er" => "ер".to_string(),
+        "ers" => "ерс".to_string(),
+        _ => transliterate_simple(suffix),
     }
 }
 
@@ -753,7 +834,7 @@ fn inflection_suffix_reading(suffix: &str) -> String {
 /// (`stem`, without that "e") is spelled with a syllabic "ес".
 ///
 /// The plural is syllabic only after a sibilant ("uses" → "юзес", "caches" →
-/// "кэшес"); any other stem takes a plain "s" ("features" → "фичес").
+/// "кэшес"); any other stem takes a plain "s" ("packages" → "пэкэджес").
 fn es_reading_is_syllabic(stem: &str) -> bool {
     ["ch", "sh", "s", "z", "x", "c", "g"]
         .iter()
@@ -854,13 +935,11 @@ mod tests {
 
     // ── Pruned IT_TERMS entries read by transliteration (#292) ──────────────
 
-    #[test_case("function" => "функшн"; "function")]
     #[test_case("array" => "аррэй"; "array")]
     #[test_case("object" => "обджект"; "object")]
     #[test_case("repository" => "репозитори"; "repository")]
     #[test_case("boolean" => "булин"; "boolean")]
     #[test_case("refactor" => "рефактор"; "refactor")]
-    #[test_case("method" => "месод"; "method")]
     #[test_case("index" => "индекс"; "redundant index")]
     #[test_case("commit" => "коммит"; "redundant commit")]
     #[test_case("deploy" => "деплой"; "redundant deploy")]
@@ -876,7 +955,7 @@ mod tests {
         // A pruned word is no longer curated, so the fallback records it in the
         // unknown-words map; a curated one would not be recorded.
         let mut en = normalizer();
-        for word in ["function", "repository", "index"] {
+        for word in ["repository", "index", "array"] {
             en.normalize(word, true);
             assert!(
                 en.get_unknown_words().contains_key(word),
@@ -1122,29 +1201,56 @@ mod tests {
     #[test_case("repository" => "репозитори"; "voiced_s_repository")]
     #[test_case("system" => "систем"; "unvoiced_s_system")]
     #[test_case("version" => "вержн"; "suffix_sion")]
-    #[test_case("function" => "функшн"; "suffix_tion")]
     #[test_case("special" => "спешл"; "suffix_cial")]
     #[test_case("partial" => "паршл"; "suffix_tial")]
     #[test_case("feature" => "фиче"; "suffix_ture")]
-    #[test_case("method" => "месод"; "th_back_vowel")]
     #[test_case("thin" => "тин"; "th_front_vowel")]
     #[test_case("black" => "блэк"; "checked_a_ck")]
     #[test_case("quick" => "квик"; "qu_and_ck")]
     #[test_case("box" => "бокс"; "x_ks")]
+    #[test_case("get" => "гет"; "hard_g_get")]
+    #[test_case("target" => "таргет"; "hard_g_target")]
+    #[test_case("begin" => "бегин"; "hard_g_begin")]
+    #[test_case("arrive" => "аррайв"; "ive_after_v")]
+    #[test_case("derive" => "дерайв"; "ive_after_v_derive")]
+    #[test_case("the" => "те"; "silent_e_the")]
+    #[test_case("she" => "ше"; "silent_e_she")]
+    #[test_case("acceptable" => "аксептабле"; "able_suffix")]
+    #[test_case("possible" => "поссибле"; "ible_suffix")]
+    #[test_case("trade" => "трейд"; "ade_suffix")]
+    #[test_case("sure" => "шер"; "sure_after_consonant")]
     #[test_case("package" => "пэкэдж"; "target_package")]
-    #[test_case("module" => "модуль"; "final_ule")]
     fn spelling_rules(word: &str) -> String {
         transliterate_simple(word)
     }
 
+    #[test_case("method" => "мэтод"; "method")]
+    #[test_case("function" => "фанкшин"; "function")]
+    #[test_case("above" => "эбав"; "above")]
+    #[test_case("apple" => "эпл"; "apple")]
+    #[test_case("module" => "модуль"; "module")]
+    fn verified_irregular_readings(word: &str) -> String {
+        normalizer().normalize(word, false)
+    }
+
+    #[test_case("driver" => "драйвер"; "driver")]
+    #[test_case("driving" => "драйвинг"; "driving")]
+    #[test_case("types" => "тайпс"; "types")]
+    #[test_case("pages" => "пейджес"; "pages")]
+    #[test_case("packages" => "пэкэджес"; "packages")]
+    #[test_case("changing" => "чейнджинг"; "changing")]
+    #[test_case("tracing" => "трейсинг"; "tracing")]
+    fn guard_stems_keep_inflections(word: &str) -> String {
+        normalizer().normalize(word, false)
+    }
+
     #[test]
     fn rule_readings_are_used_without_dictionary_entries() {
-        // #292 named these two semantic translations. "package" is now read
-        // entirely by the rules; "feature" keeps an entry only as a
-        // composition guard for "features", and the entry itself uses the
-        // phonetic rule reading.
-        assert!(!IT_TERMS.contains_key("package"));
-        assert_eq!(IT_TERMS.get("feature"), Some(&"фиче"));
+        // #292 named these two semantic translations. Both are now read by the
+        // phonetic rules; "package" stays as a composition guard for
+        // "packages", while "feature" needs no entry at all.
+        assert_eq!(IT_TERMS.get("package"), Some(&"пэкэдж"));
+        assert!(!IT_TERMS.contains_key("feature"));
         assert_eq!(normalizer().normalize("package", false), "пэкэдж");
         assert_eq!(normalizer().normalize("feature", false), "фиче");
     }
@@ -1219,7 +1325,7 @@ mod tests {
     #[test_case("supported"; "-ed")]
     #[test_case("supporting"; "-ing")]
     #[test_case("supporter"; "-er")]
-    #[test_case("features"; "non-sibilant -es")]
+    #[test_case("packages"; "non-sibilant -es")]
     #[test_case("nullable"; "-able")]
     #[test_case("building"; "silent-e -ing from build")]
     #[test_case("using"; "silent-e -ing from use")]
@@ -1288,7 +1394,7 @@ mod tests {
     #[test_case("supports" => "саппортс"; "supports")]
     #[test_case("supported" => "саппортед"; "supported")]
     #[test_case("supporting" => "саппортинг"; "supporting")]
-    #[test_case("supporter" => "саппортэр"; "supporter")]
+    #[test_case("supporter" => "саппортер"; "supporter")]
     #[test_case("feature" => "фиче"; "feature")]
     #[test_case("features" => "фичес"; "features")]
     #[test_case("using" => "юзинг"; "using")]
@@ -1323,7 +1429,7 @@ mod tests {
             en.compose_inflection("building").as_deref(),
             Some("билдинг")
         );
-        assert_eq!(en.compose_inflection("features").as_deref(), Some("фичес"));
+        assert_eq!(en.compose_inflection("features"), None);
     }
 
     #[test]
@@ -1359,7 +1465,7 @@ mod tests {
         // A restored stem that is not sibilant takes the plain "s" plural: the
         // shorter suffix composes "feature" rather than "фичаес".
         let en = EnglishNormalizer::new();
-        assert_eq!(en.compose_inflection("features").as_deref(), Some("фичес"));
+        assert_eq!(en.compose_inflection("features"), None);
         assert_eq!(
             en.compose_inflection("supports").as_deref(),
             Some("саппортс")

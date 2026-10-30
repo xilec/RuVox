@@ -585,6 +585,10 @@
       151
     ],
     [
+      143,
+      151
+    ],
+    [
       151,
       152
     ],
@@ -810,5 +814,5 @@
     ]
   ],
   "original": "file page size type use name compose drive table example\nrain see moon boy cow boat\ncity generic engine gitlab\nmusic repository version system\nfunction special partial feature\nmethod thin black quick box package module",
-  "transformed": "файл пейдж сайз тайп юз нейм компоуз драйв тейбл экзампл\nрэйн си мун бой коу боут\nсити дженерик энджин гитлаб\nмузик репозитори вержн систем\nфункшн спешл паршл фиче\nмесод тин блэк квик бокс пэкэдж модуль"
+  "transformed": "файл пейдж сайз тайп юз нейм компоуз драйв тейбл экзампл\nрэйн си мун бой коу боут\nсити дженерик энджин гитлаб\nмузик репозитори вержн систем\nфанкшин спешл паршл фиче\nмэтод тин блэк квик бокс пэкэдж модуль"
 }

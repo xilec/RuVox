@@ -181,8 +181,8 @@ impl CodeIdentifierNormalizer {
         code_words.insert("handler", "хендлер");
         code_words.insert("callback", "коллбэк");
         code_words.insert("promise", "промис");
-        code_words.insert("function", "функшн");
-        code_words.insert("method", "метод");
+        code_words.insert("function", "фанкшин");
+        code_words.insert("method", "мэтод");
         code_words.insert("class", "класс");
         code_words.insert("instance", "инстанс");
         code_words.insert("module", "модуль");
@@ -380,7 +380,7 @@ impl CodeIdentifierNormalizer {
         code_words.insert("links", "линкс");
         code_words.insert("dir", "дир");
         code_words.insert("awesome", "авесом");
-        code_words.insert("package", "пакет");
+        code_words.insert("package", "пэкэдж");
         code_words.insert("dom", "дом");
         code_words.insert("router", "роутер");
         code_words.insert("react", "риакт");
@@ -790,7 +790,7 @@ mod tests {
     #[test_case("__str__" => "стр"; "dunder_str")]
     #[test_case("__repr__" => "репр"; "dunder_repr")]
     #[test_case("__len__" => "лен"; "dunder_len")]
-    #[test_case("_private_method" => "прайвит метод"; "private_method")]
+    #[test_case("_private_method" => "прайвит мэтод"; "private_method")]
     #[test_case("__private_attr" => "прайвит аттр"; "private_attr")]
     #[test_case("MAX_VALUE" => "макс вэлью"; "screaming_max_value")]
     #[test_case("DEFAULT_TIMEOUT" => "дефолт таймаут"; "screaming_default_timeout")]
@@ -811,7 +811,7 @@ mod tests {
     #[test_case("config-file" => "конфиг файл"; "config_file")]
     #[test_case("no-cache" => "ноу кэш"; "no_cache")]
     #[test_case("dry-run" => "драй ран"; "dry_run")]
-    #[test_case("my-awesome-package" => "май авесом пакет"; "my_awesome_package")]
+    #[test_case("my-awesome-package" => "май авесом пэкэдж"; "my_awesome_package")]
     #[test_case("react-dom" => "риакт дом"; "react_dom")]
     #[test_case("vue-router" => "вью роутер"; "vue_router")]
     fn kebab_case(input: &str) -> String {

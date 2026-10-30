@@ -32,11 +32,11 @@ An entry is a pronunciation fix, not a translation, and it must do work.
 `-cial`/`-tial`, `th`, and `ck`/`qu`/`x`/`-le` are already handled. Add an
 entry only when those rules read the word wrong (`kubernetes`, `nginx`,
 `queue`), when it keeps an all-caps token from being spelled letter by letter
-(`TEST`, `DATA`, `APP`), or when it must shadow a wrong inflection composition
-(`living`, `use`, `feature`). If `transliterate_simple` already produces the
-right Cyrillic (`class`, `index`, `page`), do not add an entry — it would only
-repeat the fallback. A word with an English reading is never replaced by a
-Russian translation: `function` reads "функшн", not "функция".
+(`TEST`, `DATA`, `APP`), or when it supplies a stem whose inflected forms
+would otherwise degrade (`living`, `use`, `package`). If
+`transliterate_simple` already produces the right Cyrillic (`class`, `index`),
+do not add an entry — it would only repeat the fallback. A word with an English reading is never replaced by a
+Russian translation: `function` reads "фанкшин", not "функция".
 
 The rule layer is deliberately approximate; vowel reduction and stress
 placement are out of scope, so irregular English words stay curated.
@@ -45,7 +45,6 @@ Find the `IT_TERMS` table and add an entry (keep alphabetical order within each 
 
 ```rust
 m.insert("kubernetes", "кубернетис");
-m.insert("terraform", "терраформ");
 ```
 
 **2. Golden fixture:** `src-tauri/tests/fixtures/pipeline/`
