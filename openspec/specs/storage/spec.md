@@ -3,9 +3,7 @@
 ## Purpose
 
 Covers the on-disk persistence layer of RuVox (`src-tauri/src/storage/`): the per-user cache directory layout, the `history.json` entry store, the `config.json` application configuration, synthesized audio files (`{uuid}.opus`), word-level timestamp files (`{uuid}.timestamps.json`), the legacy WAV-to-Opus migration, and cache hygiene (orphan sweep and size-based eviction).
-
 ## Requirements
-
 ### Requirement: Cache Directory Layout
 
 The system SHALL store persistent data under two per-user roots: a **data root**
@@ -88,7 +86,7 @@ interface TextEntry {
 }
 
 interface GenerationParams {
-  engine: string;                        // Engine that produced the audio: "silero_native" | "piper" | "silero"
+  engine: string;                        // Engine that produced the audio: "silero_native" | "piper" | "silero" | "teratts"
   voice: string;                         // Engine-specific voice id actually used ("xenia", "ruslan", ...)
   sample_rate: number | null;            // Actual output sample rate of the rendered audio; null when unknown
   model: ModelParams | null;             // Model identity; null when the engine cannot report it cheaply
@@ -314,6 +312,7 @@ The `UIConfig` field table SHALL gain:
 | Field | Type | Default | Meaning |
 |-------|------|---------|---------|
 | `language` | string | `"ru"` | UI language: `"ru"` / `"en"` |
+| `teratts_voice` | string | `"ru_m5"` | TeraTTS voice id: `ru_m5`, `ru_f1`, `ru_f2` or `ru_m1` |
 
 Every existing defaulting/unknown-key/partial-update rule SHALL apply to the
 new field unchanged.
@@ -374,6 +373,16 @@ parse (the unknown key is ignored and dropped on the next save).
 - **GIVEN** a `config.json` written by an earlier build containing `read_operators: false`
 - **WHEN** the configuration is loaded
 - **THEN** it parses successfully, all other fields keep their values, and saving drops the `read_operators` key
+
+#### Scenario: Older config without teratts_voice key
+- **GIVEN** a `config.json` written by a build before the TeraTTS engine existed
+- **WHEN** the configuration is loaded
+- **THEN** it parses successfully with `teratts_voice` defaulted to `"ru_m5"`
+
+#### Scenario: TeraTTS voice round-trips
+- **GIVEN** a configuration with `teratts_voice` set to `"ru_f1"`
+- **WHEN** the configuration is saved and loaded again
+- **THEN** the loaded value is `"ru_f1"`
 
 ### Requirement: Entry CRUD
 
@@ -570,3 +579,4 @@ process cleanly with a non-zero exit code.
 - GIVEN the storage service cannot be opened during startup (e.g. the per-user data directory cannot be created)
 - WHEN the application starts
 - THEN no panic message is produced, an error entry with the cause is written to the application log, a native error dialog in Russian names the problem and points to the log directory, and after it is dismissed the process exits with a non-zero exit code
+

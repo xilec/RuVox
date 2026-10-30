@@ -86,8 +86,9 @@ interface UIConfig {
   window_geometry: [number, number, number, number] | null;
   preview_dialog_enabled: boolean;
   hide_to_tray_on_close: boolean;  // default false: closing the window quits
-  engine: string;                  // "piper" | "silero" | "silero_native" (default)
+  engine: string;                  // "piper" | "silero" | "silero_native" (default) | "teratts"
   piper_voice: string;             // default "ruslan"
+  teratts_voice: string;           // default "ru_m5"
 }
 ```
 
@@ -99,7 +100,7 @@ interface UIConfig {
 #### Scenario: UIConfig defaults include engine fields
 - GIVEN a fresh installation with no `config.json`
 - WHEN the frontend calls `invoke("get_config")`
-- THEN the response contains `engine: "silero_native"` and `piper_voice: "ruslan"` alongside the legacy fields
+- THEN the response contains `engine: "silero_native"`, `piper_voice: "ruslan"` and `teratts_voice: "ru_m5"` alongside the legacy fields
 
 #### Scenario: UIConfig defaults use brief code block mode
 - GIVEN a fresh installation with no `config.json`
@@ -499,6 +500,7 @@ interface AvailableEngines {
   piper: EngineAvailability;
   silero: EngineAvailability;
   silero_native: EngineAvailability;
+  teratts: EngineAvailability;
 }
 ```
 
@@ -508,9 +510,12 @@ directory and a successful `uv --version` exec; a `uv` binary that cannot be
 spawned at all (not installed — the normal case on Windows, where ttsd is
 not shipped) SHALL be treated as an unsuccessful probe, not an error.
 Silero Native SHALL report availability based on presence and manifest
-validity of the downloaded model bundle in the app data dir. When
-unavailable, `reason` SHALL carry a machine-readable code (translated by the
-frontend like command errors), not user-facing prose.
+validity of the downloaded model bundle in the app data dir. TeraTTS SHALL
+report availability based on a stat-only probe of its bundle: the manifest
+parses, its `format_version` is supported, and every listed file exists with
+the recorded size (no hashing). When unavailable, `reason` SHALL carry a
+machine-readable code (translated by the frontend like command errors), not
+user-facing prose.
 
 #### Scenario: probe on a system without ttsd
 - **GIVEN** no `pyproject.toml` in the resolved ttsd directory
@@ -529,6 +534,25 @@ frontend like command errors), not user-facing prose.
 - **WHEN** `get_available_engines` is invoked
 - **THEN** `silero_native.available` is `false` with `reason.code`
   `"native.bundle_missing"` indicating that the model bundle must be downloaded
+
+#### Scenario: TeraTTS unavailable before bundle download
+- **GIVEN** no TeraTTS bundle in the app data dir
+- **WHEN** `get_available_engines` is invoked
+- **THEN** `teratts.available` is `false` with `reason.code`
+  `"teratts.bundle_missing"` indicating that the model bundle must be downloaded
+
+#### Scenario: TeraTTS unavailable with an incompatible bundle
+- **GIVEN** a TeraTTS bundle whose manifest declares an unsupported
+  `format_version`
+- **WHEN** `get_available_engines` is invoked
+- **THEN** `teratts.available` is `false` with `reason.code`
+  `"teratts.bundle_incompatible"`
+
+#### Scenario: TeraTTS available with a complete bundle
+- **GIVEN** a TeraTTS bundle whose manifest parses and whose files match the
+  recorded sizes
+- **WHEN** `get_available_engines` is invoked
+- **THEN** `teratts.available` is `true` and no file is hashed
 
 ### Requirement: Piper Voice Download Command
 
@@ -716,9 +740,10 @@ During `download_piper_voice` the backend SHALL emit:
 
 ### Requirement: Bundle Download Events
 
-During `download_silero_native_bundle` the backend SHALL emit:
+During `download_silero_native_bundle` or `download_teratts_bundle` the backend
+SHALL emit:
 
-- `bundle_download_started` — `{ engine: "silero_native" }`
+- `bundle_download_started` — `{ engine: "silero_native" | "teratts" }`
 - `bundle_download_progress` — `{ engine, file, file_idx, total_files, downloaded_bytes, total_bytes }`, throttled to roughly one event per 256 KB, plus `skipped: true` for files already present and valid
 - `bundle_download_finished` — `{ engine, ok: true }` on success or `{ engine, ok: false, message }` on failure
 
@@ -728,6 +753,11 @@ During `download_silero_native_bundle` the backend SHALL emit:
 - THEN `bundle_download_started` fires first, progress events carry cumulative
   byte counts per file, and a terminal `bundle_download_finished` completes
   the sequence
+
+#### Scenario: TeraTTS events carry the engine id
+- GIVEN a TeraTTS bundle that is not installed
+- WHEN `download_teratts_bundle` runs
+- THEN every `bundle_download_*` event carries `engine: "teratts"`
 
 ### Requirement: Synthesis voice follows the active engine
 
@@ -825,10 +855,10 @@ The `add_text_entry` command SHALL accept an optional `source` parameter (`"clip
 
 On every successful synthesis the system SHALL record a `generation` snapshot on the entry describing the parameters that produced the current audio, and SHALL increment the entry's `generation_count` by one. The snapshot SHALL contain:
 
-- the engine that actually served the request (`silero_native` | `piper` | `silero`) — the engine resolved at synthesis time, not the persisted config preference;
-- the resolved engine-specific voice id actually passed to synthesis (Piper uses `piper_voice`, both Silero engines use `speaker`);
-- the actual output sample rate of the rendered audio (for Piper this is the rate fixed by the voice model);
-- the model identity where the engine can report it cheaply — silero-native: the bundle manifest `model_id` with the `tts_main.onnx` sha256; Piper: the voice model file name from the catalog; ttsd: no model identity yet, the field stays null;
+- the engine that actually served the request (`silero_native` | `piper` | `silero` | `teratts`) — the engine resolved at synthesis time, not the persisted config preference;
+- the resolved engine-specific voice id actually passed to synthesis (Piper uses `piper_voice`, both Silero engines use `speaker`, TeraTTS uses `teratts_voice`);
+- the actual output sample rate of the rendered audio (for Piper this is the rate fixed by the voice model; for TeraTTS it is 44100 Hz);
+- the model identity where the engine can report it cheaply — silero-native: the bundle manifest `model_id` with the `tts_main.onnx` sha256; TeraTTS: the manifest `model_id` with the `bundle_version` and the manifest sha256; Piper: the voice model file name from the catalog; ttsd: no model identity yet, the field stays null;
 - the application version at generation time;
 - the code block narration mode actually applied to this synthesis (`code_block_mode`: `"brief"` | `"read"`);
 - the sha256 of the normalized text used;
@@ -867,6 +897,11 @@ The snapshot SHALL flow to the frontend as part of entry payloads (`get_entries`
 - GIVEN a `history.json` whose ready entry carries a snapshot with a `read_operators` field
 - WHEN the frontend invokes `get_entries`
 - THEN the entry is returned with its snapshot intact minus `read_operators`, and no error is raised
+
+#### Scenario: TeraTTS snapshot records its model identity
+- GIVEN an entry synthesized on the TeraTTS engine with `teratts_voice: "ru_m5"`
+- WHEN the synthesis completes
+- THEN the snapshot has engine `"teratts"`, voice `"ru_m5"`, sample rate `44100`, and a model identity naming the bundle `model_id` and `bundle_version`
 
 ### Requirement: Audio Export Commands
 
@@ -1052,3 +1087,46 @@ casing convention.
 - GIVEN the path points to a nonexistent file
 - WHEN `import_user_dictionary` is called
 - THEN the command rejects with a typed error and the dictionary is unchanged
+
+### Requirement: TeraTTS bundle download command
+
+The system SHALL provide `download_teratts_bundle()` which downloads the
+TeraTTSv2 model bundle from the project's `teratts-models-v1` GitHub Release
+into the app data dir, following the bundle `manifest.json`: for every entry it
+downloads the `asset` URL into the bundle-relative `path`, verifies the size
+and sha256 while streaming to a `.partial` file, and renames the file into
+place only after verification. Files already present with a matching size and
+sha256 SHALL be skipped (idempotent re-runs), and an interrupted `.partial`
+file SHALL be resumed rather than restarted. A checksum mismatch or any I/O
+failure MUST abort the download with a typed error, remove the invalid
+`.partial` file, and leave the engine unavailable; a partial file MUST NOT be
+treated as installed. The command SHALL emit the `bundle_download_*` events
+with `engine: "teratts"`.
+
+#### Scenario: Fresh download succeeds
+
+- GIVEN no bundle in the data dir and network access to GitHub Releases
+- WHEN `download_teratts_bundle` is invoked
+- THEN every manifest file lands at its `path`, the checksums verify, and a
+  subsequent `get_available_engines` reports `teratts.available: true`
+
+#### Scenario: Re-run skips valid files
+
+- GIVEN a fully downloaded bundle
+- WHEN `download_teratts_bundle` is invoked again
+- THEN every file is reported as skipped and no bytes are downloaded
+
+#### Scenario: Interrupted download resumes
+
+- GIVEN a download interrupted after a `.partial` file was written
+- WHEN the command runs again
+- THEN it continues from the partial file's length and verifies the final
+  checksum
+
+#### Scenario: Checksum failure aborts
+
+- GIVEN a download where one file's sha256 does not match the manifest
+- WHEN verification runs
+- THEN the command fails with a typed error, the invalid file is removed, and
+  `teratts.available` stays `false`
+

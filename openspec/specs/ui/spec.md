@@ -166,9 +166,9 @@ Editing the text of an existing entry in the UI MUST NOT be supported; correctio
 
 The system SHALL provide a modal Settings dialog (`src/dialogs/Settings.tsx`) built on `@mantine/form::useForm`, loading `commands.getConfig()` and `commands.getAvailableEngines()` whenever it opens, and submitting a `UIConfigPatch` (only the form fields) via `commands.updateConfig`.
 
-The form SHALL expose: TTS engine (Piper / Silero / «Silero (нативный)», with unavailable engines disabled and an alert when the saved engine was coerced to Piper), Piper voice or Silero speaker depending on the engine, sample rate, `notify_on_ready`, `notify_on_error`, `preview_dialog_enabled`, `hide_to_tray_on_close` (the «Сворачивать в трей при закрытии окна» switch, off by default), `max_cache_size_mb` (minimum 100 MB), theme (Светлая/Тёмная/Авто), a language selector (Русский / English) bound to `UIConfig.language`, and a code block narration selector («Кратко» / «Читать полностью») bound to `UIConfig.code_block_mode` (`"brief"` / `"read"`), initialized from the loaded config and included in the submitted `UIConfigPatch` when changed. Applying a new theme SHALL push it into Mantine's color-scheme manager immediately. Choosing a language SHALL update the localization store immediately (the whole UI re-labels without reload) and include `language` in the submitted `UIConfigPatch`.
+The form SHALL expose: TTS engine (Piper / Silero / «Silero (нативный)» / «TeraTTSv2», with unavailable engines disabled and an alert when the saved engine was coerced to Piper), Piper voice or Silero speaker depending on the engine, the TeraTTS voice when that engine is selected (`ru_m5` default, `ru_f1`, `ru_f2`, `ru_m1`), sample rate, `notify_on_ready`, `notify_on_error`, `preview_dialog_enabled`, `hide_to_tray_on_close` (the «Сворачивать в трей при закрытии окна» switch, off by default), `max_cache_size_mb` (minimum 100 MB), theme (Светлая/Тёмная/Авто), a language selector (Русский / English) bound to `UIConfig.language`, and a code block narration selector («Кратко» / «Читать полностью») bound to `UIConfig.code_block_mode` (`"brief"` / `"read"`), initialized from the loaded config and included in the submitted `UIConfigPatch` when changed. Applying a new theme SHALL push it into Mantine's color-scheme manager immediately. Choosing a language SHALL update the localization store immediately (the whole UI re-labels without reload) and include `language` in the submitted `UIConfigPatch`.
 
-When «Silero (нативный)» is unavailable because the model bundle is not downloaded, the form SHALL show a download action next to the engine option; triggering it calls `commands.downloadSileroNativeBundle()` and displays live progress from the `bundle_download_*` events.
+When «Silero (нативный)» is unavailable because the model bundle is not downloaded, the form SHALL show a download action next to the engine option; triggering it calls `commands.downloadSileroNativeBundle()` and displays live progress from the `bundle_download_*` events. When «TeraTTSv2» is unavailable because its bundle is not downloaded, the form SHALL offer the analogous action through `commands.downloadTerattsBundle()`, naming the bundle size, with progress from the same event family and `engine: "teratts"`.
 
 When the form's engine was coerced away from the saved engine because that engine is currently unavailable, and the user did not pick another engine, saving the dialog SHALL omit `engine` from the `UIConfigPatch` so the saved (or default) engine value is preserved instead of persisting the temporary fallback.
 
@@ -214,6 +214,16 @@ A "Очистить кэш…" button SHALL open a nested `CleanupCacheModal` wi
 - **WHEN** the user picks "English" (before or after saving)
 - **THEN** all visible UI strings switch to the EN catalog without a reload,
   and saving persists `language: "en"` via `commands.updateConfig`
+
+#### Scenario: TeraTTS option lists its voices
+- **GIVEN** `getAvailableEngines` reports TeraTTS as available and the saved config has `teratts_voice: "ru_f1"`
+- **WHEN** the user selects «TeraTTSv2»
+- **THEN** a voice selector lists `ru_m5`, `ru_f1`, `ru_f2` and `ru_m1` with `ru_f1` preselected, and saving persists the chosen value
+
+#### Scenario: TeraTTS offers bundle download
+- **GIVEN** `getAvailableEngines` reports TeraTTS as unavailable due to a missing bundle
+- **WHEN** the Settings dialog opens
+- **THEN** the «TeraTTSv2» option is disabled with its reason shown and a download action names the bundle size; clicking it starts `downloadTerattsBundle` and shows progress until `bundle_download_finished`
 
 ### Requirement: Design tokens
 

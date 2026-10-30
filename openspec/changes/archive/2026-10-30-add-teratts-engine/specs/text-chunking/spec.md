@@ -35,6 +35,13 @@ seconds conversion is engine-side behavior, not a second splitter.
 - THEN it originates from a profile field, and no engine module declares a
   chunk-size or pause constant
 
+#### Scenario: A second-based limit is data, not behavior yet
+
+- GIVEN the shared codepoint splitter
+- WHEN it receives a profile limit
+- THEN a `Secs(n)` limit is still data the splitter does not interpret; the
+  engine that declares it converts it into a codepoint budget
+
 #### Scenario: A second-based limit is honored with a measured budget
 
 - GIVEN a profile that declares `Secs(20)`
