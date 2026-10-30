@@ -387,6 +387,10 @@ export function DictionaryModal({
             { value: 'teratts', label: tt('dictionary.scope.teratts') },
           ]}
           allowDeselect={false}
+          // The modal sits at DIALOG_Z; Mantine's default popover z-index
+          // (300) would put the dropdown behind the overlay, making the
+          // select look unresponsive.
+          comboboxProps={{ zIndex: NESTED_DIALOG_Z }}
         />
         <Group justify="space-between" wrap="nowrap">
           <TextInput
