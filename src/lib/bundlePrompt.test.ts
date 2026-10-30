@@ -7,12 +7,14 @@ const BUNDLE_PRESENT: AvailableEngines = {
   piper: { available: true, reason: null },
   silero: { available: false, reason: { code: 'silero.uv_missing' } },
   silero_native: { available: true, reason: null },
+  teratts: { available: true, reason: null },
 };
 
 const BUNDLE_MISSING: AvailableEngines = {
   piper: { available: true, reason: null },
   silero: { available: false, reason: { code: 'silero.uv_missing' } },
   silero_native: { available: false, reason: { code: 'native.bundle_missing' } },
+  teratts: { available: false, reason: { code: 'teratts.bundle_missing' } },
 };
 
 describe('shouldOfferBundleDownload', () => {

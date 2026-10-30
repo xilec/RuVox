@@ -10,19 +10,22 @@
 //! [`TtsError::Died`]. Crash recovery is layered on top in [`supervisor`].
 
 pub mod availability;
+pub mod bundle_download;
 pub mod engine;
 pub mod piper;
 pub mod profiles;
 pub mod silero_native;
 pub mod supervisor;
 pub mod switcher;
+pub mod teratts;
 
 pub use availability::{AvailableEngines, EngineAvailability};
 pub use engine::{EngineKind, SharedEngine, TtsEngine};
 pub use piper::PiperEngine;
 pub use silero_native::SileroNativeEngine;
 pub use supervisor::TtsSupervisor;
-pub use switcher::EngineSwitcher;
+pub use switcher::{EngineDirs, EngineSwitcher};
+pub use teratts::TeraTtsEngine;
 
 use std::sync::Arc;
 use std::time::Duration;

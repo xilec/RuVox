@@ -198,12 +198,16 @@ fn resolve_ttsd_dir<R: Runtime>(app: &AppHandle<R>) -> std::path::PathBuf {
 /// - `engine = "silero_native"` (default) *and* the model bundle is on disk →
 ///   in-process [`tts::SileroNativeEngine`]. A missing bundle falls back
 ///   to Piper the same way; the config value is preserved.
+/// - `engine = "teratts"` *and* its model bundle is on disk →
+///   in-process [`tts::TeraTtsEngine`]. A missing bundle falls back to Piper
+///   the same way; the config value is preserved.
 ///
 /// Voice models live at `<voices_root>/piper/<voice>/…` — see
 /// `tts::piper::catalog`. The Silero Native model bundle lives next to
-/// them at `<voices_root>/silero-native/` and is fetched on demand via
-/// `download_silero_native_bundle`. The voices root itself is resolved
-/// per-OS by [`crate::paths::voices_root`].
+/// them at `<voices_root>/silero-native/` and `<voices_root>/teratts/`, and
+/// are fetched on demand via `download_silero_native_bundle` and
+/// `download_teratts_bundle`. The voices root itself is resolved per-OS by
+/// [`crate::paths::voices_root`].
 /// Returns the active engine layer plus the runtime paths and emitter the
 /// rest of the app needs (Phase 4 download command, Phase 3 probe).
 type EngineWiring = (
@@ -211,6 +215,7 @@ type EngineWiring = (
     std::path::PathBuf, // ttsd_dir
     std::path::PathBuf, // piper_voices_dir
     std::path::PathBuf, // silero_native_bundle_dir
+    std::path::PathBuf, // teratts_bundle_dir
     tts::supervisor::Emitter,
 );
 
@@ -221,6 +226,7 @@ fn build_engine<R: Runtime>(
     let data_dir = crate::paths::voices_root().ok_or("no per-user data dir for voices")?;
     let voices_dir = data_dir.join("piper");
     let silero_native_bundle_dir = data_dir.join("silero-native");
+    let teratts_bundle_dir = data_dir.join("teratts");
 
     let app_handle_for_emitter = app.clone();
     let emitter: tts::supervisor::Emitter = Arc::new(move |event_name, payload| {
@@ -239,8 +245,16 @@ fn build_engine<R: Runtime>(
     // before opening ONNX sessions.
     let want_silero_native = config.engine == "silero_native"
         && tts::availability::probe_silero_native(&silero_native_bundle_dir).available;
+    let want_teratts = config.engine == "teratts"
+        && tts::availability::probe_teratts(&teratts_bundle_dir).available;
 
-    let (initial_engine, initial_kind, initial_voice) = if want_silero_native {
+    let (initial_engine, initial_kind, initial_voice) = if want_teratts {
+        let engine: Arc<dyn tts::TtsEngine> = Arc::new(tts::TeraTtsEngine::new(
+            teratts_bundle_dir.clone(),
+            Arc::clone(&emitter),
+        ));
+        (engine, tts::EngineKind::TeraTts, None)
+    } else if want_silero_native {
         let engine: Arc<dyn tts::TtsEngine> = Arc::new(tts::SileroNativeEngine::new(
             silero_native_bundle_dir.clone(),
             Arc::clone(&emitter),
@@ -266,6 +280,11 @@ fn build_engine<R: Runtime>(
                 "Silero Native requested in config but the bundle is missing or incomplete; serving Piper this run"
             );
         }
+        if config.engine == "teratts" {
+            tracing::info!(
+                "TeraTTS requested in config but the bundle is missing or incomplete; serving Piper this run"
+            );
+        }
         build_piper_initial(&voices_dir, &config.piper_voice, &emitter)
     };
 
@@ -273,9 +292,12 @@ fn build_engine<R: Runtime>(
         initial_engine,
         initial_kind,
         initial_voice,
-        voices_dir.clone(),
-        ttsd_dir.clone(),
-        silero_native_bundle_dir.clone(),
+        tts::EngineDirs {
+            piper_voices: voices_dir.clone(),
+            ttsd: ttsd_dir.clone(),
+            silero_native_bundle: silero_native_bundle_dir.clone(),
+            teratts_bundle: teratts_bundle_dir.clone(),
+        },
         Arc::clone(&emitter),
     ));
     Ok((
@@ -283,6 +305,7 @@ fn build_engine<R: Runtime>(
         ttsd_dir,
         voices_dir,
         silero_native_bundle_dir,
+        teratts_bundle_dir,
         emitter,
     ))
 }
@@ -430,6 +453,7 @@ pub(crate) fn invoke_handler<R: Runtime>()
         get_available_engines,
         download_piper_voice,
         download_silero_native_bundle,
+        download_teratts_bundle,
         get_timestamps,
         clear_cache,
         get_cache_stats,
@@ -928,8 +952,14 @@ pub fn run() {
             }
             spawn_audio_migration_and_cleanup(Arc::clone(&storage));
 
-            let (engine_switcher, ttsd_dir, piper_voices_dir, silero_native_bundle_dir, emitter) =
-                build_engine(app.handle(), &storage)?;
+            let (
+                engine_switcher,
+                ttsd_dir,
+                piper_voices_dir,
+                silero_native_bundle_dir,
+                teratts_bundle_dir,
+                emitter,
+            ) = build_engine(app.handle(), &storage)?;
             let tts: Arc<dyn tts::TtsEngine> = engine_switcher.clone();
             // Warm up the model in background. The engine owns the
             // model_loading → model_loaded/model_error emit sequence so the
@@ -973,6 +1003,7 @@ pub fn run() {
                 ttsd_dir,
                 piper_voices_dir,
                 silero_native_bundle_dir,
+                teratts_bundle_dir,
                 emitter,
                 player,
                 pipeline,

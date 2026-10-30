@@ -87,6 +87,33 @@ pub static PIPER_PROFILE: TextProfile = TextProfile {
     markup: Markup::None,
 };
 
+/// TeraTTSv2: the Russian MVP of the fourth engine. Every Latin fragment,
+/// number and unit is still rewritten by the pipeline (English-span routing is
+/// the follow-up change), but the engine owns stress: RUAccent dictionary marks
+/// fill the gaps while an explicit `+` from the user dictionary always wins,
+/// which is [`Stress::Manual`]. The 20-second limit is the model's decoder
+/// context; 250 ms and 200 ms separate paragraphs and chunks. `RuEnTags` is the
+/// markup the adapter wraps around the text; the profile never emits tags.
+pub static TERATTS_PROFILE: TextProfile = TextProfile {
+    languages: &["ru"],
+    route: Route {
+        latin_prose: Reading::Narrate,
+        identifier: Reading::Narrate,
+    },
+    digits: Digits::Expanded,
+    units: Units::Expanded,
+    stress: Stress::Manual,
+    charset: Charset::ModelAlphabet,
+    chunk: Chunk {
+        limit: Limit::Secs(20),
+        pauses: Pauses {
+            paragraph_ms: 250,
+            segment_ms: 200,
+        },
+    },
+    markup: Markup::RuEnTags,
+};
+
 /// A profile for an engine that reads Latin, digits and units natively.
 ///
 /// Deliberately absent from [`profile_for`]: no engine ships with it. It exists
@@ -123,6 +150,7 @@ pub fn profile_for(kind: EngineKind) -> &'static TextProfile {
         EngineKind::Silero => &SILERO_PROFILE,
         EngineKind::Piper => &PIPER_PROFILE,
         EngineKind::SileroNative => &SILERO_NATIVE_PROFILE,
+        EngineKind::TeraTts => &TERATTS_PROFILE,
     }
 }
 
@@ -220,6 +248,16 @@ mod tests {
         let expected = silero_native::chunking::MAX_CHUNK_SIZE;
         assert_eq!(SILERO_NATIVE_PROFILE.chunk.char_limit(), Some(expected));
         assert_eq!(SILERO_PROFILE.chunk.char_limit(), Some(expected));
+    }
+
+    #[test]
+    fn teratts_profile_declares_its_model_limits() {
+        assert_eq!(TERATTS_PROFILE.chunk.limit, Limit::Secs(20));
+        assert_eq!(TERATTS_PROFILE.chunk.paragraph_pause_sec(), 0.25);
+        assert_eq!(TERATTS_PROFILE.chunk.segment_pause_sec(), 0.2);
+        assert_eq!(TERATTS_PROFILE.stress, Stress::Manual);
+        assert_eq!(TERATTS_PROFILE.markup, Markup::RuEnTags);
+        assert_eq!(TERATTS_PROFILE.charset, Charset::ModelAlphabet);
     }
 
     #[test]

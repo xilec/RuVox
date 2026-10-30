@@ -41,6 +41,9 @@ pub struct AppState {
     /// ONNX/dict files). Consumed by `get_available_engines` (availability
     /// probe) and `download_silero_native_bundle`.
     pub silero_native_bundle_dir: PathBuf,
+    /// Directory holding the TeraTTSv2 model bundle. Consumed by
+    /// `get_available_engines` and `download_teratts_bundle`.
+    pub teratts_bundle_dir: PathBuf,
     /// Frontend emitter shared with the engine layer. Held here so the
     /// download path can reuse it without rebuilding the closure.
     pub emitter: Emitter,

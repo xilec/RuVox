@@ -1,6 +1,6 @@
 # RuVox
 
-**RuVox** is a desktop application for fast narration of Russian-language texts and articles with local TTS engines: native Silero v5 on ONNX Runtime (the `silero-native` crate, default), Piper (fallback), or Silero via the Python `ttsd` sidecar (fallback). The goal is quick comprehension: the listener takes the load off eyes strained by a day of reading and consumes medium-to-large texts by ear, where understanding the content matters more than the beauty of the generated speech (technical articles are a typical example). To get there with fast lightweight engines — which cannot read English terms, code, numbers, or URLs — the normalization pipeline rewrites those fragments into sounding Russian before synthesis, imitating a competent reading instead of skipping them.
+**RuVox** is a desktop application for fast narration of Russian-language texts and articles with local TTS engines: native Silero v5 on ONNX Runtime (the `silero-native` crate, default), Piper (fallback), TeraTTSv2 on ONNX Runtime (the `teratts` crate, 44.1 kHz, experimental), or Silero via the Python `ttsd` sidecar (fallback). The goal is quick comprehension: the listener takes the load off eyes strained by a day of reading and consumes medium-to-large texts by ear, where understanding the content matters more than the beauty of the generated speech (technical articles are a typical example). To get there with fast lightweight engines — which cannot read English terms, code, numbers, or URLs — the normalization pipeline rewrites those fragments into sounding Russian before synthesis, imitating a competent reading instead of skipping them.
 
 ## Problem → Solution
 
@@ -38,7 +38,7 @@ Skipping such fragments drops information, so the pipeline imitates a competent 
 | Shell | [Tauri 2](https://tauri.app/) (Rust + native webview) |
 | Frontend | React 18 + TypeScript 5 + [Mantine 8](https://mantine.dev/) |
 | Backend | Rust (normalization pipeline, storage, TTS manager, player wrapper) |
-| TTS | native Silero v5 (in-process, ONNX Runtime, `silero-native` crate, default); Piper (in-process, `piper-rs`, fallback); Silero via Python 3.12 subprocess `ttsd` (fallback) |
+| TTS | native Silero v5 (in-process, ONNX Runtime, `silero-native` crate, default); Piper (in-process, `piper-rs`, fallback); TeraTTSv2 (in-process, ONNX Runtime, `teratts` crate, 44.1 kHz, experimental); Silero via Python 3.12 subprocess `ttsd` (fallback) |
 | Audio | [`tauri-plugin-mpv`](https://crates.io/crates/tauri-plugin-mpv) (libmpv with `scaletempo2`) |
 | Build environment | Nix (`flake.nix`; dev shell in `nix/devshell.nix`) |
 
@@ -53,7 +53,7 @@ Skipping such fragments drops information, so the pipeline imitates a competent 
 
 Current behavior is specified in [openspec/specs/](../openspec/specs/) — the single source of truth:
 
-- **Backend:** `text-pipeline`, `position-mapping`, `text-import`, `storage`, `ipc-commands`, `ttsd-protocol`, `silero-native-engine`, `logging`
+- **Backend:** `text-pipeline`, `position-mapping`, `text-import`, `storage`, `ipc-commands`, `ttsd-protocol`, `silero-native-engine`, `teratts-engine`, `logging`
 - **Frontend / UX:** `ui`, `preview-dialog`, `queue-lifecycle`, `playback`, `text-display`, `word-highlight`, `tray`, `html-ingestion`, `viewer-copy-actions`, `auto-update`
 - **Packaging / runtime:** `windows-installer`, `linux-runtime`, `windows-runtime`
 

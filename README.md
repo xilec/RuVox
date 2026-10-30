@@ -16,13 +16,13 @@ Desktop-приложение для быстрого прослушивания 
 
 RuVox идёт по второму пути: нормализация — компенсирующая прослойка, которая переписывает английские термины, аббревиатуры, код, числа и URL в «звучащую» русскую форму, чтобы лёгкий движок прочитал текст целиком. `getUserData()` → «гет юзер дата», `API` → «эй пи ай», `/api/v2/users` — как путь, а не по буквам. Произношение при этом остаётся приближённым, и это осознанный размен: вместо красоты речи и мощного железа RuVox даёт скорость понимания и легковесность по ресурсам.
 
-Озвучивает один из трёх TTS-движков: Silero TTS v5 in-process на ONNX Runtime (крейт [`silero-native`](silero-native/), движок по умолчанию, бандл модели скачивается по запросу), [Piper](https://github.com/rhasspy/piper) (in-process, через `piper-rs`, запасной вариант без внешних зависимостей) или, опционально, [Silero TTS](https://github.com/snakers4/silero-models) out-of-process через Python-сайдкар `ttsd` (оставлен как fallback).
+Озвучивает один из четырёх TTS-движков: Silero TTS v5 in-process на ONNX Runtime (крейт [`silero-native`](silero-native/), движок по умолчанию, бандл модели скачивается по запросу), [Piper](https://github.com/rhasspy/piper) (in-process, через `piper-rs`, запасной вариант без внешних зависимостей), [TeraTTSv2](https://huggingface.co/TeraSpace/TeraTTSv2) (in-process на ONNX Runtime, крейт [`teratts`](teratts/), 44.1 кГц, бандл ~410 МБ скачивается по запросу) или, опционально, [Silero TTS](https://github.com/snakers4/silero-models) out-of-process через Python-сайдкар `ttsd` (оставлен как fallback).
 
 Синтез полностью локальный — никаких облачных TTS, текст никуда не отправляется. Сеть нужна только для разового скачивания голосовых моделей по запросу, проверки обновлений приложения и импорта текста по ссылке.
 
 ![Скриншот RuVox](docs/images/screenshot.png)
 
-Примеры озвучки всех трёх движков на одном тексте — на [странице проекта](https://xilec.github.io/RuVox/).
+Примеры озвучки всех движков на одном тексте — на [странице проекта](https://xilec.github.io/RuVox/).
 
 ## Установка
 
@@ -34,7 +34,7 @@ RuVox идёт по второму пути: нормализация — ком
 | Debian / Ubuntu | `*.deb` | `sudo dpkg -i ./ruvox_*.deb`; системный `mpv` ставится автоматически как зависимость; обновляется вместе с системой |
 | Любой дистрибутив Linux | `*.AppImage` | запускается напрямую (нужен FUSE; там, где его нет, — `--appimage-extract-and-run`); mpv встроен; автообновление из приложения |
 
-Голосовая модель движка скачивается по запросу при первом использовании (для Silero Native — бандл ~230 МБ).
+Голосовая модель движка скачивается по запросу при первом использовании (для Silero Native — бандл ~230 МБ, для TeraTTSv2 — ~410 МБ).
 
 ## Стек
 
@@ -43,7 +43,7 @@ RuVox идёт по второму пути: нормализация — ком
 | Shell | [Tauri 2](https://tauri.app/) (Rust + нативный webview) |
 | Frontend | React 18 + TypeScript 5 + [Mantine 8](https://mantine.dev/) |
 | Backend | Rust (pipeline нормализации, storage, TTS-менеджер) |
-| TTS | Silero v5 нативный (in-process, ONNX Runtime, крейт [`silero-native`](silero-native/), по умолчанию); Piper (in-process, `piper-rs` + `onnxruntime`, fallback); Silero через `ttsd` (опциональный Python 3.12 subprocess, fallback) |
+| TTS | Silero v5 нативный (in-process, ONNX Runtime, крейт [`silero-native`](silero-native/), по умолчанию); Piper (in-process, `piper-rs` + `onnxruntime`, fallback); TeraTTSv2 (in-process, ONNX Runtime, крейт [`teratts`](teratts/), 44.1 кГц, экспериментальный); Silero через `ttsd` (опциональный Python 3.12 subprocess, fallback) |
 | Аудио | `tauri-plugin-mpv` (libmpv с `scaletempo2`) |
 
 ## Возможности
@@ -133,6 +133,7 @@ pnpm test:unit                                                  # TS unit-тес
 cargo test --manifest-path src-tauri/Cargo.toml                 # Rust (включая golden-тесты pipeline)
 cargo test --manifest-path src-tauri/Cargo.toml --test golden   # только golden-тесты
 cargo test --manifest-path silero-native/Cargo.toml             # нативный движок Silero (bundle-gated тесты скипаются без SILERO_NATIVE_BUNDLE)
+cargo test --manifest-path teratts/Cargo.toml                   # движок TeraTTSv2 (bundle-gated тесты скипаются без TERATTS_BUNDLE)
 cd ttsd && uv run python -m pytest                              # Python subprocess
 ```
 
@@ -146,6 +147,7 @@ cd ttsd && uv run python -m pytest                              # Python subproc
 | [docs/development.md](docs/development.md) | Dev-окружение, команды, отладка |
 | [docs/contributing.md](docs/contributing.md) | Контрибуция: словари, правила коммитов и стиля |
 | [silero-native/](silero-native/) | Крейт нативного движка Silero v5 (ONNX Runtime): архитектура, экспорт бандла, parity-тесты (на английском) |
+| [teratts/](teratts/) | Крейт движка TeraTTSv2 (ONNX Runtime, 44.1 кГц): экспорт, версионирование и обновление бандла, лицензии (на английском) |
 | [openspec/specs/](openspec/specs/) | Спецификации поведения (OpenSpec): IPC, хранилище, pipeline, UI, плеер |
 | [CHANGELOG.md](CHANGELOG.md) | Хронология изменений |
 
@@ -154,3 +156,5 @@ cd ttsd && uv run python -m pytest                              # Python subproc
 Код приложения — GPL-3.0, см. [LICENSE.md](LICENSE.md).
 
 > **Важно:** голосовая модель движка по умолчанию (Silero Native) распространяется по лицензии CC BY-NC-SA 4.0 — использовать её можно только в некоммерческих целях. Подробности: [silero-native/NOTICE](silero-native/NOTICE). Для использования без лицензионных ограничений выбирайте движок Piper — он сам и его голосовые модели распространяются по MIT.
+
+> **TeraTTSv2:** модель распространяется по TeraTTSv2 Model License (Open RAIL-M с условием коммерческой атрибуции) и BigScience Open RAIL-M. Публичное использование обязано содержать атрибуцию «Text-to-speech powered by TeraTTSv2 by TeraSpace» со ссылкой на [модель](https://huggingface.co/TeraSpace/TeraTTSv2). Подробности: [teratts/NOTICE](teratts/NOTICE).

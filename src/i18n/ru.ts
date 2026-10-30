@@ -84,6 +84,7 @@ export const ru = {
   'generation.engine.silero_native': 'Silero (нативный)',
   'generation.engine.piper': 'Piper',
   'generation.engine.silero': 'Silero (Python)',
+  'generation.engine.teratts': 'TeraTTSv2',
   'generation.voice': 'Голос',
   'generation.sample_rate': 'Частота дискретизации',
   'generation.sample_rate.value': '{0} Гц',
@@ -178,16 +179,22 @@ export const ru = {
   'settings.engine.silero_native': 'Silero (нативный, рекомендуемый)',
   'settings.engine.piper': 'Piper',
   'settings.engine.silero': 'Silero (Python)',
+  'settings.engine.teratts': 'TeraTTSv2',
   'settings.coerced_alert': 'Сохранённый движок недоступен — выбран Piper.',
   'settings.availability.probing_python': 'Проверяю наличие Python-стека…',
   'settings.availability.probing_bundle': 'Проверяю наличие бандла моделей…',
   'settings.engine.reason_silero': 'Silero: {0}',
   'settings.engine.reason_silero_native': 'Silero (нативный): {0}',
+  'settings.engine.reason_teratts': 'TeraTTSv2: {0}',
   'settings.bundle.downloading': 'Скачивание моделей: {0} ({1}%)',
   'settings.bundle.download_button': 'Скачать модели Silero (~230 МБ)',
+  'settings.bundle.download_teratts': 'Скачать модели TeraTTS (~410 МБ)',
   'settings.bundle.finished.title': 'Бандл моделей скачан',
   'settings.bundle.finished.message':
     'Движок «Silero (нативный)» теперь доступен.',
+  'settings.teratts_voice.label': 'Голос TeraTTSv2',
+  'settings.teratts_voice.description':
+    'Русские голоса из бандла; ru_m5 — по умолчанию.',
   'settings.bundle.failed.title': 'Не удалось скачать бандл',
   'settings.piper_voice.label': 'Голос Piper',
   'settings.piper_voice.description':
@@ -387,6 +394,23 @@ export const ru = {
   'errors.native.bundle_missing': 'Бандл моделей Silero не скачан. Скачайте его кнопкой ниже.',
   'errors.native.bundle_manifest_corrupt': 'Манифест бандла Silero повреждён. Скачайте бандл заново.',
   'errors.native.bundle_incomplete': 'Бандл моделей Silero установлен не полностью ({0}). Скачайте его заново.',
+  'errors.teratts.bundle_missing':
+    'Бандл моделей TeraTTS не скачан. Скачайте его в настройках (движок «TeraTTSv2»).',
+  'errors.teratts.bundle_incompatible':
+    'Бандл TeraTTS формата {0} не поддерживается (нужен {1}). Обновите приложение или перекачайте бандл.',
+  'errors.teratts.bundle_corrupt':
+    'Бандл TeraTTS повреждён. Перекачайте его в настройках.',
+  'errors.bundle_not_installed':
+    'Бандл моделей не скачан. Скачайте его в настройках.',
+  'errors.bundle_corrupt':
+    'Бандл моделей повреждён. Перекачайте его в настройках.',
+  'errors.bundle_incompatible':
+    'Бандл моделей несовместим с этой версией приложения.',
+  'errors.voice_unknown': 'Голос не найден: {0}',
+  'errors.text_invalid_tags': 'Текст не подходит для этого движка: {0}',
+  'errors.synthesis_failed': 'Ошибка синтеза речи: {0}',
+  'errors.teratts_cancelled': 'Синтез отменён',
+
   'errors.dictionary.error': 'Словарь: {0}',
   'errors.dictionary.import_failed': 'Не удалось прочитать файл словаря: {0}',
   'errors.dictionary.task_panicked': 'Внутренняя ошибка при операции со словарём',

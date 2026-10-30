@@ -170,6 +170,7 @@ impl Engine {
             let words = timestamps::chunk_timestamps(
                 &chunk.text,
                 inner,
+                &prepared.dropped,
                 chunk.start,
                 audio_start,
                 audio_end,

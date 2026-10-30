@@ -8,8 +8,9 @@
 //!   cargo run --release --manifest-path teratts/Cargo.toml --example synth
 //! ```
 //!
-//! `TERATTS_VOICE` selects the voice (`ru_m5` by default). The example prints
-//! load time, synthesis time and the real-time factor.
+//! `TERATTS_VOICE` selects the voice (`ru_m5` by default), `TERATTS_THREADS`
+//! the ONNX intra-op thread count (default: half the cores). The example
+//! prints load time, synthesis time and the real-time factor.
 
 use std::sync::atomic::AtomicBool;
 use std::time::Instant;
@@ -24,9 +25,18 @@ fn main() {
     let voice = std::env::var("TERATTS_VOICE").unwrap_or_else(|_| "ru_m5".to_string());
     let out = std::env::var("TERATTS_OUT").unwrap_or_else(|_| "teratts-smoke.wav".to_string());
 
+    let threads = std::env::var("TERATTS_THREADS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or_else(teratts::default_threads);
     let load_started = Instant::now();
-    let engine = Engine::load(std::path::Path::new(&bundle)).expect("load bundle");
-    println!("load: {:.2} s", load_started.elapsed().as_secs_f64());
+    let engine =
+        Engine::load_with_threads(std::path::Path::new(&bundle), threads).expect("load bundle");
+    println!(
+        "load: {:.2} s ({} threads)",
+        load_started.elapsed().as_secs_f64(),
+        threads
+    );
 
     let policy = Chunk {
         limit: Limit::Secs(20),

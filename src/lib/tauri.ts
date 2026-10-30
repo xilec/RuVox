@@ -74,7 +74,7 @@ export interface WordTimestamp {
 
 type Theme = 'light' | 'dark' | 'auto';
 
-export type EngineKind = 'piper' | 'silero' | 'silero_native';
+export type EngineKind = 'piper' | 'silero' | 'silero_native' | 'teratts';
 
 /** Machine-readable localizable text (same shape subset as CommandError:
  * translated by the frontend via catalogs, `message` as raw fallback). */
@@ -98,6 +98,7 @@ export interface AvailableEngines {
   piper: EngineAvailability;
   silero: EngineAvailability;
   silero_native: EngineAvailability;
+  teratts: EngineAvailability;
 }
 
 export interface UIConfig {
@@ -128,6 +129,8 @@ export interface UIConfig {
   engine: EngineKind;
   /** Active Piper voice id (e.g. "ruslan", "irina"). See piperVoices.ts. */
   piper_voice: string;
+  /** Active TeraTTS voice id ("ru_m5" default; ru_f1, ru_f2, ru_m1). */
+  teratts_voice: string;
 }
 
 export type UIConfigPatch = Partial<UIConfig>;
@@ -336,6 +339,9 @@ export const commands = {
   downloadSileroNativeBundle: (): Promise<void> =>
     tauriInvoke('download_silero_native_bundle'),
 
+  downloadTerattsBundle: (): Promise<void> =>
+    tauriInvoke('download_teratts_bundle'),
+
   getTimestamps: (id: EntryId): Promise<WordTimestamp[]> =>
     tauriInvoke('get_timestamps', { id }),
 
@@ -425,10 +431,10 @@ export interface VoiceDownloadFinishedPayload {
 }
 
 export interface BundleDownloadStartedPayload {
-  engine: 'silero_native';
+  engine: 'silero_native' | 'teratts';
 }
 export interface BundleDownloadProgressPayload {
-  engine: 'silero_native';
+  engine: 'silero_native' | 'teratts';
   /** Bundle-relative file path from the manifest. */
   file: string;
   file_idx: number;
@@ -440,7 +446,7 @@ export interface BundleDownloadProgressPayload {
   skipped?: boolean;
 }
 export interface BundleDownloadFinishedPayload {
-  engine: 'silero_native';
+  engine: 'silero_native' | 'teratts';
   ok: boolean;
   /** Russian-language failure message, present when ok=false. */
   message?: string;

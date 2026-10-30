@@ -14,7 +14,7 @@ dev:
     pnpm tauri dev
 
 # Run all tests (Rust + TS + Python)
-test: test-rust test-silero-native test-contract test-ts test-python
+test: test-rust test-silero-native test-contract test-teratts test-ts test-python
 
 # Rust tests (incl. golden pipeline fixtures)
 test-rust:
@@ -27,6 +27,10 @@ test-contract:
 # silero-native engine tests
 test-silero-native:
     cargo test --manifest-path silero-native/Cargo.toml
+
+# TeraTTSv2 engine tests (bundle-gated tests skip without TERATTS_BUNDLE)
+test-teratts:
+    cargo test --manifest-path teratts/Cargo.toml
 
 # TypeScript typecheck + unit tests
 test-ts:
@@ -42,9 +46,11 @@ lint:
     cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
     cargo fmt --manifest-path silero-native/Cargo.toml -- --check
     cargo fmt --manifest-path tts-contract/Cargo.toml -- --check
+    cargo fmt --manifest-path teratts/Cargo.toml -- --check
     cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --no-deps -- -D warnings
     cargo clippy --manifest-path silero-native/Cargo.toml --all-targets --no-deps -- -D warnings
     cargo clippy --manifest-path tts-contract/Cargo.toml --all-targets --no-deps -- -D warnings
+    cargo clippy --manifest-path teratts/Cargo.toml --all-targets --no-deps -- -D warnings
     cargo deny --manifest-path src-tauri/Cargo.toml check
     pnpm lint
     pnpm knip

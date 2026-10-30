@@ -195,12 +195,17 @@ pub struct UIConfig {
     /// default: a close request quits the app.
     #[serde(default)]
     pub hide_to_tray_on_close: bool,
-    /// Active TTS engine: `"piper"` | `"silero"` | `"silero_native"` (default).
+    /// Active TTS engine: `"piper"` | `"silero"` | `"silero_native"` (default)
+    /// | `"teratts"`.
     #[serde(default = "UIConfig::default_engine")]
     pub engine: String,
     /// Active Piper voice id (`"ruslan"` by default — see `tts::piper::catalog`).
     #[serde(default = "UIConfig::default_piper_voice")]
     pub piper_voice: String,
+    /// Active TeraTTS voice id (`"ru_m5"` by default — see the bundle
+    /// manifest; `ru_f1`, `ru_f2`, `ru_m1` are the other Russian voices).
+    #[serde(default = "UIConfig::default_teratts_voice")]
+    pub teratts_voice: String,
     /// UI language: `"ru"` (default) | `"en"`.
     #[serde(default = "UIConfig::default_language")]
     pub language: String,
@@ -218,6 +223,9 @@ impl UIConfig {
     }
     fn default_piper_voice() -> String {
         "ruslan".to_string()
+    }
+    fn default_teratts_voice() -> String {
+        "ru_m5".to_string()
     }
     fn default_speech_rate() -> f64 {
         1.0
@@ -284,6 +292,7 @@ impl Default for UIConfig {
             hide_to_tray_on_close: false,
             engine: Self::default_engine(),
             piper_voice: Self::default_piper_voice(),
+            teratts_voice: Self::default_teratts_voice(),
             language: Self::default_language(),
         }
     }
@@ -308,6 +317,7 @@ pub struct UIConfigPatch {
     pub hide_to_tray_on_close: Option<bool>,
     pub engine: Option<String>,
     pub piper_voice: Option<String>,
+    pub teratts_voice: Option<String>,
     pub language: Option<String>,
 }
 
@@ -384,6 +394,7 @@ mod tests {
         assert!(!c.speaker.is_empty());
         assert_eq!(c.engine, "silero_native");
         assert_eq!(c.piper_voice, "ruslan");
+        assert_eq!(c.teratts_voice, "ru_m5");
         assert!(!c.hide_to_tray_on_close);
     }
 
@@ -404,6 +415,7 @@ mod tests {
         let c: UIConfig = serde_json::from_str(json).unwrap();
         assert_eq!(c.engine, "silero_native");
         assert_eq!(c.piper_voice, "ruslan");
+        assert_eq!(c.teratts_voice, "ru_m5");
     }
 
     #[test]
@@ -428,6 +440,7 @@ mod tests {
         assert!(p.speaker.is_none());
         assert!(p.sample_rate.is_none());
         assert!(p.theme.is_none());
+        assert!(p.teratts_voice.is_none());
     }
 
     #[test]

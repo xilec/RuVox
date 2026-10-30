@@ -43,6 +43,7 @@ import {
 interface SettingsFormValues {
   engine: EngineKind;
   piper_voice: string;
+  teratts_voice: string;
   speaker: string;
   sample_rate: number;
   notify_on_ready: boolean;
@@ -59,6 +60,16 @@ const ENGINE_OPTIONS: ReadonlyArray<{ value: EngineKind; key: MessageKey }> = [
   { value: 'silero_native', key: 'settings.engine.silero_native' },
   { value: 'piper', key: 'settings.engine.piper' },
   { value: 'silero', key: 'settings.engine.silero' },
+  { value: 'teratts', key: 'settings.engine.teratts' },
+];
+
+/** Russian voices shipped in the TeraTTS bundle (the English ones are listed
+ *  by the follow-up routing change). Voice ids are the model's own names. */
+const TERATTS_VOICES: ReadonlyArray<{ value: string; label: string }> = [
+  { value: 'ru_m5', label: 'ru_m5' },
+  { value: 'ru_f1', label: 'ru_f1' },
+  { value: 'ru_f2', label: 'ru_f2' },
+  { value: 'ru_m1', label: 'ru_m1' },
 ];
 
 /// Pessimistic default used until `getAvailableEngines()` resolves: Piper
@@ -71,6 +82,10 @@ function pessimisticAvailability(): AvailabilityMap {
     piper: { available: true, reason: null },
     silero: { available: false, reason: { code: 'settings.availability.probing_python' } },
     silero_native: {
+      available: false,
+      reason: { code: 'settings.availability.probing_bundle' },
+    },
+    teratts: {
       available: false,
       reason: { code: 'settings.availability.probing_bundle' },
     },
@@ -274,9 +289,11 @@ export function SettingsModal({
   );
   // Live bundle-download state: null when idle, otherwise the current file
   // and the overall percentage derived from the progress events.
-  const [bundleDownload, setBundleDownload] = useState<{ file: string; percent: number } | null>(
-    null,
-  );
+  const [bundleDownload, setBundleDownload] = useState<{
+    engine: 'silero_native' | 'teratts';
+    file: string;
+    percent: number;
+  } | null>(null);
   // Whether a download session is active — lets the invoke catch distinguish
   // "command failed before starting" (report here) from "failed mid-download"
   // (already reported by the finished event).
@@ -292,6 +309,7 @@ export function SettingsModal({
   const SETTINGS_DEFAULTS: SettingsFormValues = {
     engine: 'silero_native',
     piper_voice: 'ruslan',
+    teratts_voice: 'ru_m5',
     speaker: 'aidar',
     sample_rate: 24000,
     notify_on_ready: true,
@@ -333,6 +351,7 @@ export function SettingsModal({
         const loaded = {
           engine: initial.engine,
           piper_voice: initial.piperVoice,
+          teratts_voice: initial.terattsVoice,
           speaker: initial.sileroSpeaker,
           sample_rate: config.sample_rate,
           notify_on_ready: config.notify_on_ready,
@@ -393,10 +412,12 @@ export function SettingsModal({
       engine: form.values.engine,
       piperVoice: form.values.piper_voice,
       sileroSpeaker: form.values.speaker,
+      terattsVoice: form.values.teratts_voice,
       coercedAwayFromUnavailable: coercedAlert,
     };
     const updated = applyEngineChange(current, next, availability);
     form.setFieldValue('engine', updated.engine);
+    form.setFieldValue('teratts_voice', updated.terattsVoice);
     // applyEngineChange coerces ttsd-only speakers (e.g. 'random') away
     // when the native engine is picked.
     form.setFieldValue('speaker', updated.sileroSpeaker);
@@ -413,12 +434,12 @@ export function SettingsModal({
   useEffect(() => {
     if (!opened) return;
     const unlisteners = [
-      events.bundleDownloadStarted(() => {
+      events.bundleDownloadStarted((p) => {
         downloadActiveRef.current = true;
-        setBundleDownload({ file: 'manifest.json', percent: 0 });
+        setBundleDownload({ engine: p.engine, file: 'manifest.json', percent: 0 });
       }),
       events.bundleDownloadProgress((p) => {
-        setBundleDownload({ file: p.file, percent: bundleDownloadPercent(p) });
+        setBundleDownload({ engine: p.engine, file: p.file, percent: bundleDownloadPercent(p) });
       }),
       events.bundleDownloadFinished((p) => {
         downloadActiveRef.current = false;
@@ -448,12 +469,16 @@ export function SettingsModal({
     // `tt` re-subscribes on locale switch so toasts use the active catalog.
   }, [opened, tt]);
 
-  const handleBundleDownload = () => {
+  const handleBundleDownload = (engine: 'silero_native' | 'teratts') => {
     // Switch to the progress view immediately — the started event lands one
     // IPC round-trip later, and without this the button stays clickable and
     // the user can queue a second download.
-    setBundleDownload({ file: 'manifest.json', percent: 0 });
-    commands.downloadSileroNativeBundle().catch((err) => {
+    setBundleDownload({ engine, file: 'manifest.json', percent: 0 });
+    const start =
+      engine === 'silero_native'
+        ? commands.downloadSileroNativeBundle()
+        : commands.downloadTerattsBundle();
+    start.catch((err) => {
       // Mid-download failures are already reported by the
       // bundle_download_finished { ok: false } event; only a command that
       // failed before starting needs a notification here.
@@ -508,6 +533,7 @@ export function SettingsModal({
       {
         engine: values.engine,
         piper_voice: values.piper_voice,
+        teratts_voice: values.teratts_voice,
         speaker: values.speaker,
         sample_rate: values.sample_rate,
         notify_on_ready: values.notify_on_ready,
@@ -603,8 +629,14 @@ export function SettingsModal({
             </Text>
           )}
 
+          {!availability.teratts.available && availability.teratts.reason && (
+            <Text size="xs" c="dimmed" mt={-8}>
+              {tt('settings.engine.reason_teratts', [formatError(availability.teratts.reason)])}
+            </Text>
+          )}
+
           {!availability.silero_native.available &&
-            (bundleDownload ? (
+            (bundleDownload?.engine === 'silero_native' ? (
               <Stack gap={4}>
                 <Text size="xs" c="dimmed">
                   {tt('settings.bundle.downloading', [
@@ -616,11 +648,48 @@ export function SettingsModal({
               </Stack>
             ) : (
               <Group justify="flex-start">
-                <Button variant="default" size="xs" onClick={handleBundleDownload}>
+                <Button
+                  variant="default"
+                  size="xs"
+                  onClick={() => handleBundleDownload('silero_native')}
+                >
                   {tt('settings.bundle.download_button')}
                 </Button>
               </Group>
             ))}
+
+          {!availability.teratts.available &&
+            (bundleDownload?.engine === 'teratts' ? (
+              <Stack gap={4}>
+                <Text size="xs" c="dimmed">
+                  {tt('settings.bundle.downloading', [
+                    bundleDownload.file,
+                    Math.round(bundleDownload.percent),
+                  ])}
+                </Text>
+                <Progress value={bundleDownload.percent} animated />
+              </Stack>
+            ) : (
+              <Group justify="flex-start">
+                <Button
+                  variant="default"
+                  size="xs"
+                  onClick={() => handleBundleDownload('teratts')}
+                >
+                  {tt('settings.bundle.download_teratts')}
+                </Button>
+              </Group>
+            ))}
+
+          {form.values.engine === 'teratts' && (
+            <Select
+              label={tt('settings.teratts_voice.label')}
+              description={tt('settings.teratts_voice.description')}
+              data={TERATTS_VOICES.map((v) => ({ value: v.value, label: v.label }))}
+              key={form.key('teratts_voice')}
+              {...form.getInputProps('teratts_voice')}
+            />
+          )}
 
           {form.values.engine === 'piper' ? (
             <Stack gap={6}>

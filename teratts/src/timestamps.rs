@@ -61,17 +61,27 @@ pub fn leading_silence(samples: &[f32]) -> f64 {
 /// `original` is the pipeline text of the chunk (used for the highlighted word
 /// strings and char ranges), `prepared_inner` is the same chunk after tags,
 /// stress and NFKD (used for the predictor prefixes, which must match what the
-/// model saw), `predict` returns raw predicted seconds for a prefix.
+/// model saw), `dropped` lists the characters the alphabet gate removed, and
+/// `predict` returns raw predicted seconds for a prefix.
+///
+/// Tokens made only of dropped characters (a standalone em dash, a number when
+/// the caller bypassed the pipeline) disappear from the prepared text, so they
+/// are filtered out of the source list before the counts are compared; keeping
+/// them would reject the whole chunk for a cosmetic difference.
 pub fn chunk_timestamps(
     original: &str,
     prepared_inner: &str,
+    dropped: &[char],
     chunk_start: usize,
     audio_start: f64,
     audio_end: f64,
     leading_silence: f64,
     predict: impl Fn(&str) -> Result<f64>,
 ) -> Result<Vec<Word>> {
-    let source = words(original);
+    let source: Vec<_> = words(original)
+        .into_iter()
+        .filter(|(word, _, _)| !word.chars().all(|character| dropped.contains(&character)))
+        .collect();
     let prepared = words(prepared_inner);
     if source.is_empty() {
         return Ok(Vec::new());
@@ -133,11 +143,34 @@ mod tests {
         assert_eq!(words[1], ("мир!".to_string(), 8, 12));
     }
 
+    /// A token made only of characters the alphabet gate dropped (a standalone
+    /// em dash, a number when the caller bypassed the pipeline) must not fail
+    /// the chunk: it has no counterpart in the prepared text by design.
+    #[test]
+    fn tokens_dropped_by_the_alphabet_gate_are_skipped() {
+        let original = "цена — 15 рублей";
+        let prepared = "цен+а  рубл+ей";
+        let words = chunk_timestamps(
+            original,
+            prepared,
+            &['—', '1', '5'],
+            0,
+            0.0,
+            2.0,
+            0.0,
+            fake_predict,
+        )
+        .unwrap();
+        let words: Vec<&str> = words.iter().map(|w| w.word.as_str()).collect();
+        assert_eq!(words, vec!["цена", "рублей"]);
+    }
+
     #[test]
     fn timestamps_are_monotonic_and_inside_the_audio() {
         let original = "первое предложение здесь. второе предложение тут.";
         let prepared = original;
-        let words = chunk_timestamps(original, prepared, 0, 0.0, 4.0, 0.1, fake_predict).unwrap();
+        let words =
+            chunk_timestamps(original, prepared, &[], 0, 0.0, 4.0, 0.1, fake_predict).unwrap();
         assert_eq!(words.len(), 6);
         let mut previous = 0.0;
         for word in &words {
@@ -151,7 +184,7 @@ mod tests {
 
     #[test]
     fn char_ranges_are_shifted_by_the_chunk_offset() {
-        let words = chunk_timestamps("мир", "мир", 100, 0.0, 1.0, 0.0, fake_predict).unwrap();
+        let words = chunk_timestamps("мир", "мир", &[], 100, 0.0, 1.0, 0.0, fake_predict).unwrap();
         assert_eq!(words[0].start_char, 100);
         assert_eq!(words[0].end_char, 103);
     }
@@ -166,6 +199,8 @@ mod tests {
 
     #[test]
     fn a_word_count_mismatch_is_an_error() {
-        assert!(chunk_timestamps("два слова", "одно", 0, 0.0, 1.0, 0.0, fake_predict).is_err());
+        assert!(
+            chunk_timestamps("два слова", "одно", &[], 0, 0.0, 1.0, 0.0, fake_predict).is_err()
+        );
     }
 }

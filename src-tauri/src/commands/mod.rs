@@ -363,6 +363,7 @@ fn voice_for_engine(kind: EngineKind, config: &UIConfig) -> String {
     match kind {
         EngineKind::Piper => config.piper_voice.clone(),
         EngineKind::Silero | EngineKind::SileroNative => config.speaker.clone(),
+        EngineKind::TeraTts => config.teratts_voice.clone(),
     }
 }
 
@@ -1493,12 +1494,15 @@ pub async fn download_piper_voice(state: State<'_, AppState>, voice_id: String) 
 #[tauri::command]
 pub async fn get_available_engines(state: State<'_, AppState>) -> CmdResult<AvailableEngines> {
     let ttsd_dir = state.ttsd_dir.clone();
-    let bundle_dir = state.silero_native_bundle_dir.clone();
-    tokio::task::spawn_blocking(move || availability::probe(&ttsd_dir, &bundle_dir))
-        .await
-        .map_err(|e| {
-            CommandError::internal("engines.probe_panicked", vec![]).with_message(e.to_string())
-        })
+    let silero_native_bundle_dir = state.silero_native_bundle_dir.clone();
+    let teratts_bundle_dir = state.teratts_bundle_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        availability::probe(&ttsd_dir, &silero_native_bundle_dir, &teratts_bundle_dir)
+    })
+    .await
+    .map_err(|e| {
+        CommandError::internal("engines.probe_panicked", vec![]).with_message(e.to_string())
+    })
 }
 
 /// Download the Silero Native model bundle on user demand. Idempotent —
@@ -1511,6 +1515,21 @@ pub async fn download_silero_native_bundle(state: State<'_, AppState>) -> CmdRes
     let bundle_dir = state.silero_native_bundle_dir.clone();
     let emitter = Arc::clone(&state.emitter);
     crate::tts::silero_native::download::download_bundle(&bundle_dir, &emitter)
+        .await
+        .map_err(CommandError::from)
+}
+
+/// Download the TeraTTSv2 model bundle on user demand. Idempotent — files
+/// already present with a matching checksum are skipped. Progress is delivered
+/// via the `bundle_download_started` / `bundle_download_progress` /
+/// `bundle_download_finished` events with `engine: "teratts"`; the `Result`
+/// here only reports the final outcome so the frontend can show one terminal
+/// notification.
+#[tauri::command]
+pub async fn download_teratts_bundle(state: State<'_, AppState>) -> CmdResult<()> {
+    let bundle_dir = state.teratts_bundle_dir.clone();
+    let emitter = Arc::clone(&state.emitter);
+    crate::tts::teratts::download::download_bundle(&bundle_dir, &emitter)
         .await
         .map_err(CommandError::from)
 }
@@ -1950,6 +1969,9 @@ fn apply_config_patch(config: &mut UIConfig, patch: UIConfigPatch) {
     }
     if let Some(v) = patch.piper_voice {
         config.piper_voice = v;
+    }
+    if let Some(v) = patch.teratts_voice {
+        config.teratts_voice = v;
     }
     if let Some(v) = patch.language {
         config.language = v;
@@ -2550,6 +2572,7 @@ mod tests {
             hide_to_tray_on_close: _,
             engine: _,
             piper_voice: _,
+            teratts_voice: _,
             language: _,
         } = UIConfigPatch::default();
 
@@ -2751,6 +2774,7 @@ mod tests {
             hide_to_tray_on_close: true,
             engine: "silero".to_string(),
             piper_voice: "irina".to_string(),
+            teratts_voice: "ru_m5".to_string(),
             language: "ru".to_string(),
         };
         let before = serde_json::to_value(&config).unwrap();
@@ -3204,6 +3228,43 @@ mod tests {
 
         assert_eq!(engine.recorded_voices(), vec!["aidar"]);
         assert_eq!(outcome.voice, "aidar");
+    }
+
+    /// TeraTTS has its own voice namespace (`ru_m5`, `ru_f1`, …), so the
+    /// resolved voice must come from `config.teratts_voice`, not the Silero
+    /// speaker or the Piper voice.
+    #[tokio::test]
+    async fn synthesize_audio_on_teratts_uses_teratts_voice() {
+        let (storage, _dir) = make_service();
+        storage
+            .save_config(&UIConfig {
+                engine: "teratts".to_string(),
+                teratts_voice: "ru_f1".to_string(),
+                piper_voice: "ruslan".to_string(),
+                speaker: "aidar".to_string(),
+                ..UIConfig::default()
+            })
+            .unwrap();
+        let engine = RecordingEngine::new(EngineKind::TeraTts);
+        let (emitter, _log) = recording_emitter();
+        let voices_dir = TempDir::new().unwrap();
+        let entered = Mutex::new(HashSet::new());
+
+        let outcome = synthesize_audio(
+            &engine,
+            &storage,
+            voices_dir.path(),
+            &emitter,
+            &entered,
+            &uuid::Uuid::new_v4(),
+            "текст".to_string(),
+            &empty_mapping(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(engine.recorded_voices(), vec!["ru_f1"]);
+        assert_eq!(outcome.voice, "ru_f1");
     }
 
     /// A `voice_not_installed` failure on the active Piper engine enters the

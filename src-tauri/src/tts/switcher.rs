@@ -6,8 +6,9 @@
 //! calls are forwarded to whichever engine is currently installed; swap
 //! decisions are driven from [`apply_config`](EngineSwitcher::apply_config).
 //!
-//! The factory closures for Piper and Silero live here (paths + emitter +
-//! ttsd command) so [`apply_config`] can rebuild either engine in-place.
+//! The factory closures for Piper, Silero and the two ONNX engines live here
+//! (paths + emitter + ttsd command) so [`apply_config`] can rebuild any engine
+//! in-place.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU8, Ordering};
@@ -21,6 +22,7 @@ use super::engine::{EngineKind, TtsEngine};
 use super::piper::PiperEngine;
 use super::silero_native::SileroNativeEngine;
 use super::supervisor::{CommandFactory, Emitter, TtsSupervisor};
+use super::teratts::TeraTtsEngine;
 use super::{CharMappingEntry, SynthesizeOutput, TtsError};
 
 /// Currently-active engine plus the inputs needed to rebuild either side.
@@ -40,6 +42,7 @@ pub struct EngineSwitcher {
     piper_voices_dir: PathBuf,
     ttsd_dir: PathBuf,
     silero_native_bundle_dir: PathBuf,
+    teratts_bundle_dir: PathBuf,
     emitter: Emitter,
 }
 
@@ -53,12 +56,14 @@ struct Slot {
 const KIND_PIPER: u8 = 0;
 const KIND_SILERO: u8 = 1;
 const KIND_SILERO_NATIVE: u8 = 2;
+const KIND_TERATTS: u8 = 3;
 
 fn kind_to_u8(k: EngineKind) -> u8 {
     match k {
         EngineKind::Piper => KIND_PIPER,
         EngineKind::Silero => KIND_SILERO,
         EngineKind::SileroNative => KIND_SILERO_NATIVE,
+        EngineKind::TeraTts => KIND_TERATTS,
     }
 }
 
@@ -66,8 +71,20 @@ fn u8_to_kind(v: u8) -> EngineKind {
     match v {
         KIND_SILERO => EngineKind::Silero,
         KIND_SILERO_NATIVE => EngineKind::SileroNative,
+        KIND_TERATTS => EngineKind::TeraTts,
         _ => EngineKind::Piper,
     }
+}
+
+/// Directories the switcher builds engines from. Grouped into one struct so
+/// the constructor stays short and the two model-bundle paths are named
+/// rather than passed positionally.
+#[derive(Debug, Clone)]
+pub struct EngineDirs {
+    pub piper_voices: PathBuf,
+    pub ttsd: PathBuf,
+    pub silero_native_bundle: PathBuf,
+    pub teratts_bundle: PathBuf,
 }
 
 impl EngineSwitcher {
@@ -79,9 +96,7 @@ impl EngineSwitcher {
         initial: Arc<dyn TtsEngine>,
         initial_kind: EngineKind,
         initial_piper_voice: Option<String>,
-        piper_voices_dir: PathBuf,
-        ttsd_dir: PathBuf,
-        silero_native_bundle_dir: PathBuf,
+        dirs: EngineDirs,
         emitter: Emitter,
     ) -> Self {
         let last_silero = (initial_kind == EngineKind::Silero).then(|| Arc::downgrade(&initial));
@@ -92,9 +107,10 @@ impl EngineSwitcher {
             }),
             kind: AtomicU8::new(kind_to_u8(initial_kind)),
             last_silero: RwLock::new(last_silero),
-            piper_voices_dir,
-            ttsd_dir,
-            silero_native_bundle_dir,
+            piper_voices_dir: dirs.piper_voices,
+            ttsd_dir: dirs.ttsd,
+            silero_native_bundle_dir: dirs.silero_native_bundle,
+            teratts_bundle_dir: dirs.teratts_bundle,
             emitter,
         }
     }
@@ -104,7 +120,8 @@ impl EngineSwitcher {
     /// builds the new engine, swaps it in, and kicks off a background
     /// warmup so the UI gets `model_loading` → `model_loaded` events.
     ///
-    /// `target_engine` must be `"piper"`, `"silero"`, or `"silero_native"`.
+    /// `target_engine` must be `"piper"`, `"silero"`, `"silero_native"` or
+    /// `"teratts"`.
     /// Unknown values return [`TtsError::Ttsd`] with code `engine_unknown`.
     /// Picking `"silero_native"` without a downloaded model bundle fails with
     /// code `engine_unavailable` (the active engine stays untouched).
@@ -132,6 +149,7 @@ impl EngineSwitcher {
             ),
             EngineKind::Silero => (self.build_silero()?, None),
             EngineKind::SileroNative => (self.build_silero_native()?, None),
+            EngineKind::TeraTts => (self.build_teratts()?, None),
         };
 
         if target_kind == EngineKind::Silero {
@@ -193,6 +211,25 @@ impl EngineSwitcher {
         )))
     }
 
+    /// Build the in-process TeraTTSv2 engine. Fails fast with the probe's
+    /// reason when the bundle is missing, incompatible or incomplete, so
+    /// `update_config` surfaces a `config_error` and leaves the previous
+    /// config on disk instead of swapping to an engine that cannot load. The
+    /// full sha256 verification runs inside the engine's warmup.
+    fn build_teratts(&self) -> Result<Arc<TeraTtsEngine>, TtsError> {
+        let probe = super::availability::probe_teratts(&self.teratts_bundle_dir);
+        if let Some(reason) = probe.reason {
+            return Err(TtsError::Ttsd {
+                code: reason.code,
+                message: reason.message.unwrap_or_else(|| reason.params.join("; ")),
+            });
+        }
+        Ok(Arc::new(TeraTtsEngine::new(
+            self.teratts_bundle_dir.clone(),
+            Arc::clone(&self.emitter),
+        )))
+    }
+
     async fn current_engine(&self) -> Arc<dyn TtsEngine> {
         Arc::clone(&self.inner.read().await.engine)
     }
@@ -233,6 +270,7 @@ fn parse_kind(name: &str) -> Result<EngineKind, TtsError> {
         "piper" => Ok(EngineKind::Piper),
         "silero" => Ok(EngineKind::Silero),
         "silero_native" => Ok(EngineKind::SileroNative),
+        "teratts" => Ok(EngineKind::TeraTts),
         other => Err(TtsError::Ttsd {
             code: "engine_unknown".to_string(),
             message: format!("неизвестный движок: \"{other}\""),
@@ -319,9 +357,12 @@ mod tests {
             initial,
             EngineKind::Piper,
             Some("ruslan".to_string()),
-            voices_dir,
-            ttsd_dir,
-            bundle_dir,
+            EngineDirs {
+                piper_voices: voices_dir,
+                ttsd: ttsd_dir,
+                silero_native_bundle: bundle_dir.clone(),
+                teratts_bundle: bundle_dir,
+            },
             emitter,
         );
         (switcher, voices_tmp, ttsd_tmp, bundle_tmp)
@@ -335,6 +376,24 @@ mod tests {
             parse_kind("silero_native").unwrap(),
             EngineKind::SileroNative
         );
+        assert_eq!(parse_kind("teratts").unwrap(), EngineKind::TeraTts);
+    }
+
+    /// Selecting TeraTTS before its bundle is downloaded must fail with the
+    /// probe's own code (so the Settings toast explains the download button)
+    /// and leave the current engine in place.
+    #[tokio::test]
+    async fn switch_to_teratts_without_bundle_keeps_the_current_engine() {
+        let (sw, _voices_tmp, _ttsd_tmp, _bundle_tmp) = fake_switcher();
+        let err = sw
+            .apply_config("teratts", "ruslan")
+            .await
+            .expect_err("no bundle on disk");
+        match err {
+            TtsError::Ttsd { code, .. } => assert_eq!(code, "teratts.bundle_missing"),
+            other => panic!("expected Ttsd error, got {other:?}"),
+        }
+        assert_eq!(sw.kind(), EngineKind::Piper);
     }
 
     #[test]
@@ -530,9 +589,12 @@ mod tests {
             initial,
             EngineKind::Silero,
             None,
-            voices_tmp.path().to_path_buf(),
-            ttsd_tmp.path().to_path_buf(),
-            bundle_tmp.path().to_path_buf(),
+            EngineDirs {
+                piper_voices: voices_tmp.path().to_path_buf(),
+                ttsd: ttsd_tmp.path().to_path_buf(),
+                silero_native_bundle: bundle_tmp.path().to_path_buf(),
+                teratts_bundle: bundle_tmp.path().to_path_buf(),
+            },
             emitter,
         );
         (switcher, voices_tmp, ttsd_tmp, bundle_tmp)
