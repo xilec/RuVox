@@ -21,6 +21,7 @@ use crate::state::AppState;
 pub struct DictionaryEntryDto {
     pub from: String,
     pub to: String,
+    pub forms: Vec<String>,
     pub overrides_builtin: bool,
 }
 
@@ -56,6 +57,7 @@ fn dto_list(pipeline: &TTSPipeline) -> Vec<DictionaryEntryDto> {
         .map(|entry| DictionaryEntryDto {
             from: entry.from.clone(),
             to: entry.to.clone(),
+            forms: entry.forms.clone(),
             overrides_builtin: pipeline.builtin_contains(&entry.key()),
         })
         .collect()
@@ -80,8 +82,10 @@ pub async fn save_user_dictionary(
     entries: Vec<DictionaryEntry>,
 ) -> CmdResult<()> {
     for entry in &entries {
-        dictionary::validate_entry(&entry.from, &entry.to).map_err(to_command_error)?;
+        dictionary::validate_entry_with_forms(&entry.from, &entry.to, &entry.forms)
+            .map_err(to_command_error)?;
     }
+    dictionary::validate_no_form_collisions(&entries).map_err(to_command_error)?;
 
     let mut dict = UserDictionary::default();
     for entry in entries {
@@ -119,7 +123,16 @@ fn apply_import(
         ImportMode::Merge => {
             let mut dict = current.clone();
             for entry in imported {
-                if dictionary::validate_entry(&entry.from, &entry.to).is_err() {
+                if dictionary::validate_entry_with_forms(&entry.from, &entry.to, &entry.forms)
+                    .is_err()
+                {
+                    report.skipped += 1;
+                    continue;
+                }
+                let mut candidate = dict.clone();
+                candidate.insert(entry.clone());
+                let snapshot: Vec<DictionaryEntry> = candidate.iter().cloned().collect();
+                if dictionary::validate_no_form_collisions(&snapshot).is_err() {
                     report.skipped += 1;
                     continue;
                 }
@@ -134,7 +147,16 @@ fn apply_import(
         ImportMode::Replace => {
             let mut dict = UserDictionary::default();
             for entry in imported {
-                if dictionary::validate_entry(&entry.from, &entry.to).is_err() {
+                if dictionary::validate_entry_with_forms(&entry.from, &entry.to, &entry.forms)
+                    .is_err()
+                {
+                    report.skipped += 1;
+                    continue;
+                }
+                let mut candidate = dict.clone();
+                candidate.insert(entry.clone());
+                let snapshot: Vec<DictionaryEntry> = candidate.iter().cloned().collect();
+                if dictionary::validate_no_form_collisions(&snapshot).is_err() {
                     report.skipped += 1;
                     continue;
                 }
@@ -226,10 +248,7 @@ mod tests {
     use super::*;
 
     fn entry(from: &str, to: &str) -> DictionaryEntry {
-        DictionaryEntry {
-            from: from.to_string(),
-            to: to.to_string(),
-        }
+        DictionaryEntry::new(from, to)
     }
 
     fn dict_of(entries: &[(&str, &str)]) -> UserDictionary {
@@ -283,6 +302,31 @@ mod tests {
         assert_eq!(dict.len(), 1);
         assert_eq!(dict.get("kubectl"), Some("куб контрол"));
         assert_eq!(dict.get("docker"), None, "old entries gone");
+    }
+
+    #[test]
+    fn merge_keeps_forms_and_skips_a_colliding_form() {
+        let current = dict_of(&[("дворец", "двор+ец")]);
+        let imported = vec![
+            DictionaryEntry::with_forms("замок", "зам+ок", ["замка", "замке"]),
+            DictionaryEntry::with_forms("дворец", "двор+ец", ["замка"]),
+        ];
+
+        let (dict, report) = apply_import(&current, imported, ImportMode::Merge);
+
+        assert_eq!(
+            report,
+            ImportReport {
+                added: 1,
+                updated: 0,
+                skipped: 1
+            }
+        );
+        assert_eq!(dict.resolve("замка", true).as_deref(), Some("зам+ок"));
+        assert_eq!(
+            dict.iter().find(|e| e.from == "замок").unwrap().forms,
+            ["замка", "замке"]
+        );
     }
 
     #[test]

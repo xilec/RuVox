@@ -1537,6 +1537,7 @@ mod tests {
         p.user_dictionary.insert(DictionaryEntry {
             from: "stack".to_string(),
             to: "стек".to_string(),
+            forms: Vec::new(),
         });
         assert_eq!(p.process_text("stack trace"), "стек трейс");
     }
@@ -1870,6 +1871,7 @@ mod tests {
         dict.insert(DictionaryEntry {
             from: "kubernetes".to_string(),
             to: "кубернетес".to_string(),
+            forms: Vec::new(),
         });
         p.set_user_dictionary(dict);
         let out = p.process_for_engine("Kubernetes кластер", native_profile());
@@ -2032,6 +2034,7 @@ mod tests {
         dict.insert(DictionaryEntry {
             from: "docker".to_string(),
             to: "доккер".to_string(),
+            forms: Vec::new(),
         });
         p.set_user_dictionary(dict);
         let out = p.process_for_engine(
@@ -2077,6 +2080,7 @@ mod tests {
         dict.insert(DictionaryEntry {
             from: "user".to_string(),
             to: "юзер".to_string(),
+            forms: Vec::new(),
         });
         p.set_user_dictionary(dict);
         let out = p.process_for_engine("вызови get-user сейчас", native_profile());
@@ -2114,6 +2118,7 @@ mod tests {
         dict.insert(DictionaryEntry {
             from: "getuserdata".to_string(),
             to: "получить данные".to_string(),
+            forms: Vec::new(),
         });
         p.set_user_dictionary(dict);
         let out = p.process_for_engine("Вызови getUserData сейчас", native_profile());
@@ -2129,6 +2134,7 @@ mod tests {
         dict.insert(DictionaryEntry {
             from: "moskva".to_string(),
             to: "М+осква".to_string(),
+            forms: Vec::new(),
         });
         dict
     }
@@ -2193,6 +2199,7 @@ mod tests {
         dict.insert(DictionaryEntry {
             from: "замок".to_string(),
             to: "зам+ок".to_string(),
+            forms: Vec::new(),
         });
         dict
     }
@@ -2216,7 +2223,7 @@ mod tests {
     }
 
     #[test]
-    fn a_cyrillic_entry_matches_case_insensitively_but_not_inflections() {
+    fn a_single_form_entry_matches_case_insensitively_but_not_inflections() {
         let mut p = TTSPipeline::new();
         p.set_user_dictionary(dictionary_with_cyrillic_mark());
         let upper = p.process_for_engine(
@@ -2236,6 +2243,29 @@ mod tests {
             "an inflected form is a different key"
         );
         assert!(inflected.spans.is_empty(), "spans: {:?}", inflected.spans);
+    }
+
+    #[test]
+    fn listed_inflected_forms_are_replaced_and_unlisted_ones_are_left_alone() {
+        let mut p = TTSPipeline::new();
+        let mut dict = UserDictionary::default();
+        dict.insert(DictionaryEntry::with_forms(
+            "замок",
+            "зам+ок",
+            ["замка", "замке"],
+        ));
+        p.set_user_dictionary(dict);
+
+        let out = p.process_for_engine(
+            "старого замка и замке нет, а замки стоят",
+            &crate::tts::profiles::SILERO_NATIVE_PROFILE,
+        );
+        assert_eq!(out.text, "старого зам+ок и зам+ок нет, а замки стоят");
+        assert_eq!(out.spans.len(), 2, "spans: {:?}", out.spans);
+        for span in &out.spans {
+            assert_eq!(span.kind, SpanKind::DictionaryOverride);
+            assert_eq!(span_text(&out.text, span), "зам+ок");
+        }
     }
 
     #[test]
@@ -2261,6 +2291,7 @@ mod tests {
         dict.insert(DictionaryEntry {
             from: "docker".to_string(),
             to: "доккер".to_string(),
+            forms: Vec::new(),
         });
         p.set_user_dictionary(dict);
         let out = p.process_for_engine(
@@ -2279,10 +2310,12 @@ mod tests {
         dict.insert(DictionaryEntry {
             from: "docker".to_string(),
             to: "доккер".to_string(),
+            forms: Vec::new(),
         });
         dict.insert(DictionaryEntry {
             from: "замок".to_string(),
             to: "зам+ок".to_string(),
+            forms: Vec::new(),
         });
         p.set_user_dictionary(dict);
 
@@ -2326,6 +2359,7 @@ mod tests {
         dict.insert(DictionaryEntry {
             from: "все".to_string(),
             to: "вс+е".to_string(),
+            forms: Vec::new(),
         });
         assert_eq!(dict.resolve("все", true).as_deref(), Some("вс+е"));
         assert_eq!(

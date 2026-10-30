@@ -6,6 +6,7 @@ import {
   Divider,
   Group,
   Modal,
+  Popover,
   Stack,
   Table,
   Text,
@@ -23,6 +24,8 @@ import { formatError } from '../lib/errors';
 import { useT } from '../lib/i18n';
 import {
   entryKey,
+  findFormCollision,
+  parseFormList,
   sortAndFilterEntries,
   validateEntryInput,
   type DictionaryValidationReason,
@@ -48,6 +51,8 @@ interface EditorState {
   originalKey?: string;
   from: string;
   to: string;
+  /** Comma-separated additional exact forms. */
+  forms: string;
 }
 
 const VALIDATION_KEY: Record<DictionaryValidationReason, Parameters<ReturnType<typeof useT>>[0]> = {
@@ -58,6 +63,11 @@ const VALIDATION_KEY: Record<DictionaryValidationReason, Parameters<ReturnType<t
   'to.stress_malformed': 'dictionary.form.error.to.stress_malformed',
   'to.too_long': 'dictionary.form.error.to.too_long',
   'to.latin_warning': 'dictionary.form.warning.latin',
+  'forms.requires_cyrillic': 'dictionary.form.error.forms.requires_cyrillic',
+  'forms.charset': 'dictionary.form.error.forms.charset',
+  'forms.too_long': 'dictionary.form.error.forms.too_long',
+  'forms.duplicate': 'dictionary.form.error.forms.duplicate',
+  'forms.collision': 'dictionary.form.error.forms.collision',
 };
 
 /** The dialog sits above Settings (z 200) and the floating preview window
@@ -111,7 +121,7 @@ export function DictionaryModal({
       .then((list) => {
         setEntries(list);
         if (initialFrom) {
-          setEditor({ mode: 'add', from: initialFrom, to: '' });
+          setEditor({ mode: 'add', from: initialFrom, to: '', forms: '' });
           onInitialFromConsumed?.();
         }
       })
@@ -135,7 +145,9 @@ export function DictionaryModal({
       setEntries(next);
       setStatusSafe('saving');
       try {
-        await commands.saveUserDictionary(next.map(({ from, to }) => ({ from, to })));
+        await commands.saveUserDictionary(
+          next.map(({ from, to, forms }) => ({ from, to, forms })),
+        );
         setStatusSafe('saved');
         commands
           .getUserDictionary()
@@ -159,7 +171,11 @@ export function DictionaryModal({
 
   const submitEditor = useCallback(() => {
     if (!editor) return;
-    const input = { from: editor.from.trim(), to: editor.to.trim() };
+    const input = {
+      from: editor.from.trim(),
+      to: editor.to.trim(),
+      forms: parseFormList(editor.forms),
+    };
 
     // One entry per word: submitting a from that collides with an existing
     // entry (a re-add, or a rename in edit mode) updates that entry's spoken
@@ -168,7 +184,9 @@ export function DictionaryModal({
       (e) => entryKey(e.from) === entryKey(input.from) && entryKey(e.from) !== editor.originalKey,
     );
     if (collision) {
-      const next = entries.map((e) => (e === collision ? { ...e, to: input.to } : e));
+      const next = entries.map((e) =>
+        e === collision ? { ...e, to: input.to, forms: input.forms } : e,
+      );
       setEditor(null);
       void persist(next);
       return;
@@ -176,10 +194,10 @@ export function DictionaryModal({
 
     const next =
       editor.mode === 'add'
-        ? [...entries, { from: input.from, to: input.to, overridesBuiltin: false }]
+        ? [...entries, { ...input, overridesBuiltin: false }]
         : entries.map((e) =>
             entryKey(e.from) === editor.originalKey
-              ? { from: input.from, to: input.to, overridesBuiltin: e.overridesBuiltin }
+              ? { ...input, overridesBuiltin: e.overridesBuiltin }
               : e,
           );
     setEditor(null);
@@ -285,8 +303,28 @@ export function DictionaryModal({
     }
   }, [tt]);
 
-  const validation = editor ? validateEntryInput({ from: editor.from.trim(), to: editor.to.trim() }) : null;
-  const hardError = validation?.blocking ? validation.reason : null;
+  const editorInput = editor
+    ? {
+        from: editor.from.trim(),
+        to: editor.to.trim(),
+        forms: parseFormList(editor.forms),
+      }
+    : null;
+  const validation = editorInput ? validateEntryInput(editorInput) : null;
+  const formCollision =
+    editorInput && editor
+      ? findFormCollision(
+          entries,
+          editorInput.from,
+          editorInput.forms,
+          editor.originalKey,
+        )
+      : null;
+  const hardError = validation?.blocking
+    ? validation.reason
+    : formCollision !== null
+      ? 'forms.collision'
+      : null;
   const softWarning = validation && !validation.blocking ? validation.reason : null;
   const visible = sortAndFilterEntries(entries, search);
 
@@ -307,7 +345,10 @@ export function DictionaryModal({
             onChange={(e) => setSearch(e.currentTarget.value)}
             flex={1}
           />
-          <Button variant="default" onClick={() => setEditor({ mode: 'add', from: '', to: '' })}>
+          <Button
+            variant="default"
+            onClick={() => setEditor({ mode: 'add', from: '', to: '', forms: '' })}
+          >
             {tt('dictionary.add')}
           </Button>
         </Group>
@@ -376,6 +417,61 @@ export function DictionaryModal({
                 softWarning !== null ? tt(VALIDATION_KEY[softWarning]) : undefined
               }
             />
+            <TextInput
+              label={tt('dictionary.form.forms')}
+              rightSection={
+                <Tooltip
+                  label={tt('dictionary.form.forms.hint')}
+                  multiline
+                  w={320}
+                  withArrow
+                  zIndex={TOOLTIP_Z}
+                >
+                  <ActionIcon
+                    variant="subtle"
+                    size="sm"
+                    radius="xl"
+                    aria-label={tt('dictionary.form.forms.help')}
+                  >
+                    ?
+                  </ActionIcon>
+                </Tooltip>
+              }
+              placeholder={tt('dictionary.form.forms.placeholder')}
+              value={editor.forms}
+              onChange={(e) => setEditor({ ...editor, forms: e.currentTarget.value })}
+              description={tt('dictionary.form.forms.description')}
+              error={
+                hardError !== null && hardError.startsWith('forms.')
+                  ? tt(VALIDATION_KEY[hardError])
+                  : undefined
+              }
+            />
+            <Popover
+              width={380}
+              position="bottom-start"
+              withArrow
+              shadow="md"
+              withinPortal
+              zIndex={TOOLTIP_Z}
+            >
+              <Popover.Target>
+                <Button variant="subtle" size="compact-xs" w="fit-content">
+                  {tt('dictionary.form.forms.details.open')}
+                </Button>
+              </Popover.Target>
+              <Popover.Dropdown>
+                <Stack gap={6}>
+                  <Text size="sm" fw={600}>
+                    {tt('dictionary.form.forms.details.title')}
+                  </Text>
+                  <Text size="xs">{tt('dictionary.form.forms.details.intro')}</Text>
+                  <Text size="xs">{tt('dictionary.form.forms.details.example')}</Text>
+                  <Text size="xs">{tt('dictionary.form.forms.details.rules')}</Text>
+                  <Text size="xs">{tt('dictionary.form.forms.details.stress')}</Text>
+                </Stack>
+              </Popover.Dropdown>
+            </Popover>
             <Group justify="flex-end">
               <Button variant="default" onClick={() => setEditor(null)}>
                 {tt('common.cancel')}
@@ -410,6 +506,11 @@ export function DictionaryModal({
                   <Table.Tr key={entryKey(entry.from)}>
                     <Table.Td>
                       {entry.from}
+                      {(entry.forms ?? []).length > 0 && (
+                        <Text size="xs" c="dimmed">
+                          {(entry.forms ?? []).join(', ')}
+                        </Text>
+                      )}
                       {entry.overridesBuiltin && (
                         <Badge variant="light" size="xs" ml="xs">
                           {tt('dictionary.badge.overrides')}
@@ -428,6 +529,7 @@ export function DictionaryModal({
                               originalKey: entryKey(entry.from),
                               from: entry.from,
                               to: entry.to,
+                              forms: (entry.forms ?? []).join(', '),
                             })
                           }
                         >

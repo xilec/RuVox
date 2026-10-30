@@ -4,8 +4,9 @@
  * source token is one word of Latin or Russian Cyrillic letters and digits
  * with at least one letter; the
  * spoken form is a non-empty free-form string that may carry one `+` before
- * a Russian vowel to fix the stress. The Rust side stays the source of truth —
- * these checks exist to give the form instant feedback.
+ * a Russian vowel to fix the stress; a Russian entry may also list additional
+ * exact forms. The Rust side stays the source of truth — these checks exist to
+ * give the form instant feedback.
  */
 
 const MAX_FROM_LEN = 64;
@@ -26,6 +27,8 @@ const CYRILLIC_TOKEN_RE = /^[0-9]*[а-яёА-ЯЁ][0-9а-яёА-ЯЁ]*$/;
 export interface EntryInput {
   from: string;
   to: string;
+  /** Additional exact Russian forms (`замка`, `замке`, …). */
+  forms?: string[];
 }
 
 /** Localized validation failure reason; null when the pair is valid. */
@@ -36,7 +39,12 @@ export type DictionaryValidationReason =
   | 'to.required'
   | 'to.stress_malformed'
   | 'to.too_long'
-  | 'to.latin_warning';
+  | 'to.latin_warning'
+  | 'forms.requires_cyrillic'
+  | 'forms.charset'
+  | 'forms.too_long'
+  | 'forms.duplicate'
+  | 'forms.collision';
 
 /** The spoken form with the stress mark removed, or null when the mark is
  *  malformed. Mirrors the Rust `spoken_form`, so the editor rejects exactly
@@ -76,6 +84,20 @@ export function validateEntryInput(
   if (spoken === null) return { reason: 'to.stress_malformed', blocking: true };
   if ([...spoken].length > MAX_TO_LEN) return { reason: 'to.too_long', blocking: true };
 
+  const forms = entry.forms ?? [];
+  if (forms.length > 0) {
+    if (!CYRILLIC_TOKEN_RE.test(from)) return { reason: 'forms.requires_cyrillic', blocking: true };
+    const primary = entryKey(from);
+    const seen = new Set<string>();
+    for (const form of forms) {
+      if (form.length > MAX_FROM_LEN) return { reason: 'forms.too_long', blocking: true };
+      if (!CYRILLIC_TOKEN_RE.test(form)) return { reason: 'forms.charset', blocking: true };
+      const key = entryKey(form);
+      if (key === primary || seen.has(key)) return { reason: 'forms.duplicate', blocking: true };
+      seen.add(key);
+    }
+  }
+
   // Soft warning: Latin letters or digits inside `to` reach the TTS engine
   // verbatim — later phases do not re-normalize a dictionary replacement.
   if (/[A-Za-z0-9]/.test(spoken)) return { reason: 'to.latin_warning', blocking: false };
@@ -88,15 +110,50 @@ export function entryKey(from: string): string {
   return from.toLowerCase();
 }
 
+/** The first listed form that another entry already owns (as a primary word
+ *  or as one of its forms), or null when the form list is unambiguous.
+ *  `ignoreKey` is the edited entry's original key. */
+export function findFormCollision(
+  entries: EntryInput[],
+  from: string,
+  forms: string[],
+  ignoreKey?: string,
+): string | null {
+  const primary = entryKey(from);
+  for (const form of forms) {
+    const key = entryKey(form);
+    if (key === primary) return form;
+    for (const entry of entries) {
+      if (ignoreKey !== undefined && entryKey(entry.from) === ignoreKey) continue;
+      if (
+        entryKey(entry.from) === key ||
+        (entry.forms ?? []).some((owned) => entryKey(owned) === key)
+      ) {
+        return form;
+      }
+    }
+  }
+  return null;
+}
+
 /** True when `from` already exists in the list (case-insensitively). */
 export function isDuplicateFrom(entries: EntryInput[], from: string): boolean {
   const key = entryKey(from);
   return entries.some((entry) => entryKey(entry.from) === key);
 }
 
+/** Split the comma-separated forms field into trimmed tokens. */
+export function parseFormList(value: string): string[] {
+  return value
+    .split(',')
+    .map((form) => form.trim())
+    .filter((form) => form.length > 0);
+}
+
 /** Sort by the lowercased `from` and filter by a case-insensitive substring
- *  of either `from` or `to` (matches the backend's sorted listing and the
- *  editor's search box). Generic so DTO fields survive the round-trip. */
+ *  of `from`, `to`, or an inflected form (matches the backend's sorted
+ *  listing and the editor's search box). Generic so DTO fields survive the
+ *  round-trip. */
 export function sortAndFilterEntries<T extends EntryInput>(
   entries: T[],
   query: string,
@@ -106,7 +163,9 @@ export function sortAndFilterEntries<T extends EntryInput>(
     .filter((entry) =>
       q.length === 0
         ? true
-        : entry.from.toLowerCase().includes(q) || entry.to.toLowerCase().includes(q),
+        : entry.from.toLowerCase().includes(q) ||
+          entry.to.toLowerCase().includes(q) ||
+          (entry.forms ?? []).some((form) => form.toLowerCase().includes(q)),
     )
     .sort((a, b) => entryKey(a.from).localeCompare(entryKey(b.from)));
 }

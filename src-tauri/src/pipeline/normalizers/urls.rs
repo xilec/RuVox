@@ -930,6 +930,7 @@ mod tests {
         dict.insert(crate::dictionary::DictionaryEntry {
             from: "moskva".to_string(),
             to: "М+осква".to_string(),
+            forms: Vec::new(),
         });
         let stripped = URLPathNormalizer::new(&en, &nn)
             .with_user_dictionary(&dict, false)
@@ -951,6 +952,7 @@ mod tests {
         dict.insert(crate::dictionary::DictionaryEntry {
             from: "github".to_string(),
             to: "хаб".to_string(),
+            forms: Vec::new(),
         });
         let n = URLPathNormalizer::new(&en, &nn).with_user_dictionary(&dict, false);
         let spoken = n.normalize_url("https://github.com/ruvox");

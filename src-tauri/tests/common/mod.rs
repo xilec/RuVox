@@ -27,7 +27,7 @@ pub fn resolve_test_path(rel: &str) -> PathBuf {
 
 use std::fs;
 
-use ruvox_tauri_lib::dictionary::{UserDictionary, parse_import, validate_entry};
+use ruvox_tauri_lib::dictionary::{UserDictionary, parse_import, validate_entry_with_forms};
 use ruvox_tauri_lib::pipeline::normalizers::code_blocks::CodeBlockMode;
 
 /// Directory holding the pipeline golden corpus.
@@ -81,7 +81,8 @@ pub fn read_dict_sidecar(case: &str) -> UserDictionary {
     };
     let mut dict = UserDictionary::default();
     for entry in parse_import(&text).expect("valid dict sidecar TOML") {
-        validate_entry(&entry.from, &entry.to).expect("valid dict sidecar entry");
+        validate_entry_with_forms(&entry.from, &entry.to, &entry.forms)
+            .expect("valid dict sidecar entry");
         dict.insert(entry);
     }
     dict
