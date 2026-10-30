@@ -215,6 +215,21 @@ export interface DictionaryEntryInput {
   forms: string[];
 }
 
+/** Dictionary collection scope: every engine, or one engine. */
+export type DictionaryScope =
+  | 'global'
+  | 'piper'
+  | 'silero'
+  | 'silero_native'
+  | 'teratts';
+
+/** One named dictionary collection as the editor sees it. */
+export interface DictionaryCollectionDto {
+  scope: DictionaryScope;
+  name: string;
+  entries: DictionaryEntryDto[];
+}
+
 /** Import outcome counts. */
 export interface ImportReport {
   added: number;
@@ -306,23 +321,27 @@ export const commands = {
   updateConfig: (patch: UIConfigPatch): Promise<void> =>
     tauriInvoke('update_config', { patch }),
 
-  /** Sorted user dictionary entries for the editor. */
-  getUserDictionary: (): Promise<DictionaryEntryDto[]> =>
-    tauriInvoke('get_user_dictionary'),
+  /** All dictionary collections (global plus every saved engine collection). */
+  getDictionaries: (): Promise<DictionaryCollectionDto[]> =>
+    tauriInvoke('get_dictionaries'),
 
-  /** Validate-all + atomically replace the dictionary, then refresh the
+  /** Validate-all + atomically replace one collection, then refresh the
    * pipeline; any invalid entry rejects and the file stays unchanged. */
-  saveUserDictionary: (entries: DictionaryEntryInput[]): Promise<void> =>
-    tauriInvoke('save_user_dictionary', { entries }),
+  saveDictionary: (scope: DictionaryScope, entries: DictionaryEntryInput[]): Promise<void> =>
+    tauriInvoke('save_dictionary', { scope, entries }),
 
-  /** Import a dictionary TOML file in the chosen mode; returns the
-   * added/updated/skipped counts. */
-  importUserDictionary: (path: string, mode: DictionaryImportMode): Promise<ImportReport> =>
-    tauriInvoke('import_user_dictionary', { path, mode }),
+  /** Import a dictionary TOML file into the selected collection in the chosen
+   * mode; returns the added/updated/skipped counts. */
+  importDictionary: (
+    path: string,
+    mode: DictionaryImportMode,
+    scope: DictionaryScope,
+  ): Promise<ImportReport> =>
+    tauriInvoke('import_dictionary', { path, mode, scope }),
 
-  /** Write the current entries as dictionary TOML to the chosen path. */
-  exportUserDictionary: (path: string): Promise<void> =>
-    tauriInvoke('export_user_dictionary', { path }),
+  /** Write the selected collection as dictionary TOML to the chosen path. */
+  exportDictionary: (path: string, scope: DictionaryScope): Promise<void> =>
+    tauriInvoke('export_dictionary', { path, scope }),
 
   /** Native open dialog filtered to dictionary TOML files; null = cancelled. */
   pickDictionaryImportPath: (): Promise<string | null> =>

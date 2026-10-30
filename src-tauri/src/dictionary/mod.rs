@@ -17,6 +17,8 @@ pub use store::{DictionaryStore, export_to, parse_import};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::tts::EngineKind;
+
 /// Longest accepted `from`, in characters.
 pub const MAX_FROM_LEN: usize = 64;
 /// Longest accepted `to`, in characters.
@@ -79,6 +81,8 @@ pub enum DictionaryError {
     InvalidForm,
     #[error("inflected form {0:?} is already used by another entry")]
     FormCollision(String),
+    #[error("unknown dictionary scope {0:?}")]
+    InvalidScope(String),
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
     #[error("TOML serialization error: {0}")]
@@ -237,6 +241,159 @@ pub fn validate_no_form_collisions(entries: &[DictionaryEntry]) -> Result<(), Di
         }
     }
     Ok(())
+}
+
+/// The scope a dictionary collection belongs to: every engine, or one engine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DictionaryScope {
+    Global,
+    Engine(EngineKind),
+}
+
+impl DictionaryScope {
+    /// The stable identifier used by the TOML file and the command DTOs.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DictionaryScope::Global => "global",
+            DictionaryScope::Engine(kind) => kind.as_str(),
+        }
+    }
+
+    /// Parse a scope identifier from the file or the frontend.
+    pub fn parse(value: &str) -> Option<Self> {
+        if value == "global" {
+            return Some(DictionaryScope::Global);
+        }
+        EngineKind::ALL
+            .iter()
+            .copied()
+            .find(|kind| kind.as_str() == value)
+            .map(DictionaryScope::Engine)
+    }
+
+    /// The engine this scope applies to, or `None` for the global scope.
+    pub fn engine(self) -> Option<EngineKind> {
+        match self {
+            DictionaryScope::Global => None,
+            DictionaryScope::Engine(kind) => Some(kind),
+        }
+    }
+
+    /// Default display/persistence name for a collection of this scope.
+    pub fn default_name(self) -> &'static str {
+        match self {
+            DictionaryScope::Global => "Global",
+            DictionaryScope::Engine(EngineKind::Silero) => "Silero",
+            DictionaryScope::Engine(EngineKind::Piper) => "Piper",
+            DictionaryScope::Engine(EngineKind::SileroNative) => "Silero Native",
+            DictionaryScope::Engine(EngineKind::TeraTts) => "TeraTTSv2",
+        }
+    }
+}
+
+/// One named dictionary collection. `name` is display/persistence metadata;
+/// `scope` is the lookup rule.
+#[derive(Debug, Clone)]
+pub struct DictionaryCollection {
+    pub name: String,
+    pub scope: DictionaryScope,
+    pub entries: UserDictionary,
+}
+
+impl DictionaryCollection {
+    pub fn new(name: impl Into<String>, scope: DictionaryScope) -> Self {
+        Self {
+            name: name.into(),
+            scope,
+            entries: UserDictionary::default(),
+        }
+    }
+}
+
+/// All dictionary collections. The global collection is the base map; an
+/// engine collection is layered on top of it for that engine only.
+#[derive(Debug, Clone, Default)]
+pub struct DictionaryBook {
+    collections: Vec<DictionaryCollection>,
+}
+
+impl DictionaryBook {
+    /// A book with one empty global collection, the shape a missing file has.
+    pub fn with_global() -> Self {
+        let mut book = Self::default();
+        book.ensure_global();
+        book
+    }
+
+    /// Ensure the global collection exists (first, so merge order is stable).
+    pub fn ensure_global(&mut self) {
+        if self.collection(DictionaryScope::Global).is_none() {
+            self.collections.insert(
+                0,
+                DictionaryCollection::new("Global", DictionaryScope::Global),
+            );
+        }
+    }
+
+    pub fn collection(&self, scope: DictionaryScope) -> Option<&DictionaryCollection> {
+        self.collections.iter().find(|c| c.scope == scope)
+    }
+
+    pub fn collection_mut(&mut self, scope: DictionaryScope) -> Option<&mut DictionaryCollection> {
+        self.collections.iter_mut().find(|c| c.scope == scope)
+    }
+
+    /// Insert or replace a collection. An empty engine collection is removed;
+    /// the global collection is kept even when empty.
+    pub fn upsert(
+        &mut self,
+        name: impl Into<String>,
+        scope: DictionaryScope,
+        entries: UserDictionary,
+    ) {
+        if scope != DictionaryScope::Global && entries.is_empty() {
+            self.collections.retain(|c| c.scope != scope);
+            return;
+        }
+        if let Some(collection) = self.collection_mut(scope) {
+            collection.name = name.into();
+            collection.entries = entries;
+        } else {
+            let collection = DictionaryCollection {
+                name: name.into(),
+                scope,
+                entries,
+            };
+            if scope == DictionaryScope::Global {
+                self.collections.insert(0, collection);
+            } else {
+                self.collections.push(collection);
+            }
+        }
+    }
+
+    /// Entries for `engine`: the global map first, then the engine collection,
+    /// so an engine entry wins on the same primary key.
+    pub fn merged_for(&self, engine: EngineKind) -> UserDictionary {
+        let mut merged = self
+            .collection(DictionaryScope::Global)
+            .map(|c| c.entries.clone())
+            .unwrap_or_default();
+        if let Some(collection) = self.collection(DictionaryScope::Engine(engine)) {
+            for entry in collection.entries.iter().cloned() {
+                merged.insert(entry);
+            }
+        }
+        merged
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &DictionaryCollection> {
+        self.collections.iter()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.collections.iter().all(|c| c.entries.is_empty())
+    }
 }
 
 /// The in-memory dictionary: entries keyed by the lowercased `from`, so

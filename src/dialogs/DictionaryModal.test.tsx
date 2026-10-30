@@ -6,8 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../lib/tauri', () => ({
   commands: {
-    getUserDictionary: vi.fn(() => Promise.resolve([])),
-    saveUserDictionary: vi.fn(() => Promise.resolve()),
+    getDictionaries: vi.fn(() =>
+      Promise.resolve([{ scope: 'global', name: 'Global', entries: [] }]),
+    ),
+    saveDictionary: vi.fn(() => Promise.resolve()),
   },
 }));
 
@@ -66,11 +68,14 @@ function clickButton(label: string) {
   act(() => button.click());
 }
 
-/** Type into the input whose label is `label`. */
+/** Type into the input whose label is exactly `label`. */
 function typeInto(label: string, value: string) {
-  const field = [...document.querySelectorAll('input')].find((input) =>
-    input.closest('div')?.parentElement?.textContent?.includes(label),
+  const labelEl = [...document.querySelectorAll('label')].find(
+    (candidate) => candidate.textContent?.trim() === label,
   );
+  const field = labelEl?.htmlFor
+    ? (document.getElementById(labelEl.htmlFor) as HTMLInputElement | null)
+    : null;
   if (!field) throw new Error(`field ${label} not found`);
   act(() => {
     const setValue = Object.getOwnPropertyDescriptor(
@@ -83,6 +88,17 @@ function typeInto(label: string, value: string) {
 }
 
 describe('DictionaryModal field help', () => {
+  it('offers a scope selector and loads all collections', async () => {
+    await renderModal();
+    expect(commands.getDictionaries).toHaveBeenCalled();
+    expect(document.body.textContent).toContain(
+      translate('ru', 'dictionary.scope.label'),
+    );
+    expect(document.body.textContent).toContain(
+      translate('ru', 'dictionary.scope.global'),
+    );
+  });
+
   it('offers a help affordance on the spoken-form field', async () => {
     await renderModal();
     clickButton('Добавить слово');
@@ -116,7 +132,7 @@ describe('DictionaryModal field help', () => {
     clickButton('Сохранить');
 
     await vi.waitFor(() => {
-      expect(commands.saveUserDictionary).toHaveBeenCalledWith([
+      expect(commands.saveDictionary).toHaveBeenCalledWith('global', [
         { from: 'замок', to: 'зам+ок', forms: ['замка', 'замке'] },
       ]);
     });

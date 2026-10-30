@@ -1,33 +1,52 @@
 //! TOML persistence for the user dictionary (config root, alongside
 //! `config.json`). The file is the source of truth at startup; missing file
-//! means an empty dictionary, a corrupted file is backed up and replaced by
-//! an empty one (the `config.json` recovery pattern).
+//! means an empty global dictionary, a corrupted file is backed up and
+//! replaced by an empty one (the `config.json` recovery pattern).
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use super::{DictionaryEntry, DictionaryError, UserDictionary};
+use super::{DictionaryBook, DictionaryEntry, DictionaryError, DictionaryScope, UserDictionary};
+use crate::tts::EngineKind;
 
-/// File-format version. A file with a different version is treated as
-/// foreign: loaded as empty and never backed up (a newer app's dictionary
-/// must not be destroyed by an older build reading it).
-const FORMAT_VERSION: u32 = 1;
+/// File-format version. Version 1 is the historical single `[entries]` map;
+/// version 2 is an array of named, scoped collections. A file with a newer
+/// version is treated as foreign: loaded as empty and never backed up (a
+/// newer app's dictionary must not be destroyed by an older build reading it).
+const FORMAT_VERSION: u32 = 2;
 
-/// Raw file shape for parsing. Both fields optional so hand-minimal files
-/// (`[entries]` only, no `version`) parse leniently. Entries are a
-/// [`toml::Table`] — `Map<String, String>` has no serde impls in toml 0.8 —
-/// and each value is either a string or a table with `to`/`forms`.
+/// Raw file shape for parsing. Both layouts are optional so hand-minimal files
+/// parse leniently. Entries are a [`toml::Table`] — `Map<String, String>` has
+/// no serde impls in toml 0.8 — and each value is either a string or a table
+/// with `to`/`forms`.
 #[derive(Deserialize)]
 struct DictionaryFileRaw {
     version: Option<u32>,
+    /// Version 1 layout.
+    entries: Option<toml::Table>,
+    /// Version 2 layout.
+    dictionaries: Option<Vec<RawCollection>>,
+}
+
+#[derive(Deserialize)]
+struct RawCollection {
+    name: Option<String>,
+    scope: String,
     entries: Option<toml::Table>,
 }
 
 #[derive(Serialize)]
 struct DictionaryFileOut {
     version: u32,
+    dictionaries: Vec<OutCollection>,
+}
+
+#[derive(Serialize)]
+struct OutCollection {
+    name: String,
+    scope: String,
     entries: toml::Table,
 }
 
@@ -45,18 +64,19 @@ impl DictionaryStore {
         &self.path
     }
 
-    /// Load the dictionary. Infallible: missing file → empty; unreadable or
-    /// unparsable file → backup as `.bak` + empty + warning; entries failing
-    /// validation are skipped individually (a warning per entry).
-    pub fn load(&self) -> UserDictionary {
+    /// Load all collections. Infallible: missing file → one empty global
+    /// collection; unreadable or unparsable file → backup as `.bak` + empty +
+    /// warning; entries failing validation are skipped individually (a warning
+    /// per entry). Version 1 files load as one global collection.
+    pub fn load_book(&self) -> DictionaryBook {
         if !self.path.exists() {
-            return UserDictionary::default();
+            return DictionaryBook::with_global();
         }
         let raw = match fs::read_to_string(&self.path) {
             Ok(raw) => raw,
             Err(e) => {
                 tracing::warn!("failed to read {}: {e}", self.path.display());
-                return UserDictionary::default();
+                return DictionaryBook::with_global();
             }
         };
         let file: DictionaryFileRaw = match toml::from_str(&raw) {
@@ -67,44 +87,77 @@ impl DictionaryStore {
                     self.path.display()
                 );
                 self.backup_corrupted();
-                return UserDictionary::default();
+                return DictionaryBook::with_global();
             }
         };
+
         if let Some(version) = file.version {
-            if version != FORMAT_VERSION {
+            if version > FORMAT_VERSION {
                 tracing::warn!(
-                    "{} has unsupported format version {version} (expected {FORMAT_VERSION}), loading nothing",
+                    "{} has unsupported format version {version} (expected at most {FORMAT_VERSION}), loading nothing",
                     self.path.display()
                 );
-                return UserDictionary::default();
+                return DictionaryBook::with_global();
             }
         }
-        let mut dict = UserDictionary::default();
-        // `preserve_order` keeps document order, so a case-differing duplicate
-        // collapses deterministically: the last one in file order wins.
-        for (from, value) in file.entries.unwrap_or_default() {
-            let Some((to, forms)) = parse_entry_value(&value) else {
-                tracing::warn!(
-                    "{}: entry {from:?} must be a string or a table with a string `to`, skipping",
-                    self.path.display()
+
+        let mut book = DictionaryBook::with_global();
+        if file.version == Some(2) || file.dictionaries.is_some() {
+            for raw_collection in file.dictionaries.unwrap_or_default() {
+                let Some(scope) = DictionaryScope::parse(&raw_collection.scope) else {
+                    tracing::warn!(
+                        "{}: unknown dictionary scope {:?}, skipping collection",
+                        self.path.display(),
+                        raw_collection.scope
+                    );
+                    continue;
+                };
+                let name = raw_collection
+                    .name
+                    .unwrap_or_else(|| scope.default_name().to_string());
+                let entries = parse_entries(
+                    raw_collection.entries.unwrap_or_default(),
+                    &self.path,
+                    &format!("collection {name:?}"),
                 );
-                continue;
-            };
-            if let Err(e) = super::validate_entry_with_forms(&from, &to, &forms) {
-                tracing::warn!("{}: skipping entry {from:?}: {e}", self.path.display());
-                continue;
+                if book.collection(scope).is_some() {
+                    tracing::warn!(
+                        "{}: duplicate dictionary scope {:?}, last collection wins",
+                        self.path.display(),
+                        scope.as_str()
+                    );
+                }
+                book.upsert(name, scope, entries);
             }
-            if dict.insert(DictionaryEntry { from, to, forms }) {
-                tracing::warn!(
-                    "{}: duplicate keys differing only by case collapsed, last one wins",
-                    self.path.display()
-                );
-            }
+            book.ensure_global();
+            return book;
         }
-        dict
+
+        // Version 1 (or a hand-written file without a version): the historical
+        // single `[entries]` map becomes the global collection.
+        let entries = parse_entries(
+            file.entries.unwrap_or_default(),
+            &self.path,
+            "global entries",
+        );
+        book.upsert("Global", DictionaryScope::Global, entries);
+        book
     }
 
-    /// Atomically write the dictionary to the canonical file.
+    /// Compatibility accessor for callers that only need the global map
+    /// (startup tests and the historical API). Real lookup uses
+    /// [`DictionaryBook::merged_for`] with the active engine.
+    pub fn load(&self) -> UserDictionary {
+        self.load_book().merged_for(EngineKind::Silero)
+    }
+
+    /// Atomically write all collections to the canonical file.
+    pub fn save_book(&self, book: &DictionaryBook) -> Result<(), DictionaryError> {
+        write_atomic(&self.path, serialize_book(book)?.as_bytes())
+    }
+
+    /// Atomically write one historical single-dictionary file (used by export
+    /// and by the compatibility path).
     pub fn save(&self, dict: &UserDictionary) -> Result<(), DictionaryError> {
         write_atomic(&self.path, serialize(dict)?.as_bytes())
     }
@@ -118,19 +171,74 @@ impl DictionaryStore {
     }
 }
 
-/// Serialize entries to the dictionary TOML (`version = 1` + `[entries]`
-/// map, keys in display case, ordered by the lowercased key). An entry with
-/// forms becomes a table value; one without stays a plain string.
+/// Parse and validate one `[entries]`-shaped table, skipping invalid entries.
+fn parse_entries(table: toml::Table, path: &Path, source: &str) -> UserDictionary {
+    let mut dict = UserDictionary::default();
+    // `preserve_order` keeps document order, so a case-differing duplicate
+    // collapses deterministically: the last one in file order wins.
+    for (from, value) in table {
+        let Some((to, forms)) = parse_entry_value(&value) else {
+            tracing::warn!(
+                "{}: {source} entry {from:?} must be a string or a table with a string `to`, skipping",
+                path.display()
+            );
+            continue;
+        };
+        if let Err(e) = super::validate_entry_with_forms(&from, &to, &forms) {
+            tracing::warn!("{}: skipping {source} entry {from:?}: {e}", path.display());
+            continue;
+        }
+        if dict.insert(DictionaryEntry { from, to, forms }) {
+            tracing::warn!(
+                "{}: duplicate keys differing only by case collapsed, last one wins",
+                path.display()
+            );
+        }
+    }
+    dict
+}
+
+/// Serialize all collections to the version 2 dictionary TOML.
+pub fn serialize_book(book: &DictionaryBook) -> Result<String, DictionaryError> {
+    let mut dictionaries = Vec::new();
+    for collection in book.iter() {
+        if collection.scope != DictionaryScope::Global && collection.entries.is_empty() {
+            continue;
+        }
+        dictionaries.push(OutCollection {
+            name: collection.name.clone(),
+            scope: collection.scope.as_str().to_string(),
+            entries: entries_table(&collection.entries),
+        });
+    }
+    let file = DictionaryFileOut {
+        version: FORMAT_VERSION,
+        dictionaries,
+    };
+    Ok(toml::to_string_pretty(&file)?)
+}
+
+/// Serialize one historical single-dictionary file (`version = 1` + `[entries]`).
 pub fn serialize(dict: &UserDictionary) -> Result<String, DictionaryError> {
+    let file = HistoricalFileOut {
+        version: 1,
+        entries: entries_table(dict),
+    };
+    Ok(toml::to_string_pretty(&file)?)
+}
+
+#[derive(Serialize)]
+struct HistoricalFileOut {
+    version: u32,
+    entries: toml::Table,
+}
+
+fn entries_table(dict: &UserDictionary) -> toml::Table {
     let mut entries = toml::Table::new();
     for entry in dict.iter() {
         entries.insert(entry.from.clone(), entry_value(entry));
     }
-    let file = DictionaryFileOut {
-        version: FORMAT_VERSION,
-        entries,
-    };
-    Ok(toml::to_string_pretty(&file)?)
+    entries
 }
 
 /// TOML value for one entry: a bare string keeps the historical file shape,
@@ -177,11 +285,25 @@ fn parse_entry_value(value: &toml::Value) -> Option<(String, Vec<String>)> {
 /// error is surfaced as a typed error — unlike `load`, an import must not
 /// silently degrade to empty. A non-string value is represented with an empty
 /// `to`, which fails validation downstream and lands in the skipped count.
+///
+/// Version 2 files are accepted by taking the global collection (or the first
+/// collection when no global one is present), so exporting a selected
+/// collection as version 1 remains the portable path.
 pub fn parse_import(raw: &str) -> Result<Vec<DictionaryEntry>, DictionaryError> {
     let file: DictionaryFileRaw = toml::from_str(raw)?;
-    Ok(file
-        .entries
-        .unwrap_or_default()
+    let table = if let Some(entries) = file.entries {
+        entries
+    } else {
+        let mut collections = file.dictionaries.unwrap_or_default();
+        let index = collections
+            .iter()
+            .position(|c| c.scope == "global")
+            .or_else(|| (!collections.is_empty()).then_some(0));
+        index
+            .and_then(|index| collections.remove(index).entries)
+            .unwrap_or_default()
+    };
+    Ok(table
         .into_iter()
         .map(|(from, value)| {
             let (to, forms) = parse_entry_value(&value).unwrap_or_default();

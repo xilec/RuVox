@@ -231,6 +231,17 @@ fn re_alnum_abbrev() -> &'static Regex {
     })
 }
 
+/// Case-insensitive counterpart of [`re_alnum_abbrev`] for the editor's
+/// built-in marker: the entry key is lowercased, while the pipeline regex
+/// matches the original uppercase token.
+fn re_alnum_abbrev_ci() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(r"(?i)\b(?:[A-Z]{2,}|IPv)[0-9]+(?:\.[0-9]+)*\b|\b[A-Z]{2,}/[0-9]+\b")
+            .expect("valid regex")
+    })
+}
+
 fn re_english_words() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     // Single letters included: a lone "x" or "I" must also become speakable
@@ -406,15 +417,33 @@ impl TTSPipeline {
     /// Whether `word_lower` has a built-in reading at any dictionary lookup
     /// site (`IT_TERMS`, the abbreviation maps including their special
     /// cases, `CODE_WORDS`). Used by the commands layer to flag user entries
-    /// that override built-ins.
+    /// that override built-ins under the strict Silero profile.
     pub fn builtin_contains(&self, word_lower: &str) -> bool {
+        self.builtin_contains_for(&profiles::SILERO_PROFILE, word_lower)
+    }
+
+    /// Profile-aware built-in lookup for the editor's override marker: a table
+    /// that the active profile does not run cannot be overridden, so it must
+    /// not be marked as a built-in hit.
+    pub fn builtin_contains_for(
+        &self,
+        profile: &tts_contract::TextProfile,
+        word_lower: &str,
+    ) -> bool {
         use crate::pipeline::normalizers::abbreviations;
         use crate::pipeline::normalizers::english::IT_TERMS;
+        use tts_contract::Reading;
 
-        IT_TERMS.contains_key(word_lower)
-            || abbreviations::special_cases().contains_key(word_lower)
-            || abbreviations::as_word().contains_key(word_lower)
-            || self.code_normalizer.contains_builtin(word_lower)
+        let narrate_latin = profile.route.latin_prose == Reading::Narrate;
+        let narrate_identifiers = profile.route.identifier == Reading::Narrate;
+        // Mixed letter/digit abbreviations are read as a whole on both routes
+        // (phase 14.5), so their built-in reading exists even under Native.
+        re_alnum_abbrev_ci().is_match(word_lower)
+            || (narrate_latin
+                && (IT_TERMS.contains_key(word_lower)
+                    || abbreviations::special_cases().contains_key(word_lower)
+                    || abbreviations::as_word().contains_key(word_lower)))
+            || (narrate_identifiers && self.code_normalizer.contains_builtin(word_lower))
     }
 
     /// Process text for TTS with precise character-level mapping under the

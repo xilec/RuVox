@@ -1605,6 +1605,15 @@ pub async fn update_config<R: Runtime>(
         .save_config(&config)
         .map_err(CommandError::from)?;
 
+    // The merged user dictionary is engine-scoped: after a successful switch,
+    // rebuild it for the new active engine. A missing/unreadable file degrades
+    // to an empty global map inside the store.
+    let book = state.dictionary_store.load_book();
+    state
+        .pipeline
+        .lock()
+        .set_user_dictionary(book.merged_for(state.engine_switcher.kind()));
+
     if code_block_mode_patch.is_some() {
         let mode = crate::pipeline::normalizers::code_blocks::CodeBlockMode::from_config(
             &config.code_block_mode,
@@ -1851,8 +1860,8 @@ pub use export::{export_audio, pick_export_audio_path};
 // User dictionary commands live in commands/dictionary.rs (same seam split).
 mod dictionary;
 pub use dictionary::{
-    export_user_dictionary, get_user_dictionary, import_user_dictionary,
-    pick_dictionary_export_path, pick_dictionary_import_path, save_user_dictionary,
+    export_dictionary, get_dictionaries, import_dictionary, pick_dictionary_export_path,
+    pick_dictionary_import_path, save_dictionary,
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────────

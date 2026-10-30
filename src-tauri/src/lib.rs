@@ -29,6 +29,7 @@ use player::{Player, PlayerBackend};
 use state::AppState;
 use storage::service::StorageService;
 use tray::TrayCmd;
+use tts::TtsEngine;
 
 type SetupError = Box<dyn std::error::Error>;
 
@@ -444,10 +445,10 @@ pub(crate) fn invoke_handler<R: Runtime>()
         set_volume,
         get_config,
         update_config,
-        get_user_dictionary,
-        save_user_dictionary,
-        import_user_dictionary,
-        export_user_dictionary,
+        get_dictionaries,
+        save_dictionary,
+        import_dictionary,
+        export_dictionary,
         pick_dictionary_import_path,
         pick_dictionary_export_path,
         get_available_engines,
@@ -981,7 +982,10 @@ pub fn run() {
             let dictionary_store = Arc::new(DictionaryStore::new(
                 paths::dictionary_path().expect("config root resolvable once storage is open"),
             ));
-            pipeline.lock().set_user_dictionary(dictionary_store.load());
+            let dictionary_book = dictionary_store.load_book();
+            pipeline
+                .lock()
+                .set_user_dictionary(dictionary_book.merged_for(engine_switcher.kind()));
             let synthesis_tasks = Arc::new(Mutex::new(HashMap::new()));
             let synthesize_entered = Arc::new(Mutex::new(HashSet::new()));
             let tray_tx = spawn_tray_handler(
