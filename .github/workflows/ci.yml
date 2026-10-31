@@ -80,12 +80,18 @@ jobs:
   # Compile-only guard for the Windows port: catches cfg/platform breakage
   # on the real MSVC toolchain without bundling (no resource downloads, no
   # NSIS). The full installer path lives in release.yml.
+  #
+  # Rust only on purpose: the frontend half of `tauri build` (tsc + vite) is
+  # already covered by the typescript job (typecheck) and by nonnix-build
+  # (the same `pnpm tauri build --no-bundle` on Ubuntu, same path filter), so
+  # this job compiles the crate against a stub frontendDist instead of a
+  # built frontend — no Node/pnpm setup, ~1 min off the critical path.
   windows-build:
     name: Windows build (no bundle)
     needs: changes
     if: needs.changes.outputs.windows == 'true'
     runs-on: windows-latest
-    # Warm cache ~3-4 min; cold MSVC rebuild of all deps ~15 min.
+    # Warm cache ~2-3 min; cold MSVC rebuild of all deps ~15 min.
     timeout-minutes: 20
     env:
       # cmake 4.x on the runner image errors out on the vendored opus'
@@ -104,13 +110,6 @@ jobs:
       CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
     steps:
       - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 10
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 20
-          cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -122,8 +121,19 @@ jobs:
           # runs are warm. Keep `shared-key` (not the job id) so the key stays
           # stable across workflow renames and unrelated edits.
           shared-key: win-msvc-ci
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm tauri build --no-bundle
+      # tauri-codegen embeds `frontendDist` at compile time and fails when the
+      # path is missing; the stub is never executed, it only satisfies the
+      # path check. Keep the content constant so the rerun-if-changed
+      # fingerprint of the app crate does not churn between runs.
+      - name: Stub frontendDist
+        shell: bash
+        run: |
+          mkdir -p dist
+          printf '<!doctype html><title>ci</title>\n' > dist/index.html
+      # Mirrors what the Tauri CLI runs for a production build without a
+      # bundle (`cargo build --bins --features tauri/custom-protocol`), the
+      # same invocation release.yml uses for its warm-up pass.
+      - run: cargo build --release --bins --features tauri/custom-protocol --manifest-path src-tauri/Cargo.toml
 
 
   # End-to-end guard for docs/install.md (the non-Nix build path, #230):
