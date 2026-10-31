@@ -268,7 +268,7 @@ export function PreviewDialog({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [opened, onCancel, helpOpened]);
+  }, [opened, suppressed, onCancel, helpOpened]);
 
   function handleSynthesize() {
     onSynthesize(synthesisText, skipShortTexts, playWhenReady, effectiveFormat);

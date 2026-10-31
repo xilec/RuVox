@@ -179,6 +179,39 @@ describe('PreviewDialog normalization explainer', () => {
     });
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
+
+  it('ESC does nothing while suppressed and works again once unsuppressed', () => {
+    const onCancel = vi.fn();
+    const renderDialog = (suppressed: boolean) =>
+      act(() => {
+        root.render(
+          <MantineProvider>
+            <PreviewDialog
+              text={TEXT}
+              opened
+              suppressed={suppressed}
+              onSynthesize={vi.fn()}
+              onCancel={onCancel}
+            />
+          </MantineProvider>,
+        );
+      });
+
+    // Suppression arrives after the dialog is already listening (dictionary
+    // modal opened over the preview): the stale listener must be detached.
+    renderDialog(false);
+    renderDialog(true);
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    });
+    expect(onCancel).not.toHaveBeenCalled();
+
+    renderDialog(false);
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    });
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('PreviewDialog regeneration mode', () => {
