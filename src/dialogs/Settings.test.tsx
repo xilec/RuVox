@@ -92,6 +92,7 @@ function makeConfig(overrides: Partial<UIConfig> = {}): UIConfig {
     text_format: 'plain',
     max_cache_size_mb: 500,
     code_block_mode: 'brief',
+    english_reading: 'auto',
     theme: 'auto',
     language: 'ru',
     player_hotkeys: {},
@@ -108,10 +109,10 @@ function makeConfig(overrides: Partial<UIConfig> = {}): UIConfig {
 /** Availability map with TeraTTS selectable, for the voice-selector tests. */
 function terattsAvailable() {
   return {
-    piper: { available: true, reason: null },
-    silero: { available: false, reason: null },
-    silero_native: { available: true, reason: null },
-    teratts: { available: true, reason: null },
+    piper: { available: true, reason: null, reads_latin_natively: false },
+    silero: { available: false, reason: null, reads_latin_natively: false },
+    silero_native: { available: true, reason: null, reads_latin_natively: false },
+    teratts: { available: true, reason: null, reads_latin_natively: true },
   };
 }
 
@@ -124,10 +125,10 @@ describe('SettingsModal code block narration', () => {
     getTerattsVoices.mockResolvedValue([]);
     eventHandlers.bundleDownloadFinished = null;
     getAvailableEngines.mockResolvedValue({
-      piper: { available: true, reason: null },
-      silero: { available: false, reason: null },
-      silero_native: { available: true, reason: null },
-      teratts: { available: false, reason: { code: 'teratts.bundle_missing' } },
+      piper: { available: true, reason: null, reads_latin_natively: false },
+      silero: { available: false, reason: null, reads_latin_natively: false },
+      silero_native: { available: true, reason: null, reads_latin_natively: false },
+      teratts: { available: false, reason: { code: 'teratts.bundle_missing' }, reads_latin_natively: true },
     });
   });
 
@@ -184,12 +185,23 @@ describe('SettingsModal code block narration', () => {
     return [...(listbox?.querySelectorAll('[role="option"]') ?? [])].map((o) => o.textContent);
   };
 
+  /** Selected value of the segmented control with this `name`. */
+  const activeSegment = (name: string, values: readonly string[]) => {
+    for (const value of values) {
+      const input = document.querySelector<HTMLInputElement>(
+        `input[name="${name}"][value="${value}"]`,
+      );
+      const label = input?.parentElement?.querySelector('label');
+      if (label?.hasAttribute('data-active')) return value;
+    }
+    return null;
+  };
+
   it('renders the saved mode as the selected segment', async () => {
     getConfig.mockResolvedValue(makeConfig({ code_block_mode: 'read' }));
     await renderDialog();
 
-    const active = document.querySelector('[data-active]');
-    expect(active?.textContent).toBe('Читать полностью');
+    expect(activeSegment('code_block_mode', ['brief', 'read'])).toBe('read');
   });
 
   it('submits the picked mode in the config patch', async () => {
@@ -213,6 +225,97 @@ describe('SettingsModal code block narration', () => {
 
     const patch = updateConfig.mock.calls[0][0];
     expect(patch.code_block_mode).toBe('brief');
+  });
+
+  it('renders the saved English reading as the selected segment', async () => {
+    getConfig.mockResolvedValue(makeConfig({ english_reading: 'narrated' }));
+    await renderDialog();
+
+    expect(activeSegment('english_reading', ['auto', 'native', 'narrated'])).toBe(
+      'narrated',
+    );
+  });
+
+  it('submits the picked English reading in the config patch', async () => {
+    await renderDialog();
+
+    const segment = document.querySelector<HTMLInputElement>(
+      'input[name="english_reading"][value="native"]',
+    );
+    expect(segment, 'English reading segment rendered').toBeTruthy();
+    await act(async () => {
+      segment!.click();
+      await Promise.resolve();
+    });
+    await clickSave();
+
+    expect(updateConfig.mock.calls[0][0].english_reading).toBe('native');
+  });
+
+  it('keeps the saved English reading in the patch when untouched', async () => {
+    await renderDialog();
+    await clickSave();
+
+    expect(updateConfig.mock.calls[0][0].english_reading).toBe('auto');
+  });
+
+  it('explains the fallback when the engine cannot read English natively', async () => {
+    // The default fixture engine (silero_native) has no native Latin reading.
+    getConfig.mockResolvedValue(makeConfig({ english_reading: 'native' }));
+    await renderDialog();
+
+    expect(document.body.textContent ?? '').toContain(
+      'Этот движок не читает английский нативно',
+    );
+    // The preference is engine-independent: it stays selectable and saved.
+    await clickSave();
+    expect(updateConfig.mock.calls[0][0].english_reading).toBe('native');
+  });
+
+  it('shows no fallback hint for an engine that reads English natively', async () => {
+    getConfig.mockResolvedValue(
+      makeConfig({ engine: 'teratts', english_reading: 'native' }),
+    );
+    getAvailableEngines.mockResolvedValue(terattsAvailable());
+    await renderDialog();
+
+    expect(document.body.textContent ?? '').not.toContain(
+      'Этот движок не читает английский нативно',
+    );
+  });
+
+  it('updates the fallback hint when the engine changes before saving', async () => {
+    getConfig.mockResolvedValue(
+      makeConfig({ engine: 'teratts', english_reading: 'native' }),
+    );
+    getAvailableEngines.mockResolvedValue(terattsAvailable());
+    await renderDialog();
+    const hint = 'Этот движок не читает английский нативно';
+    expect(document.body.textContent ?? '').not.toContain(hint);
+
+    // Pick Piper in the engine selector without saving: the hint follows the
+    // form value, not the persisted config.
+    const engineInput = document.querySelector<HTMLInputElement>(
+      'input[value="TeraTTSv2"]',
+    );
+    expect(engineInput, 'engine selector rendered').toBeTruthy();
+    await act(async () => {
+      engineInput!.click();
+      await Promise.resolve();
+    });
+    const piperOption = [
+      ...document.querySelectorAll<HTMLElement>('[role="option"]'),
+    ].find(
+      (option) => option.textContent === 'Piper',
+    );
+    expect(piperOption, 'Piper option rendered').toBeTruthy();
+    await act(async () => {
+      piperOption!.click();
+      await Promise.resolve();
+    });
+
+    expect(document.body.textContent ?? '').toContain(hint);
+    expect(updateConfig).not.toHaveBeenCalled();
   });
 
   it('submits hide_to_tray_on_close when the toggle is enabled', async () => {

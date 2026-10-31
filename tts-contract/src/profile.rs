@@ -20,17 +20,20 @@ pub enum Reading {
     Native,
 }
 
-/// Per-kind routing decisions.
+/// Per-kind routing decisions the engine makes for itself.
 ///
 /// Only kinds with a decided answer are routed here. A kind gains its field
 /// when evidence for a `Native` route exists, never as an unimplemented
 /// placeholder: a `Native` value that no phase honours would silently produce
 /// narrate behavior.
+///
+/// Latin prose is deliberately absent: whether English words sound English or
+/// Russian is the listener's preference, not a property of the model. The
+/// profile only states whether the engine *can* read them
+/// ([`TextProfile::reads_latin_natively`]); the pipeline resolves the
+/// preference against that capability.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Route {
-    /// A run of Latin letters in prose, e.g. "Kubernetes" inside a Russian
-    /// sentence.
-    pub latin_prose: Reading,
     /// A code identifier or a part of one, e.g. "getUserData", "snake_case".
     pub identifier: Reading,
     /// A fenced code block the pipeline would otherwise read out in Russian.
@@ -40,9 +43,7 @@ pub struct Route {
 impl Route {
     /// Whether any routed kind is left to the engine.
     pub fn any_native(&self) -> bool {
-        self.latin_prose == Reading::Native
-            || self.identifier == Reading::Native
-            || self.code_block == Reading::Native
+        self.identifier == Reading::Native || self.code_block == Reading::Native
     }
 }
 
@@ -180,6 +181,14 @@ pub struct TextProfile {
     /// inherits this list: a voice-level capability is deliberately not
     /// modelled until a voice catalogue can supply one.
     pub languages: &'static [&'static str],
+    /// Whether the engine can read a Latin run in prose in English, e.g.
+    /// "Kubernetes" inside a Russian sentence.
+    ///
+    /// A capability, never a policy: the user's English reading setting decides
+    /// whether it is used (see `text-pipeline`). Requires `"en"` among
+    /// [`Self::languages`], because a native prose span is annotated with the
+    /// language it is read in.
+    pub reads_latin_natively: bool,
     pub route: Route,
     pub digits: Digits,
     pub units: Units,
@@ -205,6 +214,12 @@ impl TextProfile {
 
     /// Checks the cross-field invariants a profile must satisfy.
     pub fn validate(&self) -> Result<(), ProfileError> {
+        // A native English reading is annotated with `en`, so the profile must
+        // list it; claiming the capability without the language is a data
+        // error, not a runtime state.
+        if self.reads_latin_natively && !self.languages.contains(&"en") {
+            return Err(ProfileError::NativeLatinWithoutEnglish);
+        }
         // A `Native` fragment is read, and its span annotated, in one of the
         // engine's own languages; Russian-only profiles have none to offer.
         if self.route.any_native() && !self.languages.iter().any(|lang| *lang != "ru") {
@@ -215,11 +230,11 @@ impl TextProfile {
         if self.units == Units::Expanded && self.digits == Digits::Native {
             return Err(ProfileError::ExpandedUnitsWithoutDigits);
         }
-        // An engine that reads identifiers natively reads Latin by definition;
-        // routing identifiers Native while transliterating prose would hand it
-        // a Latin token in one place and a transliteration in another.
-        if self.route.identifier == Reading::Native && self.route.latin_prose == Reading::Narrate {
-            return Err(ProfileError::NativeIdentifierWithoutNativeProse);
+        // An engine that reads identifiers natively reads Latin by definition,
+        // so a profile may not route them Native without the capability that
+        // justifies it.
+        if self.route.identifier == Reading::Native && !self.reads_latin_natively {
+            return Err(ProfileError::NativeIdentifierWithoutLatinReading);
         }
         Ok(())
     }
@@ -228,28 +243,35 @@ impl TextProfile {
 /// A violation of a profile invariant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProfileError {
+    /// The profile claims a native English reading but does not list English
+    /// among its languages.
+    NativeLatinWithoutEnglish,
     /// A fragment is routed `Native` while the engine lists no language other
     /// than Russian — there would be no language to read it in.
     NativeWithoutLanguage,
     /// Units are expanded by the pipeline while digits are left to the engine:
     /// a unit reading needs the number in words.
     ExpandedUnitsWithoutDigits,
-    /// Identifiers are routed `Native` while prose is transliterated — the same
-    /// engine would receive both a Latin token and its Russian reading.
-    NativeIdentifierWithoutNativeProse,
+    /// Identifiers are routed `Native` while the profile lacks a native Latin
+    /// reading — the same engine would read a Latin token it declared unable
+    /// to read.
+    NativeIdentifierWithoutLatinReading,
 }
 
 impl fmt::Display for ProfileError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            ProfileError::NativeLatinWithoutEnglish => {
+                f.write_str("profile claims a native Latin reading but does not list English")
+            }
             ProfileError::NativeWithoutLanguage => f.write_str(
                 "profile routes fragments Native but lists no language other than Russian",
             ),
             ProfileError::ExpandedUnitsWithoutDigits => f.write_str(
                 "profile expands units while leaving digits Native; a unit reading needs words",
             ),
-            ProfileError::NativeIdentifierWithoutNativeProse => {
-                f.write_str("profile routes identifiers Native while transliterating prose")
+            ProfileError::NativeIdentifierWithoutLatinReading => {
+                f.write_str("profile routes identifiers Native without a native Latin reading")
             }
         }
     }
@@ -264,8 +286,8 @@ mod tests {
     fn native_profile() -> TextProfile {
         TextProfile {
             languages: &["ru", "en"],
+            reads_latin_natively: true,
             route: Route {
-                latin_prose: Reading::Native,
                 identifier: Reading::Native,
                 code_block: Reading::Native,
             },
@@ -281,6 +303,13 @@ mod tests {
                 },
             },
             markup: Markup::RuEnTags,
+        }
+    }
+
+    fn narrated_route() -> Route {
+        Route {
+            identifier: Reading::Narrate,
+            code_block: Reading::Narrate,
         }
     }
 
@@ -309,18 +338,29 @@ mod tests {
     }
 
     #[test]
-    fn native_route_without_a_non_russian_language_is_rejected() {
+    fn native_latin_capability_requires_english() {
         let mut profile = native_profile();
         profile.languages = &["ru"];
-        assert_eq!(profile.validate(), Err(ProfileError::NativeWithoutLanguage));
+        profile.route = narrated_route();
+        assert_eq!(
+            profile.validate(),
+            Err(ProfileError::NativeLatinWithoutEnglish)
+        );
+    }
+
+    #[test]
+    fn native_latin_capability_is_valid_with_english_listed() {
+        let mut profile = native_profile();
+        profile.route = narrated_route();
+        assert_eq!(profile.validate(), Ok(()));
     }
 
     #[test]
     fn native_code_route_without_a_non_russian_language_is_rejected() {
         let mut profile = native_profile();
         profile.languages = &["ru"];
+        profile.reads_latin_natively = false;
         profile.route = Route {
-            latin_prose: Reading::Narrate,
             identifier: Reading::Narrate,
             code_block: Reading::Native,
         };
@@ -328,10 +368,10 @@ mod tests {
     }
 
     #[test]
-    fn native_code_with_narrated_prose_is_valid() {
+    fn native_code_without_native_latin_reading_is_valid() {
         let mut profile = native_profile();
+        profile.reads_latin_natively = false;
         profile.route = Route {
-            latin_prose: Reading::Narrate,
             identifier: Reading::Narrate,
             code_block: Reading::Native,
         };
@@ -342,11 +382,8 @@ mod tests {
     fn russian_only_profile_narrating_every_fragment_is_valid() {
         let mut profile = native_profile();
         profile.languages = &["ru"];
-        profile.route = Route {
-            latin_prose: Reading::Narrate,
-            identifier: Reading::Narrate,
-            code_block: Reading::Narrate,
-        };
+        profile.reads_latin_natively = false;
+        profile.route = narrated_route();
         assert_eq!(profile.validate(), Ok(()));
     }
 
@@ -369,12 +406,12 @@ mod tests {
     }
 
     #[test]
-    fn native_identifiers_require_native_prose() {
+    fn native_identifiers_require_a_native_latin_reading() {
         let mut profile = native_profile();
-        profile.route.latin_prose = Reading::Narrate;
+        profile.reads_latin_natively = false;
         assert_eq!(
             profile.validate(),
-            Err(ProfileError::NativeIdentifierWithoutNativeProse)
+            Err(ProfileError::NativeIdentifierWithoutLatinReading)
         );
     }
 

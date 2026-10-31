@@ -7,6 +7,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 ## [Unreleased]
 
 ### Changed
+- **English reading is a user setting** — Settings has an «Английский текст»
+  control («Авто» / «Нативно» / «По-русски»): the choice now belongs to the
+  listener instead of the engine profile, applies to the next synthesis
+  without a restart, survives engine switches, and `auto` keeps the behaviour
+  of every existing engine; requesting native reading on an engine without an
+  English voice falls back to transliteration with a hint (#330).
 - **Code blocks are read natively by TeraTTSv2 and Piper** — with «Читать
   полностью», a fenced block is handed to those engines as code instead of
   being spelled out in Russian; «Кратко» still announces the block on every

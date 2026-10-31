@@ -1,8 +1,10 @@
 pub mod constants;
+pub mod english_reading;
 pub mod normalizers;
 pub mod spans;
 pub mod tracked_text;
 
+pub use english_reading::EnglishReading;
 pub use spans::{Span, SpanKind};
 
 use std::sync::OnceLock;
@@ -226,6 +228,40 @@ fn re_kebab() -> &'static Regex {
     })
 }
 
+/// Byte ranges of the code-identifier patterns, sorted and non-overlapping.
+///
+/// The identifier phase and the English phase must agree on what an identifier
+/// is: the first narrates or annotates it, the second must not re-read it when
+/// the profile leaves identifiers to the engine while the user asked for
+/// Russian prose.
+fn find_identifier_ranges(text: &str) -> Vec<(usize, usize)> {
+    let mut ranges: Vec<(usize, usize)> = [re_camel_lower(), re_pascal(), re_snake(), re_kebab()]
+        .into_iter()
+        .flat_map(|pattern| pattern.find_iter(text))
+        .map(|m| (m.start(), m.end()))
+        .collect();
+    ranges.sort_unstable();
+    // The kebab pattern claims a whole token while the camel or Pascal pattern
+    // claims an identifier nested in it (`my-app-getUserData-flag`: both
+    // `(0, 23)` and `(7, 18)`), and a binary search over overlapping ranges
+    // can miss the outer one; the union covers every fragment either pattern
+    // claimed.
+    let mut merged: Vec<(usize, usize)> = Vec::with_capacity(ranges.len());
+    for (start, end) in ranges {
+        match merged.last_mut() {
+            Some(last) if start < last.1 => last.1 = last.1.max(end),
+            _ => merged.push((start, end)),
+        }
+    }
+    merged
+}
+
+/// Whether `[start, end)` intersects a sorted, non-overlapping range list.
+fn overlaps_ranges(ranges: &[(usize, usize)], start: usize, end: usize) -> bool {
+    let first_after = ranges.partition_point(|(range_start, _)| *range_start < end);
+    first_after > 0 && ranges[first_after - 1].1 > start
+}
+
 fn re_alnum_abbrev() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     // Alphanumeric tokens the model alphabet cannot read as one word:
@@ -377,6 +413,9 @@ pub struct TTSPipeline {
     /// from the profile at the start of every `process_for_engine` run, so an
     /// engine switch cannot inherit the previous run's decision.
     mark_stress: bool,
+    /// How the user wants Latin prose read (the `english_reading` config
+    /// value), resolved against the engine capability per run.
+    english_reading: EnglishReading,
 }
 
 impl TTSPipeline {
@@ -394,7 +433,23 @@ impl TTSPipeline {
             code_normalizer: CodeIdentifierNormalizer::new(),
             user_dictionary: UserDictionary::default(),
             mark_stress: false,
+            // Implicit default matches the `english_reading` config default
+            // (auto = follow the engine); production code always sets the
+            // preference from config.
+            english_reading: EnglishReading::Auto,
         }
+    }
+
+    /// Current English reading preference (mirrors the `english_reading`
+    /// config value).
+    pub fn english_reading(&self) -> EnglishReading {
+        self.english_reading
+    }
+
+    /// Set the English reading preference. Driven by config: at startup and
+    /// whenever `update_config` changes `english_reading`.
+    pub fn set_english_reading(&mut self, reading: EnglishReading) {
+        self.english_reading = reading;
     }
 
     /// Current code block narration mode (mirrors the `code_block_mode`
@@ -441,7 +496,7 @@ impl TTSPipeline {
         use crate::pipeline::normalizers::english::IT_TERMS;
         use tts_contract::Reading;
 
-        let narrate_latin = profile.route.latin_prose == Reading::Narrate;
+        let narrate_latin = self.english_reading.narrates(profile.reads_latin_natively);
         let narrate_identifiers = profile.route.identifier == Reading::Narrate;
         // Mixed letter/digit abbreviations are read as a whole on both routes
         // (phase 14.5), so their built-in reading exists even under Native.
@@ -487,7 +542,7 @@ impl TTSPipeline {
         // Routing decisions, read once per call: a fragment is either narrated
         // in Russian by the pipeline or left for the engine, and the number and
         // unit phases run only when the engine cannot read them.
-        let narrate_latin = profile.route.latin_prose == Reading::Narrate;
+        let narrate_latin = self.english_reading.narrates(profile.reads_latin_natively);
         let narrate_identifiers = profile.route.identifier == Reading::Narrate;
         let expand_digits = profile.digits == Digits::Expanded;
         let expand_units = profile.units == Units::Expanded;
@@ -817,17 +872,7 @@ impl TTSPipeline {
                 &mut tracked,
                 SpanKind::CodeIdentifier,
                 native_lang,
-                |text| {
-                    let mut ranges: Vec<(usize, usize)> =
-                        [re_camel_lower(), re_pascal(), re_snake(), re_kebab()]
-                            .into_iter()
-                            .flat_map(|pattern| pattern.find_iter(text))
-                            .map(|m| (m.start(), m.end()))
-                            .collect();
-                    ranges.sort_unstable();
-                    ranges.dedup();
-                    ranges
-                },
+                find_identifier_ranges,
                 &mut recorded,
             );
         }
@@ -844,7 +889,10 @@ impl TTSPipeline {
         // built-in IT dictionary, abbreviation readings and single-letter names
         // are all the compensation a Russian-only engine needs.
         if narrate_latin {
-            self.process_english_tracked(&mut tracked, expand_digits);
+            // A native identifier is the profile's decision and stays Latin even
+            // when the user asked for Russian prose: the English block must not
+            // re-read a fragment the identifier route left to the engine.
+            self.process_english_tracked(&mut tracked, expand_digits, !narrate_identifiers);
         } else {
             record_native(
                 &mut tracked,
@@ -1226,7 +1274,20 @@ impl TTSPipeline {
         parts.join(" ")
     }
 
-    fn process_english_tracked(&mut self, tracked: &mut TrackedText, expand_digits: bool) {
+    /// Transliterates English words, abbreviations and letter-digit tokens.
+    ///
+    /// `protect_native_identifiers` keeps the identifiers the profile left to
+    /// the engine out of the match set when the user asked for Russian prose —
+    /// the mixed mode. The ranges are taken from the same snapshot the matches
+    /// are taken from, so the special-term rewrites above cannot shift them,
+    /// and an identifier the user dictionary already partly rewrote leaves its
+    /// remaining Latin parts to transliteration.
+    fn process_english_tracked(
+        &mut self,
+        tracked: &mut TrackedText,
+        expand_digits: bool,
+        protect_native_identifiers: bool,
+    ) {
         // Special programming language terms (C++, C#, F#) before general English processing.
         let special_terms: &[(&str, &str)] = &[
             ("C++", "си плюс плюс"),
@@ -1243,6 +1304,11 @@ impl TTSPipeline {
         // General English word handling via IT_TERMS, abbreviations, and transliteration.
         // Collect matches first, then process — avoids borrow issues with &mut self.
         let snapshot = tracked.text().to_string();
+        let protected = if protect_native_identifiers {
+            find_identifier_ranges(&snapshot)
+        } else {
+            Vec::new()
+        };
         let mut matches: Vec<(usize, usize, String)> = re_english_words()
             .captures_iter(&snapshot)
             .map(|caps| {
@@ -1258,6 +1324,7 @@ impl TTSPipeline {
                 self.mixed_alnum_reading(m.as_str(), expand_digits),
             )
         }));
+        matches.retain(|(start, end, _)| !overlaps_ranges(&protected, *start, *end));
         matches.sort_unstable_by_key(|(start, _, _)| *start);
 
         tracked.replace_byte_ranges(matches);
@@ -1890,6 +1957,30 @@ mod tests {
     }
 
     #[test]
+    fn identifier_ranges_merge_the_patterns_claims() {
+        // The kebab pattern claims the whole token while the camel pattern
+        // claims the identifier nested inside it; a later phase must see one
+        // range covering both, or its binary search misses the outer one.
+        assert_eq!(
+            find_identifier_ranges("my-app-getUserData-flag"),
+            vec![(0, 23)]
+        );
+        assert_eq!(
+            find_identifier_ranges("getUserData и my_snake_case"),
+            vec![(0, 11), (15, 28)]
+        );
+    }
+
+    #[test]
+    fn overlap_check_uses_half_open_ranges() {
+        let ranges = vec![(0, 3), (7, 10)];
+        assert!(overlaps_ranges(&ranges, 2, 8));
+        assert!(overlaps_ranges(&ranges, 8, 9));
+        assert!(!overlaps_ranges(&ranges, 3, 7));
+        assert!(!overlaps_ranges(&ranges, 10, 12));
+    }
+
+    #[test]
     fn native_profile_keeps_prose_latin() {
         let mut p = TTSPipeline::new();
         let out = p.process_for_engine("Kubernetes нужен кластер", native_profile());
@@ -1910,6 +2001,120 @@ mod tests {
         profile.route.identifier = Reading::Narrate;
         let out = p.process_for_engine("getUserData и Kubernetes", &profile);
         assert_eq!(out.text, "гет юзер дата и Kubernetes");
+    }
+
+    // ── English reading setting ──────────────────────────────────────────────
+
+    #[test]
+    fn english_reading_auto_follows_the_engine_capability() {
+        let mut p = TTSPipeline::new();
+        let native = p.process_for_engine(
+            "Kubernetes нужен кластер",
+            &crate::tts::profiles::TERATTS_PROFILE,
+        );
+        assert_eq!(native.text, "Kubernetes нужен кластер");
+        assert_eq!(native.spans.len(), 1, "spans: {:?}", native.spans);
+
+        let narrated = p.process_for_engine(
+            "Kubernetes нужен кластер",
+            &crate::tts::profiles::SILERO_PROFILE,
+        );
+        assert_eq!(narrated.text, "кубернетис нужен кластер");
+        assert!(narrated.spans.is_empty(), "spans: {:?}", narrated.spans);
+    }
+
+    #[test]
+    fn english_reading_native_falls_back_when_the_engine_cannot_read_latin() {
+        let mut p = TTSPipeline::new();
+        p.set_english_reading(EnglishReading::Native);
+        let out = p.process_for_engine(
+            "Kubernetes нужен кластер",
+            &crate::tts::profiles::SILERO_PROFILE,
+        );
+        assert_eq!(out.text, "кубернетис нужен кластер");
+        assert!(out.spans.is_empty(), "spans: {:?}", out.spans);
+    }
+
+    #[test]
+    fn english_reading_narrated_transliterates_on_a_capable_engine() {
+        let mut p = TTSPipeline::new();
+        p.set_english_reading(EnglishReading::Narrated);
+        let out = p.process_for_engine(
+            "Kubernetes нужен кластер",
+            &crate::tts::profiles::TERATTS_PROFILE,
+        );
+        assert_eq!(out.text, "кубернетис нужен кластер");
+        assert!(out.spans.is_empty(), "spans: {:?}", out.spans);
+        assert_eq!(
+            out.mapping.char_map.len(),
+            out.text.chars().count(),
+            "highlighting keeps one mapping entry per output codepoint"
+        );
+    }
+
+    #[test]
+    fn narrated_prose_keeps_native_identifiers() {
+        let mut p = TTSPipeline::new();
+        p.set_english_reading(EnglishReading::Narrated);
+        let out = p.process_for_engine(
+            "Kubernetes и getUserData()",
+            &crate::tts::profiles::TERATTS_PROFILE,
+        );
+        assert_eq!(out.text, "кубернетис и getUserData()");
+        assert_eq!(out.spans.len(), 1, "spans: {:?}", out.spans);
+        let span = &out.spans[0];
+        assert_eq!(span.kind, SpanKind::CodeIdentifier);
+        assert_eq!(span.lang, Some("en"));
+        assert_eq!(span_text(&out.text, span), "getUserData");
+        assert_eq!(out.mapping.char_map.len(), out.text.chars().count());
+    }
+
+    #[test]
+    fn narrated_prose_keeps_native_identifiers_after_a_special_term() {
+        // "C++" is rewritten before the English matches are collected; the
+        // protected identifier ranges must be taken after that rewrite or the
+        // shifted offsets would let the phase transliterate the identifier.
+        let mut p = TTSPipeline::new();
+        p.set_english_reading(EnglishReading::Narrated);
+        let out = p.process_for_engine(
+            "C++ и getUserData()",
+            &crate::tts::profiles::TERATTS_PROFILE,
+        );
+        assert_eq!(out.text, "си плюс плюс и getUserData()");
+        assert_eq!(out.spans.len(), 1, "spans: {:?}", out.spans);
+        assert_eq!(span_text(&out.text, &out.spans[0]), "getUserData");
+    }
+
+    #[test]
+    fn narrated_prose_keeps_native_identifiers_nested_in_a_kebab_token() {
+        // The whole token is one identifier range: without merging the kebab
+        // and camel claims, `flag` would slip past the overlap check and be
+        // transliterated while the rest stayed Latin.
+        let mut p = TTSPipeline::new();
+        p.set_english_reading(EnglishReading::Narrated);
+        let out = p.process_for_engine(
+            "my-app-getUserData-flag",
+            &crate::tts::profiles::TERATTS_PROFILE,
+        );
+        assert_eq!(out.text, "my-app-getUserData-flag");
+        assert_eq!(out.spans.len(), 1, "spans: {:?}", out.spans);
+        assert_eq!(
+            span_text(&out.text, &out.spans[0]),
+            "my-app-getUserData-flag"
+        );
+    }
+
+    #[test]
+    fn native_setting_keeps_both_native_routes_on_a_capable_engine() {
+        let mut p = TTSPipeline::new();
+        p.set_english_reading(EnglishReading::Native);
+        let out = p.process_for_engine(
+            "Kubernetes и getUserData()",
+            &crate::tts::profiles::TERATTS_PROFILE,
+        );
+        assert_eq!(out.text, "Kubernetes и getUserData()");
+        let kinds: Vec<_> = out.spans.iter().map(|span| span.kind).collect();
+        assert_eq!(kinds, vec![SpanKind::ProseLatin, SpanKind::CodeIdentifier]);
     }
 
     #[test]

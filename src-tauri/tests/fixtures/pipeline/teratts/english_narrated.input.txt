@@ -1,0 +1,1 @@
+Kubernetes и getUserData() через API

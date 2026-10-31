@@ -216,8 +216,8 @@ mod tests {
         // contract, not from an engine-local copy.
         let profile = TextProfile {
             languages: &["ru"],
+            reads_latin_natively: false,
             route: Route {
-                latin_prose: Reading::Narrate,
                 identifier: Reading::Narrate,
                 code_block: Reading::Narrate,
             },

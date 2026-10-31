@@ -971,6 +971,64 @@ async fn update_config_code_block_mode_applies_live_to_synthesis() {
     assert_eq!(g.code_block_mode.as_deref(), Some("read"));
 }
 
+/// Switching the English reading setting through `update_config` reaches the
+/// shared pipeline live, and an unknown value canonicalizes to `auto` instead
+/// of being persisted. Synthesis itself cannot tell the modes apart on the
+/// stub Piper (it narrates Latin prose either way), so the assertion is on the
+/// shared state the next synthesis reads — the same state the code-block test
+/// exercises end to end.
+#[tokio::test(flavor = "multi_thread")]
+async fn update_config_english_reading_reaches_the_shared_pipeline() {
+    let t = build_test_app();
+
+    // Pin the saved engine to the stub-active piper, as the code-block test
+    // does: `update_config` routes through the switcher, which cannot activate
+    // the absent silero-native bundle in tests.
+    let mut config = t.state().storage.load_config().unwrap();
+    config.engine = "piper".to_string();
+    config.piper_voice = "stub-voice".to_string();
+    t.state()
+        .storage
+        .save_config(&config)
+        .expect("engine pinned");
+
+    let patch = UIConfigPatch {
+        english_reading: Some("narrated".to_string()),
+        ..Default::default()
+    };
+    update_config(t.app.handle().clone(), t.state(), patch)
+        .await
+        .expect("reading patch applied");
+
+    assert_eq!(
+        t.state().pipeline.lock().english_reading(),
+        crate::pipeline::EnglishReading::Narrated,
+        "the shared pipeline serves the next synthesis"
+    );
+    assert_eq!(
+        t.state().storage.load_config().unwrap().english_reading,
+        "narrated"
+    );
+
+    // An unknown value is canonicalized on the way in, so the pipeline never
+    // sees it.
+    let patch = UIConfigPatch {
+        english_reading: Some("bilingual".to_string()),
+        ..Default::default()
+    };
+    update_config(t.app.handle().clone(), t.state(), patch)
+        .await
+        .expect("unknown value canonicalizes");
+    assert_eq!(
+        t.state().pipeline.lock().english_reading(),
+        crate::pipeline::EnglishReading::Auto
+    );
+    assert_eq!(
+        t.state().storage.load_config().unwrap().english_reading,
+        "auto"
+    );
+}
+
 /// Regeneration re-runs the same spawn path: the snapshot is overwritten
 /// with the new voice and the count grows to 2.
 #[tokio::test(flavor = "multi_thread")]

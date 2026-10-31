@@ -51,6 +51,7 @@ interface SettingsFormValues {
   hide_to_tray_on_close: boolean;
   max_cache_size_mb: number;
   code_block_mode: string;
+  english_reading: string;
   theme: string;
   language: string;
 }
@@ -67,17 +68,27 @@ const ENGINE_OPTIONS: ReadonlyArray<{ value: EngineKind; key: MessageKey }> = [
 /// don't briefly see them as enabled and click before the probe lands.
 /// Reasons are catalog codes resolved through formatError at render time
 /// (locale-aware, same path as the live probe results).
+///
+/// `reads_latin_natively` values here are placeholders for the type: the
+/// English reading hint is gated on `availabilityProbed`, so the dialog reads
+/// the capability only from the probe, which stamps it from the engine profile.
 function pessimisticAvailability(): AvailabilityMap {
   return {
-    piper: { available: true, reason: null },
-    silero: { available: false, reason: { code: 'settings.availability.probing_python' } },
+    piper: { available: true, reason: null, reads_latin_natively: false },
+    silero: {
+      available: false,
+      reason: { code: 'settings.availability.probing_python' },
+      reads_latin_natively: false,
+    },
     silero_native: {
       available: false,
       reason: { code: 'settings.availability.probing_bundle' },
+      reads_latin_natively: false,
     },
     teratts: {
       available: false,
       reason: { code: 'settings.availability.probing_bundle' },
+      reads_latin_natively: true,
     },
   };
 }
@@ -278,11 +289,21 @@ export function SettingsModal({
   const [availability, setAvailability] = useState<AvailabilityMap>(() =>
     pessimisticAvailability(),
   );
+  /** Whether `availability` already holds a probe result. The pessimistic
+   *  placeholder only carries placeholder capabilities, so the English reading
+   *  hint waits for the probe instead of reading a hard-coded engine table. */
+  const [availabilityProbed, setAvailabilityProbed] = useState(false);
   /** Voice ids shipped by the installed TeraTTS bundle; ids are the model's
    *  own names, so the id is also the label. */
   const [terattsVoices, setTerattsVoices] = useState<readonly string[]>([]);
   const refreshAvailability = useCallback(() => {
-    commands.getAvailableEngines().then(setAvailability).catch(() => {});
+    commands
+      .getAvailableEngines()
+      .then((probed) => {
+        setAvailability(probed);
+        setAvailabilityProbed(true);
+      })
+      .catch(() => {});
     commands.getTerattsVoices().then(setTerattsVoices).catch(() => {});
   }, []);
   // Whether the user touched the sample-rate selector in this dialog
@@ -305,6 +326,7 @@ export function SettingsModal({
     hide_to_tray_on_close: false,
     max_cache_size_mb: 500,
     code_block_mode: 'brief',
+    english_reading: 'auto',
     theme: 'auto',
     language: 'ru',
   };
@@ -336,6 +358,7 @@ export function SettingsModal({
     Promise.all([commands.getConfig(), commands.getAvailableEngines()])
       .then(([config, probed]) => {
         setAvailability(probed);
+        setAvailabilityProbed(true);
         const initial = computeEngineFormState(config, probed);
         const loaded = {
           engine: initial.engine,
@@ -349,6 +372,7 @@ export function SettingsModal({
           hide_to_tray_on_close: config.hide_to_tray_on_close,
           max_cache_size_mb: config.max_cache_size_mb,
           code_block_mode: config.code_block_mode,
+          english_reading: config.english_reading,
           theme: config.theme,
           language: config.language,
         };
@@ -484,6 +508,7 @@ export function SettingsModal({
         hide_to_tray_on_close: values.hide_to_tray_on_close,
         max_cache_size_mb: values.max_cache_size_mb,
         code_block_mode: values.code_block_mode,
+        english_reading: values.english_reading,
         theme: values.theme as UIConfigPatch['theme'],
         language: values.language,
       },
@@ -644,6 +669,7 @@ export function SettingsModal({
           <Stack gap={4}>
             <Text size="sm">{tt('settings.code_block.label')}</Text>
             <SegmentedControl
+              name="code_block_mode"
               value={form.values.code_block_mode}
               onChange={(v) => form.setFieldValue('code_block_mode', v)}
               data={[
@@ -654,6 +680,30 @@ export function SettingsModal({
             <Text size="xs" c="dimmed">
               {tt('settings.code_block.description')}
             </Text>
+          </Stack>
+
+          <Stack gap={4}>
+            <Text size="sm">{tt('settings.english_reading.label')}</Text>
+            <SegmentedControl
+              name="english_reading"
+              value={form.values.english_reading}
+              onChange={(v) => form.setFieldValue('english_reading', v)}
+              data={[
+                { label: tt('settings.english_reading.auto'), value: 'auto' },
+                { label: tt('settings.english_reading.native'), value: 'native' },
+                { label: tt('settings.english_reading.narrated'), value: 'narrated' },
+              ]}
+            />
+            <Text size="xs" c="dimmed">
+              {tt('settings.english_reading.description')}
+            </Text>
+            {availabilityProbed &&
+              form.values.english_reading === 'native' &&
+              !availability[form.values.engine].reads_latin_natively && (
+                <Text size="xs" c="orange.7">
+                  {tt('settings.english_reading.fallback_hint')}
+                </Text>
+              )}
           </Stack>
 
           <Divider />

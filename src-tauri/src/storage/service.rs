@@ -569,10 +569,11 @@ impl StorageService {
                 return Ok(UIConfig::default());
             }
         };
-        // Canonicalize the code block mode so configs written by earlier
+        // Canonicalize the text-shaping modes so configs written by earlier
         // builds (legacy "skip", unknown values) resolve to a value the
-        // pipeline and the Settings control understand.
+        // pipeline and the Settings controls understand.
         config.code_block_mode = UIConfig::canonical_code_block_mode(&config.code_block_mode);
+        config.english_reading = UIConfig::canonical_english_reading(&config.english_reading);
         Ok(config)
     }
 
@@ -910,6 +911,7 @@ mod tests {
         assert_eq!(cfg.speaker, "aidar");
         assert_eq!(cfg.sample_rate, 24000);
         assert_eq!(cfg.code_block_mode, "brief");
+        assert_eq!(cfg.english_reading, "auto");
     }
 
     fn write_config_file(cache: &std::path::Path, json: &str) {
@@ -961,6 +963,42 @@ mod tests {
 
         let svc = StorageService::with_cache_dir(cache).unwrap();
         assert_eq!(svc.load_config().unwrap().code_block_mode, "brief");
+    }
+
+    #[test]
+    fn config_without_english_reading_key_defaults_to_auto() {
+        let dir = TempDir::new().unwrap();
+        let cache = dir.path().to_path_buf();
+        fs::create_dir_all(cache.join("audio")).unwrap();
+        write_config_file(&cache, r#"{"speaker": "xenia"}"#);
+
+        let svc = StorageService::with_cache_dir(cache).unwrap();
+        assert_eq!(svc.load_config().unwrap().english_reading, "auto");
+    }
+
+    #[test]
+    fn persisted_english_reading_round_trips() {
+        let dir = TempDir::new().unwrap();
+        let cache = dir.path().to_path_buf();
+        fs::create_dir_all(cache.join("audio")).unwrap();
+        write_config_file(&cache, r#"{"english_reading": "narrated"}"#);
+
+        let svc = StorageService::with_cache_dir(cache).unwrap();
+        let cfg = svc.load_config().unwrap();
+        assert_eq!(cfg.english_reading, "narrated");
+        svc.save_config(&cfg).unwrap();
+        assert_eq!(svc.load_config().unwrap().english_reading, "narrated");
+    }
+
+    #[test]
+    fn unknown_english_reading_falls_back_to_auto() {
+        let dir = TempDir::new().unwrap();
+        let cache = dir.path().to_path_buf();
+        fs::create_dir_all(cache.join("audio")).unwrap();
+        write_config_file(&cache, r#"{"english_reading": "bilingual"}"#);
+
+        let svc = StorageService::with_cache_dir(cache).unwrap();
+        assert_eq!(svc.load_config().unwrap().english_reading, "auto");
     }
 
     #[test]

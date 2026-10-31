@@ -1842,14 +1842,18 @@ pub async fn download_teratts_bundle(state: State<'_, AppState>) -> CmdResult<()
     install_bundle_inner(&state, model_lifecycle::TERATTS, false).await
 }
 
-/// Apply the persisted `code_block_mode` to the shared pipeline. Called at
-/// startup so the pipeline never narrates code blocks in a mode the config
-/// did not ask for; `update_config` pushes later changes itself.
-pub fn apply_configured_code_block_mode(pipeline: &Arc<Mutex<TTSPipeline>>, config: &UIConfig) {
-    let mode = crate::pipeline::normalizers::code_blocks::CodeBlockMode::from_config(
+/// Apply the persisted text-shaping settings to the shared pipeline. Called at
+/// startup so the pipeline never narrates code blocks or English prose in a
+/// mode the config did not ask for; `update_config` pushes later changes
+/// itself.
+pub fn apply_configured_text_settings(pipeline: &Arc<Mutex<TTSPipeline>>, config: &UIConfig) {
+    let code_block_mode = crate::pipeline::normalizers::code_blocks::CodeBlockMode::from_config(
         &config.code_block_mode,
     );
-    pipeline.lock().set_code_block_mode(mode);
+    let english_reading = crate::pipeline::EnglishReading::from_config(&config.english_reading);
+    let mut pipeline = pipeline.lock();
+    pipeline.set_code_block_mode(code_block_mode);
+    pipeline.set_english_reading(english_reading);
 }
 
 /// Merge a partial config patch into the current configuration, swap the
@@ -1857,11 +1861,11 @@ pub fn apply_configured_code_block_mode(pipeline: &Arc<Mutex<TTSPipeline>>, conf
 /// the config is saved — if the user picked a Silero stack we cannot spawn,
 /// the call returns an error and the previous config stays on disk.
 ///
-/// A `code_block_mode` change is pushed into the shared pipeline after the
-/// save, so subsequent synthesis/preview runs pick it up without a restart
-/// (synthesis already in flight finishes on the previous mode). The tray icon
-/// is created or removed after the save as well, tracking
-/// `hide_to_tray_on_close`.
+/// A `code_block_mode` or `english_reading` change is pushed into the shared
+/// pipeline after the save, so subsequent synthesis/preview runs pick it up
+/// without a restart (synthesis already in flight finishes on the previous
+/// values). The tray icon is created or removed after the save as well,
+/// tracking `hide_to_tray_on_close`.
 #[tauri::command]
 pub async fn update_config<R: Runtime>(
     app: AppHandle<R>,
@@ -1870,7 +1874,6 @@ pub async fn update_config<R: Runtime>(
 ) -> CmdResult<()> {
     let mut config = state.storage.load_config().unwrap_or_default();
     let previous_engine = state.engine_switcher.kind();
-    let code_block_mode_patch = patch.code_block_mode.clone();
     // Remembered to roll the setting back when the tray icon cannot be
     // created: the persisted flag must match what the app can actually do.
     let hide_to_tray_before = config.hide_to_tray_on_close;
@@ -1906,12 +1909,7 @@ pub async fn update_config<R: Runtime>(
         pipeline.set_user_dictionary(book.merged_for(state.engine_switcher.kind()));
     }
 
-    if code_block_mode_patch.is_some() {
-        let mode = crate::pipeline::normalizers::code_blocks::CodeBlockMode::from_config(
-            &config.code_block_mode,
-        );
-        state.pipeline.lock().set_code_block_mode(mode);
-    }
+    apply_configured_text_settings(&state.pipeline, &config);
 
     if let Err(e) = crate::tray::set_enabled(&app, config.hide_to_tray_on_close) {
         // The icon could not be created (no system tray, unwritable runtime
@@ -2266,6 +2264,9 @@ fn apply_config_patch(config: &mut UIConfig, patch: UIConfigPatch) {
     }
     if let Some(v) = patch.code_block_mode {
         config.code_block_mode = UIConfig::canonical_code_block_mode(&v);
+    }
+    if let Some(v) = patch.english_reading {
+        config.english_reading = UIConfig::canonical_english_reading(&v);
     }
     if let Some(v) = patch.theme {
         config.theme = v;
@@ -2872,24 +2873,29 @@ mod tests {
     // ── apply_config_patch ──────────────────────────────────────────────────
 
     #[test]
-    fn apply_configured_code_block_mode_maps_config_values() {
+    fn apply_configured_text_settings_maps_config_values() {
+        use crate::pipeline::EnglishReading;
         use crate::pipeline::normalizers::code_blocks::CodeBlockMode;
 
         let pipeline = Arc::new(Mutex::new(TTSPipeline::new()));
         let config = UIConfig {
             code_block_mode: "read".to_string(),
+            english_reading: "narrated".to_string(),
             ..UIConfig::default()
         };
-        apply_configured_code_block_mode(&pipeline, &config);
+        apply_configured_text_settings(&pipeline, &config);
         assert_eq!(pipeline.lock().code_block_mode(), CodeBlockMode::Full);
+        assert_eq!(pipeline.lock().english_reading(), EnglishReading::Narrated);
 
-        // The legacy alias and unknown values resolve to the default mode.
+        // The legacy alias and unknown values resolve to the defaults.
         let config = UIConfig {
             code_block_mode: "skip".to_string(),
+            english_reading: "bilingual".to_string(),
             ..UIConfig::default()
         };
-        apply_configured_code_block_mode(&pipeline, &config);
+        apply_configured_text_settings(&pipeline, &config);
         assert_eq!(pipeline.lock().code_block_mode(), CodeBlockMode::Brief);
+        assert_eq!(pipeline.lock().english_reading(), EnglishReading::Auto);
     }
 
     /// Every `UIConfigPatch` field, in isolation: set to a value distinct
@@ -2910,6 +2916,7 @@ mod tests {
             text_format: _,
             max_cache_size_mb: _,
             code_block_mode: _,
+            english_reading: _,
             theme: _,
             player_hotkeys: _,
             window_geometry: _,
@@ -2983,6 +2990,13 @@ mod tests {
                 field: "code_block_mode",
                 patch: UIConfigPatch {
                     code_block_mode: Some("read".to_string()),
+                    ..Default::default()
+                },
+            },
+            Case {
+                field: "english_reading",
+                patch: UIConfigPatch {
+                    english_reading: Some("narrated".to_string()),
                     ..Default::default()
                 },
             },
@@ -3112,6 +3126,7 @@ mod tests {
             text_format: "markdown".to_string(),
             max_cache_size_mb: 1000,
             code_block_mode: "skip".to_string(),
+            english_reading: "narrated".to_string(),
             theme: "dark".to_string(),
             player_hotkeys: custom_hotkeys,
             window_geometry: Some([1, 2, 3, 4]),

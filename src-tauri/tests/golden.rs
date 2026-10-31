@@ -143,6 +143,9 @@ fn golden_fixtures() {
         if let Some(mode) = common::read_mode_sidecar(case_name) {
             pipeline.set_code_block_mode(mode);
         }
+        if let Some(reading) = common::read_english_reading_sidecar(case_name) {
+            pipeline.set_english_reading(reading);
+        }
         pipeline.set_user_dictionary(common::read_dict_sidecar(case_name));
         let processed = pipeline.process_for_engine(&input, profile);
         let actual_text = processed.text;

@@ -95,6 +95,11 @@ interface EngineAvailability {
   /** Coded explanation rendered through the localization layer when
    *  `available` is `false`. Null when the engine is available. */
   reason: LocalizedText | null;
+  /** Whether the engine can read English prose in English (its text profile's
+   *  capability). The Settings dialog uses it to explain what the English
+   *  reading setting will do instead of hard-coding engine names; requesting
+   *  `native` on an engine without it falls back to narration. */
+  reads_latin_natively: boolean;
 }
 
 export type ModelAssetId = 'silero_native' | 'teratts' | `piper:${string}`;
@@ -145,6 +150,10 @@ export interface UIConfig {
   max_cache_size_mb: number;
   /** Code block narration: "brief" (default) | "read". */
   code_block_mode: string;
+  /** How Latin prose is read: "auto" (default) | "native" | "narrated".
+   *  Resolved against the engine capability on the backend; the stored value
+   *  is the listener's preference and is never rewritten by an engine switch. */
+  english_reading: string;
   theme: Theme;
   /** UI language: "ru" (default) | "en". Mirrors UIConfig.language on the
    *  backend; narrowed to a Locale via toLocale() before use. */

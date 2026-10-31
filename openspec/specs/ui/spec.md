@@ -166,7 +166,9 @@ Editing the text of an existing entry in the UI MUST NOT be supported; correctio
 
 The system SHALL provide a modal Settings dialog (`src/dialogs/Settings.tsx`) built on `@mantine/form::useForm`, loading `commands.getConfig()`, `commands.getAvailableEngines()` and `commands.getTerattsVoices()` whenever it opens, and submitting a `UIConfigPatch` (only the form fields) via `commands.updateConfig`.
 
-The form SHALL expose: TTS engine (Piper / Silero / «Silero (нативный)» / «TeraTTSv2», with unavailable engines disabled and an alert when the saved engine was coerced to Piper), Piper voice or Silero speaker depending on the engine, the TeraTTS voice when that engine is selected (every id returned by `commands.getTerattsVoices()`, with `ru_m5` as the default), sample rate, `notify_on_ready`, `notify_on_error`, `preview_dialog_enabled`, `hide_to_tray_on_close` (the «Сворачивать в трей при закрытии окна» switch, off by default), `max_cache_size_mb` (minimum 100 MB), theme (Светлая/Тёмная/Авто), a language selector (Русский / English) bound to `UIConfig.language`, and a code block narration selector («Кратко» / «Читать полностью») bound to `UIConfig.code_block_mode` (`"brief"` / `"read"`), initialized from the loaded config and included in the submitted `UIConfigPatch` when changed. Applying a new theme SHALL push it into Mantine's color-scheme manager immediately. Choosing a language SHALL update the localization store immediately (the whole UI re-labels without reload) and include `language` in the submitted `UIConfigPatch`.
+The form SHALL expose: TTS engine (Piper / Silero / «Silero (нативный)» / «TeraTTSv2», with unavailable engines disabled and an alert when the saved engine was coerced to Piper), Piper voice or Silero speaker depending on the engine, the TeraTTS voice when that engine is selected (every id returned by `commands.getTerattsVoices()`, with `ru_m5` as the default), sample rate, `notify_on_ready`, `notify_on_error`, `preview_dialog_enabled`, `hide_to_tray_on_close` (the «Сворачивать в трей при закрытии окна» switch, off by default), `max_cache_size_mb` (minimum 100 MB), theme (Светлая/Тёмная/Авто), a language selector (Русский / English) bound to `UIConfig.language`, a code block narration selector («Кратко» / «Читать полностью») bound to `UIConfig.code_block_mode` (`"brief"` / `"read"`), and an English text selector («Английский текст»: «Авто» / «Нативно» / «По-русски») bound to `UIConfig.english_reading` (`"auto"` / `"native"` / `"narrated"`), initialized from the loaded config and included in the submitted `UIConfigPatch` when changed. Applying a new theme SHALL push it into Mantine's color-scheme manager immediately. Choosing a language SHALL update the localization store immediately (the whole UI re-labels without reload) and include `language` in the submitted `UIConfigPatch`.
+
+The English text selector SHALL read the active engine's capability from `commands.getAvailableEngines()` (`reads_latin_natively`), never from a hardcoded engine name. All three choices SHALL stay selectable on every engine — the preference is engine-independent — and when the selected engine cannot read Latin natively while the choice is «Нативно», the dialog SHALL show a hint stating that the engine will read English in Russian while the stored choice stays «Нативно».
 
 When «Silero (нативный)» is unavailable because the model bundle is not downloaded, the form SHALL show a download action next to the engine option; triggering it calls `commands.downloadSileroNativeBundle()` and displays live progress from the `bundle_download_*` events. When «TeraTTSv2» is unavailable because its bundle is not downloaded, the form SHALL offer the analogous action through `commands.downloadTerattsBundle()`, naming the bundle size, with progress from the same event family and `engine: "teratts"`.
 
@@ -183,6 +185,21 @@ A "Очистить кэш…" button SHALL open a nested `CleanupCacheModal` wi
 - **GIVEN** the Settings dialog is open with the saved config `code_block_mode: "read"` and the user picks «Кратко»
 - **WHEN** the user clicks "Сохранить"
 - **THEN** the submitted `UIConfigPatch` contains `code_block_mode: "brief"`
+
+#### Scenario: English text selector reflects the saved choice
+- **GIVEN** the Settings dialog is open with the saved config `english_reading: "narrated"`
+- **WHEN** the dialog finishes loading
+- **THEN** the «Английский текст» selector shows «По-русски», and saving without touching it submits `english_reading: "narrated"`
+
+#### Scenario: Native choice on an incapable engine shows the fallback hint
+- **GIVEN** `getAvailableEngines` reports `reads_latin_natively: false` for the selected engine
+- **WHEN** the user picks «Нативно» in the «Английский текст» selector
+- **THEN** a hint appears stating that this engine will read English in Russian, and saving still submits `english_reading: "native"`
+
+#### Scenario: Capable engine shows no fallback hint
+- **GIVEN** `getAvailableEngines` reports `reads_latin_natively: true` for the selected engine
+- **WHEN** the user picks «Нативно»
+- **THEN** no fallback hint is shown
 
 #### Scenario: Save persists the tray-on-close setting
 - **GIVEN** the Settings dialog is open with the saved config `hide_to_tray_on_close: false`
