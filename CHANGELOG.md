@@ -19,6 +19,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   removed and the irregular/guard ones kept; listening-verified readings such
   as `method` → «мэтод» and `function` → «фанкшин» are curated (#306).
 
+### Fixed
+- **TeraTTSv2 reads line-wrapped text** — a single line break inside a chunk
+  was dropped by the alphabet gate, gluing the surrounding words and failing
+  synthesis with a word-count error (seen on Markdown list items and
+  hard-wrapped prose); unsupported whitespace now becomes a space (#325).
+
 ### Added
 - **Model bundle updates and cleanup** — Settings shows installed versions,
   model ids, and sizes for Silero Native, TeraTTSv2, and Piper voices; checks
