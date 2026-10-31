@@ -85,13 +85,23 @@ jobs:
     needs: changes
     if: needs.changes.outputs.windows == 'true'
     runs-on: windows-latest
-    # Warm cache ~6-9 min; cold MSVC rebuild of all deps ~15 min.
+    # Warm cache ~3-4 min; cold MSVC rebuild of all deps ~15 min.
     timeout-minutes: 20
     env:
       # cmake 4.x on the runner image errors out on the vendored opus'
       # ancient cmake_minimum_required — pin the compat floor (design D5
       # of windows-installer-and-release).
       CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+      # This job only proves the crate still compiles and links on MSVC, it
+      # does not ship the binary — so it drops the release profile's fat LTO
+      # and single codegen unit (src-tauri/Cargo.toml [profile.release]).
+      # Those dominated the job: with dependencies served from the cache the
+      # ~4m of the build was ruvox-tauri's own codegen plus the cross-crate
+      # LTO link, on a 4-vCPU runner where codegen-units = 1 leaves three
+      # cores idle. The shipping profile stays covered by release.yml's
+      # windows-installer job, which builds the real artifact on tags.
+      CARGO_PROFILE_RELEASE_LTO: "false"
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v6
@@ -105,10 +115,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: "src-tauri\nsilero-native\ntts-contract\nteratts"
-          # Shared with the release.yml windows-installer job: without this the
-          # cache key includes the job id, so the release rebuilt all ~600 deps
-          # from scratch on every run (~8.5 min lost).
-          shared-key: win-msvc
+          # Deliberately NOT the release.yml job's `win-msvc` key: the profile
+          # overrides above change the fingerprint of every dependency, so
+          # sharing one cache would make the two jobs evict each other's
+          # artifacts. The first run with this key repopulates it once; later
+          # runs are warm. Keep `shared-key` (not the job id) so the key stays
+          # stable across workflow renames and unrelated edits.
+          shared-key: win-msvc-ci
       - run: pnpm install --frozen-lockfile
       - run: pnpm tauri build --no-bundle
 
