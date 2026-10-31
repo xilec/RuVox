@@ -1,3 +1,5 @@
+use tracing::warn;
+
 /// Character-level mapping from transformed to original positions.
 ///
 /// All indices in `char_map` are **Unicode codepoint** (char) indices, not byte
@@ -87,17 +89,24 @@ impl CharMapping {
     /// the tracked text. Every inserted codepoint takes the placeholder's
     /// source range — exactly what the tracking layer would have recorded for
     /// a replacement. The placeholder is expected to occur once; a missing
-    /// placeholder means the pipeline lost track of the fragment.
-    pub fn substitute(&mut self, placeholder: &str, text: &str) {
+    /// placeholder means the pipeline lost track of the fragment, so the
+    /// mapping is left untouched and `false` is returned.
+    pub fn substitute(&mut self, placeholder: &str, text: &str) -> bool {
         let Some(byte_start) = self.transformed.find(placeholder) else {
-            debug_assert!(false, "placeholder {placeholder:?} disappeared");
-            return;
+            warn!(
+                placeholder = ?placeholder,
+                "native code placeholder disappeared before the mapping was built"
+            );
+            return false;
         };
         let char_start = self.transformed[..byte_start].chars().count();
         let char_end = char_start + placeholder.chars().count();
         let Some(origin) = self.char_map.get(char_start).copied() else {
-            debug_assert!(false, "placeholder {placeholder:?} has no mapping entry");
-            return;
+            warn!(
+                placeholder = ?placeholder,
+                "native code placeholder has no mapping entry"
+            );
+            return false;
         };
         self.transformed
             .replace_range(byte_start..byte_start + placeholder.len(), text);
@@ -105,6 +114,7 @@ impl CharMapping {
             char_start..char_end,
             std::iter::repeat_n(origin, text.chars().count()),
         );
+        true
     }
 }
 
@@ -690,7 +700,7 @@ mod tests {
         let mut tracked = TrackedText::new(original);
         tracked.replace("```rust\nlet x = 1;\n```", placeholder);
         let mut mapping = tracked.build_mapping();
-        mapping.substitute(placeholder, "let x = 1;");
+        assert!(mapping.substitute(placeholder, "let x = 1;"));
 
         assert_eq!(mapping.transformed, "до\nlet x = 1;\nпосле");
         assert_eq!(mapping.char_map.len(), mapping.transformed.chars().count());
@@ -703,6 +713,14 @@ mod tests {
         for entry in &mapping.char_map[block_start..block_start + code_len] {
             assert_eq!(*entry, (block_start, block_end));
         }
+    }
+
+    #[test]
+    fn substitute_reports_a_missing_placeholder_without_touching_the_text() {
+        let mut mapping = TrackedText::new("привет").build_mapping();
+        assert!(!mapping.substitute("\u{e000}\u{e001}", "код"));
+        assert_eq!(mapping.transformed, "привет");
+        assert_eq!(mapping.char_map.len(), "привет".chars().count());
     }
 
     /// Batched literal replaces run longest-key-first over the same unflushed

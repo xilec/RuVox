@@ -34,7 +34,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use async_trait::async_trait;
 use serde_json::json;
 use tokio::sync::{Mutex, RwLock};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::pipeline::{Span, SpanKind};
 use crate::tts::engine::{EngineKind, TtsEngine};
@@ -330,7 +330,7 @@ fn neutralize_code_markup(text: String, spans: &[Span]) -> String {
         }
     }
     if replaced > 0 {
-        warn!(
+        debug!(
             count = replaced,
             "replaced tag delimiters inside a native code block"
         );
@@ -539,6 +539,35 @@ mod tests {
         let text = "привет < мир";
         let neutralized = neutralize_code_markup(text.to_string(), &[]);
         assert_eq!(neutralized, text);
+    }
+
+    #[test]
+    fn pipeline_code_block_survives_neutralization_at_the_same_offsets() {
+        let mut pipeline = crate::pipeline::TTSPipeline::new();
+        pipeline
+            .set_code_block_mode(crate::pipeline::normalizers::code_blocks::CodeBlockMode::Full);
+        let out = pipeline.process_for_engine("```rust\nVec<T>\n```", &profiles::TERATTS_PROFILE);
+        assert_eq!(out.text, "Vec<T>");
+        let span = out
+            .spans
+            .iter()
+            .find(|span| span.kind == SpanKind::CodeBlock)
+            .expect("the native block is annotated");
+        let emitted: String = out
+            .text
+            .chars()
+            .skip(span.start)
+            .take(span.end - span.start)
+            .collect();
+        assert_eq!(emitted, "Vec<T>");
+
+        let neutralized = neutralize_code_markup(out.text, &out.spans);
+        assert_eq!(neutralized, "Vec T ");
+        let segments = segments_for(&neutralized, &out.spans);
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].text.trim_end(), "Vec T");
+        assert_eq!(segments[0].text_start, span.start);
+        assert_eq!(segments[0].language, teratts::Language::En);
     }
 
     #[test]

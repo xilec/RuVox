@@ -515,13 +515,12 @@ impl TTSPipeline {
             profile.route.code_block,
         );
         for block in &native_code {
-            let placeholder = block.placeholder.clone();
             record_native(
                 &mut tracked,
                 SpanKind::CodeBlock,
                 native_lang,
                 |text| {
-                    text.match_indices(&placeholder)
+                    text.match_indices(&block.placeholder)
                         .map(|(start, matched)| (start, start + matched.len()))
                         .collect()
                 },
@@ -885,7 +884,12 @@ impl TTSPipeline {
         // The narrating phases are done, so the blocks the engine reads are
         // put back into the text; their mapping keeps the source block range.
         for block in native_code {
-            mapping.substitute(&block.placeholder, &block.text);
+            let restored = mapping.substitute(&block.placeholder, &block.text);
+            debug_assert!(
+                restored,
+                "native code block {:?} was lost before the mapping was built",
+                block
+            );
         }
         let result = mapping.transformed.trim().to_string();
 
@@ -2184,6 +2188,20 @@ mod tests {
         assert_eq!(out.spans.len(), 2, "spans: {:?}", out.spans);
         assert_eq!(span_text(&out.text, &out.spans[0]), "let a = 1;");
         assert_eq!(span_text(&out.text, &out.spans[1]), "let b = 2;");
+    }
+
+    #[test]
+    fn pasted_private_use_glyphs_do_not_confuse_the_restore() {
+        let mut p = TTSPipeline::new();
+        p.set_code_block_mode(CodeBlockMode::Full);
+        let out = p.process_for_engine(
+            "\u{e000}\u{e000}\n```rust\nlet a = 1;\n```",
+            &crate::tts::profiles::TERATTS_PROFILE,
+        );
+
+        assert_eq!(out.text, "\u{e000}\u{e000}\nlet a = 1;");
+        assert_eq!(out.spans.len(), 1, "spans: {:?}", out.spans);
+        assert_eq!(span_text(&out.text, &out.spans[0]), "let a = 1;");
     }
 
     #[test]

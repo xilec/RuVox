@@ -250,6 +250,7 @@ impl CodeBlockHandler {
     ) -> Vec<NativeBlock> {
         let snapshot = tracked.text().to_string();
         let mut native_blocks: Vec<NativeBlock> = Vec::new();
+        let mut next_placeholder = 0usize;
         let blocks: Vec<(usize, usize, String)> = RE_FENCED_BLOCK
             .captures_iter(&snapshot)
             .map(|caps| {
@@ -271,7 +272,17 @@ impl CodeBlockHandler {
                     if text.is_empty() {
                         String::new()
                     } else {
-                        let placeholder = placeholder_for(native_blocks.len());
+                        // A block may be replaced by the code and the speaker
+                        // may have pasted private-use glyphs; skip any stand-in
+                        // the input already contains so the search in the
+                        // mapping stays unambiguous.
+                        let placeholder = loop {
+                            let candidate = placeholder_for(next_placeholder);
+                            next_placeholder += 1;
+                            if !snapshot.contains(&candidate) {
+                                break candidate;
+                            }
+                        };
                         native_blocks.push(NativeBlock {
                             placeholder: placeholder.clone(),
                             text,
@@ -750,5 +761,24 @@ mod tests {
 
         assert!(native.is_empty());
         assert_eq!(tracked.text(), "До\n\nПосле");
+    }
+
+    #[test]
+    fn process_native_route_skips_a_placeholder_already_in_the_text() {
+        // A pasted private-use pair must not be mistaken for the stand-in: the
+        // mapping search treats every occurrence as the placeholder.
+        let pasted = "\u{e000}\u{e000}";
+        let text = format!("{pasted}\n```rust\nlet a = 1;\n```");
+        let mut tracked = TrackedText::new(&text);
+        let native = full_handler().process(&mut tracked, &no_dict(), false, Reading::Native);
+
+        assert_eq!(native.len(), 1);
+        assert_ne!(native[0].placeholder, pasted);
+        assert!(
+            tracked.text().starts_with(&format!("{pasted}\n")),
+            "the pasted glyphs stay untouched: {:?}",
+            tracked.text()
+        );
+        assert_eq!(tracked.text().matches(&native[0].placeholder).count(), 1);
     }
 }
