@@ -26,6 +26,15 @@ vi.mock('../lib/tauri', () => ({
     getLogDir: vi.fn().mockResolvedValue(''),
     downloadSileroNativeBundle: vi.fn(),
     downloadPiperVoice: vi.fn(),
+    getModelStatus: vi.fn().mockResolvedValue({
+      assets: [],
+      total_bytes: 0,
+      channel_error: null,
+      checked_at: null,
+    }),
+    installModelAsset: vi.fn().mockResolvedValue(undefined),
+    deleteModelAsset: vi.fn().mockResolvedValue(0),
+    skipModelUpdate: vi.fn().mockResolvedValue(undefined),
     clearCache: vi.fn(),
     getDictionaries: vi.fn().mockResolvedValue([]),
     saveDictionary: vi.fn().mockResolvedValue(undefined),
@@ -176,6 +185,21 @@ describe('SettingsModal code block narration', () => {
     await clickSave();
 
     expect(updateConfig.mock.calls[0][0].hide_to_tray_on_close).toBe(true);
+  });
+
+  it('does not show the Silero voice selector for TeraTTS', async () => {
+    getConfig.mockResolvedValue(makeConfig({ engine: 'teratts' }));
+    getAvailableEngines.mockResolvedValue({
+      piper: { available: true, reason: null },
+      silero: { available: false, reason: null },
+      silero_native: { available: true, reason: null },
+      teratts: { available: true, reason: null },
+    });
+    await renderDialog();
+
+    const text = document.body.textContent ?? '';
+    expect(text).toContain('Голос TeraTTSv2');
+    expect(text).not.toContain('Голос Silero');
   });
 
   it('shows the stored tray setting when the save is rejected', async () => {

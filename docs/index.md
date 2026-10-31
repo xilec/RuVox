@@ -53,7 +53,7 @@ Skipping such fragments drops information, so the pipeline imitates a competent 
 
 Current behavior is specified in [openspec/specs/](../openspec/specs/) — the single source of truth:
 
-- **Backend:** `text-pipeline`, `position-mapping`, `text-import`, `storage`, `ipc-commands`, `ttsd-protocol`, `silero-native-engine`, `teratts-engine`, `logging`
+- **Backend:** `text-pipeline`, `position-mapping`, `text-import`, `storage`, `ipc-commands`, `ttsd-protocol`, `silero-native-engine`, `teratts-engine`, `model-bundles`, `logging`
 - **Frontend / UX:** `ui`, `preview-dialog`, `queue-lifecycle`, `playback`, `text-display`, `word-highlight`, `tray`, `html-ingestion`, `viewer-copy-actions`, `auto-update`
 - **Packaging / runtime:** `windows-installer`, `linux-runtime`, `windows-runtime`
 
@@ -61,6 +61,7 @@ Current behavior is specified in [openspec/specs/](../openspec/specs/) — the s
 
 - [Development](development.md) — environment, commands, debugging.
 - [Contributing](contributing.md) — how to add a term to the dictionary, commit and style rules.
+- [Model bundles](model-bundles.md) — channel files, release procedure, and local update testing.
 
 ## License
 

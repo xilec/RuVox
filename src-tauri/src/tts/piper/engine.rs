@@ -209,6 +209,9 @@ impl TtsEngine for PiperEngine {
         super::catalog::lookup(voice).map(|v| ModelInfo {
             name: v.model_filename(),
             sha256: None,
+            bundle_version: None,
+            model_id: Some(v.id.to_string()),
+            upstream_revision: None,
         })
     }
 

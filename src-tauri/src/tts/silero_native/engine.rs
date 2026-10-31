@@ -155,9 +155,13 @@ impl SileroNativeEngine {
             .iter()
             .find(|f| f.path == silero_native::bundle::TTS_MAIN)
             .map(|f| f.sha256.clone());
+        let install = crate::tts::model_lifecycle::read_install_record(bundle_dir);
         Some(ModelInfo {
-            name: manifest.model_id,
+            name: manifest.model_id.clone(),
             sha256,
+            bundle_version: install.map(|r| r.bundle_version),
+            model_id: Some(manifest.model_id),
+            upstream_revision: None,
         })
     }
 }

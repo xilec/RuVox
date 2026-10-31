@@ -101,6 +101,12 @@ pub struct ModelParams {
     pub name: String,
     #[serde(default)]
     pub sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bundle_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upstream_revision: Option<String>,
 }
 
 /// Per-entry snapshot of the synthesis parameters, written when audio is
@@ -488,6 +494,9 @@ mod tests {
             model: Some(ModelParams {
                 name: "silero_v5_ru".to_string(),
                 sha256: Some("ab12".repeat(32)),
+                bundle_version: None,
+                model_id: None,
+                upstream_revision: None,
             }),
             app_version: "0.4.0".to_string(),
             code_block_mode: Some("read".to_string()),

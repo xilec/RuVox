@@ -149,6 +149,9 @@ impl TeraTtsEngine {
         Some(ModelInfo {
             name: format!("{} bundle v{}", manifest.model_id, manifest.bundle_version),
             sha256,
+            bundle_version: Some(manifest.bundle_version.to_string()),
+            model_id: Some(manifest.model_id),
+            upstream_revision: Some(manifest.upstream_revision),
         })
     }
 

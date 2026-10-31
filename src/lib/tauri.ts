@@ -51,6 +51,9 @@ export interface TextEntry {
 export interface ModelParams {
   name: string;
   sha256: string | null;
+  bundle_version?: string | null;
+  model_id?: string | null;
+  upstream_revision?: string | null;
 }
 
 export interface GenerationParams {
@@ -92,6 +95,34 @@ interface EngineAvailability {
   /** Coded explanation rendered through the localization layer when
    *  `available` is `false`. Null when the engine is available. */
   reason: LocalizedText | null;
+}
+
+export type ModelAssetId = 'silero_native' | 'teratts' | `piper:${string}`;
+
+export interface ModelAssetStatus {
+  id: ModelAssetId;
+  kind: 'bundle' | 'voice';
+  installed: boolean;
+  active: boolean;
+  installed_version: string | null;
+  model_id: string | null;
+  upstream_revision: string | null;
+  /** Voice ids shipped inside the bundle (Silero/TeraTTS); empty for voices. */
+  bundled_voices?: string[];
+  installed_bytes: number;
+  latest_version: string | null;
+  latest_bytes: number | null;
+  update_available: boolean;
+  skipped: boolean;
+  deletable: boolean;
+  error: string | null;
+}
+
+export interface ModelStatus {
+  assets: ModelAssetStatus[];
+  total_bytes: number;
+  channel_error: string | null;
+  checked_at: string | null;
 }
 
 export interface AvailableEngines {
@@ -363,6 +394,18 @@ export const commands = {
   downloadTerattsBundle: (): Promise<void> =>
     tauriInvoke('download_teratts_bundle'),
 
+  getModelStatus: (force = false): Promise<ModelStatus> =>
+    tauriInvoke('get_model_status', { force }),
+
+  installModelAsset: (asset: ModelAssetId): Promise<void> =>
+    tauriInvoke('install_model_asset', { asset }),
+
+  deleteModelAsset: (asset: ModelAssetId): Promise<number> =>
+    tauriInvoke('delete_model_asset', { asset }),
+
+  skipModelUpdate: (asset: ModelAssetId, version: string): Promise<void> =>
+    tauriInvoke('skip_model_update', { asset, version }),
+
   getTimestamps: (id: EntryId): Promise<WordTimestamp[]> =>
     tauriInvoke('get_timestamps', { id }),
 
@@ -452,10 +495,10 @@ export interface VoiceDownloadFinishedPayload {
 }
 
 export interface BundleDownloadStartedPayload {
-  engine: 'silero_native' | 'teratts';
+  engine: string;
 }
 export interface BundleDownloadProgressPayload {
-  engine: 'silero_native' | 'teratts';
+  engine: string;
   /** Bundle-relative file path from the manifest. */
   file: string;
   file_idx: number;
@@ -467,7 +510,7 @@ export interface BundleDownloadProgressPayload {
   skipped?: boolean;
 }
 export interface BundleDownloadFinishedPayload {
-  engine: 'silero_native' | 'teratts';
+  engine: string;
   ok: boolean;
   /** Russian-language failure message, present when ok=false. */
   message?: string;

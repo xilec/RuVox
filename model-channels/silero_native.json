@@ -1,0 +1,9 @@
+{
+  "format_version": 1,
+  "asset": "silero_native",
+  "bundle_version": "v5_ru",
+  "manifest_url": "https://github.com/xilec/RuVox/releases/download/silero-models-v5_ru/manifest.json",
+  "manifest_sha256": "6343afbc7b4eac2fc00748de103d3a26e779b15da31b3631f7d777b494137d1f",
+  "size_bytes": 234989985,
+  "published_at": "2026-10-30T00:00:00Z"
+}
