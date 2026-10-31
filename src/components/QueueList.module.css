@@ -36,6 +36,14 @@
   color: var(--mantine-color-dimmed);
 }
 
+/* Mantine's 14px line box on the 9px uppercase label leaves the Cyrillic
+   capitals about 1px below the optical centre of the 16px pill. Shift the
+   label, not the pill, so the dot/loader and the capsule stay aligned. */
+.statusBadgeLabel {
+  display: inline-block;
+  transform: translateY(-1px);
+}
+
 .actions {
   opacity: 0;
   transition: opacity 80ms ease;
