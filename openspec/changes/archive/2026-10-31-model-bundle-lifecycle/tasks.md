@@ -27,5 +27,5 @@
 - [x] 4.2 Maintainer release procedure in `docs/`.
 - [x] 4.3 `cargo fmt`, `cargo clippy`, `cargo test`, `just test`, `just lint`,
   `openspec validate --all --strict`.
-- [ ] 4.4 Manual UI pass: install, update with a local channel, skip, delete,
+- [x] 4.4 Manual UI pass: install, update with a local channel, skip, delete,
   offline behavior.
