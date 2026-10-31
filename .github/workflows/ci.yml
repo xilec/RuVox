@@ -64,6 +64,19 @@ jobs:
               - '.github/workflows/ci.yml'
               - '.github/workflows/release.yml'
               - 'scripts/fetch-windows-resources.sh'
+              # Test data is not a build input: the guard compiles the bins
+              # (`cargo build --bins`), it never compiles tests, and the
+              # golden pipeline fixtures are the most frequently edited
+              # non-code paths in the tree — without these negations a
+              # fixture-only PR pays the whole MSVC guard for nothing. The
+              # tests themselves stay covered by the rust job. Cargo
+              # manifests, tauri configs, icons and bundle resources are
+              # deliberately NOT excluded: the MSVC compile reads them.
+              - '!**/tests/**'
+              - '!**/docs/**'
+              - '!**/export/**'
+              - '!**/README.md'
+              - '!**/NOTICE'
             nonnix:
               - 'src-tauri/**'
               - 'silero-native/**'
@@ -80,37 +93,60 @@ jobs:
   # Compile-only guard for the Windows port: catches cfg/platform breakage
   # on the real MSVC toolchain without bundling (no resource downloads, no
   # NSIS). The full installer path lives in release.yml.
+  #
+  # Rust only on purpose: the frontend half of `tauri build` (tsc + vite) is
+  # already covered by the typescript job (typecheck) and by nonnix-build
+  # (the same `pnpm tauri build --no-bundle` on Ubuntu, same path filter), so
+  # this job compiles the crate against a stub frontendDist instead of a
+  # built frontend — no Node/pnpm setup, ~1 min off the critical path.
   windows-build:
     name: Windows build (no bundle)
     needs: changes
     if: needs.changes.outputs.windows == 'true'
     runs-on: windows-latest
-    # Warm cache ~6-9 min; cold MSVC rebuild of all deps ~15 min.
+    # Warm cache ~2-3 min; cold MSVC rebuild of all deps ~15 min.
     timeout-minutes: 20
     env:
       # cmake 4.x on the runner image errors out on the vendored opus'
       # ancient cmake_minimum_required — pin the compat floor (design D5
       # of windows-installer-and-release).
       CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+      # This job only proves the crate still compiles and links on MSVC, it
+      # does not ship the binary — so it drops the release profile's fat LTO
+      # and single codegen unit (src-tauri/Cargo.toml [profile.release]).
+      # Those dominated the job: with dependencies served from the cache the
+      # ~4m of the build was ruvox-tauri's own codegen plus the cross-crate
+      # LTO link, on a 4-vCPU runner where codegen-units = 1 leaves three
+      # cores idle. The shipping profile stays covered by release.yml's
+      # windows-installer job, which builds the real artifact on tags.
+      CARGO_PROFILE_RELEASE_LTO: "false"
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
     steps:
       - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 10
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 20
-          cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: "src-tauri\nsilero-native\ntts-contract\nteratts"
-          # Shared with the release.yml windows-installer job: without this the
-          # cache key includes the job id, so the release rebuilt all ~600 deps
-          # from scratch on every run (~8.5 min lost).
-          shared-key: win-msvc
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm tauri build --no-bundle
+          # Deliberately NOT the release.yml job's `win-msvc` key: the profile
+          # overrides above change the fingerprint of every dependency, so
+          # sharing one cache would make the two jobs evict each other's
+          # artifacts. The first run with this key repopulates it once; later
+          # runs are warm. Keep `shared-key` (not the job id) so the key stays
+          # stable across workflow renames and unrelated edits.
+          shared-key: win-msvc-ci
+      # tauri-codegen embeds `frontendDist` at compile time and fails when the
+      # path is missing; the stub is never executed, it only satisfies the
+      # path check. Keep the content constant so the rerun-if-changed
+      # fingerprint of the app crate does not churn between runs.
+      - name: Stub frontendDist
+        shell: bash
+        run: |
+          mkdir -p dist
+          printf '<!doctype html><title>ci</title>\n' > dist/index.html
+      # Mirrors what the Tauri CLI runs for a production build without a
+      # bundle (`cargo build --bins --features tauri/custom-protocol`), the
+      # same invocation release.yml uses for its warm-up pass.
+      - run: cargo build --release --bins --features tauri/custom-protocol --manifest-path src-tauri/Cargo.toml
 
 
   # End-to-end guard for docs/install.md (the non-Nix build path, #230):
