@@ -241,9 +241,11 @@ fn find_identifier_ranges(text: &str) -> Vec<(usize, usize)> {
         .map(|m| (m.start(), m.end()))
         .collect();
     ranges.sort_unstable();
-    // The camel and Pascal patterns can claim the same token with different
-    // extents (`snakeCase` vs `Case`); merging keeps the list searchable while
-    // the widest match wins, as it already did in the span recording.
+    // The kebab pattern claims a whole token while the camel or Pascal pattern
+    // claims an identifier nested in it (`my-app-getUserData-flag`: both
+    // `(0, 23)` and `(7, 18)`), and a binary search over overlapping ranges
+    // can miss the outer one; the union covers every fragment either pattern
+    // claimed.
     let mut merged: Vec<(usize, usize)> = Vec::with_capacity(ranges.len());
     for (start, end) in ranges {
         match merged.last_mut() {
