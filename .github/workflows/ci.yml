@@ -64,6 +64,19 @@ jobs:
               - '.github/workflows/ci.yml'
               - '.github/workflows/release.yml'
               - 'scripts/fetch-windows-resources.sh'
+              # Test data is not a build input: the guard compiles the bins
+              # (`cargo build --bins`), it never compiles tests, and the
+              # golden pipeline fixtures are the most frequently edited
+              # non-code paths in the tree — without these negations a
+              # fixture-only PR pays the whole MSVC guard for nothing. The
+              # tests themselves stay covered by the rust job. Cargo
+              # manifests, tauri configs, icons and bundle resources are
+              # deliberately NOT excluded: the MSVC compile reads them.
+              - '!**/tests/**'
+              - '!**/docs/**'
+              - '!**/export/**'
+              - '!**/README.md'
+              - '!**/NOTICE'
             nonnix:
               - 'src-tauri/**'
               - 'silero-native/**'
