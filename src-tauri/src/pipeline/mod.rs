@@ -324,6 +324,18 @@ fn re_user_dict_token_cyrillic() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"\b[0-9]*[а-яёА-ЯЁ][0-9а-яёА-ЯЁ]*\b").expect("valid regex"))
 }
 
+fn re_user_dict_hyphenated() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    // One token with an internal hyphen (`UTF-8`, `e-mail`, `по-русски`). This
+    // pattern feeds the whole-token pass that runs before the code-identifier
+    // split, where the kebab pattern would not have claimed the token yet.
+    // Both scripts are in the candidate class on purpose: keys are validated to
+    // one script, so a mixed or digit-only candidate simply never hits.
+    RE.get_or_init(|| {
+        Regex::new(r"\b[0-9A-Za-zА-Яа-яЁё]+(?:-[0-9A-Za-zА-Яа-яЁё]+)+\b").expect("valid regex")
+    })
+}
+
 fn re_number() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     // Match standalone integers: must be at a word boundary and not preceded/followed
@@ -844,6 +856,13 @@ impl TTSPipeline {
             });
         }
 
+        // ── Phase 14.9: Hyphenated dictionary keys ───────────────────────────
+        // A hyphenated key is a whole-token reading, and the phase-15.5
+        // pre-pass only ever sees its parts: resolve it here, ahead of the
+        // identifier split, so it wins over its own parts and the built-in
+        // tables on both the narrating and the native identifier route.
+        self.process_hyphenated_dictionary_tracked(&mut tracked, &mut recorded);
+
         // ── Phase 15: Code identifiers ────────────────────────────────────────
         // A profile that routes identifiers `Native` keeps them verbatim for the
         // engine; the English phase below must not re-read them either, which is
@@ -878,10 +897,11 @@ impl TTSPipeline {
         }
 
         // ── Phase 15.5: User dictionary pre-pass ─────────────────────────────
-        // After code-identifier splitting (entries apply to identifier parts,
-        // never whole identifiers) and before English-word resolution (user
-        // entries win over every built-in table). No-op for an empty
-        // dictionary — output stays byte-identical.
+        // After code-identifier splitting (single-token entries apply to
+        // identifier parts, never whole identifiers; a hyphenated key was
+        // resolved on the whole token in phase 14.9) and before English-word
+        // resolution (user entries win over every built-in table). No-op for an
+        // empty dictionary — output stays byte-identical.
         self.process_user_dictionary_tracked(&mut tracked, &mut recorded);
 
         // ── Phase 16: English words ───────────────────────────────────────────
@@ -1130,6 +1150,27 @@ impl TTSPipeline {
         });
     }
 
+    /// Whole-token user-dictionary pass for hyphenated keys (change
+    /// `add-hyphenated-dictionary-keys`): replace a token that exactly matches
+    /// a key containing a hyphen, case-insensitively, before the code-identifier
+    /// phase splits kebab identifiers into parts.
+    ///
+    /// Only exact whole-token hits are replaced; everything else flows into the
+    /// identifier phase unchanged, so part entries keep working and a
+    /// hyphenated entry never rewrites a fragment of a longer identifier.
+    fn process_hyphenated_dictionary_tracked(
+        &mut self,
+        tracked: &mut TrackedText,
+        recorded: &mut Vec<RecordedSpan>,
+    ) {
+        if !self.user_dictionary.has_hyphenated_keys() {
+            return;
+        }
+        let snapshot = tracked.text().to_string();
+        let matches = self.dictionary_hits(&snapshot, re_user_dict_hyphenated());
+        self.apply_dictionary_matches(tracked, recorded, matches);
+    }
+
     /// User-dictionary pre-pass (change `user-dictionary`): replace tokens
     /// that exactly match an entry key, case-insensitively, with the entry's
     /// spoken form. Only exact hits are replaced — non-hits flow into the
@@ -1157,18 +1198,31 @@ impl TTSPipeline {
         // Two passes produce two sorted runs, not one: the replacement applies
         // in reverse order, so the merged list has to be sorted by start.
         matches.sort_by_key(|(start, _, _)| *start);
-        if !matches.is_empty() {
-            let offsets = byte_to_char_offsets(&snapshot);
-            let ranges: Vec<(usize, usize)> = matches.iter().map(|(s, e, _)| (*s, *e)).collect();
-            record_byte_ranges(
-                tracked,
-                &offsets,
-                SpanKind::DictionaryOverride,
-                None,
-                &ranges,
-                recorded,
-            );
+        self.apply_dictionary_matches(tracked, recorded, matches);
+    }
+
+    /// Record dictionary hits as override spans and replace them in the text.
+    /// Shared by both dictionary passes, so "a hit is an override span plus a
+    /// replacement" has one home.
+    fn apply_dictionary_matches(
+        &self,
+        tracked: &mut TrackedText,
+        recorded: &mut Vec<RecordedSpan>,
+        matches: Vec<(usize, usize, String)>,
+    ) {
+        if matches.is_empty() {
+            return;
         }
+        let offsets = byte_to_char_offsets(tracked.text());
+        let ranges: Vec<(usize, usize)> = matches.iter().map(|(s, e, _)| (*s, *e)).collect();
+        record_byte_ranges(
+            tracked,
+            &offsets,
+            SpanKind::DictionaryOverride,
+            None,
+            &ranges,
+            recorded,
+        );
         tracked.replace_byte_ranges(matches);
     }
 
@@ -2793,5 +2847,153 @@ mod tests {
             None,
             "ё is a different letter, so the entry must not fire on it"
         );
+    }
+
+    // ── Hyphenated dictionary keys (change `add-hyphenated-dictionary-keys`) ─
+
+    fn dictionary_with_hyphenated(entries: &[(&str, &str)]) -> UserDictionary {
+        let mut dict = UserDictionary::default();
+        for (from, to) in entries {
+            dict.insert(DictionaryEntry::new(*from, *to));
+        }
+        dict
+    }
+
+    #[test]
+    fn a_hyphenated_entry_replaces_the_whole_token() {
+        // The code-identifier phase would split "UTF-8" into "UTF" + "8", so
+        // the whole-token pass has to resolve it first.
+        let mut p = TTSPipeline::new();
+        p.set_user_dictionary(dictionary_with_hyphenated(&[("UTF-8", "у тэф восемь")]));
+        let out =
+            p.process_for_engine("Вызови UTF-8 сейчас", &crate::tts::profiles::SILERO_PROFILE);
+        assert_eq!(out.text, "Вызови у тэф восемь сейчас");
+        assert_eq!(out.spans.len(), 1, "spans: {:?}", out.spans);
+        assert_eq!(out.spans[0].kind, SpanKind::DictionaryOverride);
+        assert_eq!(out.spans[0].lang, None);
+        assert_eq!(span_text(&out.text, &out.spans[0]), "у тэф восемь");
+    }
+
+    #[test]
+    fn a_hyphenated_entry_matches_case_insensitively() {
+        let mut p = TTSPipeline::new();
+        p.set_user_dictionary(dictionary_with_hyphenated(&[("UTF-8", "у тэф восемь")]));
+        let upper = p.process_for_engine("UTF-8", &crate::tts::profiles::SILERO_PROFILE);
+        assert_eq!(upper.text, "у тэф восемь");
+        let lower = p.process_for_engine("utf-8", &crate::tts::profiles::SILERO_PROFILE);
+        assert_eq!(lower.text, "у тэф восемь");
+        let mixed = p.process_for_engine("Utf-8", &crate::tts::profiles::SILERO_PROFILE);
+        assert_eq!(mixed.text, "у тэф восемь");
+    }
+
+    #[test]
+    fn a_whole_token_entry_outranks_its_parts() {
+        let mut p = TTSPipeline::new();
+        p.set_user_dictionary(dictionary_with_hyphenated(&[
+            ("e", "и"),
+            ("mail", "мэйл"),
+            ("e-mail", "имейл"),
+        ]));
+        let out = p.process_for_engine("напиши e-mail", &crate::tts::profiles::SILERO_PROFILE);
+        assert_eq!(out.text, "напиши имейл");
+    }
+
+    #[test]
+    fn part_entries_still_apply_without_a_whole_token_entry() {
+        let mut p = TTSPipeline::new();
+        p.set_user_dictionary(dictionary_with_hyphenated(&[("utf", "у тэф")]));
+        let out = p.process_for_engine("UTF-8", &crate::tts::profiles::SILERO_PROFILE);
+        assert_eq!(out.text, "у тэф восемь");
+    }
+
+    #[test]
+    fn a_hyphenated_entry_does_not_rewrite_a_longer_identifier() {
+        // A partial replacement would leave a mixed-script fragment
+        // ("имейл-signature") that no later phase owns.
+        let mut p = TTSPipeline::new();
+        p.set_user_dictionary(dictionary_with_hyphenated(&[("e-mail", "имейл")]));
+        let out = p.process_for_engine("e-mail-signature", &crate::tts::profiles::SILERO_PROFILE);
+        assert!(!out.text.contains("имейл"), "text: {:?}", out.text);
+        assert!(
+            out.spans
+                .iter()
+                .all(|span| span.kind != SpanKind::DictionaryOverride),
+            "spans: {:?}",
+            out.spans
+        );
+    }
+
+    #[test]
+    fn a_hyphenated_entry_applies_under_a_native_identifier_route() {
+        // The native route never runs the kebab normalizer, so the override has
+        // to come from the pass that runs ahead of the identifier phase.
+        let mut p = TTSPipeline::new();
+        p.set_user_dictionary(dictionary_with_hyphenated(&[("e-mail", "имейл")]));
+        let out = p.process_for_engine("напиши e-mail и getUserData", native_profile());
+        assert_eq!(out.text, "напиши имейл и getUserData");
+        let spans: Vec<(SpanKind, String)> = out
+            .spans
+            .iter()
+            .map(|span| (span.kind, span_text(&out.text, span)))
+            .collect();
+        assert_eq!(
+            spans,
+            vec![
+                (SpanKind::DictionaryOverride, "имейл".to_string()),
+                (SpanKind::CodeIdentifier, "getUserData".to_string()),
+            ],
+            "the override claims its token, the rest of the identifiers stay native"
+        );
+        assert_eq!(out.spans[1].lang, Some("en"));
+    }
+
+    #[test]
+    fn a_hyphenated_cyrillic_entry_replaces_the_whole_word() {
+        let mut p = TTSPipeline::new();
+        p.set_user_dictionary(dictionary_with_hyphenated(&[("по-русски", "по русски")]));
+        let out = p.process_for_engine(
+            "говори по-русски",
+            &crate::tts::profiles::SILERO_NATIVE_PROFILE,
+        );
+        assert_eq!(out.text, "говори по русски");
+        assert_eq!(out.spans.len(), 1, "spans: {:?}", out.spans);
+        assert_eq!(span_text(&out.text, &out.spans[0]), "по русски");
+    }
+
+    #[test]
+    fn inline_code_resolves_a_hyphenated_entry_on_the_whole_token() {
+        // Inline code is normalized in phase 5, before any dictionary pass, so
+        // the kebab normalizer has to carry the same whole-token lookup.
+        let mut p = TTSPipeline::new();
+        p.set_user_dictionary(dictionary_with_hyphenated(&[("e-mail", "имейл")]));
+        let out = p.process_for_engine(
+            "поле `e-mail` пустое",
+            &crate::tts::profiles::SILERO_PROFILE,
+        );
+        assert_eq!(out.text, "поле имейл пустое");
+    }
+
+    #[test]
+    fn the_hyphenated_pattern_matches_every_letter_the_validator_accepts() {
+        // The validator and the candidate pattern each spell out the alphabets;
+        // this pins them to one another, so a letter cannot be accepted and
+        // then never matched.
+        for c in ('a'..='z')
+            .chain('A'..='Z')
+            .chain('а'..='я')
+            .chain(['ё', 'Ё'])
+            .chain('А'..='Я')
+        {
+            let word = format!("{c}{c}-{c}{c}");
+            assert!(
+                crate::dictionary::validate_entry(&word, &word).is_ok(),
+                "the validator rejects {c:?}"
+            );
+            assert_eq!(
+                re_user_dict_hyphenated().find(&word).map(|m| m.as_str()),
+                Some(word.as_str()),
+                "the whole-token pass does not match a token built from {c:?}"
+            );
+        }
     }
 }
