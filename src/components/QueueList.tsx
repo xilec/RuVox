@@ -105,6 +105,7 @@ function QueueItem({ entry, isSelected, isPlaying, onSelect, onPlay, onContextMe
             <Badge
               size="xs"
               color={statusBadgeColor(entry.status)}
+              classNames={{ label: classes.statusBadgeLabel }}
               leftSection={isProcessing ? <Loader size={8} color="blue" /> : null}
             >
               {tt(STATUS_KEY[entry.status])}

@@ -49,9 +49,10 @@ _Avoid_: engine-specific block, conditional stage
 
 **Fragment route**:
 The Text Profile's per-fragment-kind decision — `Narrate` or `Native` —
-carried for prose Latin runs and code identifiers today; abbreviations travel
-with the prose route, and URLs/emails and fenced code blocks keep structural
-narration until their own route lands.
+carried for prose Latin runs, code identifiers and fenced code blocks today;
+abbreviations travel with the prose route, and URLs/emails keep structural
+narration until their own route lands. The code-block route applies only in
+the read narration mode.
 `Narrate` is the pipeline rewriting the fragment into Russian (the crutch a
 Russian-only engine needs); `Native` is the fragment surviving as-is for the
 engine to read in its own language.

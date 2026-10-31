@@ -361,10 +361,12 @@ dictionary SHALL win over every built-in table under every profile.
 
 Built-in pronunciation tables SHALL run only for fragments the active profile
 narrates. A fragment routed `Native` SHALL NOT be rewritten by a built-in
-table; the user dictionary SHALL still apply to it. The editor's
-`overridesBuiltin` marker SHALL reflect the profile that actually runs the
-tables for the selected scope, so a table that is gated off is not marked as
-overridden.
+table. The user dictionary SHALL still apply to a native fragment that the
+pipeline renders as text — a Latin prose run or a code identifier — but SHALL
+NOT apply to a fenced code block routed `Native`: the block reaches the engine
+verbatim. The editor's `overridesBuiltin` marker SHALL reflect the profile that
+actually runs the tables for the selected scope, so a table that is gated off
+is not marked as overridden.
 
 #### Scenario: Native route skips built-ins
 
@@ -372,6 +374,13 @@ overridden.
 - WHEN "Kubernetes" is normalized
 - THEN the built-in English table does not rewrite it
 - AND a matching user-dictionary entry still does
+
+#### Scenario: Native code block bypasses the dictionary
+
+- GIVEN a profile that routes fenced code blocks `Native`, the read mode and
+  a global entry `let → лет`
+- WHEN the block `let x = 42;` is normalized
+- THEN the block stays `let x = 42;` and the dictionary does not rewrite it
 
 #### Scenario: Override marker follows the profile
 

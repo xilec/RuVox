@@ -7,6 +7,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 ## [Unreleased]
 
 ### Changed
+- **Code blocks are read natively by TeraTTSv2 and Piper** — with «Читать
+  полностью», a fenced block is handed to those engines as code instead of
+  being spelled out in Russian; «Кратко» still announces the block on every
+  engine, and both Silero engines keep narrating it (#325).
 - **English spelling rules** — the transliteration fallback now understands
   silent `e`, vowel digraphs, soft `c`/`g`, voiced `s`, and the common
   `-tion`/`-sion`/`-ture`/`-cial`/`-tial` endings, so words read closer to
@@ -14,6 +18,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   `package` → «пэкэдж», `feature` → «фиче»); redundant `IT_TERMS` entries were
   removed and the irregular/guard ones kept; listening-verified readings such
   as `method` → «мэтод» and `function` → «фанкшин» are curated (#306).
+
+### Fixed
+- **TeraTTSv2 reads line-wrapped text** — a single line break inside a chunk
+  was dropped by the alphabet gate, gluing the surrounding words and failing
+  synthesis with a word-count error (seen on Markdown list items and
+  hard-wrapped prose); unsupported whitespace now becomes a space (#325).
+- **Markdown blockquote markers are not spoken** — a leading `>` survived
+  normalization and TeraTTS rejected it as stray tag markup; blockquote
+  markers are stripped before synthesis, while an inline comparison stays
+  (#325).
 
 ### Added
 - **Model bundle updates and cleanup** — Settings shows installed versions,

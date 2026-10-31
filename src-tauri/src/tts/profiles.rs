@@ -23,6 +23,7 @@ pub static SILERO_PROFILE: TextProfile = TextProfile {
     route: Route {
         latin_prose: Reading::Narrate,
         identifier: Reading::Narrate,
+        code_block: Reading::Narrate,
     },
     digits: Digits::Expanded,
     units: Units::Expanded,
@@ -47,6 +48,7 @@ pub static SILERO_NATIVE_PROFILE: TextProfile = TextProfile {
     route: Route {
         latin_prose: Reading::Narrate,
         identifier: Reading::Narrate,
+        code_block: Reading::Narrate,
     },
     digits: Digits::Expanded,
     units: Units::Expanded,
@@ -67,11 +69,18 @@ pub static SILERO_NATIVE_PROFILE: TextProfile = TextProfile {
 /// `tts::piper::engine`: VITS activation memory grows quadratically, measured
 /// at ~0.5 GB per 300-codepoint chunk), and the paragraph pause exists because
 /// eSpeak-ng reads a blank line as a plain space.
+///
+/// The #311 probe accepted a raw code block read by the Russian voice, while
+/// transliteration still sounds better for prose, so only the code-block route
+/// is `Native`. That route needs a language to annotate its span with, hence
+/// `en` in the language list; the list means "the engine accepts the
+/// language", not "the pipeline routes every fragment to it".
 pub static PIPER_PROFILE: TextProfile = TextProfile {
-    languages: &["ru"],
+    languages: &["ru", "en"],
     route: Route {
         latin_prose: Reading::Narrate,
         identifier: Reading::Narrate,
+        code_block: Reading::Native,
     },
     digits: Digits::Expanded,
     units: Units::Expanded,
@@ -87,9 +96,9 @@ pub static PIPER_PROFILE: TextProfile = TextProfile {
     markup: Markup::None,
 };
 
-/// TeraTTSv2: Russian and English in one engine. Latin prose and code
-/// identifiers stay for the engine (the `eng_f5` voice reads them natively),
-/// while numbers, units, URLs, emails and fenced code stay with the pipeline's
+/// TeraTTSv2: Russian and English in one engine. Latin prose, code identifiers
+/// and fenced code blocks stay for the engine (the #311 probe accepted all
+/// three), while numbers, units, URLs and emails stay with the pipeline's
 /// Russian narration. The engine owns stress: RUAccent dictionary marks fill the
 /// gaps while an explicit `+` from the user dictionary always wins, which is
 /// [`Stress::Manual`]. The 20-second limit is the model's decoder context;
@@ -101,6 +110,7 @@ pub static TERATTS_PROFILE: TextProfile = TextProfile {
     route: Route {
         latin_prose: Reading::Native,
         identifier: Reading::Native,
+        code_block: Reading::Native,
     },
     digits: Digits::Expanded,
     units: Units::Expanded,
@@ -116,7 +126,8 @@ pub static TERATTS_PROFILE: TextProfile = TextProfile {
     markup: Markup::RuEnTags,
 };
 
-/// A profile for an engine that reads Latin, digits and units natively.
+/// A profile for an engine that reads Latin, digits, units and code blocks
+/// natively.
 ///
 /// Deliberately absent from [`profile_for`]: no engine ships with it. It exists
 /// so tests and the golden harness can exercise every gated path — a profile is
@@ -127,6 +138,7 @@ pub static NATIVE_EN_PROFILE: TextProfile = TextProfile {
     route: Route {
         latin_prose: Reading::Native,
         identifier: Reading::Native,
+        code_block: Reading::Native,
     },
     digits: Digits::Native,
     units: Units::Native,
@@ -233,18 +245,30 @@ mod tests {
     }
 
     #[test]
-    fn only_teratts_routes_latin_natively() {
+    fn routes_follow_the_probe_verdicts() {
+        // #311: TeraTTS reads prose, identifiers and code natively; Piper reads
+        // only code natively; the Silero model family reads none of them.
         for kind in EngineKind::ALL {
             let profile = profile_for(*kind);
-            if *kind == EngineKind::TeraTts {
-                assert_eq!(profile.route.latin_prose, Reading::Native);
-                assert_eq!(profile.route.identifier, Reading::Native);
-                assert!(profile.languages.contains(&"en"));
-            } else {
-                assert!(
-                    !profile.route.any_native(),
-                    "{kind:?} cannot read Latin, so it must not route it Native"
-                );
+            match kind {
+                EngineKind::TeraTts => {
+                    assert_eq!(profile.route.latin_prose, Reading::Native);
+                    assert_eq!(profile.route.identifier, Reading::Native);
+                    assert_eq!(profile.route.code_block, Reading::Native);
+                    assert!(profile.languages.contains(&"en"));
+                }
+                EngineKind::Piper => {
+                    assert_eq!(profile.route.latin_prose, Reading::Narrate);
+                    assert_eq!(profile.route.identifier, Reading::Narrate);
+                    assert_eq!(profile.route.code_block, Reading::Native);
+                    assert!(profile.languages.contains(&"en"));
+                }
+                EngineKind::Silero | EngineKind::SileroNative => {
+                    assert!(
+                        !profile.route.any_native(),
+                        "{kind:?} cannot read Latin or code, so it must not route either Native"
+                    );
+                }
             }
         }
     }

@@ -194,6 +194,11 @@ pub fn prepare(
     for character in normalized.chars() {
         if indexer.supports(character) {
             kept.push(character);
+        } else if character.is_whitespace() {
+            // The alphabet has a space but no line breaks or tabs. Dropping
+            // them would glue the words on both sides into one token and make
+            // the timestamp word count disagree with the source chunk.
+            kept.push(' ');
         } else {
             dropped.push(character);
         }
@@ -405,6 +410,21 @@ mod tests {
         assert!(!prepared.text.contains('—'));
         assert_eq!(prepared.dropped, vec!['—']);
         assert!(prepared.text.contains("молок+о"));
+    }
+
+    #[test]
+    fn unsupported_whitespace_becomes_a_space() {
+        // The test indexer has no `\n`; dropping it would glue the two words.
+        let tmp = tempfile::tempdir().unwrap();
+        let prepared = prepare(
+            "молоко\nпривет",
+            &accentizer(tmp.path()),
+            &indexer(),
+            Language::Ru,
+        )
+        .unwrap();
+        assert_eq!(prepared.text, "<ru>молок+о прив+ет</ru>");
+        assert!(prepared.dropped.is_empty());
     }
 
     #[test]

@@ -165,18 +165,31 @@ of spaces/tabs to a single space before any content phase runs.
 
 The system SHALL process fenced code blocks (` ```lang ... ``` `) before all
 other content phases. A block tagged `mermaid` SHALL be replaced with the
-exact marker string "Тут мермэйд диаграмма" and MUST NOT be read aloud. All
-other fenced blocks SHALL be narrated according to the pipeline's code block
-narration mode, which the application sets from the `code_block_mode` config
+exact marker string "Тут мермэйд диаграмма" and MUST NOT be read aloud, in
+every narration mode and under every profile.
+
+For every other block the pipeline's code block narration mode decides whether
+the block is read at all, and the active profile's code-block route decides
+who reads it. The application sets the mode from the `code_block_mode` config
 value (`"brief"` default, `"read"` optional; the wiring lives in the
 `ipc-commands` capability):
 
 - **Brief** (`"brief"`): the block is replaced with "далее следует пример
   кода на <язык>" (language looked up in `LANGUAGE_NAMES`) or "далее следует
-  блок кода" when no language tag is present.
-- **Full** (`"read"`): block contents are tokenized and read aloud with
-  identifiers, operators, brackets, and integer literals normalized to spoken
-  Russian.
+  блок кода" when no language tag is present. The route is not consulted.
+- **Full, `Narrate`** (`"read"`): block contents are tokenized and read aloud
+  with identifiers, operators, brackets, and integer literals normalized to
+  spoken Russian.
+- **Full, `Native`** (`"read"`): the block's content is handed to the engine
+  as text. Its surrounding whitespace is trimmed and internal whitespace runs
+  are collapsed to one space; the `CharMapping` and word timestamps keep
+  pointing into the original fenced block.
+
+A `Native` block SHALL NOT be rewritten by any narrating phase: the English,
+identifier, operator, symbol, number and user-dictionary phases SHALL NOT see
+it, and a `Native` block SHALL NOT be annotated as native prose or as
+identifiers. Its codepoints map to the whole source fenced block, which is the
+same granularity the full Russian narration already has.
 
 The pipeline's implicit default mode SHALL be Brief, matching the config
 default, so a freshly constructed pipeline never contradicts the product
@@ -206,11 +219,19 @@ mode is owned solely by the setting.
 
 #### Scenario: Code block read in full mode
 
-- GIVEN the pipeline configured in Full mode and the input
-  "```python\nprint('hi')\n```"
+- GIVEN the reference (Silero) profile, the pipeline configured in Full mode
+  and the input "```python\nprint('hi')\n```"
 - WHEN the pipeline processes it
 - THEN the block content is read as "принт открывающая скобка хи
   закрывающая скобка"
+
+#### Scenario: Native code keeps its content and line breaks do not glue words
+
+- GIVEN the TeraTTS profile, the read mode and the input
+  "```python\ndef hello():\n    print('hi')\n```"
+- WHEN the pipeline processes it
+- THEN the output is "def hello(): print('hi')" — one space between the two
+  lines, no Russian reading of any token
 
 #### Scenario: Mode-switch directive
 
@@ -1150,9 +1171,12 @@ registry SHALL declare a profile for every `EngineKind` variant, and the
 definition SHALL live outside the application crate so that an engine crate can
 share it.
 
-Invariant: a profile that routes any Latin fragment `Native` SHALL list at
-least one language other than Russian; declaring native Latin reading without a
-language to read it in is a specification error, not a runtime state.
+Invariant: a profile that routes any fragment kind `Native` SHALL list at
+least one language other than Russian; declaring a native reading without a
+language to read it in is a specification error, not a runtime state. The
+first non-Russian language is also the language a native span carries, so the
+code-block route follows the same requirement as the prose and identifier
+routes.
 
 Invariant: `units: Expanded` SHALL require `digits: Expanded` — a unit reading
 spells its number out ("пятьдесят процентов"), so the pipeline cannot expand a
@@ -1178,6 +1202,8 @@ rather than handled at runtime.
 - GIVEN a profile with `latin_prose: Native` and `languages: ["ru"]`
 - WHEN the profile invariants are checked
 - THEN the check fails
+- AND a profile with only `code_block: Native` and `languages: ["ru"]` fails
+  the same way
 
 #### Scenario: Incoherent profile combinations are rejected
 
@@ -1185,6 +1211,14 @@ rather than handled at runtime.
 - WHEN the profile invariants are checked
 - THEN the check fails, because a unit reading needs the number in words
 - AND a profile with `identifier: Native` and `latin_prose: Narrate` fails too
+
+#### Scenario: Native code without native prose is valid
+
+- GIVEN a profile with `code_block: Native`, `latin_prose: Narrate`,
+  `identifier: Narrate` and a non-Russian language
+- WHEN the profile invariants are checked
+- THEN the profile is accepted, because code reading and prose reading are
+  independent decisions
 
 #### Scenario: Profile is data, not behavior
 
@@ -1199,11 +1233,11 @@ The profile SHALL decide, per fragment kind, who reads the fragment:
 compensation a Russian-only engine needs); `Native` leaves the fragment intact
 and lets the adapter read it in its own language.
 
-This change SHALL route two kinds: a Latin run in prose and a code identifier
-(including identifiers split out of identifiers, per the existing code-identifier
-requirement). Abbreviations, URLs/emails and fenced code blocks SHALL NOT carry
-their own route until evidence for one exists; the route struct SHALL grow one
-field per kind when that evidence arrives.
+The route SHALL cover three kinds: a Latin run in prose, a code identifier
+(including identifiers split out of identifiers, per the existing
+code-identifier requirement), and a fenced code block. Abbreviations and
+URLs/emails SHALL NOT carry their own route until evidence for one exists; the
+route struct SHALL grow one field per kind when that evidence arrives.
 
 The Latin prose block is one unit of compensation for a Russian-only reader:
 transliteration, the built-in term dictionary, abbreviation readings and
@@ -1211,10 +1245,15 @@ single-letter naming SHALL all be gated by the prose route together, because a
 single route cannot honestly claim that an engine reads "Kubernetes" natively
 but needs "API" spelled out in Cyrillic.
 
-URLs, emails and fenced code blocks SHALL keep their structural narration
-regardless of the prose route for this change: their reading is punctuation
-words ("точка", "слэш") and block markers, not a transliteration of a prose
-word. Reading them natively needs a route of their own (#311).
+URLs and emails SHALL keep their structural narration regardless of the prose
+route: their reading is punctuation words ("точка", "слэш"), not a
+transliteration of a prose word. Reading them natively needs a route of their
+own (#311).
+
+The code-block route SHALL apply only in the read narration mode (see the
+fenced code block requirement). In brief mode a `Native` block is still
+announced, because the mode is the user's decision not to read code at all,
+and the route only chooses the reader.
 
 A fragment routed `Native` SHALL be annotated (see the span requirement) and
 SHALL NOT be rewritten by any narrating phase. A fragment routed `Narrate`
@@ -1235,6 +1274,22 @@ something to read.
 - WHEN the pipeline processes "Kubernetes нужен кластер"
 - THEN "Kubernetes" stays Latin and is annotated as a native prose run
 
+#### Scenario: Code block routed Native survives verbatim
+
+- GIVEN a profile with the code-block route set to `Native`, English among its
+  languages, and the read mode
+- WHEN the pipeline processes a text containing
+  "```rust\nlet x = 42;\nif x == 0 { return; }\n```"
+- THEN the output contains "let x = 42; if x == 0 { return; }" — the digit and
+  the operator are not read in Russian — and a code-block span with language
+  `en` covers that text
+
+#### Scenario: Brief mode outranks a Native code route
+
+- GIVEN a profile with the code-block route set to `Native` and the brief mode
+- WHEN the pipeline processes the same text
+- THEN the block is replaced with the announcement and carries no native span
+
 #### Scenario: Narrating profile transliterates as today
 
 - GIVEN the reference (Silero) profile
@@ -1244,8 +1299,8 @@ something to read.
 
 #### Scenario: Unrouted kinds keep their structural narration
 
-- GIVEN a profile that routes prose and identifiers `Native`
-- WHEN the pipeline processes a text containing a URL and a fenced code block
+- GIVEN a profile that routes prose, identifiers and code blocks `Native`
+- WHEN the pipeline processes a text containing a URL and an email
 - THEN those fragments are narrated in Russian exactly as today
 
 #### Scenario: Abbreviations follow the prose route
@@ -1325,15 +1380,16 @@ pipeline phase reads.
 
 The pipeline output SHALL carry, besides the normalized text and its
 `CharMapping`, a list of span annotations. Each span SHALL state its kind (code
-identifier, prose Latin run, dictionary override), its language when the
-fragment is native, and its range (see `position-mapping` for the coordinate
-space and the invariants).
+identifier, prose Latin run, fenced code block, dictionary override), its
+language when the fragment is native, and its range (see `position-mapping`
+for the coordinate space and the invariants).
 
-A Latin fragment SHALL be annotated only when the active profile routes its
-kind `Native`; a narrating profile SHALL produce no native span for it. The
-span's language SHALL be the non-Russian language the profile declares (for
-TeraTTS, `en`). A dictionary-override span SHALL carry no language and SHALL
-stay Russian regardless of the prose route.
+A fragment SHALL be annotated only when the active profile routes its kind
+`Native`; a narrating profile SHALL produce no native span for it. The span's
+language SHALL be the non-Russian language the profile declares (for TeraTTS
+and Piper, `en`). A dictionary-override span SHALL carry no language and SHALL
+stay Russian regardless of the prose route. A native code-block span SHALL
+cover exactly the code text handed to the engine.
 
 Annotations SHALL express decisions, never markup: no span SHALL contain tag
 syntax, and the normalized text SHALL remain the exact synthesis input.
@@ -1358,6 +1414,14 @@ territory, and this change keeps the mapping stable.
 - WHEN the pipeline processes `Kubernetes и getUserData()`
 - THEN `Kubernetes` carries a prose-Latin span with language `en` and
   `getUserData` carries a code-identifier span with language `en`
+
+#### Scenario: Native code-block span
+
+- GIVEN the TeraTTS profile, the read mode and a text containing a fenced
+  code block
+- WHEN the pipeline processes it
+- THEN one code-block span with language `en` covers exactly the code text in
+  the output, and no prose or identifier span overlaps it
 
 #### Scenario: Narrating profile emits no native spans
 

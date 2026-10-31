@@ -219,6 +219,7 @@ mod tests {
             route: Route {
                 latin_prose: Reading::Narrate,
                 identifier: Reading::Narrate,
+                code_block: Reading::Narrate,
             },
             digits: Digits::Expanded,
             units: Units::Expanded,

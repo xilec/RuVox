@@ -131,8 +131,9 @@ Alongside `CharMapping`, the pipeline output SHALL carry span annotations. A
 span SHALL be a triple of kind, optional language code and range, where the
 range is a half-open `[start, end)` in **output** (transformed) coordinates, in
 Unicode codepoints — never bytes and never original-text offsets. The kinds
-SHALL be code identifier, prose Latin run and dictionary override; the language
-SHALL be present for a native span and absent otherwise.
+SHALL be code identifier, prose Latin run, fenced code block and dictionary
+override; the language SHALL be present for a native span and absent
+otherwise.
 
 Span invariants, asserted for every profile:
 
@@ -159,6 +160,15 @@ equals the codepoint count of `transformed`, whatever the profile.
 - WHEN the pipeline returns
 - THEN one span of kind prose-run with language English covers exactly the
   codepoints of "Kubernetes" in the output
+
+#### Scenario: Native code block reports its source range
+
+- GIVEN a profile that routes fenced code blocks `Native`, the read mode and
+  the input "Текст\n\n```rust\nlet x = 42;\n```"
+- WHEN the pipeline returns
+- THEN one span of kind code-block with language English covers exactly the
+  code text in the output, and every codepoint of that range maps through
+  `char_map` into the original fenced block
 
 #### Scenario: Expanded fragment reports a collapsed source
 

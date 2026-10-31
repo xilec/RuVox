@@ -7,6 +7,7 @@ use crate::dictionary::UserDictionary;
 use crate::pipeline::constants::{ARROW_SYMBOLS, GREEK_LETTERS, MATH_SYMBOLS};
 use crate::pipeline::normalizers::code::CodeIdentifierNormalizer;
 use crate::pipeline::tracked_text::TrackedText;
+use tts_contract::Reading;
 
 // ── Language names ─────────────────────────────────────────────────────────
 
@@ -99,6 +100,52 @@ pub static SPECIAL_SYMBOLS: Lazy<HashMap<&'static str, &'static str>> = Lazy::ne
 static RE_FENCED_BLOCK: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(?s)```(\w*)\n(.*?)```").expect("valid regex"));
 
+// ── NativeBlock ────────────────────────────────────────────────────────────
+
+/// A fenced block the engine reads itself.
+///
+/// The phase cannot leave the code in the text — the narrating phases that run
+/// after it would rewrite the block — and it cannot restore the code through
+/// `TrackedText` either, because a replacement nested inside an existing
+/// replacement is rejected. The code therefore waits here behind a placeholder
+/// until the finished `CharMapping` splices it in.
+#[derive(Debug)]
+pub struct NativeBlock {
+    /// Private-use stand-in that survives every narrating phase.
+    pub placeholder: String,
+    /// The code text to substitute, with its whitespace collapsed.
+    pub text: String,
+}
+
+/// A private-use placeholder for the block at `index`.
+///
+/// No normalizer regex matches private-use codepoints and they cannot occur in
+/// text the pipeline emits, so every narrating phase steps over the stand-in.
+/// Two codepoints keep the value unique until a document has millions of
+/// blocks, far past anything a narration is built from.
+fn placeholder_for(index: usize) -> String {
+    /// First codepoint of the Unicode private-use area (U+E000..=U+F8FF).
+    const FIRST: u32 = 0xE000;
+    const COUNT: usize = 0x1900;
+
+    fn private_use(offset: usize) -> char {
+        char::from_u32(FIRST + offset as u32).expect("the private-use range is valid")
+    }
+
+    let high = (index / COUNT) % COUNT;
+    let low = index % COUNT;
+    format!("{}{}", private_use(high), private_use(low))
+}
+
+/// The code text as the engine should read it.
+///
+/// Line layout is not readable content, and TeraTTS drops `\n` from its model
+/// alphabet, which would glue the last word of one line to the first of the
+/// next; a single space keeps the words apart for both engines.
+fn collapse_code_whitespace(code: &str) -> String {
+    code.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 // ── CodeBlockMode ──────────────────────────────────────────────────────────
 
 /// Controls how fenced code blocks are rendered into speakable text.
@@ -187,14 +234,23 @@ impl CodeBlockHandler {
     }
 
     /// In-place replacement of all fenced code blocks in `tracked`, each
-    /// under the handler's mode (owned by the `code_block_mode` config).
+    /// under the handler's mode (owned by the `code_block_mode` config) and
+    /// the profile's code-block route.
+    ///
+    /// Returns the blocks the engine reads itself. In the read mode a
+    /// [`Reading::Native`] block is not rendered: its content is replaced by a
+    /// private-use placeholder and returned for the pipeline to splice into
+    /// the final mapping after every narrating phase has run.
     pub fn process(
         &self,
         tracked: &mut TrackedText,
         user_dict: &UserDictionary,
         mark_stress: bool,
-    ) {
+        route: Reading,
+    ) -> Vec<NativeBlock> {
         let snapshot = tracked.text().to_string();
+        let mut native_blocks: Vec<NativeBlock> = Vec::new();
+        let mut next_placeholder = 0usize;
         let blocks: Vec<(usize, usize, String)> = RE_FENCED_BLOCK
             .captures_iter(&snapshot)
             .map(|caps| {
@@ -207,9 +263,32 @@ impl CodeBlockHandler {
                 };
                 let code = caps.get(2).map(|c| c.as_str()).unwrap_or("").trim();
 
-                // Mermaid diagrams are never read aloud.
+                // Mermaid diagrams are never read aloud, whatever the mode and
+                // route say.
                 let replacement = if language.is_some_and(|l| l.eq_ignore_ascii_case("mermaid")) {
                     "Тут мермэйд диаграмма".to_string()
+                } else if self.mode == CodeBlockMode::Full && route == Reading::Native {
+                    let text = collapse_code_whitespace(code);
+                    if text.is_empty() {
+                        String::new()
+                    } else {
+                        // A block may be replaced by the code and the speaker
+                        // may have pasted private-use glyphs; skip any stand-in
+                        // the input already contains so the search in the
+                        // mapping stays unambiguous.
+                        let placeholder = loop {
+                            let candidate = placeholder_for(next_placeholder);
+                            next_placeholder += 1;
+                            if !snapshot.contains(&candidate) {
+                                break candidate;
+                            }
+                        };
+                        native_blocks.push(NativeBlock {
+                            placeholder: placeholder.clone(),
+                            text,
+                        });
+                        placeholder
+                    }
                 } else {
                     self.process_block_with_mode(self.mode, code, language, user_dict, mark_stress)
                 };
@@ -219,6 +298,7 @@ impl CodeBlockHandler {
             .collect();
 
         tracked.replace_byte_ranges(blocks);
+        native_blocks
     }
 
     // ── Private helpers ────────────────────────────────────────────────
@@ -560,7 +640,7 @@ mod tests {
         let text = "<!-- ruvox-code: brief -->\n```python\nprint('hi')\n```";
         let mut tracked = TrackedText::new(text);
         let h = CodeBlockHandler::with_mode(CodeBlockMode::Full);
-        h.process(&mut tracked, &no_dict(), false);
+        h.process(&mut tracked, &no_dict(), false, Reading::Narrate);
         let result = tracked.text();
         // Full mode keeps reading the code; the comment survives as text for
         // the symbol phases (no directive interpretation, no removal).
@@ -594,7 +674,7 @@ mod tests {
         let text = "Смотри:\n```python\nprint('hi')\n```\nКонец.";
         let mut tracked = TrackedText::new(text);
         let h = CodeBlockHandler::with_mode(CodeBlockMode::Brief);
-        h.process(&mut tracked, &no_dict(), false);
+        h.process(&mut tracked, &no_dict(), false, Reading::Narrate);
         let result = tracked.text();
         // Exact form also proves the backticks are gone (no "```" substring).
         assert_eq!(
@@ -608,7 +688,7 @@ mod tests {
         let text = "Диаграмма:\n```mermaid\ngraph TD\nA-->B\n```\nКонец.";
         let mut tracked = TrackedText::new(text);
         let h = CodeBlockHandler::with_mode(CodeBlockMode::Brief);
-        h.process(&mut tracked, &no_dict(), false);
+        h.process(&mut tracked, &no_dict(), false, Reading::Narrate);
         let result = tracked.text();
         assert_eq!(result, "Диаграмма:\nТут мермэйд диаграмма\nКонец.");
     }
@@ -620,8 +700,85 @@ mod tests {
         let text = "```python\nprint('world')\n```\n```python\nprint('world')\n```";
         let mut tracked = TrackedText::new(text);
         let h = CodeBlockHandler::with_mode(CodeBlockMode::Full);
-        h.process(&mut tracked, &no_dict(), false);
+        h.process(&mut tracked, &no_dict(), false, Reading::Narrate);
         let reading = "принт открывающая скобка ворлд закрывающая скобка";
         assert_eq!(tracked.text(), format!("{reading}\n{reading}"));
+    }
+
+    // ── Native route ────────────────────────────────────────────────────
+
+    #[test]
+    fn process_native_route_returns_code_and_leaves_a_placeholder() {
+        let text = "Код:\n```rust\nlet x = 42;\nif x == 0 { return; }\n```\nКонец.";
+        let mut tracked = TrackedText::new(text);
+        let native = full_handler().process(&mut tracked, &no_dict(), false, Reading::Native);
+
+        assert_eq!(native.len(), 1);
+        assert_eq!(native[0].text, "let x = 42; if x == 0 { return; }");
+        let result = tracked.text();
+        assert!(
+            result.contains(&native[0].placeholder),
+            "the code must leave the phase behind its placeholder"
+        );
+        assert!(!result.contains("```"));
+        assert!(!result.contains("равно"));
+    }
+
+    #[test]
+    fn process_native_route_keeps_brief_mode_authoritative() {
+        let mut tracked = TrackedText::new("```python\nprint('hi')\n```");
+        let native = brief_handler().process(&mut tracked, &no_dict(), false, Reading::Native);
+
+        assert!(native.is_empty());
+        assert_eq!(tracked.text(), "далее следует пример кода на пайтон");
+    }
+
+    #[test]
+    fn process_native_route_keeps_the_mermaid_marker() {
+        let mut tracked = TrackedText::new("```mermaid\ngraph TD\nA-->B\n```");
+        let native = full_handler().process(&mut tracked, &no_dict(), false, Reading::Native);
+
+        assert!(native.is_empty());
+        assert_eq!(tracked.text(), "Тут мермэйд диаграмма");
+    }
+
+    #[test]
+    fn process_native_route_gives_each_block_its_own_placeholder() {
+        let text = "```rust\nlet a = 1;\n```\n```rust\nlet b = 2;\n```";
+        let mut tracked = TrackedText::new(text);
+        let native = full_handler().process(&mut tracked, &no_dict(), false, Reading::Native);
+
+        assert_eq!(native.len(), 2);
+        assert_ne!(native[0].placeholder, native[1].placeholder);
+        assert_eq!(native[0].text, "let a = 1;");
+        assert_eq!(native[1].text, "let b = 2;");
+    }
+
+    #[test]
+    fn process_native_route_drops_an_empty_block() {
+        let mut tracked = TrackedText::new("До\n```python\n\n```\nПосле");
+        let native = full_handler().process(&mut tracked, &no_dict(), false, Reading::Native);
+
+        assert!(native.is_empty());
+        assert_eq!(tracked.text(), "До\n\nПосле");
+    }
+
+    #[test]
+    fn process_native_route_skips_a_placeholder_already_in_the_text() {
+        // A pasted private-use pair must not be mistaken for the stand-in: the
+        // mapping search treats every occurrence as the placeholder.
+        let pasted = "\u{e000}\u{e000}";
+        let text = format!("{pasted}\n```rust\nlet a = 1;\n```");
+        let mut tracked = TrackedText::new(&text);
+        let native = full_handler().process(&mut tracked, &no_dict(), false, Reading::Native);
+
+        assert_eq!(native.len(), 1);
+        assert_ne!(native[0].placeholder, pasted);
+        assert!(
+            tracked.text().starts_with(&format!("{pasted}\n")),
+            "the pasted glyphs stay untouched: {:?}",
+            tracked.text()
+        );
+        assert_eq!(tracked.text().matches(&native[0].placeholder).count(), 1);
     }
 }

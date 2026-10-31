@@ -184,6 +184,13 @@ fn re_heading() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"(?m)^#{1,6}\s+").expect("valid regex"))
 }
 
+fn re_blockquote() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    // One or more nested `>` markers at the start of a line, with their
+    // optional padding. An inline comparison (`a > b`) never matches.
+    RE.get_or_init(|| Regex::new(r"(?m)^(?:[ \t]*>[ \t]?)+").expect("valid regex"))
+}
+
 fn re_md_link_full() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     // Match full [text](url).
@@ -505,9 +512,28 @@ impl TTSPipeline {
         }
 
         // ── Phase 1: Code blocks (must run before space/dash normalization) ───
+        // A block the profile routes Native leaves a placeholder here; the
+        // code itself is restored only after every narrating phase has run.
         let user_dict = &self.user_dictionary;
-        self.code_block_handler
-            .process(&mut tracked, user_dict, self.mark_stress);
+        let native_code = self.code_block_handler.process(
+            &mut tracked,
+            user_dict,
+            self.mark_stress,
+            profile.route.code_block,
+        );
+        for block in &native_code {
+            record_native(
+                &mut tracked,
+                SpanKind::CodeBlock,
+                native_lang,
+                |text| {
+                    text.match_indices(&block.placeholder)
+                        .map(|(start, matched)| (start, start + matched.len()))
+                        .collect()
+                },
+                &mut recorded,
+            );
+        }
 
         // ── Phase 2: Quote normalization ─────────────────────────────────────
         tracked.replace("\u{ab}", "\""); // «
@@ -861,7 +887,17 @@ impl TTSPipeline {
         tracked.sub(re_space_after_newline(), |_| "\n".to_string());
         tracked.sub(re_space_before_newline(), |_| "\n".to_string());
 
-        let mapping = tracked.build_mapping();
+        let mut mapping = tracked.build_mapping();
+        // The narrating phases are done, so the blocks the engine reads are
+        // put back into the text; their mapping keeps the source block range.
+        for block in native_code {
+            let restored = mapping.substitute(&block.placeholder, &block.text);
+            debug_assert!(
+                restored,
+                "native code block {:?} was lost before the mapping was built",
+                block
+            );
+        }
         let result = mapping.transformed.trim().to_string();
 
         if result != mapping.transformed {
@@ -970,6 +1006,9 @@ impl TTSPipeline {
 
     fn process_markdown_tracked(&self, tracked: &mut TrackedText, expand_digits: bool) {
         tracked.sub(re_heading(), |_| String::new());
+        // Blockquote markers are structure, not speech; leaving them in the
+        // text also trips the TeraTTS tag validation on a leading `>`.
+        tracked.sub(re_blockquote(), |_| String::new());
 
         // Markdown links: [text](url) → text (link text preserved for further normalization).
         //
@@ -1000,8 +1039,20 @@ impl TTSPipeline {
             for (bracket_start, bracket_end, suffix_start, suffix_end) in link_ranges {
                 // Remove "](url)" first (higher byte offset, so reverse order is correct).
                 tracked.replace_byte_range(suffix_start, suffix_end, "");
-                // Remove the leading "[" (lower byte offset, now safely independent).
-                tracked.replace_byte_range(bracket_start, bracket_end, "");
+                // A glued link brackets a word boundary (`CVE.[12]`); removing
+                // the bracket without a separator would merge the link text
+                // with the preceding token and hide the number from the
+                // numbers phase. A space before the link text keeps the words
+                // apart without disturbing links already preceded by one.
+                let needs_separator = !snapshot[..bracket_start]
+                    .chars()
+                    .next_back()
+                    .is_some_and(char::is_whitespace);
+                tracked.replace_byte_range(
+                    bracket_start,
+                    bracket_end,
+                    if needs_separator { " " } else { "" },
+                );
             }
         }
 
@@ -1906,6 +1957,28 @@ mod tests {
     }
 
     #[test]
+    fn a_glued_link_keeps_its_number_readable() {
+        let mut p = TTSPipeline::new();
+        let out = p.process_for_engine(
+            "CVE.[12](#fn:12)\n\nТекст",
+            &crate::tts::profiles::TERATTS_PROFILE,
+        );
+        assert_eq!(out.text, "CVE. двенадцать\n\nТекст");
+    }
+
+    #[test]
+    fn markdown_blockquote_markers_are_not_read() {
+        let mut p = TTSPipeline::new();
+        let out = p.process_for_engine("> цитата\n>> вложенная", native_profile());
+        assert_eq!(out.text, "цитата\nвложенная");
+        let out = p.process_for_engine("сравнение a > b", native_profile());
+        assert_eq!(
+            out.text, "сравнение a > b",
+            "an inline comparison is not a blockquote"
+        );
+    }
+
+    #[test]
     fn user_dictionary_applies_under_a_native_profile() {
         let mut p = TTSPipeline::new();
         let mut dict = UserDictionary::default();
@@ -2066,6 +2139,113 @@ mod tests {
         assert_eq!(kinds, vec![SpanKind::CodeIdentifier, SpanKind::ProseLatin]);
         assert_eq!(span_text(&out.text, &out.spans[0]), "getUserData");
         assert_eq!(span_text(&out.text, &out.spans[1]), "API");
+    }
+
+    #[test]
+    fn native_code_block_is_kept_verbatim_and_annotated() {
+        let mut p = TTSPipeline::new();
+        p.set_code_block_mode(CodeBlockMode::Full);
+        let input = "Пример:\n\n```rust\nlet x = 42;\nif x == 0 { return; }\n```";
+        let out = p.process_for_engine(input, &crate::tts::profiles::TERATTS_PROFILE);
+
+        assert_eq!(out.text, "Пример:\n\nlet x = 42; if x == 0 { return; }");
+        assert!(
+            !out.text
+                .chars()
+                .any(|c| { matches!(c as u32, 0xE000..=0xF8FF) }),
+            "a private-use placeholder leaked into the output"
+        );
+        assert_eq!(out.spans.len(), 1, "spans: {:?}", out.spans);
+        let span = &out.spans[0];
+        assert_eq!(span.kind, SpanKind::CodeBlock);
+        assert_eq!(span.lang, Some("en"));
+        assert_eq!(
+            span_text(&out.text, span),
+            "let x = 42; if x == 0 { return; }"
+        );
+
+        // Every output codepoint of the block maps to the whole source block:
+        // the same collapse the narrated-full path has.
+        let block_start = input[..input.find("```rust").unwrap()].chars().count();
+        let block_end = input.chars().count();
+        for entry in &out.mapping.char_map[span.start..span.end] {
+            assert_eq!(*entry, (block_start, block_end));
+        }
+    }
+
+    #[test]
+    fn brief_mode_wins_over_a_native_code_route() {
+        let mut p = TTSPipeline::new();
+        p.set_code_block_mode(CodeBlockMode::Brief);
+        let out = p.process_for_engine(
+            "```rust\nlet x = 42;\n```",
+            &crate::tts::profiles::TERATTS_PROFILE,
+        );
+
+        assert_eq!(out.text, "далее следует пример кода на раст");
+        assert!(out.spans.is_empty(), "spans: {:?}", out.spans);
+    }
+
+    #[test]
+    fn piper_narrates_prose_but_keeps_code() {
+        let mut p = TTSPipeline::new();
+        p.set_code_block_mode(CodeBlockMode::Full);
+        let out = p.process_for_engine(
+            "Kubernetes:\n```rust\nlet x = 42;\n```",
+            &crate::tts::profiles::PIPER_PROFILE,
+        );
+
+        assert_eq!(out.text, "кубернетис:\nlet x = 42;");
+        assert_eq!(out.spans.len(), 1, "spans: {:?}", out.spans);
+        assert_eq!(out.spans[0].kind, SpanKind::CodeBlock);
+    }
+
+    #[test]
+    fn dictionary_does_not_rewrite_native_code() {
+        let mut p = TTSPipeline::new();
+        p.set_code_block_mode(CodeBlockMode::Full);
+        let mut dict = UserDictionary::default();
+        dict.insert(DictionaryEntry {
+            from: "let".to_string(),
+            to: "лет".to_string(),
+            forms: Vec::new(),
+        });
+        p.set_user_dictionary(dict);
+        let out = p.process_for_engine(
+            "```rust\nlet x = 42;\n```",
+            &crate::tts::profiles::TERATTS_PROFILE,
+        );
+
+        assert_eq!(out.text, "let x = 42;");
+    }
+
+    #[test]
+    fn every_native_block_is_restored_in_place() {
+        let mut p = TTSPipeline::new();
+        p.set_code_block_mode(CodeBlockMode::Full);
+        let out = p.process_for_engine(
+            "```rust\nlet a = 1;\n```\nсередина\n```rust\nlet b = 2;\n```",
+            &crate::tts::profiles::TERATTS_PROFILE,
+        );
+
+        assert_eq!(out.text, "let a = 1;\nсередина\nlet b = 2;");
+        assert_eq!(out.spans.len(), 2, "spans: {:?}", out.spans);
+        assert_eq!(span_text(&out.text, &out.spans[0]), "let a = 1;");
+        assert_eq!(span_text(&out.text, &out.spans[1]), "let b = 2;");
+    }
+
+    #[test]
+    fn pasted_private_use_glyphs_do_not_confuse_the_restore() {
+        let mut p = TTSPipeline::new();
+        p.set_code_block_mode(CodeBlockMode::Full);
+        let out = p.process_for_engine(
+            "\u{e000}\u{e000}\n```rust\nlet a = 1;\n```",
+            &crate::tts::profiles::TERATTS_PROFILE,
+        );
+
+        assert_eq!(out.text, "\u{e000}\u{e000}\nlet a = 1;");
+        assert_eq!(out.spans.len(), 1, "spans: {:?}", out.spans);
+        assert_eq!(span_text(&out.text, &out.spans[0]), "let a = 1;");
     }
 
     #[test]

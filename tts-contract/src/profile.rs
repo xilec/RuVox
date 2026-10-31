@@ -33,12 +33,16 @@ pub struct Route {
     pub latin_prose: Reading,
     /// A code identifier or a part of one, e.g. "getUserData", "snake_case".
     pub identifier: Reading,
+    /// A fenced code block the pipeline would otherwise read out in Russian.
+    pub code_block: Reading,
 }
 
 impl Route {
     /// Whether any routed kind is left to the engine.
     pub fn any_native(&self) -> bool {
-        self.latin_prose == Reading::Native || self.identifier == Reading::Native
+        self.latin_prose == Reading::Native
+            || self.identifier == Reading::Native
+            || self.code_block == Reading::Native
     }
 }
 
@@ -201,8 +205,10 @@ impl TextProfile {
 
     /// Checks the cross-field invariants a profile must satisfy.
     pub fn validate(&self) -> Result<(), ProfileError> {
+        // A `Native` fragment is read, and its span annotated, in one of the
+        // engine's own languages; Russian-only profiles have none to offer.
         if self.route.any_native() && !self.languages.iter().any(|lang| *lang != "ru") {
-            return Err(ProfileError::NativeLatinWithoutLanguage);
+            return Err(ProfileError::NativeWithoutLanguage);
         }
         // A unit reading spells the number out ("пятьдесят процентов"), so the
         // pipeline cannot expand units while the engine reads the number.
@@ -224,7 +230,7 @@ impl TextProfile {
 pub enum ProfileError {
     /// A fragment is routed `Native` while the engine lists no language other
     /// than Russian — there would be no language to read it in.
-    NativeLatinWithoutLanguage,
+    NativeWithoutLanguage,
     /// Units are expanded by the pipeline while digits are left to the engine:
     /// a unit reading needs the number in words.
     ExpandedUnitsWithoutDigits,
@@ -236,8 +242,8 @@ pub enum ProfileError {
 impl fmt::Display for ProfileError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ProfileError::NativeLatinWithoutLanguage => f.write_str(
-                "profile routes Latin fragments Native but lists no language other than Russian",
+            ProfileError::NativeWithoutLanguage => f.write_str(
+                "profile routes fragments Native but lists no language other than Russian",
             ),
             ProfileError::ExpandedUnitsWithoutDigits => f.write_str(
                 "profile expands units while leaving digits Native; a unit reading needs words",
@@ -261,6 +267,7 @@ mod tests {
             route: Route {
                 latin_prose: Reading::Native,
                 identifier: Reading::Native,
+                code_block: Reading::Native,
             },
             digits: Digits::Native,
             units: Units::Native,
@@ -305,10 +312,30 @@ mod tests {
     fn native_route_without_a_non_russian_language_is_rejected() {
         let mut profile = native_profile();
         profile.languages = &["ru"];
-        assert_eq!(
-            profile.validate(),
-            Err(ProfileError::NativeLatinWithoutLanguage)
-        );
+        assert_eq!(profile.validate(), Err(ProfileError::NativeWithoutLanguage));
+    }
+
+    #[test]
+    fn native_code_route_without_a_non_russian_language_is_rejected() {
+        let mut profile = native_profile();
+        profile.languages = &["ru"];
+        profile.route = Route {
+            latin_prose: Reading::Narrate,
+            identifier: Reading::Narrate,
+            code_block: Reading::Native,
+        };
+        assert_eq!(profile.validate(), Err(ProfileError::NativeWithoutLanguage));
+    }
+
+    #[test]
+    fn native_code_with_narrated_prose_is_valid() {
+        let mut profile = native_profile();
+        profile.route = Route {
+            latin_prose: Reading::Narrate,
+            identifier: Reading::Narrate,
+            code_block: Reading::Native,
+        };
+        assert_eq!(profile.validate(), Ok(()));
     }
 
     #[test]
@@ -318,6 +345,7 @@ mod tests {
         profile.route = Route {
             latin_prose: Reading::Narrate,
             identifier: Reading::Narrate,
+            code_block: Reading::Narrate,
         };
         assert_eq!(profile.validate(), Ok(()));
     }
