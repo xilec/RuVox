@@ -68,6 +68,12 @@ NFKD and the codepoint gate.
 - WHEN the adapter prepares it
 - THEN the text still reads "двадцать пять процентов" and contains no digits
 
+#### Scenario: Transliterated Latin is not transliterated again
+
+- GIVEN the pipeline output "эй пи ай"
+- WHEN the adapter prepares it
+- THEN the text is unchanged apart from tags and stress marks
+
 #### Scenario: Native Latin is not transliterated
 
 - GIVEN the pipeline output "Kubernetes" in an English segment

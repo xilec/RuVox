@@ -23,13 +23,19 @@ The code-block routes SHALL apply only in the read narration mode. In brief
 mode every profile replaces the block with the announcement and produces no
 code-block span.
 
-#### Scenario: TeraTTS reads prose, identifiers and code natively
+#### Scenario: TeraTTS reads prose and identifiers natively
+
+- GIVEN the TeraTTS profile
+- WHEN the pipeline processes `Kubernetes и getUserData()`
+- THEN both Latin fragments stay verbatim and carry English spans
+
+#### Scenario: TeraTTS reads a code block natively
 
 - GIVEN the TeraTTS profile and the read mode
-- WHEN the pipeline processes `Kubernetes и getUserData()` and a fenced block
+- WHEN the pipeline processes the fenced block
   `let x = 42; if x == 0 { return; }`
-- THEN the Latin fragments and the code text stay verbatim and carry English
-  spans, and neither the digit nor the operator is read in Russian
+- THEN the code text stays verbatim with an English code-block span, and
+  neither the digit nor the operator is read in Russian
 
 #### Scenario: Piper reads code natively but narrates prose
 

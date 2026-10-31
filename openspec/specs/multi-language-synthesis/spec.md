@@ -40,13 +40,22 @@ the utterance.
 
 The pipeline SHALL route a fragment to the engine only when the active
 engine's text profile marks that fragment kind `Native`. The TeraTTS profile
-SHALL route Latin prose and code identifiers `Native`; every other engine
-profile SHALL keep narrating both. Numbers and units SHALL stay expanded,
-and URLs, emails and fenced code blocks SHALL stay narrated, for every
-profile including TeraTTS.
+SHALL route Latin prose, code identifiers and fenced code blocks `Native`; the
+Piper profile SHALL route fenced code blocks `Native` while narrating prose
+and identifiers; both Silero profiles — and the `ttsd` sidecar that shares
+their model alphabet — SHALL keep narrating all three. Numbers and units SHALL
+stay expanded, and URLs and emails SHALL stay narrated, for every profile
+including TeraTTS.
 
 A `Native` fragment SHALL NOT be rewritten by a narrating phase, and a
-narrated fragment SHALL NOT be handed to the English frontend.
+narrated fragment SHALL NOT be handed to the English frontend. A `Native` code
+block SHALL reach the adapter with its internal whitespace collapsed to single
+spaces and SHALL carry a code-block span with the engine's language, so the
+adapter can select the language frontend without guessing from the text.
+
+The code-block routes SHALL apply only in the read narration mode. In brief
+mode every profile replaces the block with the announcement and produces no
+code-block span.
 
 #### Scenario: TeraTTS reads prose and identifiers natively
 
@@ -54,17 +63,40 @@ narrated fragment SHALL NOT be handed to the English frontend.
 - WHEN the pipeline processes `Kubernetes и getUserData()`
 - THEN both Latin fragments stay verbatim and carry English spans
 
+#### Scenario: TeraTTS reads a code block natively
+
+- GIVEN the TeraTTS profile and the read mode
+- WHEN the pipeline processes the fenced block
+  `let x = 42; if x == 0 { return; }`
+- THEN the code text stays verbatim with an English code-block span, and
+  neither the digit nor the operator is read in Russian
+
+#### Scenario: Piper reads code natively but narrates prose
+
+- GIVEN the Piper profile and the read mode
+- WHEN the pipeline processes the same text
+- THEN the code block stays verbatim with an English code-block span, while
+  `Kubernetes` and `getUserData` are transliterated and carry no English span
+
 #### Scenario: Russian-only engines keep narrating
 
-- GIVEN the Silero, Silero Native or Piper profile
+- GIVEN the Silero or Silero Native profile
 - WHEN the pipeline processes the same text
-- THEN the Latin fragments are transliterated and no English span is produced
+- THEN every Latin fragment and the code block are narrated in Russian and no
+  English span is produced
 
 #### Scenario: Structural fragments stay narrated
 
-- GIVEN the TeraTTS profile
-- WHEN the pipeline processes a URL, an email and a fenced code block
-- THEN all three are narrated in Russian and carry no English span
+- GIVEN the TeraTTS profile and the read mode
+- WHEN the pipeline processes a URL and an email
+- THEN both are narrated in Russian and carry no English span
+
+#### Scenario: Brief mode leaves code to the pipeline
+
+- GIVEN the TeraTTS or the Piper profile and the brief mode
+- WHEN the pipeline processes a fenced code block
+- THEN the block is replaced with the announcement and no code-block span is
+  produced
 
 ### Requirement: Segment synthesis and joining
 
