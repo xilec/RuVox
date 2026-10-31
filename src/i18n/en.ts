@@ -290,6 +290,14 @@ export const en: Record<MessageKey, string> = {
   'settings.code_block.read': 'Read fully',
   'settings.code_block.description':
     '"Brief" replaces a code block with a "here follows a code example in <language>" sentence, "Read fully" speaks the code out',
+  'settings.english_reading.label': 'English text',
+  'settings.english_reading.auto': 'Auto',
+  'settings.english_reading.native': 'Native',
+  'settings.english_reading.narrated': 'In Russian',
+  'settings.english_reading.description':
+    '"Auto" follows the engine, "Native" uses the engine\'s English voice, "In Russian" transliterates into Russian',
+  'settings.english_reading.fallback_hint':
+    'This engine cannot read English natively — the text will be read in Russian. The choice is kept and applies to an engine that can.',
   'settings.notify_on_ready': 'Notify when audio is ready',
   'settings.notify_on_error': 'Notify about synthesis errors',
   'settings.preview_dialog_enabled': 'Show the preview dialog before synthesis',

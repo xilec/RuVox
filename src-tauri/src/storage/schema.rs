@@ -187,6 +187,12 @@ pub struct UIConfig {
     /// and patch (see [`UIConfig::canonical_code_block_mode`]).
     #[serde(default = "UIConfig::default_code_block_mode")]
     pub code_block_mode: String,
+    /// How English prose is read: `"auto"` (default) | `"native"` |
+    /// `"narrated"`. Unknown strings canonicalize to `"auto"` on load and
+    /// patch (see [`UIConfig::canonical_english_reading`]); the value is the
+    /// listener's preference and is never rewritten by an engine switch.
+    #[serde(default = "UIConfig::default_english_reading")]
+    pub english_reading: String,
     #[serde(default = "UIConfig::default_theme")]
     pub theme: String,
     #[serde(default = "UIConfig::default_player_hotkeys")]
@@ -248,6 +254,9 @@ impl UIConfig {
     fn default_code_block_mode() -> String {
         "brief".to_string()
     }
+    fn default_english_reading() -> String {
+        "auto".to_string()
+    }
     fn default_theme() -> String {
         "auto".to_string()
     }
@@ -260,6 +269,15 @@ impl UIConfig {
     /// owns this mapping so config and pipeline cannot drift apart.
     pub fn canonical_code_block_mode(raw: &str) -> String {
         crate::pipeline::normalizers::code_blocks::CodeBlockMode::from_config(raw)
+            .as_config_str()
+            .to_string()
+    }
+
+    /// Canonicalize a raw `english_reading` value: unknown strings resolve to
+    /// the default. The `EnglishReading` enum owns this mapping so config and
+    /// pipeline cannot drift apart.
+    pub fn canonical_english_reading(raw: &str) -> String {
+        crate::pipeline::EnglishReading::from_config(raw)
             .as_config_str()
             .to_string()
     }
@@ -291,6 +309,7 @@ impl Default for UIConfig {
             text_format: Self::default_text_format(),
             max_cache_size_mb: Self::default_max_cache_size_mb(),
             code_block_mode: Self::default_code_block_mode(),
+            english_reading: Self::default_english_reading(),
             theme: Self::default_theme(),
             player_hotkeys: Self::default_player_hotkeys(),
             window_geometry: None,
@@ -316,6 +335,7 @@ pub struct UIConfigPatch {
     pub text_format: Option<String>,
     pub max_cache_size_mb: Option<u32>,
     pub code_block_mode: Option<String>,
+    pub english_reading: Option<String>,
     pub theme: Option<String>,
     pub player_hotkeys: Option<std::collections::HashMap<String, String>>,
     pub window_geometry: Option<Option<[i32; 4]>>,

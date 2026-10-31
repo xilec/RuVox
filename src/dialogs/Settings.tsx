@@ -51,6 +51,7 @@ interface SettingsFormValues {
   hide_to_tray_on_close: boolean;
   max_cache_size_mb: number;
   code_block_mode: string;
+  english_reading: string;
   theme: string;
   language: string;
 }
@@ -69,15 +70,21 @@ const ENGINE_OPTIONS: ReadonlyArray<{ value: EngineKind; key: MessageKey }> = [
 /// (locale-aware, same path as the live probe results).
 function pessimisticAvailability(): AvailabilityMap {
   return {
-    piper: { available: true, reason: null },
-    silero: { available: false, reason: { code: 'settings.availability.probing_python' } },
+    piper: { available: true, reason: null, reads_latin_natively: false },
+    silero: {
+      available: false,
+      reason: { code: 'settings.availability.probing_python' },
+      reads_latin_natively: false,
+    },
     silero_native: {
       available: false,
       reason: { code: 'settings.availability.probing_bundle' },
+      reads_latin_natively: false,
     },
     teratts: {
       available: false,
       reason: { code: 'settings.availability.probing_bundle' },
+      reads_latin_natively: true,
     },
   };
 }
@@ -305,6 +312,7 @@ export function SettingsModal({
     hide_to_tray_on_close: false,
     max_cache_size_mb: 500,
     code_block_mode: 'brief',
+    english_reading: 'auto',
     theme: 'auto',
     language: 'ru',
   };
@@ -349,6 +357,7 @@ export function SettingsModal({
           hide_to_tray_on_close: config.hide_to_tray_on_close,
           max_cache_size_mb: config.max_cache_size_mb,
           code_block_mode: config.code_block_mode,
+          english_reading: config.english_reading,
           theme: config.theme,
           language: config.language,
         };
@@ -484,6 +493,7 @@ export function SettingsModal({
         hide_to_tray_on_close: values.hide_to_tray_on_close,
         max_cache_size_mb: values.max_cache_size_mb,
         code_block_mode: values.code_block_mode,
+        english_reading: values.english_reading,
         theme: values.theme as UIConfigPatch['theme'],
         language: values.language,
       },
@@ -654,6 +664,29 @@ export function SettingsModal({
             <Text size="xs" c="dimmed">
               {tt('settings.code_block.description')}
             </Text>
+          </Stack>
+
+          <Stack gap={4}>
+            <Text size="sm">{tt('settings.english_reading.label')}</Text>
+            <SegmentedControl
+              name="english_reading"
+              value={form.values.english_reading}
+              onChange={(v) => form.setFieldValue('english_reading', v)}
+              data={[
+                { label: tt('settings.english_reading.auto'), value: 'auto' },
+                { label: tt('settings.english_reading.native'), value: 'native' },
+                { label: tt('settings.english_reading.narrated'), value: 'narrated' },
+              ]}
+            />
+            <Text size="xs" c="dimmed">
+              {tt('settings.english_reading.description')}
+            </Text>
+            {form.values.english_reading === 'native' &&
+              !availability[form.values.engine].reads_latin_natively && (
+                <Text size="xs" c="orange.7">
+                  {tt('settings.english_reading.fallback_hint')}
+                </Text>
+              )}
           </Stack>
 
           <Divider />

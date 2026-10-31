@@ -39,11 +39,15 @@ fn span_invariants_hold_for_every_fixture_under_its_profiles() {
         let input = common::read_fixture_text(case, "input.txt");
         let dict = common::read_dict_sidecar(case);
         let mode = common::read_mode_sidecar(case);
+        let english = common::read_english_reading_sidecar(case);
 
         for profile_name in profiles {
             let mut pipeline = TTSPipeline::new();
             if let Some(mode) = mode {
                 pipeline.set_code_block_mode(mode);
+            }
+            if let Some(english) = english {
+                pipeline.set_english_reading(english);
             }
             pipeline.set_user_dictionary(dict.clone());
             let out = pipeline.process_for_engine(&input, common::profile_by_name(profile_name));

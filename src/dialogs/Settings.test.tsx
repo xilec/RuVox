@@ -92,6 +92,7 @@ function makeConfig(overrides: Partial<UIConfig> = {}): UIConfig {
     text_format: 'plain',
     max_cache_size_mb: 500,
     code_block_mode: 'brief',
+    english_reading: 'auto',
     theme: 'auto',
     language: 'ru',
     player_hotkeys: {},
@@ -108,10 +109,10 @@ function makeConfig(overrides: Partial<UIConfig> = {}): UIConfig {
 /** Availability map with TeraTTS selectable, for the voice-selector tests. */
 function terattsAvailable() {
   return {
-    piper: { available: true, reason: null },
-    silero: { available: false, reason: null },
-    silero_native: { available: true, reason: null },
-    teratts: { available: true, reason: null },
+    piper: { available: true, reason: null, reads_latin_natively: false },
+    silero: { available: false, reason: null, reads_latin_natively: false },
+    silero_native: { available: true, reason: null, reads_latin_natively: false },
+    teratts: { available: true, reason: null, reads_latin_natively: true },
   };
 }
 
@@ -124,10 +125,10 @@ describe('SettingsModal code block narration', () => {
     getTerattsVoices.mockResolvedValue([]);
     eventHandlers.bundleDownloadFinished = null;
     getAvailableEngines.mockResolvedValue({
-      piper: { available: true, reason: null },
-      silero: { available: false, reason: null },
-      silero_native: { available: true, reason: null },
-      teratts: { available: false, reason: { code: 'teratts.bundle_missing' } },
+      piper: { available: true, reason: null, reads_latin_natively: false },
+      silero: { available: false, reason: null, reads_latin_natively: false },
+      silero_native: { available: true, reason: null, reads_latin_natively: false },
+      teratts: { available: false, reason: { code: 'teratts.bundle_missing' }, reads_latin_natively: true },
     });
   });
 
@@ -213,6 +214,72 @@ describe('SettingsModal code block narration', () => {
 
     const patch = updateConfig.mock.calls[0][0];
     expect(patch.code_block_mode).toBe('brief');
+  });
+
+  const activeEnglishSegment = () => {
+    for (const value of ['auto', 'native', 'narrated']) {
+      const input = document.querySelector<HTMLInputElement>(
+        `input[name="english_reading"][value="${value}"]`,
+      );
+      const label = input?.parentElement?.querySelector('label');
+      if (label?.hasAttribute('data-active')) return value;
+    }
+    return null;
+  };
+
+  it('renders the saved English reading as the selected segment', async () => {
+    getConfig.mockResolvedValue(makeConfig({ english_reading: 'narrated' }));
+    await renderDialog();
+
+    expect(activeEnglishSegment()).toBe('narrated');
+  });
+
+  it('submits the picked English reading in the config patch', async () => {
+    await renderDialog();
+
+    const segment = document.querySelector<HTMLInputElement>(
+      'input[name="english_reading"][value="native"]',
+    );
+    expect(segment, 'English reading segment rendered').toBeTruthy();
+    await act(async () => {
+      segment!.click();
+      await Promise.resolve();
+    });
+    await clickSave();
+
+    expect(updateConfig.mock.calls[0][0].english_reading).toBe('native');
+  });
+
+  it('keeps the saved English reading in the patch when untouched', async () => {
+    await renderDialog();
+    await clickSave();
+
+    expect(updateConfig.mock.calls[0][0].english_reading).toBe('auto');
+  });
+
+  it('explains the fallback when the engine cannot read English natively', async () => {
+    // The default fixture engine (silero_native) has no native Latin reading.
+    getConfig.mockResolvedValue(makeConfig({ english_reading: 'native' }));
+    await renderDialog();
+
+    expect(document.body.textContent ?? '').toContain(
+      'Этот движок не читает английский нативно',
+    );
+    // The preference is engine-independent: it stays selectable and saved.
+    await clickSave();
+    expect(updateConfig.mock.calls[0][0].english_reading).toBe('native');
+  });
+
+  it('shows no fallback hint for an engine that reads English natively', async () => {
+    getConfig.mockResolvedValue(
+      makeConfig({ engine: 'teratts', english_reading: 'native' }),
+    );
+    getAvailableEngines.mockResolvedValue(terattsAvailable());
+    await renderDialog();
+
+    expect(document.body.textContent ?? '').not.toContain(
+      'Этот движок не читает английский нативно',
+    );
   });
 
   it('submits hide_to_tray_on_close when the toggle is enabled', async () => {

@@ -34,12 +34,16 @@ fn classify_corpus_by_profile() {
         let input = common::read_fixture_text(case, "input.txt");
         let dict = common::read_dict_sidecar(case);
         let mode = common::read_mode_sidecar(case);
+        let english = common::read_english_reading_sidecar(case);
 
         let mut outputs: Vec<ProfileOutput> = Vec::new();
         for (name, profile) in &profiles {
             let mut pipeline = TTSPipeline::new();
             if let Some(mode) = mode {
                 pipeline.set_code_block_mode(mode);
+            }
+            if let Some(english) = english {
+                pipeline.set_english_reading(english);
             }
             pipeline.set_user_dictionary(dict.clone());
             let out = pipeline.process_for_engine(&input, profile);
@@ -96,6 +100,11 @@ fn write_fixture_case() {
     )));
     if let Some(mode) = common::read_mode_sidecar(&format!("{profile_name}/{case_name}")) {
         pipeline.set_code_block_mode(mode);
+    }
+    if let Some(reading) =
+        common::read_english_reading_sidecar(&format!("{profile_name}/{case_name}"))
+    {
+        pipeline.set_english_reading(reading);
     }
     let out = pipeline.process_for_engine(&input, common::profile_by_name(profile_name));
 

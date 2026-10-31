@@ -978,10 +978,10 @@ pub fn run() {
             }
 
             let pipeline = Arc::new(Mutex::new(TTSPipeline::new()));
-            // The pipeline's code block narration mode follows the config:
-            // apply the persisted value right after construction (later
-            // changes arrive via `update_config`).
-            apply_configured_code_block_mode(&pipeline, &config);
+            // The pipeline's text-shaping settings (code block mode, English
+            // reading) follow the config: apply the persisted values right after
+            // construction (later changes arrive via `update_config`).
+            apply_configured_text_settings(&pipeline, &config);
             // The user dictionary file lives next to config.json; storage
             // opening it proves the config root is resolvable.
             let dictionary_store = Arc::new(DictionaryStore::new(

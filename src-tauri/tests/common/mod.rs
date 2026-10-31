@@ -28,6 +28,7 @@ pub fn resolve_test_path(rel: &str) -> PathBuf {
 use std::fs;
 
 use ruvox_tauri_lib::dictionary::{UserDictionary, parse_import, validate_entry_with_forms};
+use ruvox_tauri_lib::pipeline::EnglishReading;
 use ruvox_tauri_lib::pipeline::normalizers::code_blocks::CodeBlockMode;
 
 /// Directory holding the pipeline golden corpus.
@@ -69,6 +70,21 @@ pub fn read_mode_sidecar(case: &str) -> Option<CodeBlockMode> {
         "brief" => Some(CodeBlockMode::Brief),
         "read" => Some(CodeBlockMode::Full),
         other => panic!("invalid mode sidecar {}: {:?}", path.display(), other),
+    }
+}
+
+/// Optional `<case>.english.txt` sidecar pinning the English reading setting.
+///
+/// Unknown values panic instead of falling back to `auto`: a typo would
+/// otherwise silently turn a fixture into a duplicate of the default case.
+pub fn read_english_reading_sidecar(case: &str) -> Option<EnglishReading> {
+    let path = fixtures_dir().join(format!("{case}.english.txt"));
+    let text = fs::read_to_string(&path).ok()?;
+    match text.trim() {
+        "auto" => Some(EnglishReading::Auto),
+        "native" => Some(EnglishReading::Native),
+        "narrated" => Some(EnglishReading::Narrated),
+        other => panic!("invalid english sidecar {}: {:?}", path.display(), other),
     }
 }
 

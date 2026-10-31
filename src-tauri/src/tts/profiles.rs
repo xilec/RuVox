@@ -20,8 +20,8 @@ use tts_contract::{
 /// the dictionary mark is stripped until the probe (#311) says otherwise.
 pub static SILERO_PROFILE: TextProfile = TextProfile {
     languages: &["ru"],
+    reads_latin_natively: false,
     route: Route {
-        latin_prose: Reading::Narrate,
         identifier: Reading::Narrate,
         code_block: Reading::Narrate,
     },
@@ -45,8 +45,8 @@ pub static SILERO_PROFILE: TextProfile = TextProfile {
 /// distinct value so the two can diverge further without touching callers.
 pub static SILERO_NATIVE_PROFILE: TextProfile = TextProfile {
     languages: &["ru"],
+    reads_latin_natively: false,
     route: Route {
-        latin_prose: Reading::Narrate,
         identifier: Reading::Narrate,
         code_block: Reading::Narrate,
     },
@@ -72,13 +72,15 @@ pub static SILERO_NATIVE_PROFILE: TextProfile = TextProfile {
 ///
 /// The #311 probe accepted a raw code block read by the Russian voice, while
 /// transliteration still sounds better for prose, so only the code-block route
-/// is `Native`. That route needs a language to annotate its span with, hence
-/// `en` in the language list; the list means "the engine accepts the
-/// language", not "the pipeline routes every fragment to it".
+/// is `Native` and the profile declares no native Latin reading: requesting
+/// `native` on Piper falls back to narration. The code route needs a language
+/// to annotate its span with, hence `en` in the language list; the list means
+/// "the engine accepts the language", not "the pipeline routes every fragment
+/// to it".
 pub static PIPER_PROFILE: TextProfile = TextProfile {
     languages: &["ru", "en"],
+    reads_latin_natively: false,
     route: Route {
-        latin_prose: Reading::Narrate,
         identifier: Reading::Narrate,
         code_block: Reading::Native,
     },
@@ -96,10 +98,12 @@ pub static PIPER_PROFILE: TextProfile = TextProfile {
     markup: Markup::None,
 };
 
-/// TeraTTSv2: Russian and English in one engine. Latin prose, code identifiers
-/// and fenced code blocks stay for the engine (the #311 probe accepted all
-/// three), while numbers, units, URLs and emails stay with the pipeline's
-/// Russian narration. The engine owns stress: RUAccent dictionary marks fill the
+/// TeraTTSv2: Russian and English in one engine. It declares the native Latin
+/// reading (the #311 probe accepted English prose) and routes code identifiers
+/// and fenced code blocks `Native`, while numbers, units, URLs and emails stay
+/// with the pipeline's Russian narration. The prose route is the user's
+/// choice, resolved against the capability; `auto` keeps the engine's English
+/// reading. The engine owns stress: RUAccent dictionary marks fill the
 /// gaps while an explicit `+` from the user dictionary always wins, which is
 /// [`Stress::Manual`]. The 20-second limit is the model's decoder context;
 /// 250 ms and 200 ms separate paragraphs and chunks. `RuEnTags` is the markup
@@ -107,8 +111,8 @@ pub static PIPER_PROFILE: TextProfile = TextProfile {
 /// tags.
 pub static TERATTS_PROFILE: TextProfile = TextProfile {
     languages: &["ru", "en"],
+    reads_latin_natively: true,
     route: Route {
-        latin_prose: Reading::Native,
         identifier: Reading::Native,
         code_block: Reading::Native,
     },
@@ -135,8 +139,8 @@ pub static TERATTS_PROFILE: TextProfile = TextProfile {
 /// declares [`Stress::Manual`] so the explicit-only stress path is covered.
 pub static NATIVE_EN_PROFILE: TextProfile = TextProfile {
     languages: &["ru", "en"],
+    reads_latin_natively: true,
     route: Route {
-        latin_prose: Reading::Native,
         identifier: Reading::Native,
         code_block: Reading::Native,
     },
@@ -252,18 +256,25 @@ mod tests {
             let profile = profile_for(*kind);
             match kind {
                 EngineKind::TeraTts => {
-                    assert_eq!(profile.route.latin_prose, Reading::Native);
+                    assert!(profile.reads_latin_natively);
                     assert_eq!(profile.route.identifier, Reading::Native);
                     assert_eq!(profile.route.code_block, Reading::Native);
                     assert!(profile.languages.contains(&"en"));
                 }
                 EngineKind::Piper => {
-                    assert_eq!(profile.route.latin_prose, Reading::Narrate);
+                    assert!(
+                        !profile.reads_latin_natively,
+                        "the probe rejected English prose on the Russian voice"
+                    );
                     assert_eq!(profile.route.identifier, Reading::Narrate);
                     assert_eq!(profile.route.code_block, Reading::Native);
                     assert!(profile.languages.contains(&"en"));
                 }
                 EngineKind::Silero | EngineKind::SileroNative => {
+                    assert!(
+                        !profile.reads_latin_natively,
+                        "{kind:?} cannot read English prose"
+                    );
                     assert!(
                         !profile.route.any_native(),
                         "{kind:?} cannot read Latin or code, so it must not route either Native"

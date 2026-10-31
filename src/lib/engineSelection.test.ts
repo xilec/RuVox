@@ -19,38 +19,38 @@ function cfg(engine: 'piper' | 'silero' | 'silero_native' | 'teratts', piper_voi
 }
 
 const BOTH_AVAILABLE: AvailabilityMap = {
-  piper: { available: true, reason: null },
-  silero: { available: true, reason: null },
-  silero_native: { available: false, reason: { code: 'native.bundle_missing' } },
-  teratts: { available: false, reason: { code: 'teratts.bundle_missing' } },
+  piper: { available: true, reason: null, reads_latin_natively: false },
+  silero: { available: true, reason: null, reads_latin_natively: false },
+  silero_native: { available: false, reason: { code: 'native.bundle_missing' }, reads_latin_natively: false },
+  teratts: { available: false, reason: { code: 'teratts.bundle_missing' }, reads_latin_natively: true },
 };
 
 const ALL_AVAILABLE: AvailabilityMap = {
-  piper: { available: true, reason: null },
-  silero: { available: true, reason: null },
-  silero_native: { available: true, reason: null },
-  teratts: { available: true, reason: null },
+  piper: { available: true, reason: null, reads_latin_natively: false },
+  silero: { available: true, reason: null, reads_latin_natively: false },
+  silero_native: { available: true, reason: null, reads_latin_natively: false },
+  teratts: { available: true, reason: null, reads_latin_natively: true },
 };
 
 const ONLY_PIPER: AvailabilityMap = {
-  piper: { available: true, reason: null },
-  silero: { available: false, reason: { code: 'silero.uv_missing' } },
-  silero_native: { available: false, reason: { code: 'native.bundle_missing' } },
-  teratts: { available: false, reason: { code: 'teratts.bundle_missing' } },
+  piper: { available: true, reason: null, reads_latin_natively: false },
+  silero: { available: false, reason: { code: 'silero.uv_missing' }, reads_latin_natively: false },
+  silero_native: { available: false, reason: { code: 'native.bundle_missing' }, reads_latin_natively: false },
+  teratts: { available: false, reason: { code: 'teratts.bundle_missing' }, reads_latin_natively: true },
 };
 
 const ONLY_SILERO: AvailabilityMap = {
-  piper: { available: false, reason: { code: 'test.voice_missing' } },
-  silero: { available: true, reason: null },
-  silero_native: { available: false, reason: { code: 'native.bundle_missing' } },
-  teratts: { available: false, reason: { code: 'teratts.bundle_missing' } },
+  piper: { available: false, reason: { code: 'test.voice_missing' }, reads_latin_natively: false },
+  silero: { available: true, reason: null, reads_latin_natively: false },
+  silero_native: { available: false, reason: { code: 'native.bundle_missing' }, reads_latin_natively: false },
+  teratts: { available: false, reason: { code: 'teratts.bundle_missing' }, reads_latin_natively: true },
 };
 
 const NEITHER: AvailabilityMap = {
-  piper: { available: false, reason: { code: 'test.oops' } },
-  silero: { available: false, reason: { code: 'test.oops' } },
-  silero_native: { available: false, reason: { code: 'test.oops' } },
-  teratts: { available: false, reason: { code: 'test.oops' } },
+  piper: { available: false, reason: { code: 'test.oops' }, reads_latin_natively: false },
+  silero: { available: false, reason: { code: 'test.oops' }, reads_latin_natively: false },
+  silero_native: { available: false, reason: { code: 'test.oops' }, reads_latin_natively: false },
+  teratts: { available: false, reason: { code: 'test.oops' }, reads_latin_natively: true },
 };
 
 describe('computeEngineFormState', () => {

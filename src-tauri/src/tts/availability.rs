@@ -20,6 +20,9 @@ use std::process::Command;
 
 use serde::Serialize;
 
+use crate::tts::EngineKind;
+use crate::tts::profiles;
+
 /// Machine-readable, localizable reason text (same shape subset as
 /// `CommandError`: the frontend translates `code` via its catalogs and falls
 /// back to the raw `message` for unknown codes).
@@ -59,6 +62,24 @@ pub struct EngineAvailability {
     pub available: bool,
     /// `Some` only when `available == false`.
     pub reason: Option<LocalizedText>,
+    /// Whether the engine can read English prose in English (the profile's
+    /// `reads_latin_natively`). Stamped from the profile registry, not probed:
+    /// the Settings dialog needs it to explain what the English reading
+    /// setting will do on the selected engine, and it must not hard-code
+    /// engine names.
+    pub reads_latin_natively: bool,
+}
+
+impl EngineAvailability {
+    /// Availability plus the profile's text capability. A probe reports
+    /// whether the engine can run; what it can read is profile data.
+    fn new(kind: EngineKind, available: bool, reason: Option<LocalizedText>) -> Self {
+        Self {
+            available,
+            reason,
+            reads_latin_natively: profiles::profile_for(kind).reads_latin_natively,
+        }
+    }
 }
 
 /// Output of [`probe`]. Field names match the `AvailabilityMap` shape on
@@ -83,36 +104,34 @@ pub fn probe(
     teratts_bundle_dir: &Path,
 ) -> AvailableEngines {
     AvailableEngines {
-        piper: EngineAvailability {
-            available: true,
-            reason: None,
-        },
+        piper: probe_piper(),
         silero: probe_silero(ttsd_dir),
         silero_native: probe_silero_native(silero_native_bundle_dir),
         teratts: probe_teratts(teratts_bundle_dir),
     }
 }
 
+/// Piper is in-process, so it has no probe of its own; the entry exists to
+/// pair the capability with the always-available verdict.
+fn probe_piper() -> EngineAvailability {
+    EngineAvailability::new(EngineKind::Piper, true, None)
+}
+
 pub fn probe_silero(ttsd_dir: &Path) -> EngineAvailability {
     let pyproject = ttsd_dir.join("pyproject.toml");
     if !pyproject.exists() {
-        return EngineAvailability {
-            available: false,
-            reason: Some(
+        return EngineAvailability::new(
+            EngineKind::Silero,
+            false,
+            Some(
                 LocalizedText::new("silero.ttsd_missing")
                     .with_param(ttsd_dir.display().to_string()),
             ),
-        };
+        );
     }
     match check_uv() {
-        Ok(()) => EngineAvailability {
-            available: true,
-            reason: None,
-        },
-        Err(reason) => EngineAvailability {
-            available: false,
-            reason: Some(reason),
-        },
+        Ok(()) => EngineAvailability::new(EngineKind::Silero, true, None),
+        Err(reason) => EngineAvailability::new(EngineKind::Silero, false, Some(reason)),
     }
 }
 
@@ -140,9 +159,8 @@ fn check_uv_binary(binary: &str) -> Result<(), LocalizedText> {
 /// enforced where it matters (downloader checksums, the engine's bundle
 /// loader).
 pub fn probe_silero_native(bundle_dir: &Path) -> EngineAvailability {
-    let unavailable = |reason: LocalizedText| EngineAvailability {
-        available: false,
-        reason: Some(reason),
+    let unavailable = |reason: LocalizedText| {
+        EngineAvailability::new(EngineKind::SileroNative, false, Some(reason))
     };
 
     if !bundle_dir.join("manifest.json").exists() {
@@ -167,19 +185,14 @@ pub fn probe_silero_native(bundle_dir: &Path) -> EngineAvailability {
             }
         }
     }
-    EngineAvailability {
-        available: true,
-        reason: None,
-    }
+    EngineAvailability::new(EngineKind::SileroNative, true, None)
 }
 
 /// Stat-only TeraTTS bundle probe: the manifest parses, its format version is
 /// supported, and every listed file is present with the recorded size.
 pub fn probe_teratts(bundle_dir: &Path) -> EngineAvailability {
-    let unavailable = |reason: LocalizedText| EngineAvailability {
-        available: false,
-        reason: Some(reason),
-    };
+    let unavailable =
+        |reason: LocalizedText| EngineAvailability::new(EngineKind::TeraTts, false, Some(reason));
 
     let manifest = match teratts::bundle::Manifest::load(bundle_dir) {
         Ok(manifest) => manifest,
@@ -203,10 +216,7 @@ pub fn probe_teratts(bundle_dir: &Path) -> EngineAvailability {
         }
     };
     match manifest.check_sizes(bundle_dir) {
-        Ok(()) => EngineAvailability {
-            available: true,
-            reason: None,
-        },
+        Ok(()) => EngineAvailability::new(EngineKind::TeraTts, true, None),
         Err(e) => {
             unavailable(LocalizedText::new("teratts.bundle_corrupt").with_message(e.to_string()))
         }
@@ -224,6 +234,19 @@ mod tests {
         let res = probe(dir.path(), dir.path(), dir.path());
         assert!(res.piper.available);
         assert!(res.piper.reason.is_none());
+    }
+
+    /// The Settings dialog reads the English reading capability from this
+    /// probe instead of hard-coding engine names, so the per-engine verdict
+    /// must match the profile registry.
+    #[test]
+    fn probe_reports_the_profile_latin_capability() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let res = probe(dir.path(), dir.path(), dir.path());
+        assert!(!res.piper.reads_latin_natively);
+        assert!(!res.silero.reads_latin_natively);
+        assert!(!res.silero_native.reads_latin_natively);
+        assert!(res.teratts.reads_latin_natively);
     }
 
     #[test]

@@ -292,6 +292,14 @@ export const ru = {
   'settings.code_block.read': 'Читать полностью',
   'settings.code_block.description':
     '«Кратко» — блок кода заменяется фразой «далее следует пример кода на <язык>», «Читать полностью» — код проговаривается целиком',
+  'settings.english_reading.label': 'Английский текст',
+  'settings.english_reading.auto': 'Авто',
+  'settings.english_reading.native': 'Нативно',
+  'settings.english_reading.narrated': 'По-русски',
+  'settings.english_reading.description':
+    '«Авто» — так, как умеет движок, «Нативно» — английским голосом движка, «По-русски» — русской транслитерацией',
+  'settings.english_reading.fallback_hint':
+    'Этот движок не читает английский нативно — текст будет прочитан по-русски. Выбор сохранится и сработает на движке, который это умеет.',
   'settings.notify_on_ready': 'Уведомлять о готовности аудио',
   'settings.notify_on_error': 'Уведомлять об ошибках синтеза',
   'settings.preview_dialog_enabled': 'Показывать диалог предпросмотра перед синтезом',
