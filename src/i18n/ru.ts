@@ -522,7 +522,7 @@ export const ru = {
   'dictionary.column.from': 'Слово',
   'dictionary.column.to': 'Произношение',
   'dictionary.form.from': 'Слово',
-  'dictionary.form.from.placeholder': 'например, IPv6, GitHub или замок',
+  'dictionary.form.from.placeholder': 'например, IPv6, UTF-8 или замок',
   'dictionary.form.to': 'Как произносить',
   'dictionary.form.to.placeholder': 'например, айпи ви шесть',
   'dictionary.form.forms': 'Формы слова',
@@ -553,7 +553,7 @@ export const ru = {
     'Эта форма уже занята другой записью словаря.',
   'dictionary.form.error.from.required': 'Введите слово: латинские или русские буквы и цифры, хотя бы одна буква.',
   'dictionary.form.error.from.charset':
-    'Одно слово из латинских или русских букв и цифр, минимум одна буква (например, IPv6, x86, замок).',
+    'Одно слово из латинских или русских букв и цифр, минимум одна буква; дефис — только внутри слова (например, IPv6, x86, замок, UTF-8).',
   'dictionary.form.error.from.too_long': 'Слишком длинное слово (максимум 64 символа).',
   'dictionary.form.error.to.required': 'Введите произношение.',
   'dictionary.form.error.to.stress_malformed':

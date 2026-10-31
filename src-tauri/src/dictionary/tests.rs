@@ -77,13 +77,60 @@ fn rejects_empty_from() {
 }
 
 #[test]
+fn accepts_hyphenated_tokens() {
+    // #279: a hyphen joins the parts of one token, it does not split it into
+    // two words.
+    assert!(validate_entry("UTF-8", "у тэф восемь").is_ok());
+    assert!(validate_entry("e-mail", "имейл").is_ok());
+    assert!(validate_entry("snake-case", "снейк кейс").is_ok());
+    assert!(validate_entry("по-русски", "по русски").is_ok());
+    assert!(
+        validate_entry("8-bit", "восемь бит").is_ok(),
+        "a digit-first segment is a part like any other"
+    );
+}
+
+#[test]
+fn rejects_malformed_hyphenation() {
+    for from in ["-mail", "mail-", "e--mail", "-", "e-mail-8-"] {
+        assert!(
+            matches!(
+                validate_entry(from, "почта"),
+                Err(DictionaryError::InvalidFrom)
+            ),
+            "a hyphen must sit between two non-empty parts: {from:?}"
+        );
+    }
+}
+
+#[test]
 fn rejects_punctuated_from() {
     assert!(matches!(
-        validate_entry("UTF-8", "у тэф восемь"),
+        validate_entry("a.b", "а точка б"),
         Err(DictionaryError::InvalidFrom)
     ));
     assert!(matches!(
-        validate_entry("a.b", "а точка б"),
+        validate_entry("C:", "цэ двоеточие"),
+        Err(DictionaryError::InvalidFrom)
+    ));
+    assert!(matches!(
+        validate_entry("snake_case", "снейк кейс"),
+        Err(DictionaryError::InvalidFrom)
+    ));
+}
+
+#[test]
+fn rejects_a_digit_only_hyphenated_token() {
+    assert!(matches!(
+        validate_entry("12-34", "двенадцать тридцать четыре"),
+        Err(DictionaryError::InvalidFrom)
+    ));
+}
+
+#[test]
+fn rejects_a_mixed_script_hyphenated_token() {
+    assert!(matches!(
+        validate_entry("ip-замок", "ип замок"),
         Err(DictionaryError::InvalidFrom)
     ));
 }
@@ -118,6 +165,18 @@ fn rejects_overlong_to() {
 fn accepts_russian_inflected_forms() {
     let forms = vec!["замка".to_string(), "замке".to_string()];
     assert!(validate_entry_with_forms("замок", "зам+ок", &forms).is_ok());
+}
+
+#[test]
+fn accepts_hyphenated_russian_forms() {
+    // Forms share the `from` shape, hyphens included.
+    assert!(
+        validate_entry_with_forms("по-русски", "по русски", &["по-русскому".to_string()]).is_ok()
+    );
+    assert!(matches!(
+        validate_entry_with_forms("по-русски", "по русски", &["-русскому".to_string()]),
+        Err(DictionaryError::InvalidForm)
+    ));
 }
 
 #[test]
@@ -542,6 +601,22 @@ fn a_cyrillic_key_round_trips_through_the_file() {
 }
 
 #[test]
+fn a_hyphenated_key_round_trips_through_the_file() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("user_dictionary.toml");
+    let mut dict = UserDictionary::default();
+    dict.insert(entry("UTF-8", "у тэф восемь"));
+    store::export_to(&dict, &path).expect("export");
+
+    let loaded = DictionaryStore::new(path).load();
+    assert_eq!(
+        loaded.get("utf-8"),
+        Some("у тэф восемь"),
+        "the key is stored lowercased for lookup and survives the round trip"
+    );
+}
+
+#[test]
 fn script_of_the_keys_is_reported() {
     let mut dict = UserDictionary::default();
     assert!(!dict.has_keys_in(KeyScript::Latin));
@@ -557,6 +632,36 @@ fn script_of_the_keys_is_reported() {
     dict.insert(entry("замок", "зам+ок"));
     assert!(dict.has_keys_in(KeyScript::Latin));
     assert!(dict.has_keys_in(KeyScript::Cyrillic));
+}
+
+#[test]
+fn hyphenated_keys_are_reported_for_the_whole_token_pass() {
+    let mut dict = UserDictionary::default();
+    assert!(!dict.has_hyphenated_keys());
+
+    dict.insert(entry("docker", "доккер"));
+    assert!(
+        !dict.has_hyphenated_keys(),
+        "a plain word must not make the pipeline pay for a second scan"
+    );
+
+    dict.insert(entry("UTF-8", "у тэф восемь"));
+    assert!(dict.has_hyphenated_keys());
+    assert!(
+        dict.has_keys_in(KeyScript::Latin),
+        "a hyphenated Latin key still reports its script"
+    );
+
+    let mut with_form = UserDictionary::default();
+    with_form.insert(DictionaryEntry::with_forms(
+        "по",
+        "по",
+        ["по-русски".to_string()],
+    ));
+    assert!(
+        with_form.has_hyphenated_keys(),
+        "a hyphenated inflected form is matched by the whole-token pass too"
+    );
 }
 
 #[test]

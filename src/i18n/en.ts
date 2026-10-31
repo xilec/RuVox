@@ -517,7 +517,7 @@ export const en: Record<MessageKey, string> = {
   'dictionary.column.from': 'Word',
   'dictionary.column.to': 'Spoken form',
   'dictionary.form.from': 'Word',
-  'dictionary.form.from.placeholder': 'e.g. IPv6, GitHub or замок',
+  'dictionary.form.from.placeholder': 'e.g. IPv6, UTF-8 or замок',
   'dictionary.form.to': 'How to pronounce',
   'dictionary.form.to.placeholder': 'e.g. айпи ви шесть',
   'dictionary.form.forms': 'Word forms',
@@ -548,7 +548,7 @@ export const en: Record<MessageKey, string> = {
     'Another dictionary entry already owns this form.',
   'dictionary.form.error.from.required': 'Enter a word: Latin or Russian letters and digits, at least one letter.',
   'dictionary.form.error.from.charset':
-    'One word of Latin or Russian letters and digits, at least one letter (e.g. IPv6, x86, замок).',
+    'One word of Latin or Russian letters and digits, at least one letter; a hyphen only inside the word (e.g. IPv6, x86, замок, UTF-8).',
   'dictionary.form.error.from.too_long': 'The word is too long (64 characters max).',
   'dictionary.form.error.to.required': 'Enter the spoken form.',
   'dictionary.form.error.to.stress_malformed':

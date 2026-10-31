@@ -2,8 +2,9 @@
 //! built-in pipeline table (change `user-dictionary`, issue #10).
 //!
 //! An entry maps one source token (`from`, one word of Latin or Russian
-//! Cyrillic letters and digits, one script) to its spoken form (`to`), and may
-//! list additional Russian inflected forms that share that pronunciation.
+//! Cyrillic letters and digits whose parts may be joined by ASCII hyphens, one
+//! script) to its spoken form (`to`), and may list additional Russian inflected
+//! forms that share that pronunciation.
 //! Matching is case-insensitive and exact for the primary word and every form;
 //! the in-memory map is keyed by the lowercased `from` while the typed case is
 //! preserved for display and TOML serialization. `to` may carry one `+` before
@@ -68,7 +69,7 @@ impl DictionaryEntry {
 #[derive(Debug, thiserror::Error)]
 pub enum DictionaryError {
     #[error(
-        "source word must be a single token of Latin or Russian letters and digits, one script, at least one letter, max {MAX_FROM_LEN} chars"
+        "source word must be a single token of Latin or Russian letters and digits, hyphens only between its parts, one script, at least one letter, max {MAX_FROM_LEN} chars"
     )]
     InvalidFrom,
     #[error("spoken form must be non-empty and at most {MAX_TO_LEN} characters")]
@@ -153,15 +154,31 @@ pub enum KeyScript {
 }
 
 /// The script `from` uses, or `None` when it is not a single valid token: one
-/// word of letters and digits with at least one letter, all letters from one
-/// script, at most [`MAX_FROM_LEN`] characters.
+/// word of letters and digits with at least one letter, its parts optionally
+/// joined by ASCII hyphens, all letters from one script, at most
+/// [`MAX_FROM_LEN`] characters.
+///
+/// The hyphen is an internal separator only: every hyphen has to sit between
+/// two non-empty letter/digit segments, so `-mail`, `mail-` and `e--mail` are
+/// not tokens. No other punctuation is accepted.
 pub fn key_script(from: &str) -> Option<KeyScript> {
     if from.is_empty() || from.chars().count() > MAX_FROM_LEN {
         return None;
     }
     let mut script = None;
+    // Starts empty so a leading hyphen, a doubled hyphen, and a trailing
+    // hyphen (checked after the loop) are all rejected.
+    let mut segment_empty = true;
     for c in from.chars() {
+        if c == '-' {
+            if segment_empty {
+                return None;
+            }
+            segment_empty = true;
+            continue;
+        }
         if c.is_ascii_digit() {
+            segment_empty = false;
             continue;
         }
         let this = if c.is_ascii_alphabetic() {
@@ -176,16 +193,21 @@ pub fn key_script(from: &str) -> Option<KeyScript> {
             Some(seen) if seen == this => {}
             Some(_) => return None,
         }
+        segment_empty = false;
+    }
+    if segment_empty {
+        return None;
     }
     script
 }
 
 /// Validate `from`/`to` per the user-dictionary spec: `from` is one token of
-/// Latin or Russian Cyrillic letters and digits with at least one letter (alnum
-/// tokens like "IPv6" and Russian words like "замок" are the point; pure
-/// numbers, punctuation, and mixed-script tokens are not), `to` is a non-empty
-/// free-form string whose spoken form is at most [`MAX_TO_LEN`] characters,
-/// optionally carrying one well-formed stress mark.
+/// Latin or Russian Cyrillic letters and digits with at least one letter and
+/// optional internal hyphens (alnum tokens like "IPv6", hyphenated words like
+/// "UTF-8", and Russian words like "замок" are the point; pure numbers,
+/// punctuation other than the hyphen, and mixed-script tokens are not), `to` is
+/// a non-empty free-form string whose spoken form is at most [`MAX_TO_LEN`]
+/// characters, optionally carrying one well-formed stress mark.
 pub fn validate_entry(from: &str, to: &str) -> Result<(), DictionaryError> {
     if key_script(from).is_none() {
         return Err(DictionaryError::InvalidFrom);
@@ -485,6 +507,17 @@ impl UserDictionary {
             .keys()
             .chain(self.aliases.keys())
             .any(|key| key_script(key) == Some(script))
+    }
+
+    /// True when at least one key or inflected form carries a hyphen. The
+    /// whole-token pass ahead of the code-identifier split only has something
+    /// to match then; without it a dictionary of plain words would pay for a
+    /// second full scan of the document.
+    pub fn has_hyphenated_keys(&self) -> bool {
+        self.entries
+            .keys()
+            .chain(self.aliases.keys())
+            .any(|key| key.contains('-'))
     }
 
     pub fn len(&self) -> usize {

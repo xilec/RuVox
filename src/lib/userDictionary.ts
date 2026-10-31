@@ -2,7 +2,7 @@
  * Pure helpers for the user dictionary editor (change `user-dictionary`).
  * Mirrors the backend validation contract (src-tauri/src/dictionary): a
  * source token is one word of Latin or Russian Cyrillic letters and digits
- * with at least one letter; the
+ * with at least one letter, whose parts may be joined by ASCII hyphens; the
  * spoken form is a non-empty free-form string that may carry one `+` before
  * a Russian vowel to fix the stress; a Russian entry may also list additional
  * exact forms. The Rust side stays the source of truth — these checks exist to
@@ -19,10 +19,12 @@ const STRESS_MARK = '+';
 const STRESSED_VOWELS = 'аеёиоуыэюя';
 
 /** A single valid source token: one word of letters and digits with at least
- *  one letter, all letters from one script (Latin or Russian Cyrillic) — the
- *  same shapes the dictionary pre-pass matches in text. */
-const LATIN_TOKEN_RE = /^[A-Za-z0-9]*[A-Za-z][A-Za-z0-9]*$/;
-const CYRILLIC_TOKEN_RE = /^[0-9]*[а-яёА-ЯЁ][0-9а-яёА-ЯЁ]*$/;
+ *  one letter, all letters from one script (Latin or Russian Cyrillic), and
+ *  optional internal hyphens joining non-empty letter/digit segments — the
+ *  same shapes the dictionary matches in text. The leading lookahead requires
+ *  a letter of that script, so a digit-only token is rejected. */
+const LATIN_TOKEN_RE = /^(?=[0-9-]*[A-Za-z])[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/;
+const CYRILLIC_TOKEN_RE = /^(?=[0-9-]*[а-яёА-ЯЁ])[0-9а-яёА-ЯЁ]+(?:-[0-9а-яёА-ЯЁ]+)*$/;
 
 export interface EntryInput {
   from: string;

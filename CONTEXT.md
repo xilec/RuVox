@@ -11,11 +11,13 @@ built-ins on collision.
 _Avoid_: custom dictionary, personal dictionary
 
 **Dictionary Entry**:
-A single user-dictionary mapping: a Latin source word (`from` — letters and
-digits, at least one letter, e.g. `IPv6`) and its spoken form (`to`). The unit
+A single user-dictionary mapping: a source token (`from` — letters and
+digits, at least one letter, e.g. `IPv6`; an ASCII hyphen may join its parts,
+e.g. `UTF-8`) and its spoken form (`to`). The unit
 of CRUD, import, and export. One entry per word, keyed by the lowercased
 `from`; matching is case-insensitive. An entry applies wherever the word
-occurs — prose, ALL-CAPS abbreviations, parts of split code identifiers, URL
+occurs — prose, ALL-CAPS abbreviations, parts of split code identifiers (a
+hyphenated `from` matches the whole token instead), URL
 components, and code blocks read aloud — and wins over every built-in table
 at each of those sites.
 _Avoid_: custom term (implementation name inside `EnglishNormalizer`), entry

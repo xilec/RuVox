@@ -6,6 +6,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 
 ## [Unreleased]
 
+### Added
+- **Hyphenated dictionary words** — a source word may now contain an internal
+  hyphen, and such an entry is matched as a whole word: `UTF-8` → «у тэф
+  восемь» wins over entries for its parts and over the built-in reading, while
+  part entries keep working when no whole-word entry exists (#279).
+
 ### Changed
 - **English reading is a user setting** — Settings has an «Английский текст»
   control («Авто» / «Нативно» / «По-русски»): the choice now belongs to the

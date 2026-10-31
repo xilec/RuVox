@@ -496,6 +496,12 @@ impl CodeIdentifierNormalizer {
     }
 
     /// Convert kebab-case identifier to speakable Russian text.
+    ///
+    /// A hyphenated user-dictionary key is a whole-token reading and wins over
+    /// the parts (change `add-hyphenated-dictionary-keys`). The pipeline
+    /// resolves the main text earlier, in its pre-identifier pass; this lookup
+    /// covers every direct caller — inline code is normalized before any
+    /// dictionary pass runs.
     pub fn normalize_kebab_case(
         &self,
         identifier: &str,
@@ -504,6 +510,9 @@ impl CodeIdentifierNormalizer {
     ) -> String {
         if identifier.is_empty() {
             return identifier.to_string();
+        }
+        if let Some(reading) = user_dict.resolve(&identifier.to_lowercase(), mark_stress) {
+            return reading;
         }
         let parts: Vec<&str> = identifier.split("-").filter(|p| !p.is_empty()).collect();
         self.transliterate_parts(&parts, user_dict, mark_stress)

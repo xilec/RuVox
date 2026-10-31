@@ -39,8 +39,22 @@ describe('validateEntryInput', () => {
     expect(validateEntryInput({ from: '123', to: 'число' })?.reason).toBe('from.charset');
   });
 
-  it('rejects punctuation in from (hyphens are a follow-up issue)', () => {
-    expect(validateEntryInput({ from: 'UTF-8', to: 'у тэф восемь' })?.reason).toBe('from.charset');
+  it('accepts a hyphenated token', () => {
+    expect(validateEntryInput({ from: 'UTF-8', to: 'у тэф восемь' })).toBeNull();
+    expect(validateEntryInput({ from: 'e-mail', to: 'имейл' })).toBeNull();
+    expect(validateEntryInput({ from: 'по-русски', to: 'по русски' })).toBeNull();
+  });
+
+  it('rejects a malformed hyphenation', () => {
+    for (const from of ['-mail', 'mail-', 'e--mail', '12-34']) {
+      expect(validateEntryInput({ from, to: 'почта' })?.reason).toBe('from.charset');
+    }
+  });
+
+  it('rejects punctuation other than an internal hyphen', () => {
+    for (const from of ['C:', 'a.b', 'snake_case']) {
+      expect(validateEntryInput({ from, to: 'знак' })?.reason).toBe('from.charset');
+    }
   });
 
   it('rejects an overlong from', () => {
@@ -178,6 +192,17 @@ describe('isSingleSourceToken', () => {
 
   it('rejects multi-word selections', () => {
     expect(isSingleSourceToken('docker compose')).toBe(false);
+  });
+
+  it('accepts a hyphenated token', () => {
+    expect(isSingleSourceToken('UTF-8')).toBe(true);
+    expect(isSingleSourceToken('по-русски')).toBe(true);
+  });
+
+  it('rejects a malformed hyphenation', () => {
+    expect(isSingleSourceToken('-mail')).toBe(false);
+    expect(isSingleSourceToken('mail-')).toBe(false);
+    expect(isSingleSourceToken('e--mail')).toBe(false);
   });
 
   it('rejects punctuation and empty selections', () => {
