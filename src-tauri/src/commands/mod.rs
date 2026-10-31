@@ -1537,7 +1537,9 @@ fn bundle_row(asset: &str, bundle_dir: &Path, active_kind: EngineKind) -> ModelA
         latest_bytes: None,
         update_available: false,
         skipped: false,
-        deletable: info.installed && active_kind.as_str() != asset,
+        // A corrupt or partially downloaded directory still occupies disk;
+        // let the user remove it even though it is not a usable bundle.
+        deletable: info.bytes > 0 && active_kind.as_str() != asset,
         error: info.error,
     }
 }
@@ -1568,6 +1570,7 @@ pub async fn get_model_status(state: State<'_, AppState>, force: bool) -> CmdRes
         let dir = state.piper_voices_dir.join(voice.id);
         let installed = dir.join(voice.model_filename()).is_file()
             && dir.join(voice.model_config_filename()).is_file();
+        let installed_bytes = model_lifecycle::dir_size(&dir);
         let active = active_kind == EngineKind::Piper && active_voice.as_deref() == Some(voice.id);
         rows.push(ModelAssetStatus {
             id: format!("piper:{}", voice.id),
@@ -1578,12 +1581,12 @@ pub async fn get_model_status(state: State<'_, AppState>, force: bool) -> CmdRes
             model_id: Some(voice.id.to_string()),
             upstream_revision: None,
             bundled_voices: Vec::new(),
-            installed_bytes: model_lifecycle::dir_size(&dir),
+            installed_bytes,
             latest_version: None,
             latest_bytes: None,
             update_available: false,
             skipped: false,
-            deletable: installed && !active,
+            deletable: installed_bytes > 0 && !active,
             error: None,
         });
     }
@@ -2826,6 +2829,30 @@ mod tests {
     use std::collections::HashMap;
     use std::path::Path;
     use test_case::test_case;
+
+    // ── model bundle inventory ───────────────────────────────────────────────
+
+    #[test]
+    fn bundle_row_offers_deletion_for_a_corrupt_directory_but_not_the_active_bundle() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::write(dir.path().join("broken"), b"x").unwrap();
+
+        let inactive = bundle_row(
+            model_lifecycle::SILERO_NATIVE,
+            dir.path(),
+            EngineKind::Piper,
+        );
+        assert!(!inactive.installed);
+        assert_eq!(inactive.installed_bytes, 1);
+        assert!(inactive.deletable);
+
+        let active = bundle_row(
+            model_lifecycle::SILERO_NATIVE,
+            dir.path(),
+            EngineKind::SileroNative,
+        );
+        assert!(!active.deletable);
+    }
 
     // ── apply_config_patch ──────────────────────────────────────────────────
 

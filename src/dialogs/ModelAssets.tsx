@@ -391,7 +391,7 @@ export function ModelAssetsDialog({ opened, onClose, onAvailabilityChanged }: Pr
                   {t('settings.models.skip_button')}
                 </Button>
               )}
-              {asset.installed && (
+              {(asset.installed || asset.installed_bytes > 0) && (
                 <Button
                   size="xs"
                   variant="default"
@@ -451,7 +451,7 @@ export function ModelAssetsDialog({ opened, onClose, onAvailabilityChanged }: Pr
                 {t('settings.models.voice_installed')}
               </Text>
             )}
-            {asset.installed && (
+            {(asset.installed || asset.installed_bytes > 0) && (
               <Button
                 size="xs"
                 variant="default"
