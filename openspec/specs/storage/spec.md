@@ -313,9 +313,10 @@ The `UIConfig` field table SHALL gain:
 |-------|------|---------|---------|
 | `language` | string | `"ru"` | UI language: `"ru"` / `"en"` |
 | `teratts_voice` | string | `"ru_m5"` | TeraTTS voice id from the installed bundle manifest (`voices[].id`); `ru_m5` is the default |
+| `english_reading` | string | `"auto"` | How Latin prose is read: `"auto"` / `"native"` / `"narrated"` |
 
 Every existing defaulting/unknown-key/partial-update rule SHALL apply to the
-new field unchanged.
+new fields unchanged.
 
 The `code_block_mode` field SHALL accept the values `"brief"` and `"read"`,
 with `"brief"` as the default for fresh and partial configs. The legacy value
@@ -323,6 +324,12 @@ with `"brief"` as the default for fresh and partial configs. The legacy value
 SHALL fall back to `"brief"`. The `read_operators` field SHALL NOT be part of
 `UIConfig`; config files written by earlier builds that contain it MUST still
 parse (the unknown key is ignored and dropped on the next save).
+
+The `english_reading` field SHALL accept the values `"auto"`, `"native"` and
+`"narrated"`, with `"auto"` as the default for fresh and partial configs; any
+other value SHALL fall back to `"auto"` on load and when applied through a
+`UIConfigPatch`, so a config written by a newer build cannot put the pipeline
+in an undefined state.
 
 #### Scenario: Older config without language key
 - **GIVEN** a `config.json` written by a pre-localization build (no `language` key)
@@ -337,7 +344,7 @@ parse (the unknown key is ignored and dropped on the next save).
 #### Scenario: Missing config returns defaults
 - **GIVEN** no `config.json` in the cache directory
 - **WHEN** the configuration is loaded
-- **THEN** the default configuration is returned (`speaker` `"aidar"`, `sample_rate` `24000`, `engine` `"silero_native"`, `piper_voice` `"ruslan"`, `code_block_mode` `"brief"`)
+- **THEN** the default configuration is returned (`speaker` `"aidar"`, `sample_rate` `24000`, `engine` `"silero_native"`, `piper_voice` `"ruslan"`, `code_block_mode` `"brief"`, `english_reading` `"auto"`)
 
 #### Scenario: Older config without engine keys
 - **GIVEN** a `config.json` that contains only `speaker`, `sample_rate`, and `speech_rate`
@@ -368,6 +375,23 @@ parse (the unknown key is ignored and dropped on the next save).
 - **GIVEN** a `config.json` with `code_block_mode: "loud"`
 - **WHEN** the configuration is loaded
 - **THEN** `code_block_mode` resolves to `"brief"`
+
+#### Scenario: Older config without english_reading key
+- **GIVEN** a `config.json` written by a build before this setting existed
+- **WHEN** the configuration is loaded
+- **THEN** it parses successfully with `english_reading` defaulted to `"auto"`
+
+#### Scenario: Persisted english_reading round-trips
+- **GIVEN** a `config.json` with `english_reading: "narrated"`
+- **WHEN** the configuration is loaded and saved again
+- **THEN** the value stays `"narrated"` (the capability of the active engine is
+  not consulted by the storage layer and never rewrites it)
+
+#### Scenario: Unknown english_reading value falls back to auto
+- **GIVEN** a `config.json` with `english_reading: "bilingual"`
+- **WHEN** the configuration is loaded
+- **THEN** `english_reading` resolves to `"auto"`
+- **AND** a `UIConfigPatch` carrying `"bilingual"` stores `"auto"` as well
 
 #### Scenario: Config with read_operators parses
 - **GIVEN** a `config.json` written by an earlier build containing `read_operators: false`

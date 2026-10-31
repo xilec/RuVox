@@ -81,6 +81,7 @@ interface UIConfig {
   text_format: string;             // "plain" | "markdown" | "html"
   max_cache_size_mb: number;       // default 500
   code_block_mode: string;         // "brief" (default) | "read"
+  english_reading: string;         // "auto" (default) | "native" | "narrated"
   theme: string;                   // "light" | "dark" | "auto"
   player_hotkeys: Record<string, string>;
   window_geometry: [number, number, number, number] | null;
@@ -106,6 +107,14 @@ interface UIConfig {
 - GIVEN a fresh installation with no `config.json`
 - WHEN the frontend calls `invoke("get_config")`
 - THEN the response contains `code_block_mode: "brief"` and no `read_operators` key
+
+#### Scenario: UIConfig defaults include auto English reading
+
+- GIVEN a fresh installation with no `config.json`, or an existing
+  `config.json` written before `english_reading` existed
+- WHEN the frontend calls `invoke("get_config")`
+- THEN the response contains `english_reading: "auto"`, and the value is
+  canonicalized to `"auto"` when `config.json` holds anything else
 
 #### Scenario: UIConfig defaults keep tray-on-close off
 
@@ -460,11 +469,12 @@ the engine switcher; if the engine cannot be activated (e.g. Silero stack not
 spawnable) the command SHALL fail with `config_error` and the previous config
 MUST remain on disk.
 
-When the patch changes `code_block_mode`, `update_config` SHALL apply the new
-code block narration mode to the shared normalization pipeline immediately
-after persisting: subsequent synthesis and preview normalization requests
-SHALL use the new mode without an app restart. A synthesis already in flight
-when the setting changes MAY finish on the previous mode.
+When the patch changes `code_block_mode` or `english_reading`,
+`update_config` SHALL apply the new text-shaping values to the shared
+normalization pipeline immediately after persisting: subsequent synthesis and
+preview normalization requests SHALL use the new values without an app
+restart. A synthesis already in flight when the settings change MAY finish on
+the previous values.
 
 #### Scenario: partial patch updates only named fields
 - GIVEN a stored config with `theme: "auto"`
@@ -475,6 +485,14 @@ when the setting changes MAY finish on the previous mode.
 - GIVEN the Silero engine is unavailable on the system
 - WHEN `update_config` is invoked with `{ engine: "silero" }`
 - THEN the command fails with `type: "config_error"` and the on-disk config still has the previous engine
+
+#### Scenario: English reading change applies without restart
+
+- GIVEN the pipeline narrates Latin prose
+- WHEN `update_config` is invoked with `{ english_reading: "native" }`
+- THEN the shared pipeline holds the new preference for the next synthesis,
+  and a subsequent `preview_normalize` call resolves Latin prose against it
+  without restarting the app
 
 #### Scenario: code block mode change applies without restart
 - GIVEN the pipeline is narrating code blocks in brief mode
@@ -495,6 +513,7 @@ interface LocalizedText {
 interface EngineAvailability {
   available: boolean;
   reason: LocalizedText | null; // Some only when available == false
+  reads_latin_natively: boolean; // the profile's TextProfile.reads_latin_natively
 }
 interface AvailableEngines {
   piper: EngineAvailability;
@@ -516,6 +535,10 @@ parses, its `format_version` is supported, and every listed file exists with
 the recorded size (no hashing). When unavailable, `reason` SHALL carry a
 machine-readable code (translated by the frontend like command errors), not
 user-facing prose.
+
+`reads_latin_natively` SHALL be stamped from the engine's `TextProfile` in the
+same probe, not from a second per-engine table, so the UI reads one source of
+truth for whether an engine can read English prose in English.
 
 #### Scenario: probe on a system without ttsd
 - **GIVEN** no `pyproject.toml` in the resolved ttsd directory
@@ -547,6 +570,14 @@ user-facing prose.
 - **WHEN** `get_available_engines` is invoked
 - **THEN** `teratts.available` is `false` with `reason.code`
   `"teratts.bundle_incompatible"`
+
+#### Scenario: Latin capability follows the engine profile
+
+- GIVEN any system state
+- WHEN `get_available_engines` is invoked
+- THEN `teratts.reads_latin_natively` is `true` and `piper`, `silero`,
+  `silero_native` report `false`, matching the profiles regardless of whether
+  each engine is currently available
 
 #### Scenario: TeraTTS available with a complete bundle
 - **GIVEN** a TeraTTS bundle whose manifest parses and whose files match the
