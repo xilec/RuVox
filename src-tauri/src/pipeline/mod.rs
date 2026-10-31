@@ -228,7 +228,7 @@ fn re_kebab() -> &'static Regex {
     })
 }
 
-/// Byte ranges of the code-identifier patterns, sorted and de-duplicated.
+/// Byte ranges of the code-identifier patterns, sorted and non-overlapping.
 ///
 /// The identifier phase and the English phase must agree on what an identifier
 /// is: the first narrates or annotates it, the second must not re-read it when
@@ -241,8 +241,17 @@ fn find_identifier_ranges(text: &str) -> Vec<(usize, usize)> {
         .map(|m| (m.start(), m.end()))
         .collect();
     ranges.sort_unstable();
-    ranges.dedup();
-    ranges
+    // The camel and Pascal patterns can claim the same token with different
+    // extents (`snakeCase` vs `Case`); merging keeps the list searchable while
+    // the widest match wins, as it already did in the span recording.
+    let mut merged: Vec<(usize, usize)> = Vec::with_capacity(ranges.len());
+    for (start, end) in ranges {
+        match merged.last_mut() {
+            Some(last) if start < last.1 => last.1 = last.1.max(end),
+            _ => merged.push((start, end)),
+        }
+    }
+    merged
 }
 
 /// Whether `[start, end)` intersects a sorted, non-overlapping range list.
@@ -1946,6 +1955,30 @@ mod tests {
     }
 
     #[test]
+    fn identifier_ranges_merge_the_patterns_claims() {
+        // The kebab pattern claims the whole token while the camel pattern
+        // claims the identifier nested inside it; a later phase must see one
+        // range covering both, or its binary search misses the outer one.
+        assert_eq!(
+            find_identifier_ranges("my-app-getUserData-flag"),
+            vec![(0, 23)]
+        );
+        assert_eq!(
+            find_identifier_ranges("getUserData и my_snake_case"),
+            vec![(0, 11), (15, 28)]
+        );
+    }
+
+    #[test]
+    fn overlap_check_uses_half_open_ranges() {
+        let ranges = vec![(0, 3), (7, 10)];
+        assert!(overlaps_ranges(&ranges, 2, 8));
+        assert!(overlaps_ranges(&ranges, 8, 9));
+        assert!(!overlaps_ranges(&ranges, 3, 7));
+        assert!(!overlaps_ranges(&ranges, 10, 12));
+    }
+
+    #[test]
     fn native_profile_keeps_prose_latin() {
         let mut p = TTSPipeline::new();
         let out = p.process_for_engine("Kubernetes нужен кластер", native_profile());
@@ -2048,6 +2081,25 @@ mod tests {
         assert_eq!(out.text, "си плюс плюс и getUserData()");
         assert_eq!(out.spans.len(), 1, "spans: {:?}", out.spans);
         assert_eq!(span_text(&out.text, &out.spans[0]), "getUserData");
+    }
+
+    #[test]
+    fn narrated_prose_keeps_native_identifiers_nested_in_a_kebab_token() {
+        // The whole token is one identifier range: without merging the kebab
+        // and camel claims, `flag` would slip past the overlap check and be
+        // transliterated while the rest stayed Latin.
+        let mut p = TTSPipeline::new();
+        p.set_english_reading(EnglishReading::Narrated);
+        let out = p.process_for_engine(
+            "my-app-getUserData-flag",
+            &crate::tts::profiles::TERATTS_PROFILE,
+        );
+        assert_eq!(out.text, "my-app-getUserData-flag");
+        assert_eq!(out.spans.len(), 1, "spans: {:?}", out.spans);
+        assert_eq!(
+            span_text(&out.text, &out.spans[0]),
+            "my-app-getUserData-flag"
+        );
     }
 
     #[test]
