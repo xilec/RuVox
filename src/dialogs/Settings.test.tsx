@@ -185,12 +185,23 @@ describe('SettingsModal code block narration', () => {
     return [...(listbox?.querySelectorAll('[role="option"]') ?? [])].map((o) => o.textContent);
   };
 
+  /** Selected value of the segmented control with this `name`. */
+  const activeSegment = (name: string, values: readonly string[]) => {
+    for (const value of values) {
+      const input = document.querySelector<HTMLInputElement>(
+        `input[name="${name}"][value="${value}"]`,
+      );
+      const label = input?.parentElement?.querySelector('label');
+      if (label?.hasAttribute('data-active')) return value;
+    }
+    return null;
+  };
+
   it('renders the saved mode as the selected segment', async () => {
     getConfig.mockResolvedValue(makeConfig({ code_block_mode: 'read' }));
     await renderDialog();
 
-    const active = document.querySelector('[data-active]');
-    expect(active?.textContent).toBe('Читать полностью');
+    expect(activeSegment('code_block_mode', ['brief', 'read'])).toBe('read');
   });
 
   it('submits the picked mode in the config patch', async () => {
@@ -216,22 +227,13 @@ describe('SettingsModal code block narration', () => {
     expect(patch.code_block_mode).toBe('brief');
   });
 
-  const activeEnglishSegment = () => {
-    for (const value of ['auto', 'native', 'narrated']) {
-      const input = document.querySelector<HTMLInputElement>(
-        `input[name="english_reading"][value="${value}"]`,
-      );
-      const label = input?.parentElement?.querySelector('label');
-      if (label?.hasAttribute('data-active')) return value;
-    }
-    return null;
-  };
-
   it('renders the saved English reading as the selected segment', async () => {
     getConfig.mockResolvedValue(makeConfig({ english_reading: 'narrated' }));
     await renderDialog();
 
-    expect(activeEnglishSegment()).toBe('narrated');
+    expect(activeSegment('english_reading', ['auto', 'native', 'narrated'])).toBe(
+      'narrated',
+    );
   });
 
   it('submits the picked English reading in the config patch', async () => {
@@ -280,6 +282,40 @@ describe('SettingsModal code block narration', () => {
     expect(document.body.textContent ?? '').not.toContain(
       'Этот движок не читает английский нативно',
     );
+  });
+
+  it('updates the fallback hint when the engine changes before saving', async () => {
+    getConfig.mockResolvedValue(
+      makeConfig({ engine: 'teratts', english_reading: 'native' }),
+    );
+    getAvailableEngines.mockResolvedValue(terattsAvailable());
+    await renderDialog();
+    const hint = 'Этот движок не читает английский нативно';
+    expect(document.body.textContent ?? '').not.toContain(hint);
+
+    // Pick Piper in the engine selector without saving: the hint follows the
+    // form value, not the persisted config.
+    const engineInput = document.querySelector<HTMLInputElement>(
+      'input[value="TeraTTSv2"]',
+    );
+    expect(engineInput, 'engine selector rendered').toBeTruthy();
+    await act(async () => {
+      engineInput!.click();
+      await Promise.resolve();
+    });
+    const piperOption = [
+      ...document.querySelectorAll<HTMLElement>('[role="option"]'),
+    ].find(
+      (option) => option.textContent === 'Piper',
+    );
+    expect(piperOption, 'Piper option rendered').toBeTruthy();
+    await act(async () => {
+      piperOption!.click();
+      await Promise.resolve();
+    });
+
+    expect(document.body.textContent ?? '').toContain(hint);
+    expect(updateConfig).not.toHaveBeenCalled();
   });
 
   it('submits hide_to_tray_on_close when the toggle is enabled', async () => {

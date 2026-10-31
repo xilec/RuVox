@@ -972,11 +972,13 @@ async fn update_config_code_block_mode_applies_live_to_synthesis() {
 }
 
 /// Switching the English reading setting through `update_config` reaches the
-/// shared pipeline live: the next synthesis resolves prose against the new
-/// preference, and an unknown value canonicalizes to `auto` instead of being
-/// persisted.
+/// shared pipeline live, and an unknown value canonicalizes to `auto` instead
+/// of being persisted. Synthesis itself cannot tell the modes apart on the
+/// stub Piper (it narrates Latin prose either way), so the assertion is on the
+/// shared state the next synthesis reads — the same state the code-block test
+/// exercises end to end.
 #[tokio::test(flavor = "multi_thread")]
-async fn update_config_english_reading_applies_live_to_synthesis() {
+async fn update_config_english_reading_reaches_the_shared_pipeline() {
     let t = build_test_app();
 
     // Pin the saved engine to the stub-active piper, as the code-block test
