@@ -208,8 +208,8 @@ pub struct UIConfig {
     /// Active Piper voice id (`"ruslan"` by default — see `tts::piper::catalog`).
     #[serde(default = "UIConfig::default_piper_voice")]
     pub piper_voice: String,
-    /// Active TeraTTS voice id (`"ru_m5"` by default — see the bundle
-    /// manifest; `ru_f1`, `ru_f2`, `ru_m1` are the other Russian voices).
+    /// Active TeraTTS voice id (`"ru_m5"` by default — see the installed
+    /// bundle manifest; every id it lists is selectable, Russian or English).
     #[serde(default = "UIConfig::default_teratts_voice")]
     pub teratts_voice: String,
     /// UI language: `"ru"` (default) | `"en"`.

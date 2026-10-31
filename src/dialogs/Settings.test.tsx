@@ -6,14 +6,24 @@ import { MantineProvider } from '@mantine/core';
 import type { UIConfig, UIConfigPatch } from '../lib/tauri';
 import { SettingsModal } from './Settings';
 
-const { getConfig, getAvailableEngines, getTerattsVoices, updateConfig, showNotification } =
-  vi.hoisted(() => ({
-    getConfig: vi.fn<() => Promise<UIConfig>>(),
-    getAvailableEngines: vi.fn(),
-    getTerattsVoices: vi.fn<() => Promise<string[]>>(),
-    updateConfig: vi.fn<(patch: UIConfigPatch) => Promise<void>>().mockResolvedValue(undefined),
-    showNotification: vi.fn(),
-  }));
+const {
+  getConfig,
+  getAvailableEngines,
+  getTerattsVoices,
+  updateConfig,
+  showNotification,
+  eventHandlers,
+} = vi.hoisted(() => ({
+  getConfig: vi.fn<() => Promise<UIConfig>>(),
+  getAvailableEngines: vi.fn(),
+  getTerattsVoices: vi.fn<() => Promise<string[]>>(),
+  updateConfig: vi.fn<(patch: UIConfigPatch) => Promise<void>>().mockResolvedValue(undefined),
+  showNotification: vi.fn(),
+  /** Handlers the model inventory subscribes to, so a test can emit one. */
+  eventHandlers: {
+    bundleDownloadFinished: null as null | ((payload: { engine: string; ok: boolean }) => void),
+  },
+}));
 
 vi.mock('@mantine/notifications', () => ({
   notifications: { show: showNotification },
@@ -49,7 +59,13 @@ vi.mock('../lib/tauri', () => ({
   events: {
     bundleDownloadStarted: () => Promise.resolve(() => {}),
     bundleDownloadProgress: () => Promise.resolve(() => {}),
-    bundleDownloadFinished: () => Promise.resolve(() => {}),
+    bundleDownloadFinished: (handler: (payload: { engine: string; ok: boolean }) => void) => {
+      eventHandlers.bundleDownloadFinished = handler;
+      return Promise.resolve(() => {});
+    },
+    voiceDownloadStarted: () => Promise.resolve(() => {}),
+    voiceDownloadProgress: () => Promise.resolve(() => {}),
+    voiceDownloadFinished: () => Promise.resolve(() => {}),
   },
 }));
 
@@ -106,6 +122,7 @@ describe('SettingsModal code block narration', () => {
   beforeEach(() => {
     getConfig.mockResolvedValue(makeConfig());
     getTerattsVoices.mockResolvedValue([]);
+    eventHandlers.bundleDownloadFinished = null;
     getAvailableEngines.mockResolvedValue({
       piper: { available: true, reason: null },
       silero: { available: false, reason: null },
@@ -260,6 +277,31 @@ describe('SettingsModal code block narration', () => {
 
     await clickSave();
     expect(updateConfig.mock.calls[0][0].teratts_voice).toBe('eng_f5');
+  });
+
+  it('refreshes the voice catalogue when a bundle install finishes', async () => {
+    // First install from Settings: the bundle was absent when the dialog
+    // opened, so only this refresh makes the new bundle's voices selectable
+    // without reopening Settings.
+    await renderDialog();
+    getTerattsVoices.mockClear();
+
+    const openModels = [...document.querySelectorAll('button')].find(
+      (b) => b.textContent === 'Открыть',
+    );
+    expect(openModels, 'model inventory button rendered').toBeTruthy();
+    await act(async () => {
+      openModels!.click();
+      await Promise.resolve();
+    });
+    expect(eventHandlers.bundleDownloadFinished, 'inventory subscribed to bundle events').toBeTruthy();
+
+    await act(async () => {
+      eventHandlers.bundleDownloadFinished!({ engine: 'teratts', ok: true });
+      await Promise.resolve();
+    });
+
+    expect(getTerattsVoices).toHaveBeenCalledTimes(1);
   });
 
   it('shows the stored tray setting when the save is rejected', async () => {

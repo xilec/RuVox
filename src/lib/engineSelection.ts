@@ -36,8 +36,8 @@ export interface EngineFormState {
   /** Voice the user picked for Silero (`config.speaker`). Persisted across
    *  engine flips for the same reason. */
   sileroSpeaker: string;
-  /** Voice the user picked for TeraTTS Russian (`config.teratts_voice`).
-   *  Persisted across engine flips for the same reason. */
+  /** Voice the user picked for TeraTTS (`config.teratts_voice`). Persisted
+   *  across engine flips for the same reason. */
   terattsVoice: string;
   /** When `true`, show an inline alert telling the user we coerced the form
    *  away from their saved engine because it's currently unavailable. */
