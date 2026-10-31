@@ -11,17 +11,22 @@ An entry SHALL map a single source token (`from`) to its spoken form (`to`),
 and MAY list additional inflected source forms that share that pronunciation.
 `from` SHALL be one word of letters and digits with at least one letter, at
 most 64 characters, whose letters all belong to one script: ASCII Latin
-(`A-Za-z`) or Russian Cyrillic (`а-я`, `А-Я`, `ё`, `Ё`). Tokens like `IPv6`,
-`x86`, `замок`, or `А4` are valid; pure numbers, punctuation, mixed-script
-tokens (`IPзамок`), and Cyrillic letters outside the Russian alphabet are not.
+(`A-Za-z`) or Russian Cyrillic (`а-я`, `А-Я`, `ё`, `Ё`). The ASCII hyphen
+(`-`) SHALL be accepted as an internal separator between non-empty letter/digit
+segments, so a hyphenated word stays one token; a leading, trailing or doubled
+hyphen SHALL be rejected. Tokens like `IPv6`, `x86`, `замок`, `А4`, `UTF-8`,
+`e-mail`, or `по-русски` are valid; pure numbers, punctuation other than the
+hyphen, mixed-script tokens (`IPзамок`), and Cyrillic letters outside the
+Russian alphabet are not.
 
 Each listed form SHALL be one Russian Cyrillic word of letters and digits with
 at least one letter, at most 64 characters, distinct (case-insensitively) from
-the primary `from` and from every sibling form. A form SHALL NOT be owned by
-another entry, either as its primary `from` or as one of its forms. An entry
-with a non-empty form list SHALL have a Russian Cyrillic `from`; Latin entries
-SHALL NOT carry forms. The editor SHALL reject these cases before saving, and
-import/load SHALL treat them as invalid entries.
+the primary `from` and from every sibling form. A form SHALL use the same
+hyphen rule as `from`. A form SHALL NOT be owned by another entry, either as
+its primary `from` or as one of its forms. An entry with a non-empty form list
+SHALL have a Russian Cyrillic `from`; Latin entries SHALL NOT carry forms. The
+editor SHALL reject these cases before saving, and import/load SHALL treat them
+as invalid entries.
 
 Every listed form SHALL use the entry's `to`; forms whose pronunciation
 (including stress) differs need separate entries. Matching SHALL be
@@ -33,6 +38,16 @@ existing primary replaces the entry. `to` SHALL be a non-empty free-form
 string whose spoken form is at most 256 characters; Latin letters or digits in
 `to` are permitted but the editor SHALL warn that the replacement is inserted
 verbatim and later phases will not re-normalize it.
+
+A `from` that contains a hyphen SHALL be matched only as the whole hyphenated
+token: the pipeline SHALL try the whole token before the code-identifier phase
+splits a kebab identifier, so a whole-token entry wins over entries for its own
+parts and over every built-in reading, on every profile route. When no
+whole-token entry exists, the parts SHALL keep matching as before, and a
+hyphenated entry SHALL NOT rewrite a fragment of a longer identifier
+(`utf-8` does not rewrite `utf-8-extra`). Punctuation that an earlier
+structured phase consumes (sizes, dates, versions, URLs and paths, operators)
+SHALL NOT be promised to the dictionary.
 
 `to` MAY carry at most one explicit stress mark, written as `+` immediately
 before a Russian vowel (`а е ё и о у ы э ю я`, either case). The mark SHALL NOT
@@ -71,6 +86,60 @@ form in the list.
 - WHEN the entry is saved
 - THEN it is accepted and the stress is applied wherever the exact word
   "замок" (any case) occurs
+
+#### Scenario: Hyphenated source token is valid
+
+- GIVEN the entry `UTF-8 → у тэф восемь`
+- WHEN the entry is validated, saved through the editor and reloaded from the
+  file
+- THEN it is accepted, the editor shows no charset error, and the key survives
+  the round trip as typed
+
+#### Scenario: Hyphenated token is matched as a whole
+
+- GIVEN the entry `UTF-8 → у тэф восемь`
+- WHEN the text contains "UTF-8", "utf-8", or "Utf-8"
+- THEN every occurrence is replaced with "у тэф восемь", even though "UTF"
+  and "8" have built-in readings of their own
+
+#### Scenario: Whole-token entry outranks its parts
+
+- GIVEN the entries `e → и`, `mail → мэйл` and `e-mail → имейл`
+- WHEN the text contains "e-mail"
+- THEN it reads "имейл" instead of the composition "и мэйл"
+
+#### Scenario: Part entry applies without a whole-token entry
+
+- GIVEN the entry `utf → у тэф` and no `utf-8` entry
+- WHEN the text contains "UTF-8"
+- THEN it still reads "у тэф восемь", the "8" coming from the built-in reading
+
+#### Scenario: Hyphenated entry under a native identifier route
+
+- GIVEN a profile that routes identifiers `Native` and the entry
+  `e-mail → имейл`
+- WHEN the text contains "e-mail" next to "getUserData"
+- THEN "e-mail" is replaced with "имейл" and recorded as a dictionary override,
+  while "getUserData" keeps its native identifier annotation
+
+#### Scenario: Hyphenated entry does not match inside a longer identifier
+
+- GIVEN the entry `utf-8 → у тэф восемь`
+- WHEN the text contains "utf-8-sig"
+- THEN the token is not rewritten by that entry
+
+#### Scenario: Malformed hyphenation is rejected
+
+- GIVEN `from` values "-mail", "mail-", "e--mail", or "e-mail-8-"
+- WHEN the entry is validated
+- THEN each is rejected with the charset error and the editor explains the shape
+
+#### Scenario: Punctuation other than a hyphen is rejected
+
+- GIVEN `from` values "C:" or "a.b"
+- WHEN the entry is validated
+- THEN they are rejected with the charset error, because a source token carries
+  letters, digits and internal hyphens only
 
 #### Scenario: Multi-word source token is rejected
 
