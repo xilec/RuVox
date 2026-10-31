@@ -20,6 +20,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   as `method` → «мэтод» and `function` → «фанкшин» are curated (#306).
 
 ### Fixed
+- **ESC in the quick-add dictionary keeps the preview open** — the preview's
+  window-level ESC handler stayed attached while the dictionary editor was
+  open over it, so dismissing the editor also cancelled the preview.
 - **TeraTTSv2 English voices are selectable** — the Settings voice selector
   hardcoded the four Russian ids and hid the English styles shipped in the
   bundle; it now lists every voice of the installed manifest, with `ru_m5`
