@@ -90,6 +90,10 @@ pub fn read_dict_sidecar(case: &str) -> UserDictionary {
 
 /// Every profile the golden harness knows, keyed by the name used both in
 /// `RUVOX_GOLDEN_PROFILES` and in `tests/fixtures/pipeline/<profile>/`.
+///
+/// The engine profiles join the test-only `native_en` here so their pinned
+/// folders resolve; the flat corpus is classified for a narrower set (see
+/// [`selected_profile_names`]).
 pub fn all_profiles() -> Vec<(&'static str, &'static tts_contract::TextProfile)> {
     vec![
         ("silero", &ruvox_tauri_lib::tts::profiles::SILERO_PROFILE),
@@ -97,15 +101,27 @@ pub fn all_profiles() -> Vec<(&'static str, &'static tts_contract::TextProfile)>
             "native_en",
             &ruvox_tauri_lib::tts::profiles::NATIVE_EN_PROFILE,
         ),
+        ("teratts", &ruvox_tauri_lib::tts::profiles::TERATTS_PROFILE),
+        ("piper", &ruvox_tauri_lib::tts::profiles::PIPER_PROFILE),
     ]
 }
 
+/// Profiles a flat fixture is expected to hold under.
+///
+/// A flat fixture has one expected output, so a profile whose routes change
+/// that output (TeraTTS keeps Latin prose, Piper keeps code blocks) is pinned
+/// in its own folder instead. This is the classified set, not every profile
+/// the harness can name.
+pub fn flat_corpus_profile_names() -> Vec<&'static str> {
+    vec!["silero", "native_en"]
+}
+
 /// Profile names the profile-invariant fixtures run under:
-/// `RUVOX_GOLDEN_PROFILES` (comma-separated) or every known profile.
+/// `RUVOX_GOLDEN_PROFILES` (comma-separated) or the flat-corpus set.
 pub fn selected_profile_names() -> Vec<&'static str> {
     let known = all_profiles();
     let Ok(raw) = std::env::var("RUVOX_GOLDEN_PROFILES") else {
-        return known.into_iter().map(|(name, _)| name).collect();
+        return flat_corpus_profile_names();
     };
     let mut names = Vec::new();
     for name in raw.split(',').map(str::trim).filter(|n| !n.is_empty()) {

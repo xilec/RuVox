@@ -7,6 +7,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 ## [Unreleased]
 
 ### Changed
+- **Code blocks are read natively by TeraTTSv2 and Piper** — with «Читать
+  полностью», a fenced block is handed to those engines as code instead of
+  being spelled out in Russian; «Кратко» still announces the block on every
+  engine, and both Silero engines keep narrating it (#325).
 - **English spelling rules** — the transliteration fallback now understands
   silent `e`, vowel digraphs, soft `c`/`g`, voiced `s`, and the common
   `-tion`/`-sion`/`-ture`/`-cial`/`-tial` endings, so words read closer to

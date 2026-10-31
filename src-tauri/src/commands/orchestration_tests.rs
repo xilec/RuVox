@@ -964,8 +964,8 @@ async fn update_config_code_block_mode_applies_live_to_synthesis() {
     let entry = t.state().storage.get_entry(&uuid).unwrap();
     assert_eq!(
         entry.normalized_text.as_deref(),
-        Some("принт открывающая скобка хи закрывающая скобка"),
-        "fenced block read in full after the live mode switch"
+        Some("print('hi')"),
+        "fenced block read (by the engine, per the Piper route) after the live mode switch"
     );
     let g = entry.generation.expect("snapshot recorded");
     assert_eq!(g.code_block_mode.as_deref(), Some("read"));

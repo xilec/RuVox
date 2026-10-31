@@ -15,6 +15,8 @@ pub enum SpanKind {
     CodeIdentifier,
     /// A Latin run in prose the engine reads itself.
     ProseLatin,
+    /// A fenced code block the engine reads itself.
+    CodeBlock,
     /// A fragment the user dictionary replaced.
     DictionaryOverride,
 }
@@ -183,7 +185,8 @@ fn kind_priority(kind: SpanKind) -> u8 {
     match kind {
         SpanKind::DictionaryOverride => 0,
         SpanKind::CodeIdentifier => 1,
-        SpanKind::ProseLatin => 2,
+        SpanKind::CodeBlock => 2,
+        SpanKind::ProseLatin => 3,
     }
 }
 

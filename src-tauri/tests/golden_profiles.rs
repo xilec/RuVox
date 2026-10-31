@@ -1,10 +1,12 @@
 //! Profile classification of the golden corpus.
 //!
-//! `RUVOX_GOLDEN_PROFILES` decides which text profiles the corpus runs under.
-//! This test reports, for every fixture, whether its output is the same under
-//! every profile (profile-invariant, stays in `tests/fixtures/pipeline/`) or
-//! differs (profile-specific, belongs in `tests/fixtures/pipeline/<profile>/`
-//! with its own expected files).
+//! `RUVOX_GOLDEN_PROFILES` decides which text profiles the corpus runs under;
+//! without it the flat corpus runs under its classified set
+//! ([`common::flat_corpus_profile_names`]). This test reports, for every
+//! fixture, whether its output is the same under every selected profile
+//! (profile-invariant, stays in `tests/fixtures/pipeline/`) or differs
+//! (profile-specific, belongs in `tests/fixtures/pipeline/<profile>/` with its
+//! own expected files).
 //!
 //! Run the classifier with:
 //!   cargo test --manifest-path src-tauri/Cargo.toml --test golden_profiles -- --ignored --nocapture
@@ -20,7 +22,11 @@ type ProfileOutput = (&'static str, String, Vec<(usize, usize)>);
 #[ignore = "classifier: prints the move list instead of asserting"]
 fn classify_corpus_by_profile() {
     let cases = common::collect_case_names();
-    let profiles = common::all_profiles();
+    let profiles: Vec<(&'static str, &tts_contract::TextProfile)> =
+        common::selected_profile_names()
+            .into_iter()
+            .map(|name| (name, common::profile_by_name(name)))
+            .collect();
     let mut invariant = Vec::new();
     let mut specific: Vec<(String, Vec<&str>)> = Vec::new();
 

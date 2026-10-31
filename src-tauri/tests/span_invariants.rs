@@ -80,7 +80,7 @@ fn assert_span_invariants(text: &str, spans: &[Span], char_map: &[(usize, usize)
         previous_end = span.end;
 
         match span.kind {
-            SpanKind::CodeIdentifier | SpanKind::ProseLatin => assert_eq!(
+            SpanKind::CodeIdentifier | SpanKind::ProseLatin | SpanKind::CodeBlock => assert_eq!(
                 span.lang,
                 Some("en"),
                 "{label}: a native span carries the language the engine reads it in"

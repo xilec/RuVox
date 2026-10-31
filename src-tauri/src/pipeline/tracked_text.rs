@@ -78,6 +78,34 @@ impl CharMapping {
 
         (word_start, word_end)
     }
+
+    /// Replaces a placeholder in the finished mapping with text the pipeline
+    /// kept out of every narrating phase.
+    ///
+    /// A placeholder is itself a replacement, and [`TrackedText`] rejects a
+    /// replacement nested inside one, so this restoration cannot go through
+    /// the tracked text. Every inserted codepoint takes the placeholder's
+    /// source range — exactly what the tracking layer would have recorded for
+    /// a replacement. The placeholder is expected to occur once; a missing
+    /// placeholder means the pipeline lost track of the fragment.
+    pub fn substitute(&mut self, placeholder: &str, text: &str) {
+        let Some(byte_start) = self.transformed.find(placeholder) else {
+            debug_assert!(false, "placeholder {placeholder:?} disappeared");
+            return;
+        };
+        let char_start = self.transformed[..byte_start].chars().count();
+        let char_end = char_start + placeholder.chars().count();
+        let Some(origin) = self.char_map.get(char_start).copied() else {
+            debug_assert!(false, "placeholder {placeholder:?} has no mapping entry");
+            return;
+        };
+        self.transformed
+            .replace_range(byte_start..byte_start + placeholder.len(), text);
+        self.char_map.splice(
+            char_start..char_end,
+            std::iter::repeat_n(origin, text.chars().count()),
+        );
+    }
 }
 
 // ---- Internal tracking types ----
@@ -652,6 +680,28 @@ mod tests {
         assert_eq!(mapping.char_map.len(), 11);
         for i in 0..11 {
             assert_eq!(mapping.char_map[i], (i, i + 1));
+        }
+    }
+
+    #[test]
+    fn substitute_splices_code_into_a_finished_mapping() {
+        let placeholder = "\u{e000}\u{e001}";
+        let original = "до\n```rust\nlet x = 1;\n```\nпосле";
+        let mut tracked = TrackedText::new(original);
+        tracked.replace("```rust\nlet x = 1;\n```", placeholder);
+        let mut mapping = tracked.build_mapping();
+        mapping.substitute(placeholder, "let x = 1;");
+
+        assert_eq!(mapping.transformed, "до\nlet x = 1;\nпосле");
+        assert_eq!(mapping.char_map.len(), mapping.transformed.chars().count());
+
+        let block_start = original[..original.find("```rust").unwrap()]
+            .chars()
+            .count();
+        let block_end = block_start + "```rust\nlet x = 1;\n```".chars().count();
+        let code_len = "let x = 1;".chars().count();
+        for entry in &mapping.char_map[block_start..block_start + code_len] {
+            assert_eq!(*entry, (block_start, block_end));
         }
     }
 

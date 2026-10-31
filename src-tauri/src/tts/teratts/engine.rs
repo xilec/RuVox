@@ -36,7 +36,7 @@ use serde_json::json;
 use tokio::sync::{Mutex, RwLock};
 use tracing::{info, warn};
 
-use crate::pipeline::Span;
+use crate::pipeline::{Span, SpanKind};
 use crate::tts::engine::{EngineKind, TtsEngine};
 use crate::tts::map_via_spans;
 use crate::tts::profiles;
@@ -173,6 +173,7 @@ impl TeraTtsEngine {
         self.cancel.store(false, Ordering::SeqCst);
         let cancel = Arc::clone(&self.cancel);
         let policy = profiles::profile_for(EngineKind::TeraTts).chunk;
+        let text = neutralize_code_markup(text, &spans);
         let result = tokio::task::spawn_blocking(move || {
             let segments = segments_for(&text, &spans);
             engine.synthesize_segments(
@@ -305,6 +306,38 @@ fn segments_for<'a>(text: &'a str, spans: &[Span]) -> Vec<teratts::Segment<'a>> 
         });
     }
     segments
+}
+
+/// Replaces tag delimiters inside native code spans with spaces.
+///
+/// The model understands `<`/`>` only as tag syntax and the text frontend
+/// rejects a stray one, but code legitimately contains both (`Vec<T>`,
+/// `a < b`). Spaces keep the neighbouring words apart, which dropping them
+/// would not, and the codepoint count stays the same, so spans, timestamps and
+/// the char mapping remain valid. Every other segment keeps today's validation.
+fn neutralize_code_markup(text: String, spans: &[Span]) -> String {
+    let in_code = |index: usize| {
+        spans
+            .iter()
+            .any(|span| span.kind == SpanKind::CodeBlock && span.start <= index && index < span.end)
+    };
+    let mut chars: Vec<char> = text.chars().collect();
+    let mut replaced = 0usize;
+    for (index, character) in chars.iter_mut().enumerate() {
+        if matches!(character, '<' | '>') && in_code(index) {
+            *character = ' ';
+            replaced += 1;
+        }
+    }
+    if replaced > 0 {
+        warn!(
+            count = replaced,
+            "replaced tag delimiters inside a native code block"
+        );
+        chars.into_iter().collect()
+    } else {
+        text
+    }
 }
 
 /// Write the engine's WAV bytes to `out_wav`, creating the parent directory.
@@ -485,6 +518,27 @@ mod tests {
         let segments = segments_for(text, &spans);
         assert_eq!(segments.len(), 1);
         assert_eq!(segments[0].language, teratts::Language::Ru);
+    }
+
+    #[test]
+    fn tag_delimiters_inside_native_code_become_spaces() {
+        let text = "Vec<T> и a < b";
+        let spans = [Span {
+            kind: SpanKind::CodeBlock,
+            lang: Some("en"),
+            start: 0,
+            end: 6,
+        }];
+        let neutralized = neutralize_code_markup(text.to_string(), &spans);
+        assert_eq!(neutralized, "Vec T  и a < b");
+        assert_eq!(neutralized.chars().count(), text.chars().count());
+    }
+
+    #[test]
+    fn tag_delimiters_outside_native_code_stay_for_validation() {
+        let text = "привет < мир";
+        let neutralized = neutralize_code_markup(text.to_string(), &[]);
+        assert_eq!(neutralized, text);
     }
 
     #[test]

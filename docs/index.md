@@ -24,7 +24,7 @@ Skipping such fragments drops information, so the pipeline imitates a competent 
 - **Edit mode** — edit `original_text` directly in the viewer; changes are saved on the entry.
 - **Queue** — all entries with status badges (`pending` / `processing` / `ready` / `playing` / `error`); the context menu regenerates audio, exports it («Сохранить аудио как…»: WAV / Ogg Opus) and shows the parameters each recording was made with (also on double-click).
 - **Word highlight** — synchronized highlighting of the word being read in markdown mode, via binary search over `WordTimestamp`.
-- **Code block modes** — «Кратко» (default) replaces fenced code blocks with a marker sentence; «Читать полностью» narrates them in full; switched in Settings, applies live.
+- **Code block modes** — «Кратко» (default) replaces fenced code blocks with a marker sentence; «Читать полностью» hands them to the engine (TeraTTSv2 and Piper read the code themselves, Silero narrates it in full); switched in Settings, applies live.
 - **Mermaid** — diagrams render in the UI; for TTS they are replaced with the marker "тут мермэйд диаграмма".
 - **Playback** — mpv-based player with speed up to 3.0×, persisted across restarts.
 - **Localization** — Russian and English UI, selected in Settings.
