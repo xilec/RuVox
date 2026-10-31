@@ -184,6 +184,13 @@ fn re_heading() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"(?m)^#{1,6}\s+").expect("valid regex"))
 }
 
+fn re_blockquote() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    // One or more nested `>` markers at the start of a line, with their
+    // optional padding. An inline comparison (`a > b`) never matches.
+    RE.get_or_init(|| Regex::new(r"(?m)^(?:[ \t]*>[ \t]?)+").expect("valid regex"))
+}
+
 fn re_md_link_full() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     // Match full [text](url).
@@ -999,6 +1006,9 @@ impl TTSPipeline {
 
     fn process_markdown_tracked(&self, tracked: &mut TrackedText, expand_digits: bool) {
         tracked.sub(re_heading(), |_| String::new());
+        // Blockquote markers are structure, not speech; leaving them in the
+        // text also trips the TeraTTS tag validation on a leading `>`.
+        tracked.sub(re_blockquote(), |_| String::new());
 
         // Markdown links: [text](url) → text (link text preserved for further normalization).
         //
@@ -1029,8 +1039,20 @@ impl TTSPipeline {
             for (bracket_start, bracket_end, suffix_start, suffix_end) in link_ranges {
                 // Remove "](url)" first (higher byte offset, so reverse order is correct).
                 tracked.replace_byte_range(suffix_start, suffix_end, "");
-                // Remove the leading "[" (lower byte offset, now safely independent).
-                tracked.replace_byte_range(bracket_start, bracket_end, "");
+                // A glued link brackets a word boundary (`CVE.[12]`); removing
+                // the bracket without a separator would merge the link text
+                // with the preceding token and hide the number from the
+                // numbers phase. A space before the link text keeps the words
+                // apart without disturbing links already preceded by one.
+                let needs_separator = !snapshot[..bracket_start]
+                    .chars()
+                    .next_back()
+                    .is_some_and(char::is_whitespace);
+                tracked.replace_byte_range(
+                    bracket_start,
+                    bracket_end,
+                    if needs_separator { " " } else { "" },
+                );
             }
         }
 
@@ -1932,6 +1954,28 @@ mod tests {
 
         let out = p.process_for_engine("1. Первое", native_profile());
         assert_eq!(out.text, "1. Первое", "the marker itself is a number");
+    }
+
+    #[test]
+    fn a_glued_link_keeps_its_number_readable() {
+        let mut p = TTSPipeline::new();
+        let out = p.process_for_engine(
+            "CVE.[12](#fn:12)\n\nТекст",
+            &crate::tts::profiles::TERATTS_PROFILE,
+        );
+        assert_eq!(out.text, "CVE. двенадцать\n\nТекст");
+    }
+
+    #[test]
+    fn markdown_blockquote_markers_are_not_read() {
+        let mut p = TTSPipeline::new();
+        let out = p.process_for_engine("> цитата\n>> вложенная", native_profile());
+        assert_eq!(out.text, "цитата\nвложенная");
+        let out = p.process_for_engine("сравнение a > b", native_profile());
+        assert_eq!(
+            out.text, "сравнение a > b",
+            "an inline comparison is not a blockquote"
+        );
     }
 
     #[test]

@@ -24,6 +24,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   was dropped by the alphabet gate, gluing the surrounding words and failing
   synthesis with a word-count error (seen on Markdown list items and
   hard-wrapped prose); unsupported whitespace now becomes a space (#325).
+- **Markdown blockquote markers are not spoken** — a leading `>` survived
+  normalization and TeraTTS rejected it as stray tag markup; blockquote
+  markers are stripped before synthesis, while an inline comparison stays
+  (#325).
 
 ### Added
 - **Model bundle updates and cleanup** — Settings shows installed versions,
