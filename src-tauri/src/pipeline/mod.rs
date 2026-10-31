@@ -1168,20 +1168,7 @@ impl TTSPipeline {
         }
         let snapshot = tracked.text().to_string();
         let matches = self.dictionary_hits(&snapshot, re_user_dict_hyphenated());
-        if matches.is_empty() {
-            return;
-        }
-        let offsets = byte_to_char_offsets(&snapshot);
-        let ranges: Vec<(usize, usize)> = matches.iter().map(|(s, e, _)| (*s, *e)).collect();
-        record_byte_ranges(
-            tracked,
-            &offsets,
-            SpanKind::DictionaryOverride,
-            None,
-            &ranges,
-            recorded,
-        );
-        tracked.replace_byte_ranges(matches);
+        self.apply_dictionary_matches(tracked, recorded, matches);
     }
 
     /// User-dictionary pre-pass (change `user-dictionary`): replace tokens
@@ -1211,18 +1198,31 @@ impl TTSPipeline {
         // Two passes produce two sorted runs, not one: the replacement applies
         // in reverse order, so the merged list has to be sorted by start.
         matches.sort_by_key(|(start, _, _)| *start);
-        if !matches.is_empty() {
-            let offsets = byte_to_char_offsets(&snapshot);
-            let ranges: Vec<(usize, usize)> = matches.iter().map(|(s, e, _)| (*s, *e)).collect();
-            record_byte_ranges(
-                tracked,
-                &offsets,
-                SpanKind::DictionaryOverride,
-                None,
-                &ranges,
-                recorded,
-            );
+        self.apply_dictionary_matches(tracked, recorded, matches);
+    }
+
+    /// Record dictionary hits as override spans and replace them in the text.
+    /// Shared by both dictionary passes, so "a hit is an override span plus a
+    /// replacement" has one home.
+    fn apply_dictionary_matches(
+        &self,
+        tracked: &mut TrackedText,
+        recorded: &mut Vec<RecordedSpan>,
+        matches: Vec<(usize, usize, String)>,
+    ) {
+        if matches.is_empty() {
+            return;
         }
+        let offsets = byte_to_char_offsets(tracked.text());
+        let ranges: Vec<(usize, usize)> = matches.iter().map(|(s, e, _)| (*s, *e)).collect();
+        record_byte_ranges(
+            tracked,
+            &offsets,
+            SpanKind::DictionaryOverride,
+            None,
+            &ranges,
+            recorded,
+        );
         tracked.replace_byte_ranges(matches);
     }
 
@@ -2878,10 +2878,12 @@ mod tests {
     fn a_hyphenated_entry_matches_case_insensitively() {
         let mut p = TTSPipeline::new();
         p.set_user_dictionary(dictionary_with_hyphenated(&[("UTF-8", "у тэф восемь")]));
-        for input in ["UTF-8", "utf-8", "Utf-8"] {
-            let out = p.process_for_engine(input, &crate::tts::profiles::SILERO_PROFILE);
-            assert_eq!(out.text, "у тэф восемь", "input {input:?}");
-        }
+        let upper = p.process_for_engine("UTF-8", &crate::tts::profiles::SILERO_PROFILE);
+        assert_eq!(upper.text, "у тэф восемь");
+        let lower = p.process_for_engine("utf-8", &crate::tts::profiles::SILERO_PROFILE);
+        assert_eq!(lower.text, "у тэф восемь");
+        let mixed = p.process_for_engine("Utf-8", &crate::tts::profiles::SILERO_PROFILE);
+        assert_eq!(mixed.text, "у тэф восемь");
     }
 
     #[test]

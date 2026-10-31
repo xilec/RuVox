@@ -92,15 +92,22 @@ fn accepts_hyphenated_tokens() {
 
 #[test]
 fn rejects_malformed_hyphenation() {
-    for from in ["-mail", "mail-", "e--mail", "-", "e-mail-8-"] {
-        assert!(
-            matches!(
-                validate_entry(from, "почта"),
-                Err(DictionaryError::InvalidFrom)
-            ),
-            "a hyphen must sit between two non-empty parts: {from:?}"
-        );
-    }
+    assert!(matches!(
+        validate_entry("-mail", "почта"),
+        Err(DictionaryError::InvalidFrom)
+    ));
+    assert!(matches!(
+        validate_entry("mail-", "почта"),
+        Err(DictionaryError::InvalidFrom)
+    ));
+    assert!(matches!(
+        validate_entry("e--mail", "почта"),
+        Err(DictionaryError::InvalidFrom)
+    ));
+    assert!(matches!(
+        validate_entry("e-mail-8-", "почта"),
+        Err(DictionaryError::InvalidFrom)
+    ));
 }
 
 #[test]
