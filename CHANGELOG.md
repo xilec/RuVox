@@ -16,6 +16,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   as `method` → «мэтод» and `function` → «фанкшин» are curated (#306).
 
 ### Added
+- **Model bundle updates and cleanup** — Settings shows installed versions,
+  model ids, and sizes for Silero Native, TeraTTSv2, and Piper voices; checks
+  a small update channel, installs updates atomically with rollback, skips a
+  version, and deletes inactive assets; the generation snapshot records bundle
+  provenance (#317).
 - **Engine-scoped dictionaries** — the dictionary file now holds named
   collections: a global one for every engine and optional per-engine ones.
   Engine entries win on the same source word, the editor has a scope selector,

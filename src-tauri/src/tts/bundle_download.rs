@@ -61,9 +61,40 @@ pub async fn download(
     parse_manifest: impl Fn(&[u8]) -> Result<Vec<BundleFile>, String>,
     emitter: &Emitter,
 ) -> Result<(), TtsError> {
+    download_from_manifest_url(
+        bundle_dir,
+        engine,
+        &format!("{base_url}/manifest.json"),
+        None,
+        parse_manifest,
+        emitter,
+    )
+    .await
+}
+
+/// Same as [`download`], but with the manifest URL supplied by a channel and
+/// an optional expected sha256 for the manifest itself. The channel hash is
+/// verified before the manifest is parsed or written, so a swapped or
+/// truncated manifest cannot half-install a bundle.
+pub async fn download_from_manifest_url(
+    bundle_dir: &Path,
+    engine: &str,
+    manifest_url: &str,
+    manifest_sha256: Option<&str>,
+    parse_manifest: impl Fn(&[u8]) -> Result<Vec<BundleFile>, String>,
+    emitter: &Emitter,
+) -> Result<(), TtsError> {
     (emitter)("bundle_download_started", json!({ "engine": engine }));
 
-    let result = download_inner(bundle_dir, engine, base_url, parse_manifest, emitter).await;
+    let result = download_inner(
+        bundle_dir,
+        engine,
+        manifest_url,
+        manifest_sha256,
+        parse_manifest,
+        emitter,
+    )
+    .await;
 
     match &result {
         Ok(()) => {
@@ -85,7 +116,8 @@ pub async fn download(
 async fn download_inner(
     bundle_dir: &Path,
     engine: &str,
-    base_url: &str,
+    manifest_url: &str,
+    manifest_sha256: Option<&str>,
     parse_manifest: impl Fn(&[u8]) -> Result<Vec<BundleFile>, String>,
     emitter: &Emitter,
 ) -> Result<(), TtsError> {
@@ -105,8 +137,16 @@ async fn download_inner(
             message: format!("не удалось инициализировать HTTP-клиент: {e}"),
         })?;
 
-    let manifest_url = format!("{base_url}/manifest.json");
-    let manifest_bytes = fetch_whole(&client, &manifest_url).await?;
+    let manifest_bytes = fetch_whole(&client, manifest_url).await?;
+    if let Some(expected) = manifest_sha256 {
+        let actual = sha256_bytes(&manifest_bytes);
+        if !actual.eq_ignore_ascii_case(expected) {
+            return Err(TtsError::Ttsd {
+                code: "bundle_manifest_checksum_failed".to_string(),
+                message: "контрольная сумма манифеста не совпала с каналом".to_string(),
+            });
+        }
+    }
     let files = parse_manifest(&manifest_bytes).map_err(|e| TtsError::Ttsd {
         code: "bundle_manifest_invalid".to_string(),
         message: format!("манифест бандла повреждён: {e}"),
@@ -119,6 +159,9 @@ async fn download_inner(
     }
     write_atomic(&bundle_dir.join("manifest.json"), &manifest_bytes).await?;
 
+    let base_url = manifest_url
+        .strip_suffix("/manifest.json")
+        .unwrap_or(manifest_url);
     let total_files = files.len() as u32;
     for (idx, entry) in files.iter().enumerate() {
         let dest = safe_path(bundle_dir, &entry.path)?;
@@ -185,6 +228,12 @@ pub(crate) async fn file_is_valid(dest: &Path, entry: &BundleFile) -> bool {
         Ok(actual) => actual.eq_ignore_ascii_case(&entry.sha256),
         Err(_) => false,
     }
+}
+
+fn sha256_bytes(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    format!("{:x}", hasher.finalize())
 }
 
 /// sha256 of a local file, read in 1 MiB chunks (bundle files reach ~256 MB).
@@ -294,6 +343,12 @@ async fn download_one_inner(
     total_files: u32,
     emitter: &Emitter,
 ) -> Result<(), TtsError> {
+    // TeraTTS manifests use nested destinations such as
+    // `models/vocoder.onnx`; the release assets themselves are flat, so the
+    // destination parent must be created before the `.partial` file.
+    if let Some(parent) = dest.parent() {
+        fs::create_dir_all(parent).await.map_err(TtsError::Ipc)?;
+    }
     let tmp = partial_path(dest);
     let mut existing = match fs::metadata(&tmp).await {
         Ok(meta) if meta.len() <= entry.size => meta.len(),
@@ -543,6 +598,50 @@ mod tests {
         assert!(result.is_err());
         assert!(!partial_path(&dest).exists());
         assert!(!dest.exists());
+    }
+
+    /// A manifest may place a file in a subdirectory (TeraTTS does); the
+    /// downloader must create that directory before writing the `.partial`.
+    #[tokio::test]
+    async fn nested_destination_creates_parent_directory() {
+        use std::io::{Read as _, Write as _};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let contents = b"nested model bytes";
+        let response = {
+            let head = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                contents.len()
+            );
+            let mut bytes = head.into_bytes();
+            bytes.extend_from_slice(contents);
+            bytes
+        };
+        std::thread::spawn(move || {
+            if let Ok((mut sock, _)) = listener.accept() {
+                let mut buf = [0u8; 1024];
+                let _ = sock.read(&mut buf);
+                let _ = sock.write_all(&response);
+            }
+        });
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let dest = dir.path().join("models").join("vocoder.onnx");
+        let entry = entry_for("models/vocoder.onnx", contents);
+        download_one(
+            &reqwest::Client::new(),
+            &format!("http://{addr}/vocoder.onnx"),
+            &dest,
+            &entry,
+            "teratts",
+            0,
+            1,
+            &test_emitter(),
+        )
+        .await
+        .expect("nested download succeeds");
+        assert_eq!(fs::read(&dest).await.unwrap(), contents);
     }
 
     #[test]

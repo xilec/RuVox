@@ -1,0 +1,9 @@
+{
+  "format_version": 1,
+  "asset": "teratts",
+  "bundle_version": "1",
+  "manifest_url": "https://github.com/xilec/RuVox/releases/download/teratts-models-v1/manifest.json",
+  "manifest_sha256": "87f9c975eca77a2e948462f7a273276022878a12ca5cc0d0025798ed6430e7ab",
+  "size_bytes": 409846627,
+  "published_at": "2026-10-30T00:00:00Z"
+}

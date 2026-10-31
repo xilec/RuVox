@@ -452,6 +452,10 @@ pub(crate) fn invoke_handler<R: Runtime>()
         pick_dictionary_import_path,
         pick_dictionary_export_path,
         get_available_engines,
+        get_model_status,
+        install_model_asset,
+        delete_model_asset,
+        skip_model_update,
         download_piper_voice,
         download_silero_native_bundle,
         download_teratts_bundle,
@@ -1017,6 +1021,14 @@ pub fn run() {
                 user_quit: Arc::new(AtomicBool::new(false)),
                 synthesis_tasks,
                 synthesize_entered,
+            });
+
+            // Startup channel check is intentionally fire-and-forget and
+            // throttled by the module's 24-hour cache. An offline machine
+            // keeps working from the installed bundle and Settings shows the
+            // channel error without a toast.
+            tauri::async_runtime::spawn(async {
+                let _ = tts::model_lifecycle::channels(false).await;
             });
 
             Ok(())

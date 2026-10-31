@@ -42,7 +42,9 @@ export default defineConfig(() => ({
   server: {
     port: 1420,
     strictPort: true,
-    host: host || false,
+    // Bind IPv4 explicitly: WebKitGTK resolves localhost to 127.0.0.1 while
+    // Node/Vite can bind only ::1, which leaves the dev window blank.
+    host: host || "127.0.0.1",
     hmr: host
       ? {
           protocol: "ws",

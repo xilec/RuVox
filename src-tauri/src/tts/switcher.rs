@@ -234,6 +234,13 @@ impl EngineSwitcher {
         Arc::clone(&self.inner.read().await.engine)
     }
 
+    /// Piper voice currently held by the switcher, if the active engine is
+    /// Piper. The model inventory uses it to protect the active voice from
+    /// deletion.
+    pub async fn active_piper_voice(&self) -> Option<String> {
+        self.inner.read().await.piper_voice.clone()
+    }
+
     /// Terminate the current engine's in-flight work: the ttsd subprocess for
     /// Silero, the active chunk loop's cancel flag for Piper (`PiperEngine::
     /// kill_current`). Also terminates the most recently built Silero engine

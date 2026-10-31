@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Badge,
@@ -8,7 +8,6 @@ import {
   Group,
   Modal,
   NumberInput,
-  Progress,
   SegmentedControl,
   Select,
   Stack,
@@ -22,15 +21,15 @@ import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { getVersion } from '@tauri-apps/api/app';
-import { commands, events } from '../lib/tauri';
+import { commands } from '../lib/tauri';
 import { formatMb as formatMbValue } from '../lib/format';
 import type { CleanupMode, EngineKind, UIConfigPatch } from '../lib/tauri';
 import type { MessageKey } from '../i18n/ru';
 import { formatError } from '../lib/errors';
 import { t, useT } from '../lib/i18n';
 import { setLocale, toLocale } from '../stores/locale';
-import { bundleDownloadPercent } from '../lib/bundleDownload';
 import { PIPER_VOICES } from '../lib/piperVoices';
+import { ModelAssetsDialog } from './ModelAssets';
 import { checkForUpdatesManual, updaterSupported } from '../lib/updater';
 import {
   applyEngineChange,
@@ -277,6 +276,7 @@ export function SettingsModal({
   const tt = useT();
   const { setColorScheme } = useMantineColorScheme();
   const [cleanupOpen, setCleanupOpen] = useState(false);
+  const [modelsOpen, setModelsOpen] = useState(false);
   const [dictionaryCount, setDictionaryCount] = useState<number | null>(null);
   const [cacheDir, setCacheDir] = useState<string>('');
   const [appVersion, setAppVersion] = useState<string>('');
@@ -286,17 +286,9 @@ export function SettingsModal({
   const [availability, setAvailability] = useState<AvailabilityMap>(() =>
     pessimisticAvailability(),
   );
-  // Live bundle-download state: null when idle, otherwise the current file
-  // and the overall percentage derived from the progress events.
-  const [bundleDownload, setBundleDownload] = useState<{
-    engine: 'silero_native' | 'teratts';
-    file: string;
-    percent: number;
-  } | null>(null);
-  // Whether a download session is active — lets the invoke catch distinguish
-  // "command failed before starting" (report here) from "failed mid-download"
-  // (already reported by the finished event).
-  const downloadActiveRef = useRef(false);
+  const refreshAvailability = useCallback(() => {
+    commands.getAvailableEngines().then(setAvailability).catch(() => {});
+  }, []);
   // Whether the user touched the sample-rate selector in this dialog
   // session. The config default is 24000 (the native engine's own default);
   // picking «Silero (нативный)» follows it only while the user made no
@@ -430,86 +422,13 @@ export function SettingsModal({
     }
   };
 
-  // Live bundle-download progress, driven by the backend's
-  // bundle_download_* events. Subscribed only while the dialog is open.
-  useEffect(() => {
-    if (!opened) return;
-    const unlisteners = [
-      events.bundleDownloadStarted((p) => {
-        downloadActiveRef.current = true;
-        setBundleDownload({ engine: p.engine, file: 'manifest.json', percent: 0 });
-      }),
-      events.bundleDownloadProgress((p) => {
-        setBundleDownload({ engine: p.engine, file: p.file, percent: bundleDownloadPercent(p) });
-      }),
-      events.bundleDownloadFinished((p) => {
-        downloadActiveRef.current = false;
-        setBundleDownload(null);
-        if (p.ok) {
-          notifications.show({
-            title: tt('settings.bundle.finished.title'),
-            message:
-              p.engine === 'teratts'
-                ? tt('settings.bundle.finished.message_teratts')
-                : tt('settings.bundle.finished.message'),
-            color: 'green',
-          });
-          // Re-probe so the engine option becomes selectable immediately.
-          commands.getAvailableEngines().then(setAvailability).catch(() => {});
-        } else {
-          notifications.show({
-            title: tt('settings.bundle.failed.title'),
-            message: p.message ?? tt('bundle.unknown_error'),
-            color: 'red',
-          });
-        }
-      }),
-    ];
-    return () => {
-      unlisteners.forEach((u) => {
-        u.then((fn) => fn()).catch(() => {});
-      });
-    };
-    // `tt` re-subscribes on locale switch so toasts use the active catalog.
-  }, [opened, tt]);
-
-  const handleBundleDownload = (engine: 'silero_native' | 'teratts') => {
-    // Switch to the progress view immediately — the started event lands one
-    // IPC round-trip later, and without this the button stays clickable and
-    // the user can queue a second download.
-    setBundleDownload({ engine, file: 'manifest.json', percent: 0 });
-    const start =
-      engine === 'silero_native'
-        ? commands.downloadSileroNativeBundle()
-        : commands.downloadTerattsBundle();
-    start.catch((err) => {
-      // Mid-download failures are already reported by the
-      // bundle_download_finished { ok: false } event; only a command that
-      // failed before starting needs a notification here.
-      if (!downloadActiveRef.current) {
-        setBundleDownload(null);
-        notifications.show({
-          title: tt('settings.bundle.failed.title'),
-          message: formatError(err),
-          color: 'red',
-        });
-      }
-    });
-  };
-
-  // A download can outlive the dialog: clear the local progress when it
-  // closes so reopening does not show a stale bar (the backend serializes
-  // downloads and reports a second attempt as in-progress).
-  useEffect(() => {
-    if (opened) return;
-    setBundleDownload(null);
-    downloadActiveRef.current = false;
-  }, [opened]);
-
   // Reset the nested cleanup modal's visibility when Settings closes, so
   // reopening Settings does not resurrect a stale nested-open state.
   useEffect(() => {
-    if (!opened) setCleanupOpen(false);
+    if (!opened) {
+      setCleanupOpen(false);
+      setModelsOpen(false);
+    }
   }, [opened]);
 
   const handleOpenCacheDir = async () => {
@@ -618,6 +537,20 @@ export function SettingsModal({
             </Alert>
           )}
 
+          <Group justify="space-between" wrap="nowrap">
+            <div>
+              <Text size="sm" fw={500}>
+                {tt('settings.models.title')}
+              </Text>
+              <Text size="xs" c="dimmed">
+                {tt('settings.models.description')}
+              </Text>
+            </div>
+            <Button variant="default" size="xs" onClick={() => setModelsOpen(true)}>
+              {tt('settings.models.open')}
+            </Button>
+          </Group>
+
           <Select
             label={tt('settings.engine.label')}
             description={tt('settings.engine.description')}
@@ -648,54 +581,6 @@ export function SettingsModal({
             </Text>
           )}
 
-          {!availability.silero_native.available &&
-            (bundleDownload?.engine === 'silero_native' ? (
-              <Stack gap={4}>
-                <Text size="xs" c="dimmed">
-                  {tt('settings.bundle.downloading', [
-                    bundleDownload.file,
-                    Math.round(bundleDownload.percent),
-                  ])}
-                </Text>
-                <Progress value={bundleDownload.percent} animated />
-              </Stack>
-            ) : (
-              <Group justify="flex-start">
-                <Button
-                  variant="default"
-                  size="xs"
-                  disabled={bundleDownload !== null}
-                  onClick={() => handleBundleDownload('silero_native')}
-                >
-                  {tt('settings.bundle.download_button')}
-                </Button>
-              </Group>
-            ))}
-
-          {!availability.teratts.available &&
-            (bundleDownload?.engine === 'teratts' ? (
-              <Stack gap={4}>
-                <Text size="xs" c="dimmed">
-                  {tt('settings.bundle.downloading', [
-                    bundleDownload.file,
-                    Math.round(bundleDownload.percent),
-                  ])}
-                </Text>
-                <Progress value={bundleDownload.percent} animated />
-              </Stack>
-            ) : (
-              <Group justify="flex-start">
-                <Button
-                  variant="default"
-                  size="xs"
-                  disabled={bundleDownload !== null}
-                  onClick={() => handleBundleDownload('teratts')}
-                >
-                  {tt('settings.bundle.download_teratts')}
-                </Button>
-              </Group>
-            ))}
-
           {form.values.engine === 'teratts' && (
             <Select
               label={tt('settings.teratts_voice.label')}
@@ -725,32 +610,15 @@ export function SettingsModal({
                 }
                 rightSectionWidth={60}
               />
-              <Group justify="flex-start">
-                <Button
-                  variant="default"
-                  size="xs"
-                  onClick={() =>
-                    commands.downloadPiperVoice(form.values.piper_voice).catch((err) => {
-                      notifications.show({
-                        title: tt('settings.piper_voice.download_failed.title'),
-                        message: formatError(err),
-                        color: 'red',
-                      });
-                    })
-                  }
-                >
-                  {tt('settings.piper_voice.download_now')}
-                </Button>
-              </Group>
             </Stack>
-          ) : (
+          ) : form.values.engine === 'silero' || form.values.engine === 'silero_native' ? (
             <Select
               label={tt('settings.speaker.label')}
               data={speakerOptions}
               key={form.key('speaker')}
               {...form.getInputProps('speaker')}
             />
-          )}
+          ) : null}
 
           <Select
             label={tt('settings.sample_rate.label')}
@@ -960,6 +828,12 @@ export function SettingsModal({
           </Group>
         </Stack>
       </form>
+
+      <ModelAssetsDialog
+        opened={modelsOpen}
+        onClose={() => setModelsOpen(false)}
+        onAvailabilityChanged={refreshAvailability}
+      />
 
       <CleanupCacheModal
         opened={cleanupOpen}

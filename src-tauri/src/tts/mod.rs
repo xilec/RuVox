@@ -12,6 +12,7 @@
 pub mod availability;
 pub mod bundle_download;
 pub mod engine;
+pub mod model_lifecycle;
 pub mod piper;
 pub mod profiles;
 pub mod silero_native;
@@ -237,6 +238,12 @@ pub struct ModelInfo {
     /// file name (`ru_RU-ruslan-medium.onnx`).
     pub name: String,
     pub sha256: Option<String>,
+    /// Installed bundle version when the engine has one.
+    pub bundle_version: Option<String>,
+    /// Stable model id from the bundle manifest.
+    pub model_id: Option<String>,
+    /// Upstream revision recorded by the bundle manifest.
+    pub upstream_revision: Option<String>,
 }
 
 // ---------------------------------------------------------------------------

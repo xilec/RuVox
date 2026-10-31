@@ -7,7 +7,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use parking_lot::Mutex;
@@ -27,6 +27,8 @@ use crate::storage::schema::{
 };
 use crate::storage::service::{StorageError, StorageService};
 use crate::tts::engine::EngineKind;
+use crate::tts::model_lifecycle::{self, ModelAssetStatus, ModelState, ModelStatus};
+use crate::tts::piper::catalog;
 use crate::tts::piper::download::download_voice;
 use crate::tts::{
     AvailableEngines, CharMappingEntry, ModelInfo, SynthesizeOutput, TtsEngine, TtsError,
@@ -506,6 +508,9 @@ fn model_params(info: ModelInfo) -> ModelParams {
     ModelParams {
         name: info.name,
         sha256: info.sha256,
+        bundle_version: info.bundle_version,
+        model_id: info.model_id,
+        upstream_revision: info.upstream_revision,
     }
 }
 
@@ -1479,6 +1484,290 @@ pub async fn get_config(state: State<'_, AppState>) -> CmdResult<UIConfig> {
     state.storage.load_config().map_err(CommandError::from)
 }
 
+/// Path of the small, non-config model-state file (skip-version choices).
+fn model_state_path() -> CmdResult<PathBuf> {
+    crate::paths::config_root()
+        .map(|root| root.join("model_state.json"))
+        .ok_or_else(|| CommandError::internal("models.config_root_missing", vec![]))
+}
+
+fn bundle_dir(state: &AppState, asset: &str) -> Option<PathBuf> {
+    match asset {
+        model_lifecycle::SILERO_NATIVE => Some(state.silero_native_bundle_dir.clone()),
+        model_lifecycle::TERATTS => Some(state.teratts_bundle_dir.clone()),
+        _ => None,
+    }
+}
+
+fn pinned_manifest_url(asset: &str) -> Option<String> {
+    match asset {
+        model_lifecycle::SILERO_NATIVE => Some(format!(
+            "{}/manifest.json",
+            crate::tts::silero_native::download::BUNDLE_RELEASE_BASE_URL
+        )),
+        model_lifecycle::TERATTS => Some(format!(
+            "{}/manifest.json",
+            crate::tts::teratts::download::BUNDLE_RELEASE_BASE_URL
+        )),
+        _ => None,
+    }
+}
+
+fn default_bundle_version(asset: &str) -> &'static str {
+    match asset {
+        model_lifecycle::SILERO_NATIVE => "v5_ru",
+        model_lifecycle::TERATTS => "1",
+        _ => "unknown",
+    }
+}
+
+fn bundle_row(asset: &str, bundle_dir: &Path, active_kind: EngineKind) -> ModelAssetStatus {
+    let info = model_lifecycle::inspect_bundle(asset, bundle_dir);
+    ModelAssetStatus {
+        id: asset.to_string(),
+        kind: "bundle".to_string(),
+        installed: info.installed,
+        active: active_kind.as_str() == asset,
+        installed_version: info.version.filter(|v| !v.is_empty()),
+        model_id: info.model_id,
+        upstream_revision: info.upstream_revision,
+        bundled_voices: info.bundled_voices,
+        installed_bytes: info.bytes,
+        latest_version: None,
+        latest_bytes: None,
+        update_available: false,
+        skipped: false,
+        deletable: info.installed && active_kind.as_str() != asset,
+        error: info.error,
+    }
+}
+
+/// Return the unified model inventory: both versioned bundles and installed
+/// Piper voices, with sizes and update state. `force` bypasses the 24-hour
+/// channel cache and is used by the explicit "check for updates" action.
+#[tauri::command]
+pub async fn get_model_status(state: State<'_, AppState>, force: bool) -> CmdResult<ModelStatus> {
+    let snapshot = model_lifecycle::channels(force).await;
+    let model_state = ModelState::load(&model_state_path()?);
+    let active_kind = state.engine_switcher.kind();
+    let active_voice = state.engine_switcher.active_piper_voice().await;
+
+    let mut rows = vec![
+        bundle_row(
+            model_lifecycle::SILERO_NATIVE,
+            &state.silero_native_bundle_dir,
+            active_kind,
+        ),
+        bundle_row(
+            model_lifecycle::TERATTS,
+            &state.teratts_bundle_dir,
+            active_kind,
+        ),
+    ];
+    for voice in catalog::VOICES {
+        let dir = state.piper_voices_dir.join(voice.id);
+        let installed = dir.join(voice.model_filename()).is_file()
+            && dir.join(voice.model_config_filename()).is_file();
+        let active = active_kind == EngineKind::Piper && active_voice.as_deref() == Some(voice.id);
+        rows.push(ModelAssetStatus {
+            id: format!("piper:{}", voice.id),
+            kind: "voice".to_string(),
+            installed,
+            active,
+            installed_version: None,
+            model_id: Some(voice.id.to_string()),
+            upstream_revision: None,
+            bundled_voices: Vec::new(),
+            installed_bytes: model_lifecycle::dir_size(&dir),
+            latest_version: None,
+            latest_bytes: None,
+            update_available: false,
+            skipped: false,
+            deletable: installed && !active,
+            error: None,
+        });
+    }
+    Ok(model_lifecycle::status_from_rows(
+        rows,
+        &snapshot,
+        &model_state,
+    ))
+}
+
+/// Install or update one bundle from its channel. Falls back to the pinned
+/// release when no channel is available (initial install on an offline
+/// machine); the downloaded manifest still verifies every file.
+async fn install_bundle_inner(state: &AppState, asset: &str, force_channel: bool) -> CmdResult<()> {
+    let Some(bundle_dir) = bundle_dir(state, asset) else {
+        return Err(CommandError::internal(
+            "bundle.unknown_asset",
+            vec![asset.to_string()],
+        ));
+    };
+    if state.engine_switcher.kind().as_str() == asset {
+        return Err(CommandError::internal("bundle.in_use", vec![]));
+    }
+    let _guard = state
+        .bundle_download_lock
+        .try_lock()
+        .map_err(|_| CommandError::internal("bundle.download_in_progress", vec![]))?;
+
+    let snapshot = model_lifecycle::channels(force_channel).await;
+    let channel = snapshot.channels.get(asset);
+    // Initial install may use the pinned release when no channel is reachable.
+    // An update must not: falling back would silently replace a newer bundle
+    // with the version pinned in this app build.
+    let installed = model_lifecycle::inspect_bundle(asset, &bundle_dir).installed;
+    let manifest_url = if let Some(channel) = channel {
+        channel.manifest_url.clone()
+    } else if installed {
+        return Err(CommandError::internal(
+            "bundle.channel_unavailable",
+            vec![asset.to_string()],
+        ));
+    } else {
+        pinned_manifest_url(asset).ok_or_else(|| {
+            CommandError::internal("bundle.unknown_asset", vec![asset.to_string()])
+        })?
+    };
+    let manifest_sha = channel.map(|c| c.manifest_sha256.as_str());
+    let version = channel
+        .map(|c| c.bundle_version.as_str())
+        .unwrap_or_else(|| default_bundle_version(asset));
+    let emitter = Arc::clone(&state.emitter);
+
+    let result = match asset {
+        model_lifecycle::SILERO_NATIVE => {
+            model_lifecycle::install(
+                &bundle_dir,
+                asset,
+                &manifest_url,
+                manifest_sha,
+                |bytes| {
+                    silero_native::bundle::Manifest::parse(bytes)
+                        .map(|manifest| {
+                            manifest
+                                .files
+                                .into_iter()
+                                .map(|file| crate::tts::bundle_download::BundleFile {
+                                    asset: file.path.clone(),
+                                    path: file.path,
+                                    size: file.size,
+                                    sha256: file.sha256,
+                                })
+                                .collect()
+                        })
+                        .map_err(|e| e.to_string())
+                },
+                version,
+                &emitter,
+            )
+            .await
+        }
+        model_lifecycle::TERATTS => {
+            model_lifecycle::install(
+                &bundle_dir,
+                asset,
+                &manifest_url,
+                manifest_sha,
+                |bytes| {
+                    let manifest: teratts::bundle::Manifest =
+                        serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
+                    if manifest.format_version != teratts::bundle::FORMAT_VERSION {
+                        return Err(format!(
+                            "unsupported bundle format {} (expected {})",
+                            manifest.format_version,
+                            teratts::bundle::FORMAT_VERSION
+                        ));
+                    }
+                    Ok(manifest
+                        .files
+                        .into_iter()
+                        .map(|file| crate::tts::bundle_download::BundleFile {
+                            path: file.path,
+                            asset: file.asset,
+                            size: file.size,
+                            sha256: file.sha256,
+                        })
+                        .collect())
+                },
+                version,
+                &emitter,
+            )
+            .await
+        }
+        _ => unreachable!("bundle_dir accepted only known assets"),
+    };
+    result.map(|_| ()).map_err(bundle_install_error)
+}
+
+/// Keep the typed bundle failure code so the frontend can localize known
+/// cases (active model, checksum, disk I/O) and fall back to the concrete
+/// backend message for network/HTTP failures.
+fn bundle_install_error(e: TtsError) -> CommandError {
+    match e {
+        TtsError::Ttsd { code, message } => {
+            CommandError::internal(&code, vec![]).with_message(message)
+        }
+        TtsError::Ipc(e) => CommandError::internal("bundle.io_error", vec![e.to_string()]),
+        other => CommandError::from(other),
+    }
+}
+
+/// Install or update a model bundle. The active engine's bundle is protected
+/// with `bundle.in_use`; the UI asks the user to switch engines first.
+#[tauri::command]
+pub async fn install_model_asset(state: State<'_, AppState>, asset: String) -> CmdResult<()> {
+    install_bundle_inner(&state, &asset, true).await
+}
+
+/// Delete a downloaded model asset and return the reclaimed bytes. Refuses the
+/// active bundle and the active Piper voice.
+#[tauri::command]
+pub async fn delete_model_asset(state: State<'_, AppState>, asset: String) -> CmdResult<u64> {
+    if let Some(voice_id) = asset.strip_prefix("piper:") {
+        let voice = catalog::lookup(voice_id)
+            .ok_or_else(|| CommandError::internal("bundle.unknown_asset", vec![asset.clone()]))?;
+        let active = state.engine_switcher.kind() == EngineKind::Piper
+            && state.engine_switcher.active_piper_voice().await.as_deref() == Some(voice.id);
+        if active {
+            return Err(CommandError::internal("bundle.in_use", vec![]));
+        }
+        let dir = state.piper_voices_dir.join(voice.id);
+        return model_lifecycle::remove_dir(&dir)
+            .await
+            .map_err(CommandError::from);
+    }
+    let Some(dir) = bundle_dir(&state, &asset) else {
+        return Err(CommandError::internal(
+            "bundle.unknown_asset",
+            vec![asset.clone()],
+        ));
+    };
+    if state.engine_switcher.kind().as_str() == asset {
+        return Err(CommandError::internal("bundle.in_use", vec![]));
+    }
+    let _guard = state
+        .bundle_download_lock
+        .try_lock()
+        .map_err(|_| CommandError::internal("bundle.download_in_progress", vec![]))?;
+    model_lifecycle::remove_dir(&dir)
+        .await
+        .map_err(CommandError::from)
+}
+
+/// Defer a specific channel version: automatic checks stop advertising it,
+/// while the manual "Update" action remains available.
+#[tauri::command]
+pub async fn skip_model_update(asset: String, version: String) -> CmdResult<()> {
+    let path = model_state_path()?;
+    let mut model_state = ModelState::load(&path);
+    model_state.skip(&asset, &version);
+    model_state.save(&path).map_err(|e| {
+        CommandError::internal("models.state_save_failed", vec![]).with_message(e.to_string())
+    })
+}
+
 /// Download a Piper voice on user demand. Idempotent — already-present
 /// files are skipped. Progress is delivered via the
 /// `voice_download_started` / `voice_download_progress` /
@@ -1521,15 +1810,7 @@ pub async fn get_available_engines(state: State<'_, AppState>) -> CmdResult<Avai
 /// final outcome so the frontend can show one final notification.
 #[tauri::command]
 pub async fn download_silero_native_bundle(state: State<'_, AppState>) -> CmdResult<()> {
-    let _guard = state
-        .bundle_download_lock
-        .try_lock()
-        .map_err(|_| CommandError::internal("bundle.download_in_progress", vec![]))?;
-    let bundle_dir = state.silero_native_bundle_dir.clone();
-    let emitter = Arc::clone(&state.emitter);
-    crate::tts::silero_native::download::download_bundle(&bundle_dir, &emitter)
-        .await
-        .map_err(CommandError::from)
+    install_bundle_inner(&state, model_lifecycle::SILERO_NATIVE, false).await
 }
 
 /// Download the TeraTTSv2 model bundle on user demand. Idempotent — files
@@ -1540,15 +1821,7 @@ pub async fn download_silero_native_bundle(state: State<'_, AppState>) -> CmdRes
 /// notification.
 #[tauri::command]
 pub async fn download_teratts_bundle(state: State<'_, AppState>) -> CmdResult<()> {
-    let _guard = state
-        .bundle_download_lock
-        .try_lock()
-        .map_err(|_| CommandError::internal("bundle.download_in_progress", vec![]))?;
-    let bundle_dir = state.teratts_bundle_dir.clone();
-    let emitter = Arc::clone(&state.emitter);
-    crate::tts::teratts::download::download_bundle(&bundle_dir, &emitter)
-        .await
-        .map_err(CommandError::from)
+    install_bundle_inner(&state, model_lifecycle::TERATTS, false).await
 }
 
 /// Apply the persisted `code_block_mode` to the shared pipeline. Called at
@@ -2297,6 +2570,9 @@ mod synthesis_tests {
         regenerated.model = Some(ModelParams {
             name: "ru_RU-baya-medium.onnx".to_string(),
             sha256: None,
+            bundle_version: None,
+            model_id: None,
+            upstream_revision: None,
         });
         set_status(
             &storage,
