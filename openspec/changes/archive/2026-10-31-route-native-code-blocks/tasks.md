@@ -65,7 +65,8 @@
 - [x] 5.4 Automated end-to-end smoke on TeraTTSv2: the `teratts_mixed_app`
   probe fed a read-mode fenced block containing `<`, synthesized it without an
   error, and word timestamps stayed mapped.
-- [ ] 5.5 Manual listening pass with TeraTTSv2 and Piper installed: set
+- [x] 5.5 Manual listening pass with TeraTTSv2 and Piper installed: set
   «Читать полностью», listen to an article with a fenced block (code read by
   the engine, Russian prose unchanged, no digits spelled out inside code),
   verify «Кратко» still announces, and that the highlight stays continuous.
+  Accepted by the user after the dev-app pass on 2026-10-31.
