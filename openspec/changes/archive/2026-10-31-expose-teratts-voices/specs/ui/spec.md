@@ -53,7 +53,7 @@ A "Очистить кэш…" button SHALL open a nested `CleanupCacheModal` wi
 - **THEN** all visible UI strings switch to the EN catalog without a reload,
   and saving persists `language: "en"` via `commands.updateConfig`
 
-#### Scenario: TeraTTS option lists every bundle voice
+#### Scenario: TeraTTS option lists its voices
 - **GIVEN** `getAvailableEngines` reports TeraTTS as available, `getTerattsVoices` reports `ru_m5`, `ru_f1`, `ru_f2`, `ru_m1`, `eng_f3`, `eng_f4_whisper`, `eng_f5`, `eng_m2_whisper`, `eng_m3` and `eng_m4`, and the saved config has `teratts_voice: "eng_f5"`
 - **WHEN** the user selects «TeraTTSv2»
 - **THEN** the voice selector offers all ten ids with `eng_f5` preselected, and saving persists the chosen value

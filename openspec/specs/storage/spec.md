@@ -312,7 +312,7 @@ The `UIConfig` field table SHALL gain:
 | Field | Type | Default | Meaning |
 |-------|------|---------|---------|
 | `language` | string | `"ru"` | UI language: `"ru"` / `"en"` |
-| `teratts_voice` | string | `"ru_m5"` | TeraTTS voice id: `ru_m5`, `ru_f1`, `ru_f2` or `ru_m1` |
+| `teratts_voice` | string | `"ru_m5"` | TeraTTS voice id from the installed bundle manifest (`voices[].id`); `ru_m5` is the default |
 
 Every existing defaulting/unknown-key/partial-update rule SHALL apply to the
 new field unchanged.
@@ -380,9 +380,9 @@ parse (the unknown key is ignored and dropped on the next save).
 - **THEN** it parses successfully with `teratts_voice` defaulted to `"ru_m5"`
 
 #### Scenario: TeraTTS voice round-trips
-- **GIVEN** a configuration with `teratts_voice` set to `"ru_f1"`
+- **GIVEN** a configuration with `teratts_voice` set to `"eng_f5"`
 - **WHEN** the configuration is saved and loaded again
-- **THEN** the loaded value is `"ru_f1"`
+- **THEN** the loaded value is `"eng_f5"` (the field accepts every id the bundle manifest ships, not a fixed set)
 
 ### Requirement: Entry CRUD
 
@@ -579,3 +579,4 @@ process cleanly with a non-zero exit code.
 - GIVEN the storage service cannot be opened during startup (e.g. the per-user data directory cannot be created)
 - WHEN the application starts
 - THEN no panic message is produced, an error entry with the cause is written to the application log, a native error dialog in Russian names the problem and points to the log directory, and after it is dismissed the process exits with a non-zero exit code
+

@@ -14,12 +14,12 @@
 ## 3. Records
 
 - [x] 3.1 Add the `[Unreleased]` CHANGELOG entry (English voices selectable)
-- [ ] 3.2 Validate the change specs, then sync and archive the change
+- [x] 3.2 Validate the change specs, then sync and archive the change
 
 ## 4. Validation
 
 - [x] 4.1 Run `cargo fmt` and `cargo clippy -- -D warnings` for `src-tauri`
 - [x] 4.2 Run `cargo test --manifest-path src-tauri/Cargo.toml`
 - [x] 4.3 Run `pnpm typecheck`, `pnpm test:unit`, and eslint/knip
-- [ ] 4.4 Run `pnpm dlx @fission-ai/openspec@1.6.0 validate --specs --strict` after archiving
+- [x] 4.4 Run `pnpm dlx @fission-ai/openspec@1.6.0 validate --specs --strict` after archiving
 - [x] 4.5 Confirm the catalogue path is covered end to end (manifest -> IPC -> selector) by the Rust IPC test and the Settings test; a live pass is deferred because the TeraTTS bundle is not installed in this workspace
