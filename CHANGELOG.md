@@ -20,6 +20,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   as `method` → «мэтод» and `function` → «фанкшин» are curated (#306).
 
 ### Fixed
+- **TeraTTSv2 English voices are selectable** — the Settings voice selector
+  hardcoded the four Russian ids and hid the English styles shipped in the
+  bundle; it now lists every voice of the installed manifest, with `ru_m5`
+  still the default (#328).
 - **TeraTTSv2 reads line-wrapped text** — a single line break inside a chunk
   was dropped by the alphabet gate, gluing the surrounding words and failing
   synthesis with a word-count error (seen on Markdown list items and

@@ -6,12 +6,14 @@ import { MantineProvider } from '@mantine/core';
 import type { UIConfig, UIConfigPatch } from '../lib/tauri';
 import { SettingsModal } from './Settings';
 
-const { getConfig, getAvailableEngines, updateConfig, showNotification } = vi.hoisted(() => ({
-  getConfig: vi.fn<() => Promise<UIConfig>>(),
-  getAvailableEngines: vi.fn(),
-  updateConfig: vi.fn<(patch: UIConfigPatch) => Promise<void>>().mockResolvedValue(undefined),
-  showNotification: vi.fn(),
-}));
+const { getConfig, getAvailableEngines, getTerattsVoices, updateConfig, showNotification } =
+  vi.hoisted(() => ({
+    getConfig: vi.fn<() => Promise<UIConfig>>(),
+    getAvailableEngines: vi.fn(),
+    getTerattsVoices: vi.fn<() => Promise<string[]>>(),
+    updateConfig: vi.fn<(patch: UIConfigPatch) => Promise<void>>().mockResolvedValue(undefined),
+    showNotification: vi.fn(),
+  }));
 
 vi.mock('@mantine/notifications', () => ({
   notifications: { show: showNotification },
@@ -21,6 +23,7 @@ vi.mock('../lib/tauri', () => ({
   commands: {
     getConfig,
     getAvailableEngines,
+    getTerattsVoices,
     updateConfig,
     getCacheDir: vi.fn().mockResolvedValue(''),
     getLogDir: vi.fn().mockResolvedValue(''),
@@ -86,12 +89,23 @@ function makeConfig(overrides: Partial<UIConfig> = {}): UIConfig {
   };
 }
 
+/** Availability map with TeraTTS selectable, for the voice-selector tests. */
+function terattsAvailable() {
+  return {
+    piper: { available: true, reason: null },
+    silero: { available: false, reason: null },
+    silero_native: { available: true, reason: null },
+    teratts: { available: true, reason: null },
+  };
+}
+
 describe('SettingsModal code block narration', () => {
   let container: HTMLElement | null = null;
   let root: Root | null = null;
 
   beforeEach(() => {
     getConfig.mockResolvedValue(makeConfig());
+    getTerattsVoices.mockResolvedValue([]);
     getAvailableEngines.mockResolvedValue({
       piper: { available: true, reason: null },
       silero: { available: false, reason: null },
@@ -133,6 +147,24 @@ describe('SettingsModal code block narration', () => {
       save!.click();
       await Promise.resolve();
     });
+  };
+
+  /**
+   * Open the TeraTTS voice dropdown (its input mirrors the selected id) and
+   * read the options of *that* listbox — closed selects also keep role=option
+   * nodes in the document.
+   */
+  const openVoiceOptions = async (selected: string): Promise<(string | null)[]> => {
+    const select = document.querySelector<HTMLInputElement>(`input[value="${selected}"]`);
+    expect(select, 'TeraTTS voice selector rendered').toBeTruthy();
+    await act(async () => {
+      select!.click();
+      await Promise.resolve();
+    });
+    const listId = select!.getAttribute('aria-controls');
+    expect(listId, 'voice dropdown opened').toBeTruthy();
+    const listbox = document.getElementById(listId!);
+    return [...(listbox?.querySelectorAll('[role="option"]') ?? [])].map((o) => o.textContent);
   };
 
   it('renders the saved mode as the selected segment', async () => {
@@ -189,17 +221,45 @@ describe('SettingsModal code block narration', () => {
 
   it('does not show the Silero voice selector for TeraTTS', async () => {
     getConfig.mockResolvedValue(makeConfig({ engine: 'teratts' }));
-    getAvailableEngines.mockResolvedValue({
-      piper: { available: true, reason: null },
-      silero: { available: false, reason: null },
-      silero_native: { available: true, reason: null },
-      teratts: { available: true, reason: null },
-    });
+    getAvailableEngines.mockResolvedValue(terattsAvailable());
     await renderDialog();
 
     const text = document.body.textContent ?? '';
     expect(text).toContain('Голос TeraTTSv2');
     expect(text).not.toContain('Голос Silero');
+  });
+
+  it('offers every voice the bundle reports and preselects the saved one', async () => {
+    const voices = [
+      'ru_m5',
+      'ru_f1',
+      'ru_f2',
+      'ru_m1',
+      'eng_f3',
+      'eng_f4_whisper',
+      'eng_f5',
+      'eng_m2_whisper',
+      'eng_m3',
+      'eng_m4',
+    ];
+    getTerattsVoices.mockResolvedValue(voices);
+    getConfig.mockResolvedValue(makeConfig({ engine: 'teratts', teratts_voice: 'eng_f5' }));
+    getAvailableEngines.mockResolvedValue(terattsAvailable());
+    await renderDialog();
+
+    expect(await openVoiceOptions('eng_f5')).toEqual(voices);
+  });
+
+  it('keeps a saved voice the catalogue does not list and saves it unchanged', async () => {
+    getTerattsVoices.mockResolvedValue(['ru_m5', 'ru_f1']);
+    getConfig.mockResolvedValue(makeConfig({ engine: 'teratts', teratts_voice: 'eng_f5' }));
+    getAvailableEngines.mockResolvedValue(terattsAvailable());
+    await renderDialog();
+
+    expect(await openVoiceOptions('eng_f5')).toEqual(['ru_m5', 'ru_f1', 'eng_f5']);
+
+    await clickSave();
+    expect(updateConfig.mock.calls[0][0].teratts_voice).toBe('eng_f5');
   });
 
   it('shows the stored tray setting when the save is rejected', async () => {

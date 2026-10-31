@@ -345,6 +345,11 @@ impl TestApp {
     pub fn state(&self) -> tauri::State<'_, AppState> {
         self.app.state::<AppState>()
     }
+
+    /// The bundle directory the managed state points both bundle engines at.
+    pub fn bundle_dir(&self) -> &std::path::Path {
+        self._bundle_dir.path()
+    }
 }
 
 /// Build the test app: production command set, managed `AppState` with fakes.
@@ -444,6 +449,56 @@ pub fn write_fake_bundle(dir: &std::path::Path, files: &[(&str, &[u8])]) {
     std::fs::write(dir.join("manifest.json"), manifest.to_string()).unwrap();
 }
 
+/// Write a TeraTTS `manifest.json` plus the payload files it lists. Sizes and
+/// hashes are honest, so both the parser and the stat-only probe accept the
+/// fixture; pass `files: &[]` when only the manifest matters.
+pub fn write_teratts_manifest(
+    dir: &std::path::Path,
+    format_version: u32,
+    voices: &[(&str, &str)],
+    files: &[(&str, &[u8])],
+) {
+    use sha2::{Digest, Sha256};
+
+    let entries: Vec<serde_json::Value> = files
+        .iter()
+        .map(|(name, contents)| {
+            let path = dir.join(name);
+            std::fs::create_dir_all(path.parent().expect("fixture file has a parent"))
+                .expect("create fixture directory");
+            std::fs::write(&path, contents).expect("write fixture file");
+            serde_json::json!({
+                "path": name,
+                "asset": name.replace('/', "__"),
+                "size": contents.len(),
+                "sha256": format!("{:x}", Sha256::new().chain_update(contents).finalize()),
+            })
+        })
+        .collect();
+    let voice_entries: Vec<serde_json::Value> = voices
+        .iter()
+        .map(|(id, language)| serde_json::json!({ "id": id, "language": language }))
+        .collect();
+    let manifest = serde_json::json!({
+        "format_version": format_version,
+        "bundle_version": 1,
+        "model_id": "test",
+        "model_version": "1",
+        "upstream_repo": "test/repo",
+        "upstream_revision": "abc",
+        "opset": 19,
+        "sample_rate": 44100,
+        "created_at_utc": "2026-01-01T00:00:00Z",
+        "voices": voice_entries,
+        "files": entries,
+    });
+    std::fs::write(
+        dir.join(teratts::bundle::MANIFEST_NAME),
+        manifest.to_string(),
+    )
+    .expect("write teratts manifest");
+}
+
 // ---------------------------------------------------------------------------
 // Proof tests
 // ---------------------------------------------------------------------------
@@ -500,6 +555,46 @@ mod tests {
 
         let entries = res.expect("get_entries IPC call failed");
         assert!(entries.is_empty());
+    }
+
+    /// The TeraTTS voice catalogue travels the real IPC path: the command is
+    /// registered and ships every manifest id (English styles included), so the
+    /// Settings selector cannot drift from the installed bundle.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn get_teratts_voices_over_ipc_reports_every_manifest_voice() {
+        let t = build_test_app();
+        write_teratts_manifest(
+            t.bundle_dir(),
+            teratts::bundle::FORMAT_VERSION,
+            &[("ru_m5", "ru"), ("eng_f5", "en")],
+            &[],
+        );
+        let webview = tauri::WebviewWindowBuilder::new(&t.app, "main", Default::default())
+            .build()
+            .expect("mock webview window");
+
+        let res = tauri::test::get_ipc_response(
+            &webview,
+            tauri::webview::InvokeRequest {
+                cmd: "get_teratts_voices".into(),
+                callback: tauri::ipc::CallbackFn(0),
+                error: tauri::ipc::CallbackFn(1),
+                url: if cfg!(any(windows, target_os = "android")) {
+                    "http://tauri.localhost"
+                } else {
+                    "tauri://localhost"
+                }
+                .parse()
+                .unwrap(),
+                body: tauri::ipc::InvokeBody::default(),
+                headers: Default::default(),
+                invoke_key: tauri::test::INVOKE_KEY.to_string(),
+            },
+        )
+        .map(|b| b.deserialize::<Vec<String>>().unwrap());
+
+        let voices = res.expect("get_teratts_voices IPC call failed");
+        assert_eq!(voices, vec!["ru_m5", "eng_f5"]);
     }
 
     /// The position-emitter loop (production code in `player`) driven by a

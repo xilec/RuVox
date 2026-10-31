@@ -1806,6 +1806,21 @@ pub async fn get_available_engines(state: State<'_, AppState>) -> CmdResult<Avai
     })
 }
 
+/// Voice ids shipped by the installed TeraTTS bundle, in manifest order.
+///
+/// Feeds the Settings voice selector so it cannot drift from the bundle. Reads
+/// only `manifest.json`; when the bundle is missing or unreadable the list is
+/// empty — [`get_available_engines`] carries the reason the engine is unusable.
+#[tauri::command]
+pub async fn get_teratts_voices(state: State<'_, AppState>) -> CmdResult<Vec<String>> {
+    let bundle_dir = state.teratts_bundle_dir.clone();
+    tokio::task::spawn_blocking(move || crate::tts::teratts::voices(&bundle_dir))
+        .await
+        .map_err(|e| {
+            CommandError::internal("teratts.voices_panicked", vec![]).with_message(e.to_string())
+        })
+}
+
 /// Download the Silero Native model bundle on user demand. Idempotent —
 /// files already present with a matching checksum are skipped. Progress is
 /// delivered via the `bundle_download_started` / `bundle_download_progress`

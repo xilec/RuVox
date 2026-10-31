@@ -35,4 +35,8 @@ if (typeof window !== 'undefined') {
       dispatchEvent: () => false,
     }),
   });
+
+  // jsdom has no scrollIntoView; Mantine's combobox calls it when a dropdown
+  // opens or the active option moves.
+  Element.prototype.scrollIntoView = () => {};
 }

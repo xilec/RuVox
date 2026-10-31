@@ -385,6 +385,11 @@ export const commands = {
   getAvailableEngines: (): Promise<AvailableEngines> =>
     tauriInvoke('get_available_engines'),
 
+  /** Voice ids shipped by the installed TeraTTS bundle, in manifest order;
+   *  empty when the bundle is missing or unreadable. */
+  getTerattsVoices: (): Promise<string[]> =>
+    tauriInvoke('get_teratts_voices'),
+
   downloadPiperVoice: (voice_id: string): Promise<void> =>
     tauriInvoke('download_piper_voice', { voiceId: voice_id }),
 
