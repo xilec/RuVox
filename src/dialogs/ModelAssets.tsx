@@ -73,7 +73,7 @@ function EngineQualityBar({ score, label }: { score: number; label: string }) {
   );
 }
 
-/** Filled play marker for the asset the current engine is using. */
+/** Filled radio marker for the asset the current engine is using. */
 function ActiveAssetIcon({ hint }: { hint: string }) {
   return (
     <Tooltip label={hint} withArrow zIndex={600}>
@@ -99,10 +99,9 @@ function ActiveAssetIcon({ hint }: { hint: string }) {
   );
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 МБ';
-  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} ГБ`;
-  return `${Math.max(1, Math.round(bytes / 1024 ** 2))} МБ`;
+function formatBytes(bytes: number, mb: string, gb: string): string {
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} ${gb}`;
+  return `${Math.max(0, Math.round(bytes / 1024 ** 2))} ${mb}`;
 }
 
 function voiceId(asset: ModelAssetId): string {
@@ -129,6 +128,7 @@ function assetLabel(asset: ModelAssetStatus, t: ReturnType<typeof useT>): string
  */
 export function ModelAssetsDialog({ opened, onClose, onAvailabilityChanged }: Props) {
   const t = useT();
+  const formatSize = (bytes: number) => formatBytes(bytes, t('common.mb'), t('common.gb'));
   const [status, setStatus] = useState<ModelStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -262,7 +262,7 @@ export function ModelAssetsDialog({ opened, onClose, onAvailabilityChanged }: Pr
       onAvailabilityChanged();
       notifications.show({
         title: t('settings.models.deleted.title'),
-        message: t('settings.models.deleted.message', [formatBytes(freed)]),
+        message: t('settings.models.deleted.message', [formatSize(freed)]),
         color: 'green',
       });
     } catch (err) {
@@ -322,7 +322,7 @@ export function ModelAssetsDialog({ opened, onClose, onAvailabilityChanged }: Pr
     const update = asset.latest_version
       ? asset.installed && !hasNewer
         ? t('settings.models.up_to_date')
-        : `${asset.latest_version}${asset.latest_bytes != null ? ` (${formatBytes(asset.latest_bytes)})` : ''}`
+        : `${asset.latest_version}${asset.latest_bytes != null ? ` (${formatSize(asset.latest_bytes)})` : ''}`
       : asset.installed
         ? t('settings.models.update_unknown')
         : '—';
@@ -418,7 +418,7 @@ export function ModelAssetsDialog({ opened, onClose, onAvailabilityChanged }: Pr
         </Table.Td>
         <Table.Td ta="right">
           <Text size="xs" c="dimmed">
-            {asset.installed ? formatBytes(asset.installed_bytes) : '—'}
+            {asset.installed ? formatSize(asset.installed_bytes) : '—'}
           </Text>
         </Table.Td>
       </Table.Tr>
@@ -468,7 +468,7 @@ export function ModelAssetsDialog({ opened, onClose, onAvailabilityChanged }: Pr
       </Table.Td>
       <Table.Td ta="right">
         <Text size="xs" c="dimmed">
-          {asset.installed ? formatBytes(asset.installed_bytes) : '—'}
+          {asset.installed ? formatSize(asset.installed_bytes) : '—'}
         </Text>
       </Table.Td>
     </Table.Tr>
@@ -485,7 +485,7 @@ export function ModelAssetsDialog({ opened, onClose, onAvailabilityChanged }: Pr
       <Stack gap="sm">
         <Group justify="space-between" align="center">
           <Text size="xs" c="dimmed">
-            {status ? t('settings.models.total', [formatBytes(status.total_bytes)]) : ''}
+            {status ? t('settings.models.total', [formatSize(status.total_bytes)]) : ''}
           </Text>
           <Group gap="sm" align="center" wrap="nowrap">
             {checkMessage && (
@@ -547,7 +547,7 @@ export function ModelAssetsDialog({ opened, onClose, onAvailabilityChanged }: Pr
                 </Table.Td>
                 <Table.Td ta="right" style={piperOpen ? { borderBottom: 'none' } : undefined}>
                   <Text size="xs" c="dimmed">
-                    {formatBytes(piperBytes)}
+                    {formatSize(piperBytes)}
                   </Text>
                 </Table.Td>
               </Table.Tr>

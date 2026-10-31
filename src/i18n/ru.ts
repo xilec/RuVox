@@ -13,6 +13,7 @@ export const ru = {
   'common.save': 'Сохранить',
   'common.error': 'Ошибка',
   'common.mb': 'МБ',
+  'common.gb': 'ГБ',
   'common.kb': 'КБ',
   'common.yes': 'Да',
   'common.no': 'Нет',
