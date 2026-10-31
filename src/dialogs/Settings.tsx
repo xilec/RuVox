@@ -62,14 +62,6 @@ const ENGINE_OPTIONS: ReadonlyArray<{ value: EngineKind; key: MessageKey }> = [
   { value: 'teratts', key: 'settings.engine.teratts' },
 ];
 
-/** Voices shipped in the TeraTTS bundle; ids are the model's own names. */
-const TERATTS_VOICES: ReadonlyArray<{ value: string; label: string }> = [
-  { value: 'ru_m5', label: 'ru_m5' },
-  { value: 'ru_f1', label: 'ru_f1' },
-  { value: 'ru_f2', label: 'ru_f2' },
-  { value: 'ru_m1', label: 'ru_m1' },
-];
-
 /// Pessimistic default used until `getAvailableEngines()` resolves: Piper
 /// is always on; the Silero engines are treated as unavailable so users
 /// don't briefly see them as enabled and click before the probe lands.
@@ -286,8 +278,12 @@ export function SettingsModal({
   const [availability, setAvailability] = useState<AvailabilityMap>(() =>
     pessimisticAvailability(),
   );
+  /** Voice ids shipped by the installed TeraTTS bundle; ids are the model's
+   *  own names, so the id is also the label. */
+  const [terattsVoices, setTerattsVoices] = useState<readonly string[]>([]);
   const refreshAvailability = useCallback(() => {
     commands.getAvailableEngines().then(setAvailability).catch(() => {});
+    commands.getTerattsVoices().then(setTerattsVoices).catch(() => {});
   }, []);
   // Whether the user touched the sample-rate selector in this dialog
   // session. The config default is 24000 (the native engine's own default);
@@ -370,6 +366,9 @@ export function SettingsModal({
         });
       });
     commands.getCacheDir().then(setCacheDir).catch(() => setCacheDir(''));
+    // A catalogue failure must not fail the dialog: the selector falls back
+    // to the saved id and the availability reason explains the engine state.
+    commands.getTerattsVoices().then(setTerattsVoices).catch(() => setTerattsVoices([]));
     // Always resolve the version (independent of the updater gate) so bug
     // reports can quote it on every platform.
     getVersion().then(setAppVersion).catch(() => setAppVersion(''));
@@ -399,6 +398,17 @@ export function SettingsModal({
     () => SAMPLE_RATES.map((hz) => ({ value: String(hz), label: tt('settings.sample_rate.hz', [hz]) })),
     [tt],
   );
+
+  const terattsVoiceOptions = useMemo(() => {
+    const options = terattsVoices.map((id) => ({ value: id, label: id }));
+    const saved = form.values.teratts_voice;
+    // Keep a stored id the manifest does not list selectable: otherwise the
+    // selector shows no selection and a save looks like a silent voice change.
+    if (saved && !terattsVoices.includes(saved)) {
+      options.push({ value: saved, label: saved });
+    }
+    return options;
+  }, [terattsVoices, form.values.teratts_voice]);
 
   const handleEngineChange = (next: EngineKind) => {
     const current = {
@@ -585,7 +595,7 @@ export function SettingsModal({
             <Select
               label={tt('settings.teratts_voice.label')}
               description={tt('settings.teratts_voice.description')}
-              data={TERATTS_VOICES.map((v) => ({ value: v.value, label: v.label }))}
+              data={terattsVoiceOptions}
               key={form.key('teratts_voice')}
               {...form.getInputProps('teratts_voice')}
             />

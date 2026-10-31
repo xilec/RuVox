@@ -452,6 +452,7 @@ pub(crate) fn invoke_handler<R: Runtime>()
         pick_dictionary_import_path,
         pick_dictionary_export_path,
         get_available_engines,
+        get_teratts_voices,
         get_model_status,
         install_model_asset,
         delete_model_asset,

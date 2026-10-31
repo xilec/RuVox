@@ -196,7 +196,7 @@ export const en: Record<MessageKey, string> = {
     'The "TeraTTSv2" engine is now available.',
   'settings.teratts_voice.label': 'TeraTTSv2 voice',
   'settings.teratts_voice.description':
-    'Russian voices from the bundle; ru_m5 is the default.',
+    'Voices from the installed bundle; ru_m5 is the default.',
   'settings.bundle.failed.title': 'Failed to download the bundle',
   'settings.models.title': 'Models and voices',
   'settings.models.dialog_title': 'Models and voices',

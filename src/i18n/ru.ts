@@ -197,7 +197,7 @@ export const ru = {
     'Движок «TeraTTSv2» теперь доступен.',
   'settings.teratts_voice.label': 'Голос TeraTTSv2',
   'settings.teratts_voice.description':
-    'Русские голоса из бандла; ru_m5 — по умолчанию.',
+    'Голоса из установленного бандла; ru_m5 — по умолчанию.',
   'settings.bundle.failed.title': 'Не удалось скачать бандл',
   'settings.models.title': 'Модели и голоса',
   'settings.models.dialog_title': 'Модели и голоса',

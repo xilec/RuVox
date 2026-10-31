@@ -160,7 +160,8 @@ export interface UIConfig {
   engine: EngineKind;
   /** Active Piper voice id (e.g. "ruslan", "irina"). See piperVoices.ts. */
   piper_voice: string;
-  /** Active TeraTTS Russian voice id ("ru_m5" default; ru_f1, ru_f2, ru_m1). */
+  /** Active TeraTTS voice id ("ru_m5" default; any id from the installed
+   *  bundle manifest, including the English styles). */
   teratts_voice: string;
 }
 
@@ -384,6 +385,11 @@ export const commands = {
 
   getAvailableEngines: (): Promise<AvailableEngines> =>
     tauriInvoke('get_available_engines'),
+
+  /** Voice ids shipped by the installed TeraTTS bundle, in manifest order;
+   *  empty when the bundle is missing or unreadable. */
+  getTerattsVoices: (): Promise<string[]> =>
+    tauriInvoke('get_teratts_voices'),
 
   downloadPiperVoice: (voice_id: string): Promise<void> =>
     tauriInvoke('download_piper_voice', { voiceId: voice_id }),

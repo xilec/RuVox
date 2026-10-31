@@ -217,7 +217,6 @@ pub fn probe_teratts(bundle_dir: &Path) -> EngineAvailability {
 mod tests {
     use super::*;
     use crate::test_support::write_fake_bundle;
-    use sha2::Digest;
 
     #[test]
     fn piper_is_always_available() {
@@ -298,33 +297,12 @@ mod tests {
         assert!(reason.message.is_some());
     }
     fn write_teratts_bundle(dir: &Path) {
-        let contents = b"onnx bytes";
-        let file = serde_json::json!({
-            "path": "models/a.onnx",
-            "asset": "models__a.onnx",
-            "size": contents.len(),
-            "sha256": format!("{:x}", sha2::Sha256::new().chain_update(contents).finalize()),
-        });
-        let manifest = serde_json::json!({
-            "format_version": teratts::bundle::FORMAT_VERSION,
-            "bundle_version": 1,
-            "model_id": "test",
-            "model_version": "1",
-            "upstream_repo": "test/repo",
-            "upstream_revision": "abc",
-            "opset": 19,
-            "sample_rate": 44100,
-            "created_at_utc": "2026-01-01T00:00:00Z",
-            "voices": [{"id": "ru_m5", "language": "ru"}],
-            "files": [file],
-        });
-        std::fs::create_dir_all(dir.join("models")).unwrap();
-        std::fs::write(dir.join("models/a.onnx"), contents).unwrap();
-        std::fs::write(
-            dir.join("manifest.json"),
-            serde_json::to_vec_pretty(&manifest).unwrap(),
-        )
-        .unwrap();
+        crate::test_support::write_teratts_manifest(
+            dir,
+            teratts::bundle::FORMAT_VERSION,
+            &[("ru_m5", "ru")],
+            &[("models/a.onnx", b"onnx bytes")],
+        );
     }
 
     #[test]
@@ -360,12 +338,12 @@ mod tests {
     #[test]
     fn teratts_unavailable_with_an_incompatible_format() {
         let dir = tempfile::TempDir::new().unwrap();
-        write_teratts_bundle(dir.path());
-        let path = dir.path().join("manifest.json");
-        let mut manifest: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-        manifest["format_version"] = serde_json::json!(999);
-        std::fs::write(&path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
+        crate::test_support::write_teratts_manifest(
+            dir.path(),
+            999,
+            &[("ru_m5", "ru")],
+            &[("models/a.onnx", b"onnx bytes")],
+        );
         let res = probe_teratts(dir.path());
         assert!(!res.available);
         let reason = res.reason.expect("reason set");
