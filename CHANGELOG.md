@@ -47,6 +47,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   normalization and TeraTTS rejected it as stray tag markup; blockquote
   markers are stripped before synthesis, while an inline comparison stays
   (#325).
+- **Bare `<`/`>` are spoken instead of reaching the engine** — a comparison, a
+  shell redirect or a pasted tag used to fail on TeraTTSv2 with
+  `text_invalid_tags` and be silently dropped by the other engines; both
+  characters now read as «меньше»/«больше» in prose, while native code blocks
+  keep their delimiters.
+- **A failed or cancelled regeneration keeps the previous recording** —
+  regeneration deleted the stored audio before synthesizing, so a rejected text
+  cost the user a good recording; the stored file is now replaced only by a
+  successful synthesis, and a failure or cancel returns the entry to `ready`
+  with the old audio still playable.
 
 ### Added
 - **Model bundle updates and cleanup** — Settings shows installed versions,

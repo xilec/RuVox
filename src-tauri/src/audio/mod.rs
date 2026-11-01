@@ -284,14 +284,45 @@ fn write_frames(
     Ok(())
 }
 
-/// Convenience wrapper: encode `wav_path` to `<wav_path with .opus extension>`,
-/// then delete the source `.wav`. Returns the Opus file path.
+/// Extension the atomic encoder gives its temporary sibling: an `<name>.opus`
+/// target is written as `<name>.opus.part` first. Exposed so callers can clean
+/// up a part file left behind by an interrupted run.
+pub const OPUS_PART_EXTENSION: &str = "opus.part";
+
+/// Path of the temporary sibling [`encode_wav_to_opus_atomic`] writes before
+/// publishing `opus_path`.
+pub fn opus_part_path(opus_path: &Path) -> std::path::PathBuf {
+    opus_path.with_extension(OPUS_PART_EXTENSION)
+}
+
+/// Encode `wav_path` to Opus and publish the result at `opus_path`
+/// atomically: the encoder writes a sibling `<opus_path>.part` file, which is
+/// renamed over `opus_path` only after a complete encode. A crash, a full
+/// disk or an interrupted task therefore leaves the previous recording under
+/// `opus_path` untouched instead of a truncated file the entry may reference.
+/// The `.part` file is removed on failure.
+pub fn encode_wav_to_opus_atomic(wav_path: &Path, opus_path: &Path) -> Result<()> {
+    let part_path = opus_part_path(opus_path);
+    let encoded = encode_wav_to_opus(wav_path, &part_path).and_then(|()| {
+        fs::rename(&part_path, opus_path)?;
+        Ok(())
+    });
+    if encoded.is_err() {
+        let _ = fs::remove_file(&part_path);
+    }
+    encoded
+}
+
+/// Convenience wrapper: encode `wav_path` to `<wav_path with .opus extension>`
+/// and delete the source `.wav`. Returns the Opus file path. The publish step
+/// is atomic — see [`encode_wav_to_opus_atomic`].
 ///
 /// On encode failure the source `.wav` is left untouched so the caller can
-/// fall back to it.
+/// fall back to it, and an already stored `.opus` at the target keeps its
+/// previous content.
 pub fn replace_wav_with_opus(wav_path: &Path) -> Result<std::path::PathBuf> {
     let opus_path = wav_path.with_extension("opus");
-    encode_wav_to_opus(wav_path, &opus_path)?;
+    encode_wav_to_opus_atomic(wav_path, &opus_path)?;
     fs::remove_file(wav_path)?;
     Ok(opus_path)
 }
@@ -742,6 +773,53 @@ mod tests {
         assert!(opus_path.exists(), "opus file missing");
         assert!(!wav_path.exists(), "source wav should be gone");
         assert_eq!(opus_path.extension().and_then(|e| e.to_str()), Some("opus"));
+    }
+
+    /// A failed encode must not damage the recording already published at the
+    /// target: the encoder writes a `.part` sibling, so the old file survives
+    /// and no partial output is left behind.
+    #[test]
+    fn encode_wav_to_opus_atomic_keeps_the_previous_file_on_failure() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let wav_path = dir.path().join("clip.wav");
+        let opus_path = dir.path().join("clip.opus");
+        std::fs::write(&wav_path, b"not a wav file").expect("bogus wav");
+        std::fs::write(&opus_path, b"previous recording").expect("previous opus");
+
+        let result = encode_wav_to_opus_atomic(&wav_path, &opus_path);
+
+        assert!(result.is_err(), "a bogus wav must fail to encode");
+        assert_eq!(
+            std::fs::read(&opus_path).expect("previous opus read"),
+            b"previous recording",
+            "the published recording keeps its content"
+        );
+        assert!(
+            !dir.path().join("clip.opus.part").exists(),
+            "the temporary part file must be removed on failure"
+        );
+    }
+
+    /// The atomic publish leaves no `.part` file after a successful encode and
+    /// does not delete the source WAV (that stays the caller's decision).
+    #[test]
+    fn encode_wav_to_opus_atomic_publishes_without_a_part_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let wav_path = dir.path().join("clip.wav");
+        let opus_path = dir.path().join("clip.opus");
+        write_sine_wav(&wav_path, 48_000, 220.0, 0.25);
+
+        encode_wav_to_opus_atomic(&wav_path, &opus_path).expect("encode");
+
+        assert!(opus_path.exists(), "published opus missing");
+        assert!(
+            wav_path.exists(),
+            "the helper does not delete the source wav"
+        );
+        assert!(
+            !dir.path().join("clip.opus.part").exists(),
+            "the part file is renamed away"
+        );
     }
 
     /// Decode is the inverse of the encode side: a sine encoded to Opus at

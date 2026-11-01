@@ -848,6 +848,21 @@ impl TTSPipeline {
         {
             tracked.replace(symbol, &format!(" {} ", replacement));
         }
+        // A bare `<`/`>` that survived the operator phase is markup to an
+        // engine: TeraTTS reads the delimiters only as its own tag syntax and
+        // rejects the segment, while the alphabet-gated engines drop the
+        // character and lose the comparison or shell redirect it belonged to.
+        // Multi-character operators are already consumed above, and native
+        // code blocks sit behind placeholders restored after the narrating
+        // phases, so only prose reaches this loop.
+        // The reading comes from the shared symbol table, the same one the
+        // inline-code and identifier normalizers use, so a wording change there
+        // reaches prose too.
+        for bracket in ["<", ">"] {
+            let reading = self.symbol_normalizer.normalize(bracket);
+            tracked.replace(bracket, &format!(" {reading} "));
+        }
+
         // Tilde before a number means "approximately": ~46 → около 46.
         // We capture the digit(s) after the tilde and emit them after "около ".
         if expand_digits {
@@ -2232,8 +2247,8 @@ mod tests {
         assert_eq!(out.text, "цитата\nвложенная");
         let out = p.process_for_engine("сравнение a > b", native_profile());
         assert_eq!(
-            out.text, "сравнение a > b",
-            "an inline comparison is not a blockquote"
+            out.text, "сравнение a  больше  b",
+            "an inline comparison is narrated, not read as a blockquote marker"
         );
     }
 
@@ -2995,5 +3010,66 @@ mod tests {
                 "the whole-token pass does not match a token built from {c:?}"
             );
         }
+    }
+
+    /// The engine text must carry no markup characters: TeraTTS reads `<` and
+    /// `>` only as its own tag syntax and rejects the segment, while the
+    /// alphabet-gated engines silently drop the character and lose the
+    /// comparison or redirect it belonged to. Asserted across every shipping
+    /// profile because no profile reads a stray bracket natively.
+    #[test]
+    fn pipeline_never_emits_markup_characters_for_prose() {
+        let cases = [
+            "Перенаправьте вывод в 2>/dev/null",
+            "Значение a > b",
+            "Значение a < b",
+            "Тег <div> тут",
+            "Смотри <https://example.com/ путь>",
+            "если a >= b",
+            "если a <= b",
+            "стрелка -> туда",
+        ];
+        for profile in [
+            &profiles::SILERO_PROFILE,
+            &profiles::SILERO_NATIVE_PROFILE,
+            &profiles::PIPER_PROFILE,
+            &profiles::TERATTS_PROFILE,
+        ] {
+            for input in cases {
+                let mut p = TTSPipeline::new();
+                let text = p.process_for_engine(input, profile).text;
+                assert!(
+                    !text.contains('<') && !text.contains('>'),
+                    "profile left markup in {text:?} for input {input:?}"
+                );
+            }
+        }
+    }
+
+    /// The incident text: a shell redirect with no spaces around the bracket.
+    /// The exact reading is pinned here (and by the `teratts/shell_redirect`
+    /// golden fixture) so a wording change shows up in review.
+    #[test]
+    fn pipeline_reads_a_shell_redirect_bracket() {
+        let mut p = TTSPipeline::new();
+        assert_eq!(
+            p.process_text("Перенаправьте вывод в 2>/dev/null"),
+            "Перенаправьте вывод в два больше слэш дев слэш налл"
+        );
+    }
+
+    /// Multi-character operators keep their own reading: the bracket phase
+    /// runs after the operator phase and never splits `>=` into `>` + `=`.
+    #[test]
+    fn pipeline_operator_phase_owns_multi_character_brackets() {
+        let mut p = TTSPipeline::new();
+        // Compared with collapsed whitespace: a narrated reading is inserted
+        // space-padded, and the padding is an implementation detail.
+        let reading = p
+            .process_text("если a >= b")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert_eq!(reading, "если эй больше или равно би");
     }
 }
