@@ -44,26 +44,55 @@ Two facts shape the fix:
 
 ## Decisions
 
-### D1. Stop deleting before synthesis; the successful transcode replaces the file
+### D1. Stop deleting before synthesis; publish the new audio atomically
 
 `regenerate_entry` keeps the artifacts and metadata, sets `was_regenerated`
 and clears `error_message`, moves the entry to `pending` explicitly (it used
 to be a side effect of `delete_audio`), emits `entry_updated` and spawns the
-task. On success the worker's `replace_wav_with_opus` rename swaps the stored
-file and `apply_ready_if_current` records the new duration/generation/count;
-on any failure before that rename the previous file was never touched.
+task.
+
+Publication is staged, because the canonical per-entry names are also the
+names a previous recording may occupy:
+
+- Engines write their WAV to `<id>.next.wav`, never to `<id>.wav`.
+- `encode_wav_to_opus` (through `encode_wav_to_opus_atomic`) writes
+  `<id>.opus.part` and renames it over `<id>.opus` only after a complete
+  encode; a crash, a full disk or an aborted task leaves the previous Opus
+  untouched and the `.part` file is removed on failure.
+- When the encoder rejects the WAV, the staged file is renamed over `<id>.wav`
+  — the WAV fallback still publishes in one step, and a rename failure makes
+  the synthesis fail with `StoreFailed` instead of leaving the entry pointing
+  at stale audio.
+- The timestamps are saved *after* the audio is published: a failed publish
+  cannot pair new word timings with old audio. A timestamp-save failure stays
+  best-effort (`None`), as before.
+
+The reviewer's crash-window analysis is the reason for the staging: without
+it, an interrupted Opus encode or a WAV fallback entry being overwritten by
+the engine would leave a truncated file under the name the entry references,
+which startup reconciliation would then promote to `ready`.
 
 Rejected: keeping the delete but restoring from a backup copy. It doubles the
 I/O on every regeneration and adds a restore path that itself can fail.
+Rejected: staging only for WAV-backed entries. The branch has one
+publication path, not two; a conditional would need the entry's current
+`audio_path` inside `synthesize_audio` for no behavioral gain.
 
 ### D2. A failed regeneration returns the entry to `ready`, not `error`
 
-`apply_error_if_current` still stores the message and still emits the
-`tts_error` event, but it now picks the status from the entry's own state: a
-stored `audio_path` means the entry owns a playable recording, so it returns
-to `ready`; without one (a first synthesis, a `cancelled` restart) it becomes
-`error` as before. The check is a field read, deliberately not a filesystem
-probe, so the storage write lock stays free of I/O.
+`apply_error_if_current` still stores the message, but it now picks the status
+from the entry's own state: a stored `audio_path` means the entry owns a
+playable recording, so it returns to `ready`; without one (a first synthesis, a
+`cancelled` restart) it becomes `error` as before. The check is a field read,
+deliberately not a filesystem probe, so the storage write lock stays free of
+I/O.
+
+A `ready` entry with an error message looks healthy in the UI (the queue badge
+keys on the status and nothing renders `error_message`), so the worker emits
+`tts_error` for every applied failure that leaves a playable entry — not only
+`TtsFailed`. The red toast is the only in-app signal that the regeneration did
+nothing; a first synthesis without audio still lands on `error`, where the
+queue already shows the failure, so it keeps its old event rule.
 
 The status flip is the one place where the frontend needed a matching rule: the
 synthesis toast reacted to `processing → ready` as "done". `entry_updated`
@@ -111,6 +140,17 @@ the regeneration was reported as cancelled. The file is valid and is what the
 entry points at, so this is a cosmetic inconsistency of a rare interleaving,
 not data loss — the opposite direction from the bug being fixed.
 
+A narrower variant of the same race: when the abort lands exactly while the
+blocking encode is running, `spawn_blocking` finishes (aborting the future does
+not stop it) and may publish the new Opus after the cancel restored `ready`.
+The timestamps save runs *after* that await, so it never happens — the entry
+then has the new audio with the previous timestamps, and word highlighting
+drifts until the next regeneration. The window is the encode itself (a fraction
+of a second) and the file stays valid; closing it would need a cancellation
+token checked inside the blocking encoder and a two-file transactional publish,
+which is more machinery than the failure justifies. Every other path publishes
+audio and timestamps together or keeps the previous pair.
+
 ## Risks / Trade-offs
 
 - During regeneration the entry is `pending`/`processing` with an `audio_path`,
@@ -135,10 +175,20 @@ not data loss — the opposite direction from the bug being fixed.
 - Orchestration test: cancelling a regenerating entry (blocked engine)
   restores `ready` and keeps the file.
 - Unit test for `discard_late_files`: a referenced name survives, an
-  unreferenced one is removed.
+  unreferenced one is removed, and the transient `<id>.next.wav` /
+  `<id>.opus.part` names are removed too.
 - Frontend unit test for the synthesis toast (`notificationBridge.test.ts`): a
   moved `generation_count` announces the completion, an unchanged one hides the
   spinner, an `error` transition hides it.
+- Audio unit tests: `encode_wav_to_opus_atomic` keeps the previously published
+  `.opus` on an encode failure, removes its `.part` file, and leaves no `.part`
+  after success.
+- Orchestration test: a WAV-backed entry's recording survives a failed
+  regeneration and the staged WAV is cleaned up.
+- Orchestration test: a normalization failure (empty text) on a regeneration
+  restores `ready`, keeps the audio, and emits `tts_error`.
+- Unit test: `finalize_audio_files` publishes the staged WAV over `<id>.wav`
+  when the encoder rejects it, and reports `StoreFailed` otherwise.
 
 ## Migration Plan
 

@@ -855,7 +855,11 @@ impl TTSPipeline {
         // Multi-character operators are already consumed above, and native
         // code blocks sit behind placeholders restored after the narrating
         // phases, so only prose reaches this loop.
-        for (bracket, reading) in [("<", "меньше"), (">", "больше")] {
+        // The reading comes from the shared symbol table, the same one the
+        // inline-code and identifier normalizers use, so a wording change there
+        // reaches prose too.
+        for bracket in ["<", ">"] {
+            let reading = self.symbol_normalizer.normalize(bracket);
             tracked.replace(bracket, &format!(" {reading} "));
         }
 

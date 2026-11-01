@@ -278,13 +278,18 @@ impl<R: Runtime> SynthesisDeps<R> {
 }
 
 /// Distinct failure points for a synthesis task. Each variant maps to the
-/// user-visible string written into `TextEntry.error_message`; `TtsFailed`
-/// additionally triggers a `tts_error` event for the frontend toast.
+/// user-visible string written into `TextEntry.error_message`; `TtsFailed` and
+/// `StoreFailed` additionally trigger a `tts_error` event — the failure classes
+/// that can leave a playable entry (a failed regeneration keeps its audio), so
+/// the stored message alone would be invisible.
 #[derive(Debug)]
 enum SynthesisError {
     PipelinePanic(String),
     EmptyText,
     TtsFailed(String),
+    /// The audio was synthesized but could not be published (transcode or
+    /// rename failure). The entry keeps its previous recording.
+    StoreFailed(String),
 }
 
 impl SynthesisError {
@@ -293,6 +298,7 @@ impl SynthesisError {
             Self::PipelinePanic(msg) => format!("pipeline task panicked: {msg}"),
             Self::EmptyText => "нормализация вернула пустой текст".to_string(),
             Self::TtsFailed(msg) => msg.clone(),
+            Self::StoreFailed(msg) => format!("не удалось сохранить аудио: {msg}"),
         }
     }
 }
@@ -374,6 +380,23 @@ fn voice_for_engine(kind: EngineKind, config: &UIConfig) -> String {
     }
 }
 
+/// Staging name for the engine's WAV output. The canonical `<id>.wav` /
+/// `<id>.opus` names are publications: a new recording is written here and only
+/// renamed into place once it is complete, so a failed run never touches the
+/// entry's stored audio.
+fn staged_wav_filename(entry_id: &EntryId) -> String {
+    format!("{entry_id}.next.wav")
+}
+
+/// Partial artifacts a synthesis run may leave in the audio dir, for the
+/// stale-result cleanup. They are never the entry's published recording.
+fn transient_audio_names(entry_id: &EntryId) -> [String; 2] {
+    [
+        staged_wav_filename(entry_id),
+        format!("{entry_id}.{}", crate::audio::OPUS_PART_EXTENSION),
+    ]
+}
+
 /// Everything later synthesis phases need from [`synthesize_audio`]: the
 /// engine output plus the inputs resolved *for this request* — the snapshot
 /// must record the voice/settings actually used, not a fresh config read
@@ -409,9 +432,15 @@ async fn synthesize_audio(
     spans: Vec<Span>,
     mapping: &CharMapping,
 ) -> Result<SynthOutcome, SynthesisError> {
-    // ttsd writes WAV; finalize_audio_files transcodes it to Opus right after.
+    // Engines write their WAV under a staging name: the entry's published
+    // recording must stay untouched until the new audio is complete. The
+    // canonical `<id>.wav` name is only used to publish a WAV fallback (and for
+    // the generation snapshot).
     let wav_filename = format!("{entry_id}.wav");
-    let out_wav_path = storage.data_dir().join("audio").join(&wav_filename);
+    let out_wav_path = storage
+        .data_dir()
+        .join("audio")
+        .join(staged_wav_filename(entry_id));
     let out_wav = out_wav_path.to_string_lossy().into_owned();
 
     let config = storage.load_config().unwrap_or_default();
@@ -556,18 +585,65 @@ async fn build_generation_snapshot(
     }
 }
 
-/// Phases 5 + 5b: persist word timestamps and transcode WAV → Opus.
+/// Phases 5 + 5b: publish the fresh audio and persist word timestamps.
 ///
-/// Both steps are best-effort: timestamp save failure yields `None`; opus
-/// encode failure (or panic) keeps the original WAV filename so playback
-/// still works.
+/// Publication is ordered and atomic: the engine wrote `<id>.next.wav`; the
+/// Opus encoder writes a `<id>.opus.part` sibling and renames it over
+/// `<id>.opus` (or the staged WAV is renamed over `<id>.wav` when the encode
+/// fails). A publish failure returns an error and leaves the entry's previous
+/// recording untouched — the timestamps are saved only after the audio is in
+/// place, so a failed publish cannot pair new word timings with old audio.
+///
+/// Timestamp save stays best-effort (`None` on failure): the audio is already
+/// published and playback works without the word mapping.
 async fn finalize_audio_files(
     storage: &StorageService,
     entry_id: &EntryId,
     output: &SynthesizeOutput,
-    out_wav_path: PathBuf,
+    staged_wav_path: PathBuf,
     wav_filename: &str,
-) -> (Option<String>, String) {
+) -> Result<(Option<String>, String), SynthesisError> {
+    let audio_dir = storage.data_dir().join("audio");
+    let opus_path = audio_dir.join(format!("{entry_id}.opus"));
+    let publish_path = audio_dir.join(wav_filename);
+
+    let staged_for_publish = staged_wav_path.clone();
+    let opus_for_publish = opus_path.clone();
+    let publish = tokio::task::spawn_blocking(move || {
+        crate::audio::encode_wav_to_opus_atomic(&staged_for_publish, &opus_for_publish)
+    })
+    .await;
+
+    let audio_filename = match publish {
+        Ok(Ok(())) => {
+            if let Err(e) = std::fs::remove_file(&staged_wav_path) {
+                warn!("failed to remove staged wav for {entry_id}: {e}");
+            }
+            format!("{entry_id}.opus")
+        }
+        Ok(Err(e)) => {
+            // The encoder rejected the WAV (e.g. an unsupported layout): keep
+            // the staged file as the entry's recording, publishing it with a
+            // rename so the previous audio survives a rename failure too.
+            warn!("opus encode failed for {entry_id}, keeping wav: {e}");
+            std::fs::rename(&staged_wav_path, &publish_path).map_err(|rename_err| {
+                SynthesisError::StoreFailed(format!(
+                    "staged wav {staged_wav_path:?} -> {publish_path:?}: {rename_err}"
+                ))
+            })?;
+            wav_filename.to_string()
+        }
+        Err(e) => {
+            warn!("opus encode task panicked for {entry_id}, keeping wav: {e}");
+            std::fs::rename(&staged_wav_path, &publish_path).map_err(|rename_err| {
+                SynthesisError::StoreFailed(format!(
+                    "staged wav {staged_wav_path:?} -> {publish_path:?}: {rename_err}"
+                ))
+            })?;
+            wav_filename.to_string()
+        }
+    };
+
     let tts_words: Vec<WordTimestamp> = output
         .timestamps
         .iter()
@@ -578,7 +654,6 @@ async fn finalize_audio_files(
             original_pos: w.original_pos,
         })
         .collect();
-
     let ts_filename = match storage.save_timestamps(entry_id, &tts_words) {
         Ok(f) => Some(f),
         Err(e) => {
@@ -587,27 +662,7 @@ async fn finalize_audio_files(
         }
     };
 
-    let wav_path_for_encode = out_wav_path;
-    let encode_result = tokio::task::spawn_blocking(move || {
-        crate::audio::replace_wav_with_opus(&wav_path_for_encode)
-    })
-    .await;
-    let audio_filename = match encode_result {
-        Ok(Ok(opus_path)) => opus_path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| wav_filename.to_string()),
-        Ok(Err(e)) => {
-            warn!("opus encode failed for {entry_id}, keeping wav: {e}");
-            wav_filename.to_string()
-        }
-        Err(e) => {
-            warn!("opus encode task panicked for {entry_id}, keeping wav: {e}");
-            wav_filename.to_string()
-        }
-    };
-
-    (ts_filename, audio_filename)
+    Ok((ts_filename, audio_filename))
 }
 
 /// Stale-completion guard: a synthesis completion or failure applies only
@@ -695,7 +750,8 @@ fn apply_ready_if_current(
             entry_id,
             [Some(audio_filename.to_string()), ts_filename]
                 .into_iter()
-                .flatten(),
+                .flatten()
+                .chain(transient_audio_names(entry_id)),
         );
     }
     applied
@@ -793,8 +849,8 @@ pub fn spawn_synthesis<R: Runtime + 'static>(
                     &mapping,
                 )
                 .await?;
-                // Read the header before finalize_audio_files transcodes the
-                // WAV to Opus and removes the intermediate file.
+                // Read the header before finalize_audio_files publishes the
+                // staged WAV and removes it.
                 let sample_rate = wav_sample_rate(&outcome.out_wav_path);
                 let (ts_filename, audio_filename) = finalize_audio_files(
                     &storage,
@@ -803,7 +859,7 @@ pub fn spawn_synthesis<R: Runtime + 'static>(
                     outcome.out_wav_path,
                     &outcome.wav_filename,
                 )
-                .await;
+                .await?;
                 let generation = build_generation_snapshot(
                     tts.as_ref(),
                     &storage,
@@ -834,17 +890,37 @@ pub fn spawn_synthesis<R: Runtime + 'static>(
             if let Err(err) = result {
                 let msg = err.user_message();
                 tracing::error!("synthesis failed for {entry_id}: {msg}");
+                // A failed run must not leave a partial engine WAV next to the
+                // published recordings.
+                let staged_path = storage
+                    .data_dir()
+                    .join("audio")
+                    .join(staged_wav_filename(&entry_id));
+                match std::fs::remove_file(&staged_path) {
+                    Ok(()) => (),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
+                    Err(e) => warn!("failed to remove staged wav {}: {e}", staged_path.display()),
+                }
                 // Normalization-stage failures arrive while the entry is
                 // legitimately still `pending` (mark_processing runs after
-                // normalization), so the stale guard only applies to
-                // TTS-stage failures.
-                let require_processing = matches!(err, SynthesisError::TtsFailed(_));
+                // normalization), so the stale guard only applies to failures
+                // raised after `mark_processing`.
+                let require_processing = matches!(
+                    err,
+                    SynthesisError::TtsFailed(_) | SynthesisError::StoreFailed(_)
+                );
                 let applied = set_entry_error(&storage, &app, &entry_id, &msg, require_processing);
                 if applied {
-                    if let SynthesisError::TtsFailed(tts_msg) = err {
+                    // A failed regeneration keeps a playable entry; without the
+                    // event the outcome is indistinguishable from a successful
+                    // run, because nothing renders `error_message`.
+                    let restores_a_playable_entry = storage
+                        .get_entry(&entry_id)
+                        .is_some_and(|e| e.audio_path.is_some());
+                    if restores_a_playable_entry || matches!(err, SynthesisError::TtsFailed(_)) {
                         let _ = app.emit(
                             "tts_error",
-                            json!({ "entry_id": entry_id.to_string(), "message": tts_msg }),
+                            json!({ "entry_id": entry_id.to_string(), "message": msg }),
                         );
                     }
                 }
@@ -945,7 +1021,9 @@ fn apply_error_if_current(
                         format!("{entry_id}.wav"),
                         format!("{entry_id}.opus"),
                         format!("{entry_id}.timestamps.json"),
-                    ],
+                    ]
+                    .into_iter()
+                    .chain(transient_audio_names(entry_id)),
                 );
             }
             _ => {}
@@ -1350,7 +1428,10 @@ fn cancel_entry(
 }
 
 /// Cancel an in-progress or queued synthesis job: abort the entry's
-/// synthesis task and flip the entry to `cancelled`. If the task had
+/// synthesis task and move the entry out of the in-flight states: `cancelled`
+/// for an entry without a stored recording, back to `ready` for one that still
+/// owns its previous audio (cancelling a regeneration must not hide a playable
+/// recording — see [`cancel_entry`]). If the task had
 /// already entered the TTS stage, the active engine's in-flight work is
 /// terminated too — the ttsd subprocess for Silero, the chunk-loop cancel
 /// flag for Piper (the supervisor transparently respawns ttsd on the next
@@ -2472,10 +2553,14 @@ mod synthesis_tests {
         let id = entry.id;
 
         // The encoder requires a valid RIFF header; bogus bytes force the
-        // best-effort path that keeps the .wav file as audio_filename.
+        // fallback path that publishes the staged WAV as the entry's recording.
         let wav_filename = format!("{id}.wav");
-        let wav_path = storage.data_dir().join("audio").join(&wav_filename);
-        std::fs::write(&wav_path, b"not a wav file").unwrap();
+        let audio_dir = storage.data_dir().join("audio");
+        let wav_path = audio_dir.join(&wav_filename);
+        let staged_path = audio_dir.join(staged_wav_filename(&id));
+        std::fs::write(&staged_path, b"not a wav file").unwrap();
+        // A previous recording must survive the encode attempt...
+        std::fs::write(&wav_path, b"previous recording").unwrap();
 
         let output = SynthesizeOutput {
             timestamps: Vec::new(),
@@ -2483,10 +2568,18 @@ mod synthesis_tests {
         };
 
         let (ts_filename, audio_filename) =
-            finalize_audio_files(&storage, &id, &output, wav_path.clone(), &wav_filename).await;
+            finalize_audio_files(&storage, &id, &output, staged_path.clone(), &wav_filename)
+                .await
+                .unwrap();
         assert!(ts_filename.is_some());
         assert_eq!(audio_filename, wav_filename);
-        // .wav file is left untouched on encode failure (replace_wav_with_opus contract).
+        // ...until the complete staged WAV replaces it, which is what
+        // `audio_filename` now points at.
+        assert_eq!(std::fs::read(&wav_path).unwrap(), b"not a wav file");
+        assert!(
+            !staged_path.exists(),
+            "the staged wav is published, not kept"
+        );
         assert!(wav_path.exists());
     }
 
@@ -2503,6 +2596,10 @@ mod synthesis_tests {
         assert_eq!(
             SynthesisError::TtsFailed("ttsd died".into()).user_message(),
             "ttsd died",
+        );
+        assert_eq!(
+            SynthesisError::StoreFailed("disk full".into()).user_message(),
+            "не удалось сохранить аудио: disk full",
         );
     }
 

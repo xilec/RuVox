@@ -15,7 +15,9 @@ directly before a number SHALL be read as "около" ("~46" → "около 46
 
 The same phase SHALL read a bare `<` and `>` that survived the operator phase
 as "меньше" and "больше", also surrounded by spaces, so a comparison, a shell
-redirect or a pasted markup tag is spoken instead of reaching the engine.
+redirect or a pasted markup tag is spoken instead of reaching the engine. The
+readings come from the shared `SYMBOLS` table (the same one the inline-code and
+identifier normalizers use), so a single table entry owns the wording.
 Multi-character operators take priority: they are consumed by the operator
 phase that runs first, so only the remaining single brackets are read here.
 Invariant: the text handed to an engine SHALL NOT contain a stray `<` or `>`

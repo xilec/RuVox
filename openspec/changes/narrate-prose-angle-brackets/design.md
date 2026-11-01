@@ -42,9 +42,12 @@ error, the others silent data loss. That is a pipeline bug, not an adapter one.
 
 ### D1. Narrate the brackets inside the existing special-symbols phase
 
-The narration is a two-entry loop placed right after the Greek/math/arrow loop
-in the same phase (Phase 14), using `TrackedText::replace` with a
-space-surrounded reading, exactly like its neighbours.
+The narration is a loop over the two brackets placed right after the
+Greek/math/arrow loop in the same phase (Phase 14), using `TrackedText::replace`
+with a space-surrounded reading, exactly like its neighbours. The reading itself
+comes from `SymbolNormalizer`'s shared `SYMBOLS` table — the same one inline
+code and identifiers already use — so the wording has one home (a review
+follow-up replaced the initial literal pair; the output is byte-identical).
 
 Rejected: adding `<`/`>` to `TRACKED_OPERATOR_KEYS`. That list is "operators
 with a longer form worth matching first" and its entries are matched *before*

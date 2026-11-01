@@ -11,17 +11,25 @@ timestamps until the fresh synthesis succeeds. The command SHALL set
 `was_regenerated: true` and `error_message: null`, move the entry to
 `pending` (from there the lifecycle runs `processing` → `ready` as for a new
 entry), emit `entry_updated`, and start the background synthesis. Nothing
-SHALL delete the current audio, timestamps or generation snapshot up front:
-engines write their output only after a successful synthesis and the Opus
-transcode replaces the stored file in a single rename, so the previous
-recording survives every failure before that point.
+SHALL delete the current audio, timestamps or generation snapshot up front,
+and the fresh audio SHALL be published atomically: engines write a staged
+`<id>.next.wav`, the Opus encoder writes `<id>.opus.part` and renames it over
+`<id>.opus` only after a complete encode, and the WAV fallback renames the
+staged file over `<id>.wav`. A crash, a full disk, an aborted task or an
+encode failure therefore leaves the entry's previous recording intact under
+the name it references. The word timestamps SHALL be saved only after the
+audio is published, so a failed publish cannot pair new timings with old
+audio.
 
 When the fresh synthesis succeeds the entry becomes `ready` with the new
 audio, timestamps, `duration_sec` and generation snapshot, replacing the
 previous artifacts in place. When it fails, the entry's previous recording
 SHALL remain: an entry that still has a stored recording (`audio_path` set)
-SHALL return to `ready` with `error_message` carrying the failure and the
-`tts_error` event still emitted; an entry without a recording SHALL fail to
+SHALL return to `ready` with `error_message` carrying the failure and a
+`tts_error` event emitted for that failure — including failure classes other
+than an engine error (`EmptyText`, `PipelinePanic`, `StoreFailed`), since a
+restored `ready` entry otherwise looks indistinguishable from a successful
+regeneration; an entry without a recording SHALL fail to
 `error` as usual. When `play_when_ready` is `true` and regeneration succeeds,
 the fresh audio SHALL start playing (the same autoplay rule as the initial
 synthesis); when it is `false`, the regenerated audio is only cached. If the
@@ -51,6 +59,32 @@ racing the in-flight task.
 - WHEN its synthesis fails
 - THEN the entry status becomes `error`, since there is no previous audio to
   fall back to
+
+#### Scenario: failed publish keeps the previous audio
+
+- GIVEN a `ready` entry with a stored recording whose regeneration synthesized
+  audio but could not publish it (encode rejected the WAV, full disk, an
+  interrupted task)
+- WHEN the task unwinds
+- THEN the previous audio and timestamps are untouched, the entry returns to
+  `ready` with `error_message`, and a `tts_error` event is emitted; a staged
+  `<id>.next.wav` or `<id>.opus.part` left by the run is removed
+
+#### Scenario: a WAV fallback recording is never overwritten in place
+
+- GIVEN a `ready` entry whose stored recording is the WAV codec fallback
+- WHEN its regeneration starts
+- THEN the engine writes a staged WAV and the stored `<id>.wav` keeps its
+  content until the fresh audio is renamed over it, so a failed or interrupted
+  run leaves the previous recording intact
+
+#### Scenario: failure before the TTS stage is reported
+
+- GIVEN a `ready` entry with stored audio whose text normalizes to an empty
+  string
+- WHEN `regenerate_entry` runs
+- THEN the entry returns to `ready` with its audio untouched, `error_message`
+  carries the normalization failure, and a `tts_error` event is emitted
 
 #### Scenario: regenerate with play-when-ready autoplays
 

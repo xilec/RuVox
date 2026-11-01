@@ -45,3 +45,9 @@
 - [ ] 3.4 Manual pass on the dev app with TeraTTS active: regenerate the entry
   that failed (SSH-honeypot article) and confirm the synthesis completes and
   the redirect is audible.
+
+## 4. Review follow-up (branch review)
+
+- [x] 4.1 Read the brackets through `SymbolNormalizer`'s shared `SYMBOLS` table
+  instead of a local literal pair — one home for the wording, output
+  byte-identical (no fixture re-bake).

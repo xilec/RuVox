@@ -47,11 +47,27 @@
 
 - [x] 3.1 CHANGELOG `[Unreleased]` entry (user-visible: a failed or cancelled
   regeneration no longer loses the previous recording).
-- [ ] 3.2 `pnpm dlx @fission-ai/openspec@1.6.0 validate
+- [x] 3.2 `pnpm dlx @fission-ai/openspec@1.6.0 validate
   preserve-audio-on-regeneration --strict`.
-- [ ] 3.3 `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`,
+- [x] 3.3 `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`,
   `cargo test --manifest-path src-tauri/Cargo.toml`, `pnpm typecheck` and
   `pnpm test:unit`.
 - [ ] 3.4 Manual pass on the dev app: with TeraTTS active, regenerate an entry
   whose text makes the engine fail and confirm the old audio still plays; then
   cancel a regeneration and confirm the entry stays playable.
+
+## 4. Review follow-ups (branch review)
+
+- [x] 4.1 Atomic publish: the Opus encoder writes `<id>.opus.part` and renames
+  it over `<id>.opus`; engines write `<id>.next.wav` and the WAV fallback is
+  renamed into place, so no crash window can truncate a referenced recording
+  (`encode_wav_to_opus_atomic`, `staged_wav_filename`).
+- [x] 4.2 Save timestamps after the audio is published; a publish failure
+  reports `StoreFailed` instead of pairing new timings with old audio.
+- [x] 4.3 Emit `tts_error` for every applied failure that leaves a playable
+  entry, not only `TtsFailed` (a restored `ready` entry is otherwise silent).
+- [x] 4.4 `cancel_synthesis` command doc matches the restored-`ready` rule.
+- [ ] 4.5 Deferred: extract the inline test modules (`pipeline/mod.rs` ~1.5k
+  lines, `commands/mod.rs` ~1.1k) into sibling files and split the synthesis
+  block out of `commands/mod.rs` — pre-existing layout debt, deferred so this
+  fix branch stays reviewable.
