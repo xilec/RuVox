@@ -52,7 +52,7 @@
 - [x] 3.3 `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`,
   `cargo test --manifest-path src-tauri/Cargo.toml`, `pnpm typecheck` and
   `pnpm test:unit`.
-- [ ] 3.4 Manual pass on the dev app: with TeraTTS active, regenerate an entry
+- [x] 3.4 Manual pass on the dev app: with TeraTTS active, regenerate an entry
   whose text makes the engine fail and confirm the old audio still plays; then
   cancel a regeneration and confirm the entry stays playable.
 

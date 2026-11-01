@@ -42,7 +42,7 @@
   `cargo test --manifest-path src-tauri/Cargo.toml` (golden corpus included),
   `pnpm typecheck` and `pnpm test:unit` (no frontend change expected, but the
   gate is required).
-- [ ] 3.4 Manual pass on the dev app with TeraTTS active: regenerate the entry
+- [x] 3.4 Manual pass on the dev app with TeraTTS active: regenerate the entry
   that failed (SSH-honeypot article) and confirm the synthesis completes and
   the redirect is audible.
 
