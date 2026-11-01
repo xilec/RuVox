@@ -1,0 +1,1 @@
+grep -r mdrfckr /root/.ssh /home/*/.ssh 2>/dev/null crontab -l; ls -la /etc/cron.d lastb | head -50

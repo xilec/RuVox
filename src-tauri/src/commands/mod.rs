@@ -16,7 +16,7 @@ use serde_json::json;
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use tauri_plugin_mpv::MpvExt;
 use tokio::task::AbortHandle;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::pipeline::tracked_text::CharMapping;
 use crate::pipeline::{Span, TTSPipeline};
@@ -621,9 +621,31 @@ fn completion_is_current(status: EntryStatus) -> bool {
 /// Best-effort removal of the audio/timestamp files a discarded late result
 /// wrote into the audio dir. Missing files are fine (e.g. the Opus transcode
 /// never ran on the failure path).
-fn discard_late_files<I: IntoIterator<Item = String>>(storage: &StorageService, names: I) {
+///
+/// A file the entry still references is kept: regeneration reuses the canonical
+/// per-entry names, so a late result of a cancelled run and the recording that
+/// run was going to replace can share a filename — deleting it by name would
+/// wipe the restored audio.
+fn discard_late_files<I: IntoIterator<Item = String>>(
+    storage: &StorageService,
+    entry_id: &EntryId,
+    names: I,
+) {
+    let referenced = storage.get_entry(entry_id).map(|e| {
+        [e.audio_path, e.timestamps_path]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<String>>()
+    });
     let audio_dir = storage.data_dir().join("audio");
     for name in names {
+        if referenced
+            .as_ref()
+            .is_some_and(|referenced| referenced.contains(&name))
+        {
+            debug!("keeping stale result file {name}: the entry still references it");
+            continue;
+        }
         let path = audio_dir.join(name);
         match std::fs::remove_file(&path) {
             Ok(()) => (),
@@ -670,6 +692,7 @@ fn apply_ready_if_current(
         }
         discard_late_files(
             storage,
+            entry_id,
             [Some(audio_filename.to_string()), ts_filename]
                 .into_iter()
                 .flatten(),
@@ -869,13 +892,17 @@ fn cleanup_finished_handle(tasks: &Mutex<HashMap<EntryId, AbortHandle>>, entry_i
     }
 }
 
-/// Core of [`set_entry_error`] without Tauri handles: flip the entry to
-/// `error`. With `require_processing` the stale-completion guard applies —
-/// a failure arriving for an entry that left `processing` (e.g. cancelled
-/// to `cancelled`) is discarded together with the files the late request
-/// may have written. Normalization-stage failures pass `false` because the
-/// entry is legitimately still `pending` before `mark_processing` runs.
-/// Returns `true` when the error was applied.
+/// Core of [`set_entry_error`] without Tauri handles: record the failure. With
+/// `require_processing` the stale-completion guard applies — a failure arriving
+/// for an entry that left `processing` (e.g. cancelled to `cancelled`) is
+/// discarded together with the files the late request may have written.
+/// Normalization-stage failures pass `false` because the entry is legitimately
+/// still `pending` before `mark_processing` runs.
+///
+/// The status follows the entry's own state: an entry that still owns a
+/// recording (a regeneration that failed without replacing it) returns to
+/// `ready`, so the audio stays playable; an entry without one becomes `error`.
+/// Returns `true` when the failure was applied.
 fn apply_error_if_current(
     storage: &StorageService,
     entry_id: &EntryId,
@@ -891,7 +918,15 @@ fn apply_error_if_current(
         entry_id,
         |e| !require_processing || completion_is_current(e.status),
         |e| {
-            e.status = EntryStatus::Error;
+            // A failed regeneration must not hide a recording it never
+            // replaced: an entry that still owns audio returns to `ready`,
+            // which is the only status playback accepts. A first synthesis (no
+            // `audio_path`) keeps the terminal `error` outcome.
+            e.status = if e.audio_path.is_some() {
+                EntryStatus::Ready
+            } else {
+                EntryStatus::Error
+            };
             e.error_message = Some(message.to_string());
         },
     );
@@ -905,6 +940,7 @@ fn apply_error_if_current(
                 info!("discarding stale failure for {entry_id} (status: {status:?})");
                 discard_late_files(
                     storage,
+                    entry_id,
                     [
                         format!("{entry_id}.wav"),
                         format!("{entry_id}.opus"),
@@ -1166,11 +1202,18 @@ pub async fn set_entry_format<R: Runtime>(
     Ok(())
 }
 
-/// Regenerate audio for an existing entry: drop its current audio + timestamps,
-/// reset status to `Pending`, and re-run the synthesis pipeline. Useful when
+/// Regenerate audio for an existing entry: re-run the synthesis pipeline
+/// against the stored `original_text` with the current settings. Useful when
 /// the user has changed `speaker`, `speech_rate`, or other normalization
 /// settings and wants the cached audio to reflect them. With `play_when_ready`,
 /// the fresh audio autoplays on success (same rule as the initial synthesis).
+///
+/// Non-destructive: the entry's current audio and timestamps stay in place
+/// until the fresh synthesis succeeds (the Opus transcode replaces the file
+/// with a single rename). A run that fails or is cancelled therefore leaves the
+/// previous recording playable — see [`apply_error_if_current`] and
+/// [`cancel_entry`], which restore `ready` instead of parking the entry in
+/// `error` / `cancelled` for exactly that reason.
 ///
 /// Rejects the call if the entry is currently being synthesized — re-entering
 /// `spawn_synthesis` for the same id would race with the in-flight task.
@@ -1191,21 +1234,19 @@ pub async fn regenerate_entry<R: Runtime>(
         ));
     }
 
-    // If this entry is currently playing, stop playback so the about-to-be-
-    // deleted audio file is not held open by the player.
+    // If this entry is currently playing, stop playback so the player does not
+    // hold the file the fresh transcode is about to rename over.
     if state.player.current_entry_id().as_deref() == Some(&id) {
         let _ = state.player.stop();
     }
 
-    state
+    let mut entry = state
         .storage
-        .delete_audio(&uuid)
-        .map_err(CommandError::from)?;
-
-    let mut entry = state.storage.get_entry(&uuid).ok_or_else(|| {
-        CommandError::not_found("entry.not_found", vec![id.to_string()])
-            .with_message("entry vanished after delete_audio")
-    })?;
+        .get_entry(&uuid)
+        .ok_or_else(|| CommandError::not_found("entry.not_found", vec![id.to_string()]))?;
+    // `delete_audio` used to move the entry to `pending` as a side effect; the
+    // lifecycle still starts there, only without touching the stored artifacts.
+    entry.status = EntryStatus::Pending;
     entry.was_regenerated = true;
     entry.error_message = None;
     state
@@ -1224,8 +1265,8 @@ pub async fn regenerate_entry<R: Runtime>(
 }
 
 /// Core of [`cancel_synthesis`] without Tauri handles: abort the entry's
-/// synthesis task (if registered) and flip the entry to `cancelled`.
-/// Returns the updated entry plus whether the task had entered the TTS
+/// synthesis task (if registered) and flip the entry out of the in-flight
+/// states. Returns the updated entry plus whether the task had entered the TTS
 /// stage — the caller kills ttsd only in that case.
 ///
 /// Only a `processing` or `pending` entry may be cancelled: the spec
@@ -1236,6 +1277,10 @@ pub async fn regenerate_entry<R: Runtime>(
 /// entry briefly sits in `pending` with its synthesis task already
 /// registered — cancelling must still abort it. `ready`, `playing`,
 /// `error` and `cancelled` fail with `synthesis_error` and change nothing.
+///
+/// An entry that still owns a recording returns to `ready` instead of
+/// `cancelled`: cancelling a regeneration keeps the audio the run was going to
+/// replace, and only `ready` makes it playable again.
 fn cancel_entry(
     storage: &StorageService,
     synthesis_tasks: &Mutex<HashMap<EntryId, AbortHandle>>,
@@ -1263,14 +1308,23 @@ fn cancel_entry(
         ));
     }
 
-    // Atomic transition: flip to `cancelled` only if the entry is still
+    // Atomic transition: leave the in-flight states only if the entry is still
     // `processing`/`pending` at apply time. A concurrent synthesis completion
     // that already moved it out of these states wins, and the stale
-    // `cancelled` clone is NOT persisted.
+    // `cancelled` clone is NOT persisted. The target status follows the same
+    // rule as a failed regeneration: a stored recording means the entry is
+    // still playable, so it goes back to `ready` rather than the terminal
+    // `cancelled`.
     let applied = storage.update_entry_if(
         &uuid,
         |e| matches!(e.status, EntryStatus::Processing | EntryStatus::Pending),
-        |e| e.status = EntryStatus::Cancelled,
+        |e| {
+            e.status = if e.audio_path.is_some() {
+                EntryStatus::Ready
+            } else {
+                EntryStatus::Cancelled
+            };
+        },
     );
 
     if !applied {

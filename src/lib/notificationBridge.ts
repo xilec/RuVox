@@ -136,6 +136,12 @@ export async function setupNotificationBridge(): Promise<() => void> {
   // ttsd does not stream chunk-level progress, so the toast just reflects
   // status transitions: processing → ready/error.
   const synthesisShown = new Set<string>();
+  // Generation counter captured when the spinner appears. `ready` means a
+  // fresh recording only when the counter moved: a failed or cancelled
+  // regeneration restores the previous audio and leaves the counter alone, and
+  // a green "synthesis complete" toast there would contradict the result (the
+  // failure has its own red toast, a cancellation its own notice).
+  const synthesisGeneration = new Map<string, number>();
   const truncate = (text: string, max = 60): string =>
     text.length > max ? `${text.slice(0, max).trimEnd()}…` : text;
 
@@ -147,6 +153,7 @@ export async function setupNotificationBridge(): Promise<() => void> {
       if (status === 'processing') {
         if (synthesisShown.has(id)) return;
         synthesisShown.add(id);
+        synthesisGeneration.set(id, p.entry.generation_count);
         notifications.show({
           id: toastId,
           title: t('notify.synthesis.title'),
@@ -163,9 +170,17 @@ export async function setupNotificationBridge(): Promise<() => void> {
         // transition can also come from a regenerate flow clearing the old
         // state.
         synthesisShown.delete(id);
+        synthesisGeneration.delete(id);
         notifications.hide(toastId);
       } else if (status === 'ready' && synthesisShown.has(id)) {
         synthesisShown.delete(id);
+        const generationBefore = synthesisGeneration.get(id);
+        synthesisGeneration.delete(id);
+        if (generationBefore === undefined || generationBefore === p.entry.generation_count) {
+          // No new audio was baked: the entry kept its previous recording.
+          notifications.hide(toastId);
+          return;
+        }
         notifications.update({
           id: toastId,
           title: t('notify.synthesis.done.title'),
@@ -176,6 +191,7 @@ export async function setupNotificationBridge(): Promise<() => void> {
         });
       } else if (status === 'error' && synthesisShown.has(id)) {
         synthesisShown.delete(id);
+        synthesisGeneration.delete(id);
         notifications.hide(toastId);
       }
     }),

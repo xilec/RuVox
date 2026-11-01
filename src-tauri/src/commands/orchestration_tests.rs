@@ -138,9 +138,9 @@ async fn delete_entry_of_other_entry_keeps_playback_running() {
 
 // ── regenerate_entry ─────────────────────────────────────────────────
 
-/// Happy path: the old audio file is dropped, the entry is flagged
-/// `was_regenerated` (and emitted), and a fresh synthesis brings it back
-/// to `ready` with newly written audio.
+/// Happy path: the entry is flagged `was_regenerated` (and emitted) and a
+/// fresh synthesis replaces the stored audio in place — the file is rewritten
+/// by the successful transcode, never deleted up front.
 #[tokio::test(flavor = "multi_thread")]
 async fn regenerate_entry_replaces_audio_and_resynthesizes() {
     let t = build_test_app();
@@ -158,7 +158,7 @@ async fn regenerate_entry_replaces_audio_and_resynthesizes() {
 
     wait_entry_status(&t, &uuid, EntryStatus::Ready).await;
 
-    // delete_audio removed the sentinel before synthesis rewrote the file.
+    // The successful transcode replaced the sentinel in place.
     assert_ne!(std::fs::read(&audio_file).unwrap(), b"old-marker".to_vec());
 
     let entry = t.state().storage.get_entry(&uuid).unwrap();
@@ -170,6 +170,161 @@ async fn regenerate_entry_replaces_audio_and_resynthesizes() {
     assert!(
         log.iter()
             .any(|(_, p)| p["entry"]["id"] == id && p["entry"]["was_regenerated"] == true)
+    );
+}
+
+/// A regeneration that fails must not cost the user the recording it was about
+/// to replace: the file stays on disk, the entry returns to `ready` (the only
+/// status playback accepts), and the failure still surfaces through
+/// `error_message` and `tts_error`.
+#[tokio::test(flavor = "multi_thread")]
+async fn regenerate_entry_failure_keeps_previous_audio_and_restores_ready() {
+    let t = build_test_app();
+    let id = add_ready_entry(&t).await;
+    let uuid = entry_uuid(&id);
+    let (audio_file, timestamps_file) = audio_paths(&t, &uuid);
+    let audio_before = std::fs::read(&audio_file).unwrap();
+    let timestamps_before = std::fs::read(&timestamps_file).unwrap();
+
+    t.engine.fail_with("stub regeneration boom");
+    let events = record_events(&t.app, &["entry_updated", "tts_error"]);
+
+    regenerate_entry(t.app.handle().clone(), t.state(), id.clone(), false)
+        .await
+        .unwrap();
+    // Wait on the event, not the status: the failure mutation lands before the
+    // emits, and `tts_error` is emitted last.
+    wait_until("tts_error emitted", TIMEOUT, || {
+        events.lock().unwrap().iter().any(|(n, _)| n == "tts_error")
+    })
+    .await;
+
+    let entry = t.state().storage.get_entry(&uuid).unwrap();
+    assert_eq!(entry.status, EntryStatus::Ready);
+    assert!(entry.was_regenerated);
+    assert_eq!(
+        entry.audio_path.as_deref(),
+        Some(format!("{uuid}.opus").as_str()),
+        "the entry keeps pointing at the recording it owned"
+    );
+    assert!(
+        entry
+            .error_message
+            .as_deref()
+            .unwrap_or_default()
+            .contains("stub regeneration boom")
+    );
+
+    assert_eq!(
+        std::fs::read(&audio_file).unwrap(),
+        audio_before,
+        "the failed regeneration must not touch the stored audio"
+    );
+    assert_eq!(
+        std::fs::read(&timestamps_file).unwrap(),
+        timestamps_before,
+        "the failed regeneration must not touch the timestamps"
+    );
+
+    {
+        let log = events.lock().unwrap();
+        let ready_idx = log
+            .iter()
+            .position(|(n, p)| {
+                n == "entry_updated"
+                    && p["entry"]["status"] == "ready"
+                    && p["entry"]["error_message"]
+                        .as_str()
+                        .is_some_and(|message| message.contains("stub regeneration boom"))
+            })
+            .expect("entry_updated(ready + error_message) must be emitted");
+        let tts_idx = log
+            .iter()
+            .position(|(n, _)| n == "tts_error")
+            .expect("tts_error must be emitted");
+        assert!(
+            ready_idx < tts_idx,
+            "entry_updated(ready) precedes tts_error"
+        );
+    }
+
+    // The restored recording is playable again without another synthesis.
+    play_entry(t.state(), id).await.unwrap();
+    assert!(t.player.is_playing());
+}
+
+/// Cancelling a regeneration keeps the recording the run was going to replace
+/// and returns the entry to `ready`: a `cancelled` entry would orphan the file
+/// from playback, which is the state this change exists to prevent.
+#[tokio::test(flavor = "multi_thread")]
+async fn cancel_synthesis_during_regeneration_keeps_audio_and_returns_ready() {
+    let t = build_test_app();
+    let id = add_ready_entry(&t).await;
+    let uuid = entry_uuid(&id);
+    let (audio_file, _) = audio_paths(&t, &uuid);
+    let audio_before = std::fs::read(&audio_file).unwrap();
+
+    t.engine.block_synthesis();
+    regenerate_entry(t.app.handle().clone(), t.state(), id.clone(), false)
+        .await
+        .unwrap();
+    wait_until("regeneration entered TTS stage", TIMEOUT, || {
+        t.state().synthesize_entered.lock().contains(&uuid)
+    })
+    .await;
+
+    cancel_synthesis(t.app.handle().clone(), t.state(), id.clone())
+        .await
+        .unwrap();
+
+    let entry = t.state().storage.get_entry(&uuid).unwrap();
+    assert_eq!(entry.status, EntryStatus::Ready);
+    assert!(entry.audio_path.is_some());
+    assert_eq!(
+        std::fs::read(&audio_file).unwrap(),
+        audio_before,
+        "cancelling a regeneration must not touch the stored audio"
+    );
+    assert!(t.state().synthesis_tasks.lock().is_empty());
+
+    play_entry(t.state(), id).await.unwrap();
+    assert!(t.player.is_playing());
+}
+
+/// The late-result cleanup keeps a file the entry still references: a cancelled
+/// regeneration and its late result share the canonical per-entry name, so a
+/// name-based delete would wipe the restored recording.
+#[tokio::test(flavor = "multi_thread")]
+async fn discard_late_files_keeps_files_the_entry_references() {
+    let t = build_test_app();
+    let id = add_ready_entry(&t).await;
+    let uuid = entry_uuid(&id);
+    let (audio_file, timestamps_file) = audio_paths(&t, &uuid);
+    let stray = format!("{uuid}.wav");
+    std::fs::write(audio_dir(&t).join(&stray), b"partial").unwrap();
+
+    discard_late_files(
+        &t.state().storage,
+        &uuid,
+        [
+            format!("{uuid}.opus"),
+            format!("{uuid}.timestamps.json"),
+            stray.clone(),
+        ],
+    );
+
+    assert!(audio_file.exists(), "referenced audio must survive");
+    assert!(
+        timestamps_file.exists(),
+        "referenced timestamps must survive"
+    );
+    assert!(
+        !audio_dir(&t).join(&stray).exists(),
+        "a file the entry does not reference is removed"
+    );
+    assert_eq!(
+        t.state().storage.get_entry(&uuid).unwrap().status,
+        EntryStatus::Ready
     );
 }
 
