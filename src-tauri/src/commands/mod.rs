@@ -278,10 +278,11 @@ impl<R: Runtime> SynthesisDeps<R> {
 }
 
 /// Distinct failure points for a synthesis task. Each variant maps to the
-/// user-visible string written into `TextEntry.error_message`; `TtsFailed` and
-/// `StoreFailed` additionally trigger a `tts_error` event — the failure classes
-/// that can leave a playable entry (a failed regeneration keeps its audio), so
-/// the stored message alone would be invisible.
+/// user-visible string written into `TextEntry.error_message`. `TtsFailed`
+/// always emits a `tts_error` event (an engine error is the classic toast); any
+/// other failure emits it only when the entry kept a playable recording — a
+/// failed regeneration restores `ready`, where the stored message would
+/// otherwise be invisible.
 #[derive(Debug)]
 enum SynthesisError {
     PipelinePanic(String),
@@ -673,6 +674,34 @@ fn completion_is_current(status: EntryStatus) -> bool {
     status == EntryStatus::Processing
 }
 
+/// Best-effort removal of one file from the audio dir. Missing is fine (a
+/// cleanup may run after the file was already published or never written).
+fn remove_audio_file(storage: &StorageService, name: &str) {
+    let path = storage.data_dir().join("audio").join(name);
+    match std::fs::remove_file(&path) {
+        Ok(()) => (),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
+        Err(e) => warn!("failed to remove audio file {}: {e}", path.display()),
+    }
+}
+
+/// Best-effort removal of the staging files a run may have left behind
+/// (`<id>.next.wav`, `<id>.opus.part`). Skipped while the entry is back in
+/// flight: a newer regeneration owns those names and deleting them would make
+/// its publish fail with `StoreFailed`.
+fn discard_transient_files(storage: &StorageService, entry_id: &EntryId) {
+    let in_flight = storage
+        .get_entry(entry_id)
+        .is_some_and(|e| matches!(e.status, EntryStatus::Pending | EntryStatus::Processing));
+    if in_flight {
+        debug!("keeping transient audio files for {entry_id}: a new run owns them");
+        return;
+    }
+    for name in transient_audio_names(entry_id) {
+        remove_audio_file(storage, &name);
+    }
+}
+
 /// Best-effort removal of the audio/timestamp files a discarded late result
 /// wrote into the audio dir. Missing files are fine (e.g. the Opus transcode
 /// never ran on the failure path).
@@ -692,7 +721,6 @@ fn discard_late_files<I: IntoIterator<Item = String>>(
             .flatten()
             .collect::<Vec<String>>()
     });
-    let audio_dir = storage.data_dir().join("audio");
     for name in names {
         if referenced
             .as_ref()
@@ -701,12 +729,7 @@ fn discard_late_files<I: IntoIterator<Item = String>>(
             debug!("keeping stale result file {name}: the entry still references it");
             continue;
         }
-        let path = audio_dir.join(name);
-        match std::fs::remove_file(&path) {
-            Ok(()) => (),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
-            Err(e) => warn!("failed to remove stale result file {}: {e}", path.display()),
-        }
+        remove_audio_file(storage, &name);
     }
 }
 
@@ -723,6 +746,9 @@ fn apply_ready_if_current(
     audio_filename: &str,
     generation: GenerationParams,
 ) -> bool {
+    // Read before the update: a successful publish retires the recording it
+    // replaced (a WAV fallback left behind by a fresh Opus file).
+    let previous_audio = storage.get_entry(entry_id).and_then(|e| e.audio_path);
     // Atomic under a single storage lock (issue #179): the `processing` check
     // and the ready-field mutation cannot be raced by a concurrent cancel.
     let applied = storage.update_entry_if(
@@ -745,14 +771,41 @@ fn apply_ready_if_current(
         if let Some(status) = storage.get_entry(entry_id).map(|e| e.status) {
             info!("discarding stale completion for {entry_id} (status: {status:?})");
         }
+        // The timestamps file always carries the canonical name, so the entry
+        // "references" it even when the discarded run overwrote it with timings
+        // for audio the entry did not keep. Wrong word timings are worse than
+        // none: drop them with the audio they describe.
+        let entry_kept_the_new_audio = storage
+            .get_entry(entry_id)
+            .and_then(|e| e.audio_path)
+            .as_deref()
+            == Some(audio_filename);
+        let keep_ts = if entry_kept_the_new_audio {
+            ts_filename.clone()
+        } else {
+            None
+        };
         discard_late_files(
             storage,
             entry_id,
-            [Some(audio_filename.to_string()), ts_filename]
+            [Some(audio_filename.to_string()), keep_ts]
                 .into_iter()
                 .flatten()
                 .chain(transient_audio_names(entry_id)),
         );
+        if !entry_kept_the_new_audio {
+            if let Some(ts) = ts_filename {
+                remove_audio_file(storage, &ts);
+            }
+        }
+    } else if let Some(previous) = previous_audio {
+        // Retire the file the fresh recording replaced, but only if the entry
+        // still points at the fresh one: a concurrent regeneration may have
+        // published something else since.
+        let still_ours = storage.get_entry(entry_id).and_then(|e| e.audio_path);
+        if previous != audio_filename && still_ours.as_deref() == Some(audio_filename) {
+            remove_audio_file(storage, &previous);
+        }
     }
     applied
 }
@@ -890,17 +943,6 @@ pub fn spawn_synthesis<R: Runtime + 'static>(
             if let Err(err) = result {
                 let msg = err.user_message();
                 tracing::error!("synthesis failed for {entry_id}: {msg}");
-                // A failed run must not leave a partial engine WAV next to the
-                // published recordings.
-                let staged_path = storage
-                    .data_dir()
-                    .join("audio")
-                    .join(staged_wav_filename(&entry_id));
-                match std::fs::remove_file(&staged_path) {
-                    Ok(()) => (),
-                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
-                    Err(e) => warn!("failed to remove staged wav {}: {e}", staged_path.display()),
-                }
                 // Normalization-stage failures arrive while the entry is
                 // legitimately still `pending` (mark_processing runs after
                 // normalization), so the stale guard only applies to failures
@@ -910,6 +952,10 @@ pub fn spawn_synthesis<R: Runtime + 'static>(
                     SynthesisError::TtsFailed(_) | SynthesisError::StoreFailed(_)
                 );
                 let applied = set_entry_error(&storage, &app, &entry_id, &msg, require_processing);
+                // The run is no longer in flight (or a newer one owns the
+                // staging names): drop the partial engine output. This also
+                // covers a run aborted before `finalize_audio_files`.
+                discard_transient_files(&storage, &entry_id);
                 if applied {
                     // A failed regeneration keeps a playable entry; without the
                     // event the outcome is indistinguishable from a successful
@@ -1420,7 +1466,9 @@ fn cancel_entry(
         handle.abort();
     }
     let entered_tts = synthesize_entered.lock().remove(&uuid);
-
+    // The abort kills the async task, not a blocking encoder that already
+    // started: drop its staging files, but only while no newer run owns them.
+    discard_transient_files(storage, &uuid);
     let entry = storage
         .get_entry(&uuid)
         .ok_or_else(|| CommandError::not_found("entry.not_found", vec![id.to_string()]))?;
@@ -2681,6 +2729,90 @@ mod synthesis_tests {
         );
         assert!(!audio_dir.join(&audio_name).exists());
         assert!(!audio_dir.join(&ts_name).exists());
+    }
+
+    /// A discarded run that published under a different name must take its
+    /// timestamps with it: the canonical timestamps name is always "referenced",
+    /// so keeping it would pair new word timings with the old recording.
+    #[test]
+    fn stale_completion_discards_timestamps_of_a_different_audio_name() {
+        let (storage, _dir) = make_service();
+        let entry = storage.add_entry("текст".to_string()).unwrap();
+        let id = entry.id;
+        let audio_dir = storage.data_dir().join("audio");
+        let wav_name = format!("{id}.wav");
+        let opus_name = format!("{id}.opus");
+        let ts_name = format!("{id}.timestamps.json");
+        std::fs::write(audio_dir.join(&wav_name), b"old wav").unwrap();
+        std::fs::write(audio_dir.join(&ts_name), b"old timings").unwrap();
+        let mut stored = storage.get_entry(&id).unwrap();
+        stored.status = EntryStatus::Cancelled;
+        stored.audio_path = Some(wav_name.clone());
+        stored.timestamps_path = Some(ts_name.clone());
+        storage.update_entry(stored).unwrap();
+        // The discarded run published Opus and rewrote the timestamps.
+        std::fs::write(audio_dir.join(&opus_name), b"new opus").unwrap();
+        std::fs::write(audio_dir.join(&ts_name), b"new timings").unwrap();
+
+        let applied = apply_ready_if_current(
+            &storage,
+            &id,
+            &fake_output(),
+            Some(ts_name.clone()),
+            &opus_name,
+            fake_generation(),
+        );
+
+        assert!(!applied);
+        assert!(
+            audio_dir.join(&wav_name).exists(),
+            "the entry's recording survives"
+        );
+        assert!(
+            !audio_dir.join(&opus_name).exists(),
+            "the discarded audio is removed"
+        );
+        assert!(
+            !audio_dir.join(&ts_name).exists(),
+            "timings describing the discarded audio are removed too"
+        );
+    }
+
+    /// A successful publish retires the recording it replaced, so a WAV
+    /// fallback does not linger after the entry moved to Opus.
+    #[test]
+    fn applied_completion_retires_the_replaced_audio_file() {
+        let (storage, _dir) = make_service();
+        let entry = storage.add_entry("текст".to_string()).unwrap();
+        let id = entry.id;
+        let audio_dir = storage.data_dir().join("audio");
+        let wav_name = format!("{id}.wav");
+        let opus_name = format!("{id}.opus");
+        std::fs::write(audio_dir.join(&wav_name), b"old wav").unwrap();
+        std::fs::write(audio_dir.join(&opus_name), b"new opus").unwrap();
+        set_status(&storage, &entry, EntryStatus::Processing);
+        let mut stored = storage.get_entry(&id).unwrap();
+        stored.audio_path = Some(wav_name.clone());
+        storage.update_entry(stored).unwrap();
+
+        let applied = apply_ready_if_current(
+            &storage,
+            &id,
+            &fake_output(),
+            None,
+            &opus_name,
+            fake_generation(),
+        );
+
+        assert!(applied);
+        assert!(
+            !audio_dir.join(&wav_name).exists(),
+            "the replaced recording is retired"
+        );
+        assert_eq!(
+            storage.get_entry(&id).unwrap().audio_path.as_deref(),
+            Some(opus_name.as_str())
+        );
     }
 
     /// The happy path: a completion arriving while the entry is `processing`

@@ -71,3 +71,9 @@
   lines, `commands/mod.rs` ~1.1k) into sibling files and split the synthesis
   block out of `commands/mod.rs` — pre-existing layout debt, deferred so this
   fix branch stays reviewable.
+- [x] 4.6 A discarded late completion removes the timestamps it wrote when the
+  entry kept different audio: the canonical timestamps name is always
+  "referenced", and wrong word timings are worse than none.
+- [x] 4.7 A successful publish retires the file it replaced (WAV fallback →
+  Opus), and cancelling removes the run's staging files while no newer run owns
+  them — both best-effort, both skipped while the entry is back in flight.

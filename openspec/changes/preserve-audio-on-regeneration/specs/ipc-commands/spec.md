@@ -86,6 +86,22 @@ racing the in-flight task.
 - THEN the entry returns to `ready` with its audio untouched, `error_message`
   carries the normalization failure, and a `tts_error` event is emitted
 
+#### Scenario: a cancelled run's leftovers go with their timestamps
+
+- GIVEN a regeneration that published a fresh `<id>.opus` and rewrote
+  `<id>.timestamps.json` while the entry had already been cancelled and restored
+  to its previous `<id>.wav`
+- WHEN the late result is discarded
+- THEN the fresh audio and the timestamps it wrote are both removed, so the
+  restored recording never plays with word timings from another take
+
+#### Scenario: publishing retires the recording it replaced
+
+- GIVEN a `ready` entry whose stored recording is the WAV fallback
+- WHEN a regeneration succeeds and publishes Opus
+- THEN the entry points at the new `<id>.opus` and the now-unreferenced
+  `<id>.wav` is removed (best-effort, so a failure to remove it is only logged)
+
 #### Scenario: regenerate with play-when-ready autoplays
 
 - GIVEN a `ready` entry

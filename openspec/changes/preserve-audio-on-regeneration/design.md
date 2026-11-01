@@ -145,11 +145,22 @@ blocking encode is running, `spawn_blocking` finishes (aborting the future does
 not stop it) and may publish the new Opus after the cancel restored `ready`.
 The timestamps save runs *after* that await, so it never happens — the entry
 then has the new audio with the previous timestamps, and word highlighting
-drifts until the next regeneration. The window is the encode itself (a fraction
-of a second) and the file stays valid; closing it would need a cancellation
-token checked inside the blocking encoder and a two-file transactional publish,
-which is more machinery than the failure justifies. Every other path publishes
-audio and timestamps together or keeps the previous pair.
+drifts until the next regeneration.
+
+Two mitigations were considered and not taken: a `CancelFlag` checked before the
+rename (the pattern Piper's engine already uses for its chunk loop) would shrink
+the window from the whole encode to a single syscall but not close it, and only
+a two-file transactional publish (journal, or one directory rename) eliminates
+it. Against request cancellation every other path publishes audio and
+timestamps together; a process crash between the two writes has a mirror-image
+window in any order, which no journal-free scheme avoids. The chosen order
+(audio first) is the better one — a publish failure is more likely than a crash
+in that instruction window, and the old order had the opposite window.
+
+When the late result is discarded after such a publish, the timestamps go with
+the audio they describe (`entry_kept_the_new_audio` in `apply_ready_if_current`):
+the canonical `<id>.timestamps.json` name is always "referenced", so keeping it
+would pair old audio with new timings. Wrong highlighting is worse than none.
 
 ## Risks / Trade-offs
 

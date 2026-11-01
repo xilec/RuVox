@@ -34,11 +34,11 @@
 
 ## 3. Documentation and validation
 
-- [ ] 3.1 Add a CHANGELOG `[Unreleased]` entry (user-visible: `<`/`>` are now
+- [x] 3.1 Add a CHANGELOG `[Unreleased]` entry (user-visible: `<`/`>` are now
   read instead of failing on TeraTTS / being dropped elsewhere).
-- [ ] 3.2 `pnpm dlx @fission-ai/openspec@1.6.0 validate
+- [x] 3.2 `pnpm dlx @fission-ai/openspec@1.6.0 validate
   narrate-prose-angle-brackets --strict`.
-- [ ] 3.3 `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`,
+- [x] 3.3 `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`,
   `cargo test --manifest-path src-tauri/Cargo.toml` (golden corpus included),
   `pnpm typecheck` and `pnpm test:unit` (no frontend change expected, but the
   gate is required).
