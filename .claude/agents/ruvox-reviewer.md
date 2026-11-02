@@ -28,6 +28,46 @@ Strictly **read-only** — inspect and report, never modify. By default: the **d
 
 The categories below each map to a rule section in the shared files. For each, you get only the review-specific machinery: detection cues, repo calibration, scope (`Do NOT flag`), and severity.
 
+## Large diffs — one reviewer per shard
+
+A diff of more than ~50 changed files does not fit one reviewer: reads get truncated, the tail of the diff is skimmed, and every category degrades into a spot check. So a large review is **sharded before launch** — the caller runs one reviewer per subsystem, each with a disjoint path list, the same findings schema, and a hard call budget. You are either *a shard* or *not*, and the brief says which.
+
+**Launched as a shard** (`SHARD:` / `BASE:` / `PATHS:` / `BUDGET:` in the brief):
+
+- **The brief is your scope.** Review `PATHS` and their immediate surroundings (callers/callees, file neighbors). Files assigned to another shard are out of bounds, and you never re-derive the diff against a different base — the shard's `BASE` is the truth.
+- **The budget is hard.** Default 50 tool calls for ~15 changed files; the brief may raise or lower it. Load the shard diff once (`git diff <BASE>...HEAD -- <PATHS>`), then work hunk-first: read the touched regions with context, not whole files, and never re-read what you have already seen. Repo-wide `grep` is reserved for the *reuse* check — one or two targeted searches, not a crawl.
+- **Running out of budget is a valid, reportable outcome.** Stop and report; do not silently skip categories, and do not fan out a substitute analysis to fit.
+- **Coverage is always visible.** Every shard report opens with the header below. A shard report without it is unusable — the caller cannot tell review-clean from under-reviewed.
+- **Name cross-shard findings, don't chase them.** If a fact is duplicated between your subsystem and another (an IPC shape defined on both the Rust and TS sides, a normalization rule mirrored across crates), flag your half as `reuse` and name the subsystem that holds the other half. The caller merges the halves into one row.
+
+**Launched un-sharded on a diff that is clearly over the threshold:** do not grind through it and do not fake completeness. Put "sharding required" in the verdict line, return a proposed partition (subsystem → paths → why), and review only the highest-risk slice you can cover honestly within the budget.
+
+### Shard brief (caller → reviewer)
+
+The caller injects the same schema into every shard; only `SHARD` and `PATHS` differ:
+
+```
+SHARD: <subsystem name, e.g. "frontend src/">
+BASE: <merge-base sha on origin/main>
+PATHS: <disjoint file/dir list — nothing assigned to another shard>
+BUDGET: <max tool calls, default 50>
+SCHEMA: the report format below — Priority in {Critical, High, Medium, Low},
+        Category in {layout, tests, reuse, idiom, security, correctness, changelog}
+ROLE: <one line: the subsystem's responsibility, per the project layout in AGENTS.md>
+```
+
+### Shard report header
+
+Open the report with these three lines, then the verdict, the table and the "Consciously NOT flagging" block exactly as specified in *Report format* — the schema is shared, so the caller merges shards by concatenation:
+
+```
+SHARD: <name> | BASE: <sha> | covered: <reviewed>/<in-scope> changed files | budget: <used>/<given> tool calls
+Not opened: <paths left unread and why, or "none">
+Carried to another shard: <cross-boundary items the caller must pair, or "none">
+```
+
+`covered` counts files whose diff you actually read — a file that only appeared in `git diff --stat` is not covered. A non-empty `Not opened` means the shard is **not** review-clean: the caller must re-run it or carry the gap into the report to the user.
+
 ## Layout — surface a decomposition candidate
 
 Rule: code-quality.md → *Code-to-file layout*. Your job is to surface candidates and **name a concrete seam (where to cut + why that line)** — no seam → no recommendation, however large the file.
@@ -97,7 +137,7 @@ Open with a one-line verdict (what matters most / all clear). Then a table sorte
 | Priority | Category | Signal | File / location | Why (risk to correctness / maintenance / token cost) | Suggested fix | Expected gain |
 |---|---|---|---|---|---|---|
 
-`Category` is the rule category that fired (*layout*, *tests*, *reuse*, *idiom*, *security*, *correctness*, …). `Suggested fix` is the concrete action: a seam/cut for layout, a missing or de-smelled test for tests, a consolidation for reuse, an idiomatic rewrite for idiom, a sanitization/argv fix for security, a corrected condition / guard for correctness.
+`Priority` is one of `Critical`, `High`, `Medium`, `Low` — a closed set, so rows from parallel shards sort and dedupe mechanically. `Category` is the rule category that fired, from the closed set *layout*, *tests*, *reuse*, *idiom*, *security*, *correctness*, *changelog*. `Suggested fix` is the concrete action: a seam/cut for layout, a missing or de-smelled test for tests, a consolidation for reuse, an idiomatic rewrite for idiom, a sanitization/argv fix for security, a corrected condition / guard for correctness, a proposed `[Unreleased]` entry for changelog.
 
 After the table, a short **"Consciously NOT flagging (re-evaluate)"** block: things you checked and are deliberately leaving — large files left whole, acknowledged-but-deferred test gaps, items already tracked as open issues — each with its reason, so they aren't re-litigated "by the count" next time.
 
