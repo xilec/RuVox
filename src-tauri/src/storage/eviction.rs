@@ -93,11 +93,11 @@ pub fn sweep_orphans(svc: &StorageService) -> Result<SweepStats> {
         if valid.contains(name) {
             continue;
         }
-        if let Ok(modified) = meta.modified() {
-            if now.duration_since(modified).unwrap_or(Duration::ZERO) < RECENT_FILE_GRACE {
-                tracing::debug!("sweep_orphans: skipping recent file {name}");
-                continue;
-            }
+        if let Ok(modified) = meta.modified()
+            && now.duration_since(modified).unwrap_or(Duration::ZERO) < RECENT_FILE_GRACE
+        {
+            tracing::debug!("sweep_orphans: skipping recent file {name}");
+            continue;
         }
 
         let size = meta.len();
@@ -119,15 +119,15 @@ pub fn sweep_orphans(svc: &StorageService) -> Result<SweepStats> {
 /// Total on-disk size of an entry's audio + timestamps files (existing files only).
 pub(super) fn entry_files_size(audio_dir: &Path, entry: &TextEntry) -> u64 {
     let mut total: u64 = 0;
-    if let Some(ref name) = entry.audio_path {
-        if let Ok(meta) = fs::metadata(audio_dir.join(name)) {
-            total += meta.len();
-        }
+    if let Some(ref name) = entry.audio_path
+        && let Ok(meta) = fs::metadata(audio_dir.join(name))
+    {
+        total += meta.len();
     }
-    if let Some(ref name) = entry.timestamps_path {
-        if let Ok(meta) = fs::metadata(audio_dir.join(name)) {
-            total += meta.len();
-        }
+    if let Some(ref name) = entry.timestamps_path
+        && let Ok(meta) = fs::metadata(audio_dir.join(name))
+    {
+        total += meta.len();
     }
     total
 }

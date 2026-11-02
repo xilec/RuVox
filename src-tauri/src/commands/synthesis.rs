@@ -570,10 +570,8 @@ pub(super) fn apply_ready_if_current(
                 .flatten()
                 .chain(transient_audio_names(entry_id)),
         );
-        if !entry_kept_the_new_audio {
-            if let Some(ts) = ts_filename {
-                remove_audio_file(storage, &ts);
-            }
+        if !entry_kept_the_new_audio && let Some(ts) = ts_filename {
+            remove_audio_file(storage, &ts);
         }
     } else if let Some(previous) = previous_audio {
         // Retire the file the fresh recording replaced, but only if the entry
@@ -764,10 +762,10 @@ pub(crate) fn spawn_synthesis<R: Runtime + 'static>(
         // `synthesize_entered` is unmarked right after the synthesize await
         // on the normal path and by `cancel_synthesis` on the abort path;
         // only a panic can leave the entry marked, so only then clean up.
-        if let Err(e) = &result {
-            if e.is_panic() {
-                entered_for_cleanup.lock().remove(&entry_id);
-            }
+        if let Err(e) = &result
+            && e.is_panic()
+        {
+            entered_for_cleanup.lock().remove(&entry_id);
         }
     }));
 
@@ -866,10 +864,8 @@ fn set_entry_error<R: Runtime>(
     require_processing: bool,
 ) -> bool {
     let applied = apply_error_if_current(storage, entry_id, message, require_processing);
-    if applied {
-        if let Some(entry) = storage.get_entry(entry_id) {
-            emit_entry_updated(app, &entry);
-        }
+    if applied && let Some(entry) = storage.get_entry(entry_id) {
+        emit_entry_updated(app, &entry);
     }
     applied
 }

@@ -129,10 +129,10 @@ fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
     // CloseRequested fires (its own RunEvent handler), so the subprocess is
     // gone after a tray-on-close cycle.  Re-init lazily on every show so
     // playback works after the user reopens the window.
-    if let Some(state) = app.try_state::<AppState>() {
-        if let Err(e) = state.player.ensure_mpv_alive() {
-            tracing::error!("ensure_mpv_alive failed: {e}");
-        }
+    if let Some(state) = app.try_state::<AppState>()
+        && let Err(e) = state.player.ensure_mpv_alive()
+    {
+        tracing::error!("ensure_mpv_alive failed: {e}");
     }
 }
 

@@ -143,15 +143,15 @@ impl PiperEngine {
         // Fast path — voice already loaded.
         {
             let guard = self.loaded.read().await;
-            if let Some(loaded) = guard.as_ref() {
-                if loaded.id == voice_id {
-                    return Ok(LoadedHandle {
-                        piper: Arc::clone(&loaded.piper),
-                        noise_scale: loaded.noise_scale,
-                        noise_w: loaded.noise_w,
-                        sample_rate: loaded.sample_rate,
-                    });
-                }
+            if let Some(loaded) = guard.as_ref()
+                && loaded.id == voice_id
+            {
+                return Ok(LoadedHandle {
+                    piper: Arc::clone(&loaded.piper),
+                    noise_scale: loaded.noise_scale,
+                    noise_w: loaded.noise_w,
+                    sample_rate: loaded.sample_rate,
+                });
             }
         }
 
@@ -383,14 +383,14 @@ impl TtsEngine for PiperEngine {
                 // it already created must be removed explicitly.
                 Err(e) => {
                     drop(writer);
-                    if let Err(remove_err) = std::fs::remove_file(&out_wav_for_write) {
-                        if remove_err.kind() != std::io::ErrorKind::NotFound {
-                            warn!(
-                                target: "tts::piper",
-                                "failed to remove partial WAV {}: {remove_err}",
-                                out_wav_for_write
-                            );
-                        }
+                    if let Err(remove_err) = std::fs::remove_file(&out_wav_for_write)
+                        && remove_err.kind() != std::io::ErrorKind::NotFound
+                    {
+                        warn!(
+                            target: "tts::piper",
+                            "failed to remove partial WAV {}: {remove_err}",
+                            out_wav_for_write
+                        );
                     }
                     Err(e)
                 }

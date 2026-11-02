@@ -504,15 +504,13 @@ pub fn init_platform_env() {
 /// and Nix builds are unaffected.
 #[cfg(not(windows))]
 pub fn init_platform_env() {
-    if std::env::var_os("PIPER_ESPEAKNG_DATA_DIRECTORY").is_none() {
-        if let Ok(exe) = std::env::current_exe() {
-            if let Some(exe_dir) = exe.parent() {
-                if let Some(data) = find_bundled_espeak_data(exe_dir) {
-                    // SAFETY: called from main before any threads exist.
-                    unsafe { std::env::set_var("PIPER_ESPEAKNG_DATA_DIRECTORY", data) };
-                }
-            }
-        }
+    if std::env::var_os("PIPER_ESPEAKNG_DATA_DIRECTORY").is_none()
+        && let Ok(exe) = std::env::current_exe()
+        && let Some(exe_dir) = exe.parent()
+        && let Some(data) = find_bundled_espeak_data(exe_dir)
+    {
+        // SAFETY: called from main before any threads exist.
+        unsafe { std::env::set_var("PIPER_ESPEAKNG_DATA_DIRECTORY", data) };
     }
     // `ort` with `load-dynamic` dlopens libonnxruntime; without an explicit
     // path it relies on the OS loader search, which does NOT include the
@@ -521,15 +519,13 @@ pub fn init_platform_env() {
     // the nix wrapper (system onnxruntime) is unaffected. The size guard
     // skips the committed placeholder so a placeholder build degrades to
     // Piper instead of failing the dlopen.
-    if std::env::var_os("ORT_DYLIB_PATH").is_none() {
-        if let Ok(exe) = std::env::current_exe() {
-            if let Some(exe_dir) = exe.parent() {
-                if let Some(dylib) = find_bundled_onnxruntime(exe_dir) {
-                    // SAFETY: called from main before any threads exist.
-                    unsafe { std::env::set_var("ORT_DYLIB_PATH", dylib) };
-                }
-            }
-        }
+    if std::env::var_os("ORT_DYLIB_PATH").is_none()
+        && let Ok(exe) = std::env::current_exe()
+        && let Some(exe_dir) = exe.parent()
+        && let Some(dylib) = find_bundled_onnxruntime(exe_dir)
+    {
+        // SAFETY: called from main before any threads exist.
+        unsafe { std::env::set_var("ORT_DYLIB_PATH", dylib) };
     }
 }
 
