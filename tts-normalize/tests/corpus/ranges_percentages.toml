@@ -1,0 +1,281 @@
+# Ranges, percentages and approximations.
+
+# ── locked: ranges and percentages already read correctly ────────────────────
+
+[[case]]
+id = "ranges_percentages/simple"
+subcategory = "range"
+status = "locked"
+input = "10-20"
+expected = "от десяти до двадцати"
+
+[[case]]
+id = "ranges_percentages/percentage-range"
+subcategory = "percentage-range"
+status = "locked"
+input = "10-20%"
+expected = "от десяти до двадцати процентов"
+
+[[case]]
+id = "ranges_percentages/percentage"
+subcategory = "percentage"
+status = "locked"
+input = "50%"
+expected = "пятьдесят процентов"
+
+[[case]]
+id = "ranges_percentages/percentage-decimal"
+subcategory = "percentage"
+status = "locked"
+input = "99.9%"
+expected = "девяносто девять точка девять процентов"
+
+[[case]]
+id = "ranges_percentages/year-range"
+subcategory = "range"
+status = "locked"
+input = "2020-2024"
+expected = "от две тысячи двадцатого до две тысячи двадцать четвёртого"
+
+[[case]]
+id = "ranges_percentages/hundreds"
+subcategory = "range"
+status = "locked"
+input = "100-200"
+expected = "от ста до двухсот"
+
+[[case]]
+id = "ranges_percentages/small"
+subcategory = "range"
+status = "locked"
+input = "1-10"
+expected = "от одного до десяти"
+
+[[case]]
+id = "ranges_percentages/percentage-space"
+subcategory = "percentage"
+status = "locked"
+input = "5 %"
+expected = "пять процентов"
+
+# ── target: ranges with units and en dashes ──────────────────────────────────
+
+[[case]]
+id = "ranges_percentages/kg-en-dash"
+subcategory = "range"
+status = "target"
+input = "5–10 кг"
+expected = "от пяти до десяти килограммов"
+
+[[case]]
+id = "ranges_percentages/percent-en-dash-space"
+subcategory = "percentage-range"
+status = "target"
+input = "10–15 %"
+expected = "от десяти до пятнадцати процентов"
+
+[[case]]
+id = "ranges_percentages/percent-en-dash"
+subcategory = "percentage-range"
+status = "target"
+input = "50–60%"
+expected = "от пятидесяти до шестидесяти процентов"
+
+[[case]]
+id = "ranges_percentages/percent-en-dash-space-before"
+subcategory = "percentage-range"
+status = "target"
+input = "10–20 %"
+expected = "от десяти до двадцати процентов"
+
+[[case]]
+id = "ranges_percentages/percent-hyphen"
+subcategory = "percentage-range"
+status = "locked"
+input = "5-10%"
+expected = "от пяти до десяти процентов"
+
+[[case]]
+id = "ranges_percentages/minutes"
+subcategory = "range"
+status = "target"
+input = "5–10 минут"
+expected = "от пяти до десяти минут"
+
+[[case]]
+id = "ranges_percentages/celsius"
+subcategory = "range"
+status = "target"
+input = "20–30 °C"
+expected = "от двадцати до тридцати градусов Цельсия"
+
+[[case]]
+id = "ranges_percentages/decimal-bounds"
+subcategory = "range"
+status = "target"
+input = "1,5–2 кг"
+expected = "от полутора до двух килограммов"
+
+[[case]]
+id = "ranges_percentages/from-to-words"
+subcategory = "range"
+status = "target"
+input = "от 5 до 10"
+expected = "от пяти до десяти"
+
+[[case]]
+id = "ranges_percentages/s-to"
+subcategory = "range"
+status = "target"
+input = "с 5 до 10"
+expected = "с пяти до десяти"
+
+[[case]]
+id = "ranges_percentages/small-pair"
+subcategory = "pair"
+status = "target"
+input = "2-3 раза"
+expected = "два-три раза"
+note = "a hyphenated pair of small counts keeps the hyphenated reading, not 'от … до …'"
+
+[[case]]
+id = "ranges_percentages/small-pair-en-dash"
+subcategory = "pair"
+status = "locked"
+input = "в 2–3 раза"
+expected = "в два-три раза"
+
+[[case]]
+id = "ranges_percentages/pages-pair"
+subcategory = "pair"
+status = "target"
+input = "5-6 страниц"
+expected = "пять-шесть страниц"
+
+# ── target: approximations ───────────────────────────────────────────────────
+
+[[case]]
+id = "ranges_percentages/approx-tilde"
+subcategory = "approx"
+status = "target"
+input = "~5 минут"
+expected = "около пяти минут"
+
+[[case]]
+id = "ranges_percentages/approx-almost"
+subcategory = "approx"
+status = "target"
+input = "≈ 5 минут"
+expected = "примерно пять минут"
+
+[[case]]
+id = "ranges_percentages/approx-plus-minus"
+subcategory = "approx"
+status = "target"
+input = "±5"
+expected = "плюс-минус пять"
+
+[[case]]
+id = "ranges_percentages/plus-suffix"
+subcategory = "approx"
+status = "target"
+input = "5+"
+expected = "пять и больше"
+
+[[case]]
+id = "ranges_percentages/percentage-s-do"
+subcategory = "range"
+status = "target"
+input = "с 10 до 20%"
+expected = "с десяти до двадцати процентов"
+
+[[case]]
+id = "ranges_percentages/percentage-en-dash-glued"
+subcategory = "percentage-range"
+status = "target"
+input = "10–20%"
+expected = "от десяти до двадцати процентов"
+
+[[case]]
+id = "ranges_percentages/times-five-six"
+subcategory = "pair"
+status = "locked"
+input = "в 5–6 раз"
+expected = "в пять-шесть раз"
+
+[[case]]
+id = "ranges_percentages/about-percent"
+subcategory = "approx"
+status = "target"
+input = "около 5 %"
+expected = "около пяти процентов"
+
+[[case]]
+id = "ranges_percentages/decimal-to-integer"
+subcategory = "range"
+status = "target"
+input = "от 1,5 до 2"
+expected = "от полутора до двух"
+
+[[case]]
+id = "ranges_percentages/days-five-seven"
+subcategory = "range"
+status = "target"
+input = "5–7 дней"
+expected = "от пяти до семи дней"
+
+[[case]]
+id = "ranges_percentages/percentage-hyphen-space"
+subcategory = "percentage-range"
+status = "locked"
+input = "10-20 %"
+expected = "от десяти до двадцати процентов"
+
+[[case]]
+id = "ranges_percentages/percent-one"
+subcategory = "percentage"
+status = "locked"
+input = "1 %"
+expected = "один процент"
+
+[[case]]
+id = "ranges_percentages/percent-two"
+subcategory = "percentage"
+status = "locked"
+input = "2 %"
+expected = "два процента"
+
+[[case]]
+id = "ranges_percentages/percent-twenty-two"
+subcategory = "percentage"
+status = "locked"
+input = "22 %"
+expected = "двадцать два процента"
+
+[[case]]
+id = "ranges_percentages/percent-zero"
+subcategory = "percentage"
+status = "locked"
+input = "0 %"
+expected = "ноль процентов"
+
+[[case]]
+id = "ranges_percentages/percent-hundred"
+subcategory = "percentage"
+status = "locked"
+input = "100 %"
+expected = "сто процентов"
+
+[[case]]
+id = "ranges_percentages/more-than-percent"
+subcategory = "approx"
+status = "target"
+input = "более 5 %"
+expected = "более пяти процентов"
+
+[[case]]
+id = "ranges_percentages/decimal-multiplier"
+subcategory = "pair"
+status = "target"
+input = "в 2,5 раза"
+expected = "в два с половиной раза"
