@@ -7,7 +7,7 @@ corresponding range in the original source. This mapping powers word-level
 highlighting during playback: TTS word timestamps refer to the normalized
 text, and the UI converts them back to original-text positions via
 `CharMapping`. Implemented by `TrackedText` / `CharMapping`
-(`src-tauri/src/pipeline/tracked_text.rs`). HTML extraction lives in the
+(`tts-normalize/src/pipeline/tracked_text.rs`). HTML extraction lives in the
 frontend and is specified in the `html-ingestion` capability.
 ## Requirements
 ### Requirement: CharMapping data model

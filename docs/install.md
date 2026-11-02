@@ -170,10 +170,10 @@ pnpm tauri build
 
 Outputs:
 
-- `src-tauri/target/release/ruvox-tauri` — the binary.
-- `src-tauri/target/release/bundle/deb/*.deb` — installable package
+- `target/release/ruvox-tauri` — the binary.
+- `target/release/bundle/deb/*.deb` — installable package
   (`sudo dpkg -i`).
-- `src-tauri/target/release/bundle/appimage/*.AppImage` — portable
+- `target/release/bundle/appimage/*.AppImage` — portable
   AppImage.
 
 ### Release artifacts & self-updates

@@ -19,7 +19,9 @@ pub mod synth;
 pub mod text;
 pub mod timestamps;
 
-pub use engine::{Engine, ModelInfo, Segment, Synthesis, default_threads};
+pub use engine::{
+    AudioPart, Engine, ModelInfo, Segment, StreamSummary, Synthesis, default_threads,
+};
 pub use error::{Error, Result};
 pub use synth::SAMPLE_RATE;
 pub use text::Language;

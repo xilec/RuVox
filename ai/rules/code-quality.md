@@ -56,7 +56,7 @@ How to decompose code across files — optimized for two axes at once.
   effect, not "doesn't panic" or a bare `is_ok()`. Drive through the **public
   surface** so harmless refactors don't break tests.
 - **Pipeline changes → golden fixtures.** A change to
-  `src-tauri/src/pipeline/` adds or updates a fixture in
+  `tts-normalize/src/pipeline/` adds or updates a fixture in
   `src-tauri/tests/fixtures/pipeline/` that pins the new behavior; a pipeline
   bug fix first adds a fixture reproducing the bug.
 - **Deterministic & isolated.** No wall-clock / `sleep` / `setTimeout` races /

@@ -34,7 +34,7 @@ nix develop -c pnpm tauri dev
 │   └── stores/             # Zustand store selectedEntry
 ├── src-tauri/              # Rust backend
 │   ├── src/
-│   │   ├── pipeline/       # Normalization: tracked_text, normalizers/, html_extractor, constants
+│   │   ├── pipeline.rs     # Re-export of the tts-normalize pipeline
 │   │   ├── storage/        # JSON history + audio files (schema in storage/schema.rs)
 │   │   ├── tts/            # TTS engines: piper, silero_native, ttsd subprocess manager
 │   │   ├── player/         # tauri-plugin-mpv wrapper (ensure_mpv_alive, seek-suppress)
@@ -60,6 +60,8 @@ nix develop -c pnpm tauri dev
 ├── silero-native/          # Native Silero v5 engine (ONNX Runtime, no Python)
 ├── teratts/                # TeraTTSv2 engine (ONNX Runtime, 44.1 kHz) + bundle exporter
 ├── tts-contract/           # Shared text contract: profile types + chunker (data only)
+├── tts-normalize/          # Normalization pipeline, user dictionary, per-engine profiles
+├── Cargo.toml              # Cargo workspace root: app + engine/text crates, one lockfile
 ├── docs/                   # Documentation (this directory)
 ├── scripts/                # Utilities (launch-prod, rebuild_prod)
 ├── nix/
@@ -81,6 +83,7 @@ nix build .#ruvox && ./result/bin/ruvox     # production binary
 ```bash
 nix develop -c cargo test --manifest-path src-tauri/Cargo.toml                  # all Rust tests
 nix develop -c cargo test --manifest-path tts-contract/Cargo.toml               # shared contract crate
+nix develop -c cargo test --manifest-path tts-normalize/Cargo.toml              # normalization pipeline + dictionary
 nix develop -c cargo test --manifest-path teratts/Cargo.toml                   # TeraTTSv2 engine (bundle-gated tests skip without TERATTS_BUNDLE)
 nix develop -c cargo test --manifest-path src-tauri/Cargo.toml --test golden    # golden tests only
 nix develop -c pnpm typecheck                                                   # TypeScript strict

@@ -78,7 +78,7 @@ cd /src
 tar cf - \
     --exclude=./tmp \
     --exclude=./node_modules \
-    --exclude=./src-tauri/target \
+    --exclude=./target \
     --exclude=./dist \
     --exclude=./.git \
     . | tar xf - -C /work

@@ -11,7 +11,7 @@ cd "${REPO_DIR}"
 # hardcoded 160-byte path_home buffer during its cmake phoneme-compile step
 # (compiledata.c::LoadSpect). Deep checkout paths (e.g. a Claude Code git
 # worktree under .claude/worktrees/<name>/) push the default
-# src-tauri/target/release/build/.../phsource/... path past that limit and
+# target/release/build/.../phsource/... path past that limit and
 # the build fails with "Bad vowel file" / a cmake exit. See flake.nix's
 # preBuild for the equivalent substituteInPlace fix on the Nix package build.
 # launch-prod.sh looks for the binary here first.

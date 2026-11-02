@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use super::{DictionaryBook, DictionaryEntry, DictionaryError, DictionaryScope, UserDictionary};
-use crate::tts::EngineKind;
+use crate::EngineKind;
 
 /// File-format version. Version 1 is the historical single `[entries]` map;
 /// version 2 is an array of named, scoped collections. A file with a newer

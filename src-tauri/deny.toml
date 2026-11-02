@@ -66,6 +66,11 @@ allow = ["GPL-3.0-only"]
 crate = "teratts"
 allow = ["GPL-3.0-only"]
 
+# Same policy for the normalization crate (path dependency).
+[[licenses.exceptions]]
+crate = "tts-normalize"
+allow = ["GPL-3.0-only"]
+
 [bans]
 multiple-versions = "warn"
 wildcards = "warn"

@@ -43,7 +43,7 @@ Craft rules (layout, test quality, duplication, idiom, correctness) live in
 
 - **Frontend (`src/`)** talks to the backend **only** through Tauri commands
   (`src-tauri/src/commands/`), via the `invoke` wrappers in `src/lib/tauri.ts`.
-- **Text normalization pipeline** lives in `src-tauri/src/pipeline/` — pure
+- **Text normalization pipeline** lives in `tts-normalize/src/pipeline/` — pure
   Rust, no Tauri dependencies. Correctness is verified by golden fixtures in
   `src-tauri/tests/fixtures/pipeline/`.
 - **ttsd** (Python sidecar) speaks strictly the stdin/stdout JSON protocol

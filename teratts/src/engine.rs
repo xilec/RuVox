@@ -56,6 +56,33 @@ pub struct Segment<'a> {
     pub text_start: usize,
 }
 
+/// One piece of audio produced by [`Engine::synthesize_stream`].
+#[derive(Debug)]
+pub struct AudioPart<'a> {
+    /// Mono f32 samples at [`synth::SAMPLE_RATE`]. Silence inserted between
+    /// chunks and language segments is emitted as its own part (zeros).
+    pub samples: &'a [f32],
+    /// Codepoint offset of the chunk's first character in the *normalized*
+    /// utterance — the same coordinate space as `Word::start_char`; `None`
+    /// for a pause between parts.
+    pub text_start: Option<usize>,
+    /// Whether the source had a paragraph break right after this chunk.
+    pub paragraph_break_after: bool,
+    /// Offset of the part's first sample from the start of the stream, seconds.
+    pub start_sec: f64,
+}
+
+/// Totals of a streamed synthesis, known once it returns.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct StreamSummary {
+    /// Emitted parts, pauses included.
+    pub parts: usize,
+    /// Total samples across all parts.
+    pub samples: usize,
+    /// Total duration, seconds.
+    pub duration_sec: f64,
+}
+
 /// In-process TeraTTSv2 engine.
 pub struct Engine {
     bundle: Bundle,
@@ -195,7 +222,7 @@ impl Engine {
             }
             let (mut part, mut words) =
                 self.synthesize_samples(segment.text, voice, segment.language, policy, cancelled)?;
-            let audio_offset = samples.len() as f64 / synth::SAMPLE_RATE as f64;
+            let audio_offset = samples_to_secs(samples.len());
             for word in &mut words {
                 word.start += audio_offset;
                 word.end += audio_offset;
@@ -205,8 +232,7 @@ impl Engine {
             samples.append(&mut part);
             timestamps.append(&mut words);
             if index + 1 < segments.len() {
-                let count =
-                    (segment_pause_ms as f64 / 1000.0 * synth::SAMPLE_RATE as f64).round() as usize;
+                let count = pause_samples(f64::from(segment_pause_ms) / 1000.0);
                 samples.extend(std::iter::repeat_n(0.0, count));
             }
         }
@@ -216,10 +242,87 @@ impl Engine {
         let wav = synth::encode_wav(&samples)?;
         Ok(Synthesis {
             wav,
-            duration_sec: samples.len() as f64 / synth::SAMPLE_RATE as f64,
+            duration_sec: samples_to_secs(samples.len()),
             samples,
             timestamps,
         })
+    }
+
+    /// Synthesize `segments`, handing every ready piece of audio to `emit`
+    /// instead of returning one buffer.
+    ///
+    /// `emit` runs on the calling thread between model chunks: a consumer that
+    /// must not block (a socket writer) enqueues and returns. Word timestamps
+    /// are not produced on this path — they cost a duration-predictor call per
+    /// word and no streaming consumer needs them.
+    ///
+    /// Cancellation is checked between chunks; a cancelled stream returns
+    /// [`Error::Cancelled`] after the parts it already handed out.
+    pub fn synthesize_stream(
+        &self,
+        segments: &[Segment<'_>],
+        voice: &str,
+        policy: &ChunkPolicy,
+        cancelled: &AtomicBool,
+        segment_pause_ms: u32,
+        emit: &mut dyn FnMut(AudioPart<'_>) -> Result<()>,
+    ) -> Result<StreamSummary> {
+        if segments.is_empty() {
+            return Err(Error::InvalidText("empty text".into()));
+        }
+        let styles = self.styles_for(voice)?;
+        let mut summary = StreamSummary::default();
+
+        for (index, segment) in segments.iter().enumerate() {
+            if cancelled.load(Ordering::Relaxed) {
+                return Err(Error::Cancelled);
+            }
+            let mut options = self.options;
+            if segment.language == Language::Ru && segment.text.trim().chars().count() <= 2 {
+                options.duration_scale *= SHORT_RU_SEGMENT_SCALE;
+            }
+            let estimate = |part: &str| self.estimate(part, &styles, segment.language);
+            let chunks = chunk::split(segment.text, policy, estimate)?;
+
+            for (chunk_index, chunk) in chunks.iter().enumerate() {
+                if cancelled.load(Ordering::Relaxed) {
+                    return Err(Error::Cancelled);
+                }
+                let (_, wave) =
+                    self.synth_chunk(&styles, &chunk.text, segment.language, &options)?;
+                let start_sec = samples_to_secs(summary.samples);
+                summary.parts += 1;
+                summary.samples += wave.samples.len();
+                emit(AudioPart {
+                    samples: &wave.samples,
+                    text_start: Some(segment.text_start + chunk.start),
+                    paragraph_break_after: chunk.paragraph_break_after,
+                    start_sec,
+                })?;
+
+                if chunk_index + 1 < chunks.len() {
+                    let pause_sec = if chunk.paragraph_break_after {
+                        policy.paragraph_pause_sec()
+                    } else {
+                        policy.segment_pause_sec()
+                    };
+                    emit_pause(&mut summary, emit, pause_sec, chunk.paragraph_break_after)?;
+                }
+            }
+
+            if index + 1 < segments.len() {
+                let pause_sec = f64::from(segment_pause_ms) / 1000.0;
+                emit_pause(&mut summary, emit, pause_sec, false)?;
+            }
+        }
+
+        // Same cancellation contract as the buffered path: a cancel raised
+        // during the last chunk still surfaces as `Cancelled`.
+        if cancelled.load(Ordering::Relaxed) {
+            return Err(Error::Cancelled);
+        }
+        summary.duration_sec = samples_to_secs(summary.samples);
+        Ok(summary)
     }
 
     fn synthesize_samples(
@@ -249,19 +352,7 @@ impl Engine {
             if cancelled.load(Ordering::Relaxed) {
                 return Err(Error::Cancelled);
             }
-            let prepared = text::prepare(&chunk.text, &self.accentizer, &self.indexer, language)?;
-            let ids = self.indexer.encode(&prepared.text);
-            let duration_text = prepared.text.replace('+', "");
-            let duration_ids = self.indexer.encode(&duration_text);
-            let wave = synth::synthesize(
-                &self.sessions,
-                &styles,
-                ids.ids,
-                ids.mask,
-                duration_ids.ids,
-                duration_ids.mask,
-                &options,
-            )?;
+            let (prepared, wave) = self.synth_chunk(&styles, &chunk.text, language, &options)?;
 
             let audio_start = samples.len() as f64 / synth::SAMPLE_RATE as f64;
             let audio_end = audio_start + wave.duration_sec;
@@ -298,7 +389,7 @@ impl Engine {
                 } else {
                     policy.segment_pause_sec()
                 };
-                let count = (pause * synth::SAMPLE_RATE as f64).round() as usize;
+                let count = pause_samples(pause);
                 samples.extend(std::iter::repeat_n(0.0, count));
             }
         }
@@ -326,5 +417,159 @@ impl Engine {
         let encoded = self.indexer.encode(&duration_text);
         let raw = synth::predict_raw(&self.sessions, encoded.ids, encoded.mask, &styles.dp)?;
         Ok(raw * self.options.duration_scale as f64 / synth::SPEED as f64)
+    }
+
+    /// Prepare one chunk and run the four sessions on it.
+    ///
+    /// Shared by the buffered and the streaming paths so a fix to the model
+    /// call cannot land in only one of them.
+    fn synth_chunk(
+        &self,
+        styles: &Styles,
+        chunk_text: &str,
+        language: Language,
+        options: &SynthOptions,
+    ) -> Result<(text::PreparedText, synth::Waveform)> {
+        let prepared = text::prepare(chunk_text, &self.accentizer, &self.indexer, language)?;
+        let ids = self.indexer.encode(&prepared.text);
+        let duration_text = prepared.text.replace('+', "");
+        let duration_ids = self.indexer.encode(&duration_text);
+        let wave = synth::synthesize(
+            &self.sessions,
+            styles,
+            ids.ids,
+            ids.mask,
+            duration_ids.ids,
+            duration_ids.mask,
+            options,
+        )?;
+        Ok((prepared, wave))
+    }
+}
+
+/// Samples of silence for `seconds` of pause. One rounding rule shared by the
+/// buffered and the streaming path — the two must produce identical audio.
+fn pause_samples(seconds: f64) -> usize {
+    (seconds * synth::SAMPLE_RATE as f64).round() as usize
+}
+
+/// Seconds at `samples` samples into the stream. Offsets come from the integer
+/// sample count, so `StreamSummary::duration_sec` equals `samples / rate`
+/// instead of a sum of rounded per-part quotients that can drift in the last
+/// bits.
+fn samples_to_secs(samples: usize) -> f64 {
+    samples as f64 / synth::SAMPLE_RATE as f64
+}
+
+/// Emit `seconds` of silence as its own stream part, updating the totals.
+fn emit_pause(
+    summary: &mut StreamSummary,
+    emit: &mut dyn FnMut(AudioPart<'_>) -> Result<()>,
+    seconds: f64,
+    paragraph_break_after: bool,
+) -> Result<()> {
+    let count = pause_samples(seconds);
+    if count == 0 {
+        return Ok(());
+    }
+    let silence = vec![0.0f32; count];
+    let start_sec = samples_to_secs(summary.samples);
+    summary.parts += 1;
+    summary.samples += count;
+    emit(AudioPart {
+        samples: &silence,
+        text_start: None,
+        paragraph_break_after,
+        start_sec,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// What the streaming callbacks received, so the pause accounting is
+    /// checked without a model bundle.
+    #[derive(Default)]
+    struct Parts {
+        lens: Vec<usize>,
+        starts: Vec<f64>,
+        paragraph_after: Vec<bool>,
+        all_zero: Vec<bool>,
+    }
+
+    impl Parts {
+        fn record(&mut self, part: AudioPart<'_>) {
+            self.lens.push(part.samples.len());
+            self.starts.push(part.start_sec);
+            self.paragraph_after.push(part.paragraph_break_after);
+            self.all_zero
+                .push(part.samples.iter().all(|sample| *sample == 0.0));
+        }
+    }
+
+    #[test]
+    fn pause_samples_is_the_shared_rounding_rule() {
+        assert_eq!(pause_samples(0.0), 0);
+        assert_eq!(pause_samples(0.2), 8_820);
+        assert_eq!(pause_samples(0.25), 11_025);
+        assert_eq!(pause_samples(0.001), 44, "rounds, never truncates to zero");
+    }
+
+    #[test]
+    fn sample_offsets_do_not_drift_like_a_float_sum() {
+        // Summing per-part seconds and dividing the total sample count
+        // disagree in the last bits for these sizes; the stream derives every
+        // offset from the sample count, so it cannot drift.
+        assert_ne!(
+            samples_to_secs(30_640) + samples_to_secs(57_895),
+            samples_to_secs(30_640 + 57_895)
+        );
+    }
+
+    #[test]
+    fn a_zero_length_pause_emits_no_part() {
+        let mut summary = StreamSummary::default();
+        let mut parts = Parts::default();
+        let mut emit = |part: AudioPart<'_>| {
+            parts.record(part);
+            Ok(())
+        };
+
+        emit_pause(&mut summary, &mut emit, 0.0, true).expect("a zero pause cannot fail");
+
+        assert!(parts.lens.is_empty(), "no callback for an empty pause");
+        assert_eq!(summary, StreamSummary::default(), "totals stay untouched");
+    }
+
+    #[test]
+    fn consecutive_pauses_are_offset_by_the_samples_before_them() {
+        let mut summary = StreamSummary {
+            parts: 1,
+            samples: 1_000,
+            ..StreamSummary::default()
+        };
+        let mut parts = Parts::default();
+        let mut emit = |part: AudioPart<'_>| {
+            parts.record(part);
+            Ok(())
+        };
+
+        emit_pause(&mut summary, &mut emit, 0.2, false).expect("first pause");
+        emit_pause(&mut summary, &mut emit, 0.25, true).expect("second pause");
+
+        assert_eq!(parts.lens, vec![8_820, 11_025]);
+        assert_eq!(
+            parts.starts,
+            vec![samples_to_secs(1_000), samples_to_secs(9_820)],
+            "each pause starts where the previous audio ended"
+        );
+        assert_eq!(parts.paragraph_after, vec![false, true]);
+        assert!(
+            parts.all_zero.iter().all(|zero| *zero),
+            "a pause is silence"
+        );
+        assert_eq!(summary.parts, 3);
+        assert_eq!(summary.samples, 20_845);
     }
 }

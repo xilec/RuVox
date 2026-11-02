@@ -34,6 +34,9 @@ jobs:
               - 'silero-native/**'
               - 'teratts/**'
               - 'tts-contract/**'
+              - 'tts-normalize/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
               - '.github/workflows/ci.yml'
             typescript:
               - 'src/**'
@@ -52,6 +55,8 @@ jobs:
               - 'flake.nix'
               - 'flake.lock'
               - 'nix/devshell.nix'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
               - '.github/workflows/ci.yml'
             openspec:
               - 'openspec/**'
@@ -61,6 +66,9 @@ jobs:
               - 'silero-native/**'
               - 'teratts/**'
               - 'tts-contract/**'
+              - 'tts-normalize/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
               - '.github/workflows/ci.yml'
               - '.github/workflows/release.yml'
               - 'scripts/fetch-windows-resources.sh'
@@ -81,6 +89,9 @@ jobs:
               - 'src-tauri/**'
               - 'silero-native/**'
               - 'teratts/**'
+              - 'tts-normalize/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
               - 'src/**'
               - 'package.json'
               - 'pnpm-lock.yaml'
@@ -113,7 +124,7 @@ jobs:
       CMAKE_POLICY_VERSION_MINIMUM: "3.5"
       # This job only proves the crate still compiles and links on MSVC, it
       # does not ship the binary — so it drops the release profile's fat LTO
-      # and single codegen unit (src-tauri/Cargo.toml [profile.release]).
+      # and single codegen unit (Cargo.toml [profile.release]).
       # Those dominated the job: with dependencies served from the cache the
       # ~4m of the build was ruvox-tauri's own codegen plus the cross-crate
       # LTO link, on a 4-vCPU runner where codegen-units = 1 leaves three
@@ -126,7 +137,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: "src-tauri\nsilero-native\ntts-contract\nteratts"
+          workspaces: "."
           # Deliberately NOT the release.yml job's `win-msvc` key: the profile
           # overrides above change the fingerprint of every dependency, so
           # sharing one cache would make the two jobs evict each other's
@@ -177,7 +188,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: "src-tauri\nsilero-native\ntts-contract\nteratts"
+          workspaces: "."
       - uses: pnpm/action-setup@v6
         with:
           version: 10
@@ -222,15 +233,9 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: "src-tauri\nsilero-native\ntts-contract\nteratts"
-      - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
-      - run: cargo fmt --manifest-path silero-native/Cargo.toml -- --check
-      - run: cargo fmt --manifest-path tts-contract/Cargo.toml -- --check
-      - run: cargo fmt --manifest-path teratts/Cargo.toml -- --check
-      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --no-deps -- -D warnings
-      - run: cargo clippy --manifest-path silero-native/Cargo.toml --all-targets --no-deps -- -D warnings
-      - run: cargo clippy --manifest-path tts-contract/Cargo.toml --all-targets --no-deps -- -D warnings
-      - run: cargo clippy --manifest-path teratts/Cargo.toml --all-targets --no-deps -- -D warnings
+          workspaces: "."
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets --no-deps -- -D warnings
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
@@ -238,6 +243,7 @@ jobs:
       - run: cargo test --manifest-path src-tauri/Cargo.toml --all-features
       - run: cargo test --manifest-path silero-native/Cargo.toml
       - run: cargo test --manifest-path tts-contract/Cargo.toml
+      - run: cargo test --manifest-path tts-normalize/Cargo.toml
       - run: cargo test --manifest-path teratts/Cargo.toml
 
   typescript:

@@ -1,6 +1,6 @@
 /**
  * Pure helpers for the user dictionary editor (change `user-dictionary`).
- * Mirrors the backend validation contract (src-tauri/src/dictionary): a
+ * Mirrors the backend validation contract (tts-normalize/src/dictionary): a
  * source token is one word of Latin or Russian Cyrillic letters and digits
  * with at least one letter, whose parts may be joined by ASCII hyphens; the
  * spoken form is a non-empty free-form string that may carry one `+` before

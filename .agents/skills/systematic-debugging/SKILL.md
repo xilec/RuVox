@@ -97,7 +97,7 @@ and the first to rot.
 
 ### 5. Fix — and lock the class
 - Add a **regression test** that reproduces the original symptom and now
-  passes. For `src-tauri/src/pipeline/` that means a **golden fixture** in
+  passes. For `tts-normalize/src/pipeline/` that means a **golden fixture** in
   `src-tauri/tests/fixtures/pipeline/` with the repro text.
 - Where step 4 found a structural cause, add the **structural lock** too
   (invariant / single source) so the next variant can't reintroduce it.

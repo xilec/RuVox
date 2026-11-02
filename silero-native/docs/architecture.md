@@ -68,9 +68,10 @@ unsupported sample rate), `synthesis_failed`.
   per-stage breakdown (frontend / tts_main / istft / pqmf / wav encode)
   per sample rate:
   `nix develop -c cargo run --release --manifest-path silero-native/Cargo.toml --example bench`.
-  The crate's `[profile.release]` carries `debug = "line-tables-only"`,
-  so `perf` attributes samples to source lines:
-  `nix develop -c bash -c 'cargo build --release --manifest-path silero-native/Cargo.toml --example bench && perf record -g --call-graph dwarf ./silero-native/target/release/examples/bench && perf report'`.
+  The workspace root release profile carries no debug info (the shipped app
+  is built for size), so add line tables for the profiling run with
+  `CARGO_PROFILE_RELEASE_DEBUG=line-tables-only`:
+  `nix develop -c bash -c 'CARGO_PROFILE_RELEASE_DEBUG=line-tables-only cargo build --release --manifest-path silero-native/Cargo.toml --example bench && perf record -g --call-graph dwarf ./target/release/examples/bench && perf report'`.
   For a flamegraph swap `perf report` for
   `nix shell nixpkgs#flamegraph -c bash -c 'perf script | stackcollapse-perf.pl | flamegraph.pl > tmp/flamegraph.svg'`
   (or `nix shell nixpkgs#flamegraph -c cargo flamegraph --example bench`,
@@ -111,7 +112,7 @@ unsupported sample rate), `synthesis_failed`.
 
 - Crate: `ort = "2.0.0-rc.12"` (pykeio/ort v2; pinned with `=` while on rc),
   feature `load-dynamic`. Same version already sits in
-  `src-tauri/Cargo.lock` via piper-rs — one ort version for the whole app.
+  `Cargo.lock` via piper-rs — one ort version for the whole app.
 - At runtime `ort` dlopens the shared library from the `ORT_DYLIB_PATH`
   environment variable:
   - dev shell: `nix/devshell.nix` sets
