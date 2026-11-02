@@ -129,9 +129,13 @@ impl SessionPool {
                 .collect();
             let mut sessions = Vec::with_capacity(lanes);
             for handle in handles {
-                let lane = handle
-                    .join()
-                    .map_err(|_| Error::Synthesis("opening a session lane panicked".into()))??;
+                let lane = match handle.join() {
+                    Ok(opened) => opened?,
+                    // A lane panic unwinds through `scope`, exactly as a
+                    // synthesis worker panic does; resume it instead of
+                    // pretending to convert it to a load error.
+                    Err(panic) => std::panic::resume_unwind(panic),
+                };
                 sessions.push(lane);
             }
             Ok(sessions)
@@ -142,8 +146,11 @@ impl SessionPool {
         })
     }
 
-    pub fn lane(&self, index: usize) -> &Sessions {
-        &self.lanes[index]
+    /// The lane at `index`; a pool always holds at least one lane.
+    pub(crate) fn lane(&self, index: usize) -> &Sessions {
+        self.lanes
+            .get(index)
+            .expect("a session pool always holds at least one lane")
     }
 
     pub fn lanes(&self) -> &[Sessions] {

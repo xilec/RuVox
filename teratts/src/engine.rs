@@ -127,8 +127,10 @@ struct PlannedChunk {
     text_start: usize,
     language: Language,
     options: SynthOptions,
-    /// Whether a paragraph break follows this chunk in the source text.
+    /// Whether the source had a paragraph break after this chunk; the
+    /// streamed part reports it separately from the pause that follows.
     paragraph_break_after: bool,
+    /// What separates this chunk from the next one in the assembled audio.
     pause_after: PauseAfter,
 }
 
@@ -137,8 +139,10 @@ struct PlannedChunk {
 enum PauseAfter {
     /// The chunk ends the utterance.
     None,
-    /// Another chunk of the same segment follows.
-    Chunk { paragraph: bool },
+    /// Another chunk of the same segment follows, without a paragraph break.
+    Chunk,
+    /// Another chunk of the same segment follows after a paragraph break.
+    Paragraph,
     /// Another segment follows; the caller's segment pause separates them.
     Segment,
 }
@@ -160,14 +164,8 @@ fn chunk_pause(
 ) -> Option<(f64, bool)> {
     match chunk.pause_after {
         PauseAfter::None => None,
-        PauseAfter::Chunk { paragraph } => Some((
-            if paragraph {
-                policy.paragraph_pause_sec()
-            } else {
-                policy.segment_pause_sec()
-            },
-            paragraph,
-        )),
+        PauseAfter::Chunk => Some((policy.segment_pause_sec(), false)),
+        PauseAfter::Paragraph => Some((policy.paragraph_pause_sec(), true)),
         PauseAfter::Segment => Some((f64::from(segment_pause_ms) / 1000.0, false)),
     }
 }
@@ -182,9 +180,9 @@ impl Engine {
 
     /// Load and verify a bundle with one lane of `threads` intra-op threads.
     ///
-    /// The parity fixtures and the benchmark example pin the thread count this
-    /// way: ONNX Runtime's intra-op reduction order changes the samples, so the
-    /// multi-lane default would silently move the reference.
+    /// One lane keeps the intra-op thread count explicit for tools and tests
+    /// that must pin it: ONNX Runtime's reduction order changes the samples, so
+    /// an implicit multi-lane default would silently move their reference.
     pub fn load_with_threads(dir: &Path, threads: usize) -> Result<Self> {
         Self::load_with_lanes(dir, 1, threads)
     }
@@ -331,7 +329,9 @@ impl Engine {
     /// word and no streaming consumer needs them.
     ///
     /// Cancellation is checked between chunks; a cancelled stream returns
-    /// [`Error::Cancelled`] after the parts it already handed out.
+    /// [`Error::Cancelled`] after the parts it already handed out. The whole
+    /// utterance is planned before the first part is emitted, so the time to
+    /// the first part grows with the text, not with one chunk.
     pub fn synthesize_stream(
         &self,
         segments: &[Segment<'_>],
@@ -401,8 +401,10 @@ impl Engine {
             let chunk_count = chunks.len();
             for (position, chunk) in chunks.iter().enumerate() {
                 let pause_after = if position + 1 < chunk_count {
-                    PauseAfter::Chunk {
-                        paragraph: chunk.paragraph_break_after,
+                    if chunk.paragraph_break_after {
+                        PauseAfter::Paragraph
+                    } else {
+                        PauseAfter::Chunk
                     }
                 } else if last_segment {
                     PauseAfter::None
@@ -441,7 +443,11 @@ impl Engine {
         // Set when the consumer stops early (an error or a cancellation): the
         // lanes then stop taking new chunks instead of draining the plan.
         let stop = AtomicBool::new(false);
-        let (sender, receiver) = mpsc::channel();
+        // Bounded so a slow consumer (a streaming sink) throttles the lanes:
+        // four queued results per lane plus one chunk per worker in flight,
+        // so the window stays O(lanes) regardless of the plan length.
+        let capacity = plan.len().min(self.sessions.lanes().len() * 4).max(1);
+        let (sender, receiver) = mpsc::sync_channel(capacity);
         std::thread::scope(|scope| -> Result<()> {
             let next = &next;
             let stop = &stop;
@@ -468,43 +474,49 @@ impl Engine {
             }
             drop(sender);
 
-            let mut pending: BTreeMap<usize, Result<ChunkAudio>> = BTreeMap::new();
-            let mut expected = 0;
-            while expected < plan.len() {
-                if cancelled.load(Ordering::Relaxed) {
-                    stop.store(true, Ordering::Relaxed);
-                    return Err(Error::Cancelled);
-                }
-                while !pending.contains_key(&expected) {
-                    match receiver.recv() {
-                        Ok((index, result)) => {
-                            pending.insert(index, result);
-                        }
-                        Err(_) => break,
-                    }
-                }
-                let Some(result) = pending.remove(&expected) else {
+            // Dropping the receiver on the way out turns a lane blocked in
+            // `send` into an error, so the scope can always finish.
+            let outcome = (|| -> Result<()> {
+                let mut pending: BTreeMap<usize, Result<ChunkAudio>> = BTreeMap::new();
+                let mut expected = 0;
+                while expected < plan.len() {
                     if cancelled.load(Ordering::Relaxed) {
+                        stop.store(true, Ordering::Relaxed);
                         return Err(Error::Cancelled);
                     }
-                    return Err(Error::Synthesis(
-                        "chunk lanes stopped before delivering the next chunk".into(),
-                    ));
-                };
-                let audio = match result {
-                    Ok(audio) => audio,
-                    Err(error) => {
+                    while !pending.contains_key(&expected) {
+                        match receiver.recv() {
+                            Ok((index, result)) => {
+                                pending.insert(index, result);
+                            }
+                            Err(_) => break,
+                        }
+                    }
+                    let Some(result) = pending.remove(&expected) else {
+                        if cancelled.load(Ordering::Relaxed) {
+                            return Err(Error::Cancelled);
+                        }
+                        return Err(Error::Synthesis(
+                            "chunk lanes stopped before delivering the next chunk".into(),
+                        ));
+                    };
+                    let audio = match result {
+                        Ok(audio) => audio,
+                        Err(error) => {
+                            stop.store(true, Ordering::Relaxed);
+                            return Err(error);
+                        }
+                    };
+                    if let Err(error) = emit(&plan[expected], audio) {
                         stop.store(true, Ordering::Relaxed);
                         return Err(error);
                     }
-                };
-                if let Err(error) = emit(&plan[expected], audio) {
-                    stop.store(true, Ordering::Relaxed);
-                    return Err(error);
+                    expected += 1;
                 }
-                expected += 1;
-            }
-            Ok(())
+                Ok(())
+            })();
+            drop(receiver);
+            outcome
         })
     }
 
@@ -758,20 +770,12 @@ mod tests {
 
         assert_eq!(chunk_pause(&planned(PauseAfter::None), &policy, 120), None);
         assert_eq!(
-            chunk_pause(
-                &planned(PauseAfter::Chunk { paragraph: false }),
-                &policy,
-                120
-            ),
+            chunk_pause(&planned(PauseAfter::Chunk), &policy, 120),
             Some((0.2, false)),
             "a plain chunk boundary uses the profile's segment pause"
         );
         assert_eq!(
-            chunk_pause(
-                &planned(PauseAfter::Chunk { paragraph: true }),
-                &policy,
-                120
-            ),
+            chunk_pause(&planned(PauseAfter::Paragraph), &policy, 120),
             Some((0.25, true)),
             "a paragraph break uses the profile's paragraph pause"
         );

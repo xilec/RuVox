@@ -27,14 +27,23 @@ fn main() {
     let voice = std::env::var("TERATTS_VOICE").unwrap_or_else(|_| "ru_m5".to_string());
     let out = std::env::var("TERATTS_OUT").unwrap_or_else(|_| "teratts-smoke.wav".to_string());
 
+    // The engine's own split; the env vars exist for benchmarks that pin a
+    // configuration.
+    let (default_lanes, default_threads) = teratts::lane_split(teratts::default_threads());
     let lanes = std::env::var("TERATTS_LANES")
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
-        .unwrap_or(teratts::DEFAULT_LANES);
+        .unwrap_or(default_lanes);
     let threads = std::env::var("TERATTS_THREADS")
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
-        .unwrap_or_else(|| (teratts::default_threads() / lanes.max(1)).max(1));
+        .unwrap_or_else(|| {
+            if lanes == default_lanes {
+                default_threads
+            } else {
+                (teratts::default_threads() / lanes.max(1)).max(1)
+            }
+        });
     let load_started = Instant::now();
     let engine = Engine::load_with_lanes(std::path::Path::new(&bundle), lanes, threads)
         .expect("load bundle");

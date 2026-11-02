@@ -14,7 +14,7 @@
 //! bundle is a separate download and CI has no copy of it.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use teratts::{Engine, Error, Language, Segment};
 use tts_contract::{Chunk, Limit, Pauses};
@@ -120,4 +120,40 @@ fn a_cancelled_parallel_synthesis_returns_no_audio() {
         .expect_err("cancelled before the first chunk");
 
     assert!(matches!(error, Error::Cancelled), "{error:?}");
+}
+
+#[test]
+fn cancellation_after_the_first_streamed_part_stops_the_lanes() {
+    let Some(dir) = bundle() else {
+        eprintln!("TERATTS_BUNDLE is not set: skipping the stream cancellation test");
+        return;
+    };
+    let engine = load(&dir, 4);
+    let voice = voice(&engine);
+    let policy = policy();
+    let cancelled = AtomicBool::new(false);
+    let segments = [Segment {
+        text: TEXT,
+        language: Language::Ru,
+        text_start: 0,
+    }];
+
+    let mut chunk_parts = 0usize;
+    let result =
+        engine.synthesize_stream(&segments, &voice, &policy, &cancelled, 120, &mut |part| {
+            if part.text_start.is_some() {
+                chunk_parts += 1;
+            }
+            // Cancel from the consumer while the other lanes are still
+            // synthesizing, so the executor's dispatch and discard path runs.
+            cancelled.store(true, Ordering::Relaxed);
+            Ok(())
+        });
+
+    let error = result.expect_err("a cancel after the first part must reach the caller");
+    assert!(matches!(error, Error::Cancelled), "{error:?}");
+    assert_eq!(
+        chunk_parts, 1,
+        "no chunk is emitted after the cancellation, only the pause that follows the first one"
+    );
 }
