@@ -117,31 +117,20 @@ pub struct SessionPool {
 impl SessionPool {
     /// Open `lanes` independent sets with `threads` intra-op threads each.
     ///
-    /// The sets are opened in parallel threads: each one re-reads the four
-    /// graphs, and a sequential open would multiply the engine load time by the
-    /// lane count.
+    /// The sets are opened one after another on purpose: creating sessions from
+    /// several threads at once makes ONNX Runtime occasionally hand out a
+    /// session with different numerics — one fresh four-lane load in ten
+    /// differed from the one-lane reference on a chunk, while sequential loads
+    /// were stable across every run.
     pub fn open(bundle: &Bundle, lanes: usize, threads: usize) -> Result<Self> {
         let lanes = lanes.max(1);
         let threads = threads.max(1);
-        let opened: Result<Vec<Sessions>> = std::thread::scope(|scope| {
-            let handles: Vec<_> = (0..lanes)
-                .map(|_| scope.spawn(|| Sessions::open(bundle, threads)))
-                .collect();
-            let mut sessions = Vec::with_capacity(lanes);
-            for handle in handles {
-                let lane = match handle.join() {
-                    Ok(opened) => opened?,
-                    // A lane panic unwinds through `scope`, exactly as a
-                    // synthesis worker panic does; resume it instead of
-                    // pretending to convert it to a load error.
-                    Err(panic) => std::panic::resume_unwind(panic),
-                };
-                sessions.push(lane);
-            }
-            Ok(sessions)
-        });
+        let mut opened = Vec::with_capacity(lanes);
+        for _ in 0..lanes {
+            opened.push(Sessions::open(bundle, threads)?);
+        }
         Ok(Self {
-            lanes: opened?,
+            lanes: opened,
             threads_per_lane: threads,
         })
     }

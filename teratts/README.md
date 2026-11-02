@@ -49,7 +49,7 @@ article that becomes 408 segments and 18.7 minutes of audio:
 
 | Metric | Value |
 |--------|-------|
-| Model load (cold) | ~5.8 s (four lanes, opened in parallel) |
+| Model load (cold) | ~7 s (four lanes, opened one after another) |
 | Synthesis RTF, one lane x 12 threads | 0.086 (96.7 s wall) |
 | Synthesis RTF, four lanes x 3 threads (default) | 0.035 (39.1 s wall) |
 | Peak RSS, one lane | ~1.6 GiB |

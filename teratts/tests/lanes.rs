@@ -15,6 +15,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, MutexGuard};
 
 use teratts::{Engine, Error, Language, Segment};
 use tts_contract::{Chunk, Limit, Pauses};
@@ -59,8 +60,45 @@ fn load(dir: &Path, lanes: usize) -> Engine {
     Engine::load_with_lanes(dir, lanes, 1).expect("bundle loads")
 }
 
+/// Compact comparison of two buffers: lengths and where they first diverge.
+fn describe(left: &[f32], right: &[f32]) -> String {
+    if left.len() != right.len() {
+        return format!("length {} vs {}", left.len(), right.len());
+    }
+    let Some(first) = (0..left.len()).find(|&index| left[index] != right[index]) else {
+        return "equal".to_string();
+    };
+    let last = (0..left.len())
+        .rev()
+        .find(|&index| left[index] != right[index])
+        .unwrap_or(first);
+    let max_diff = (first..=last)
+        .filter(|&index| left[index] != right[index])
+        .map(|index| (left[index] - right[index]).abs())
+        .fold(0.0f32, f32::max);
+    format!(
+        "{} samples differ from {first} to {last} (max diff {max_diff:e})",
+        (first..=last)
+            .filter(|&index| left[index] != right[index])
+            .count()
+    )
+}
+
+/// The bundle-gated tests each load engines in this one process. Creating
+/// ONNX Runtime sessions concurrently makes a session occasionally compute
+/// differently: one four-lane load in ten produced a different chunk while
+/// loading lanes one after another was stable, so the tests take turns.
+static LANE_TESTS: Mutex<()> = Mutex::new(());
+
+fn exclusive() -> MutexGuard<'static, ()> {
+    LANE_TESTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 #[test]
 fn lane_count_does_not_change_the_audio() {
+    let _guard = exclusive();
     let Some(dir) = bundle() else {
         eprintln!("TERATTS_BUNDLE is not set: skipping the lane parity test");
         return;
@@ -88,10 +126,22 @@ fn lane_count_does_not_change_the_audio() {
         "the text must split into several chunks, got {} words",
         one.timestamps.len()
     );
-    assert_eq!(
-        one.samples, parallel.samples,
-        "lane count changed the samples"
-    );
+    if one.samples != parallel.samples {
+        // A mismatch is rare and would otherwise print two 18-second buffers:
+        // re-synthesize each engine once more to say which side is unstable.
+        let one_again = single
+            .synthesize_segments(&segments, &voice, &policy, &cancelled, 120)
+            .expect("single lane repeat");
+        let four_again = four
+            .synthesize_segments(&segments, &voice, &policy, &cancelled, 120)
+            .expect("four lanes repeat");
+        panic!(
+            "lane count changed the samples: single_vs_four {}, single_vs_repeat {}, four_vs_repeat {}",
+            describe(&one.samples, &parallel.samples),
+            describe(&one.samples, &one_again.samples),
+            describe(&parallel.samples, &four_again.samples),
+        );
+    }
     assert_eq!(
         one.timestamps, parallel.timestamps,
         "lane count changed the timestamps"
@@ -101,6 +151,7 @@ fn lane_count_does_not_change_the_audio() {
 
 #[test]
 fn a_cancelled_parallel_synthesis_returns_no_audio() {
+    let _guard = exclusive();
     let Some(dir) = bundle() else {
         eprintln!("TERATTS_BUNDLE is not set: skipping the lane cancellation test");
         return;
@@ -124,6 +175,7 @@ fn a_cancelled_parallel_synthesis_returns_no_audio() {
 
 #[test]
 fn cancellation_after_the_first_streamed_part_stops_the_lanes() {
+    let _guard = exclusive();
     let Some(dir) = bundle() else {
         eprintln!("TERATTS_BUNDLE is not set: skipping the stream cancellation test");
         return;
