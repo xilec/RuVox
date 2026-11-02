@@ -4,9 +4,10 @@
 //! The application adapter owns the `TtsEngine` trait, error translation and
 //! file writing; this type owns everything that is model-specific.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use tracing::{info, instrument};
@@ -17,7 +18,7 @@ use crate::chunk;
 use crate::error::{Error, Result};
 use crate::indexer::Indexer;
 use crate::styles::Styles;
-use crate::synth::{self, Sessions, SynthOptions};
+use crate::synth::{self, SessionPool, Sessions, SynthOptions};
 use crate::text::{self, Accentizer, Language};
 use crate::timestamps::{self, Word};
 
@@ -88,7 +89,7 @@ pub struct Engine {
     bundle: Bundle,
     indexer: Indexer,
     accentizer: Accentizer,
-    sessions: Sessions,
+    sessions: SessionPool,
     styles: Mutex<HashMap<String, Arc<Styles>>>,
     options: SynthOptions,
 }
@@ -107,23 +108,97 @@ pub fn default_threads() -> usize {
         .unwrap_or(1)
 }
 
+/// Lanes the engine opens by default when the thread budget allows.
+pub const DEFAULT_LANES: usize = 4;
+
+/// Split a total intra-op thread budget into lanes: four lanes when the budget
+/// allows it, never fewer than one thread per lane.
+pub fn lane_split(total_threads: usize) -> (usize, usize) {
+    let total = total_threads.max(1);
+    let lanes = DEFAULT_LANES.min(total);
+    (lanes, (total / lanes).max(1))
+}
+
+/// One chunk of work for the lane pool: everything a lane needs to synthesize
+/// it, plus where it belongs in the assembled utterance.
+struct PlannedChunk {
+    text: String,
+    /// Absolute codepoint offset in the normalized utterance.
+    text_start: usize,
+    language: Language,
+    options: SynthOptions,
+    /// Whether the source had a paragraph break after this chunk; the
+    /// streamed part reports it separately from the pause that follows.
+    paragraph_break_after: bool,
+    /// What separates this chunk from the next one in the assembled audio.
+    pause_after: PauseAfter,
+}
+
+/// What separates this chunk from the next one in the assembled audio.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PauseAfter {
+    /// The chunk ends the utterance.
+    None,
+    /// Another chunk of the same segment follows, without a paragraph break.
+    Chunk,
+    /// Another chunk of the same segment follows after a paragraph break.
+    Paragraph,
+    /// Another segment follows; the caller's segment pause separates them.
+    Segment,
+}
+
+/// One synthesized chunk with its word timestamps in chunk-local coordinates:
+/// audio seconds from the chunk's first sample, codepoints from its first
+/// character. The assembler shifts both.
+struct ChunkAudio {
+    samples: Vec<f32>,
+    timestamps: Vec<Word>,
+}
+
+/// The pause that follows `chunk`, if any: inside a segment the profile's
+/// paragraph or segment pause, between segments the caller's value.
+fn chunk_pause(
+    chunk: &PlannedChunk,
+    policy: &ChunkPolicy,
+    segment_pause_ms: u32,
+) -> Option<(f64, bool)> {
+    match chunk.pause_after {
+        PauseAfter::None => None,
+        PauseAfter::Chunk => Some((policy.segment_pause_sec(), false)),
+        PauseAfter::Paragraph => Some((policy.paragraph_pause_sec(), true)),
+        PauseAfter::Segment => Some((f64::from(segment_pause_ms) / 1000.0, false)),
+    }
+}
+
 impl Engine {
-    /// Load and verify a bundle with the default thread count.
+    /// Load and verify a bundle with the default lane pool.
     #[instrument(skip_all, fields(dir = %dir.display()))]
     pub fn load(dir: &Path) -> Result<Self> {
-        Self::load_with_threads(dir, default_threads())
+        let (lanes, threads) = lane_split(default_threads());
+        Self::load_with_lanes(dir, lanes, threads)
     }
 
-    /// Load and verify a bundle with an explicit intra-op thread count.
+    /// Load and verify a bundle with one lane of `threads` intra-op threads.
+    ///
+    /// One lane keeps the intra-op thread count explicit for tools and tests
+    /// that must pin it: ONNX Runtime's reduction order changes the samples, so
+    /// an implicit multi-lane default would silently move their reference.
     pub fn load_with_threads(dir: &Path, threads: usize) -> Result<Self> {
+        Self::load_with_lanes(dir, 1, threads)
+    }
+
+    /// Load and verify a bundle with `lanes` independent session sets of
+    /// `threads` intra-op threads each.
+    pub fn load_with_lanes(dir: &Path, lanes: usize, threads: usize) -> Result<Self> {
         let started = std::time::Instant::now();
         let bundle = Bundle::load(dir)?;
         let indexer = Indexer::load(&bundle.file("unicode_indexer.json"))?;
         let accentizer = Accentizer::load(&bundle.dir().join("ruaccent/dictionary"))?;
-        let sessions = Sessions::open(&bundle, threads.max(1))?;
+        let sessions = SessionPool::open(&bundle, lanes, threads)?;
         info!(
             elapsed_ms = started.elapsed().as_secs_f64() * 1e3,
-            threads = threads.max(1),
+            lanes = sessions.lanes().len(),
+            threads = sessions.threads_per_lane(),
             model = %bundle.manifest().model_id,
             "teratts engine loaded"
         );
@@ -189,15 +264,12 @@ impl Engine {
         policy: &ChunkPolicy,
         cancelled: &AtomicBool,
     ) -> Result<Synthesis> {
-        let (samples, timestamps) =
-            self.synthesize_samples(text, voice, language, policy, cancelled)?;
-        let wav = synth::encode_wav(&samples)?;
-        Ok(Synthesis {
-            wav,
-            duration_sec: samples.len() as f64 / synth::SAMPLE_RATE as f64,
-            samples,
-            timestamps,
-        })
+        let segments = [Segment {
+            text,
+            language,
+            text_start: 0,
+        }];
+        self.synthesize_segments(&segments, voice, policy, cancelled, 0)
     }
 
     /// Synthesize a mixed utterance segment by segment, joining them with
@@ -214,28 +286,28 @@ impl Engine {
         if segments.is_empty() {
             return Err(Error::InvalidText("empty text".into()));
         }
+        let (styles, plan) = self.plan_chunks(segments, voice, policy, cancelled)?;
         let mut samples: Vec<f32> = Vec::new();
         let mut timestamps: Vec<Word> = Vec::new();
-        for (index, segment) in segments.iter().enumerate() {
-            if cancelled.load(Ordering::Relaxed) {
-                return Err(Error::Cancelled);
+        self.run_plan(&plan, &styles, true, cancelled, |chunk, audio| {
+            let ChunkAudio {
+                samples: chunk_samples,
+                timestamps: words,
+            } = audio;
+            let audio_start = samples_to_secs(samples.len());
+            timestamps.extend(words.into_iter().map(|mut word| {
+                word.start += audio_start;
+                word.end += audio_start;
+                word.start_char += chunk.text_start;
+                word.end_char += chunk.text_start;
+                word
+            }));
+            samples.extend_from_slice(&chunk_samples);
+            if let Some((pause, _)) = chunk_pause(chunk, policy, segment_pause_ms) {
+                samples.extend(std::iter::repeat_n(0.0, pause_samples(pause)));
             }
-            let (mut part, mut words) =
-                self.synthesize_samples(segment.text, voice, segment.language, policy, cancelled)?;
-            let audio_offset = samples_to_secs(samples.len());
-            for word in &mut words {
-                word.start += audio_offset;
-                word.end += audio_offset;
-                word.start_char += segment.text_start;
-                word.end_char += segment.text_start;
-            }
-            samples.append(&mut part);
-            timestamps.append(&mut words);
-            if index + 1 < segments.len() {
-                let count = pause_samples(f64::from(segment_pause_ms) / 1000.0);
-                samples.extend(std::iter::repeat_n(0.0, count));
-            }
-        }
+            Ok(())
+        })?;
         if cancelled.load(Ordering::Relaxed) {
             return Err(Error::Cancelled);
         }
@@ -257,7 +329,9 @@ impl Engine {
     /// word and no streaming consumer needs them.
     ///
     /// Cancellation is checked between chunks; a cancelled stream returns
-    /// [`Error::Cancelled`] after the parts it already handed out.
+    /// [`Error::Cancelled`] after the parts it already handed out. The whole
+    /// utterance is planned before the first part is emitted, so the time to
+    /// the first part grows with the text, not with one chunk.
     pub fn synthesize_stream(
         &self,
         segments: &[Segment<'_>],
@@ -270,52 +344,24 @@ impl Engine {
         if segments.is_empty() {
             return Err(Error::InvalidText("empty text".into()));
         }
-        let styles = self.styles_for(voice)?;
+        let (styles, plan) = self.plan_chunks(segments, voice, policy, cancelled)?;
         let mut summary = StreamSummary::default();
-
-        for (index, segment) in segments.iter().enumerate() {
-            if cancelled.load(Ordering::Relaxed) {
-                return Err(Error::Cancelled);
+        let emit = &mut *emit;
+        self.run_plan(&plan, &styles, false, cancelled, |chunk, audio| {
+            let start_sec = samples_to_secs(summary.samples);
+            summary.parts += 1;
+            summary.samples += audio.samples.len();
+            emit(AudioPart {
+                samples: &audio.samples,
+                text_start: Some(chunk.text_start),
+                paragraph_break_after: chunk.paragraph_break_after,
+                start_sec,
+            })?;
+            if let Some((pause, paragraph)) = chunk_pause(chunk, policy, segment_pause_ms) {
+                emit_pause(&mut summary, emit, pause, paragraph)?;
             }
-            let mut options = self.options;
-            if segment.language == Language::Ru && segment.text.trim().chars().count() <= 2 {
-                options.duration_scale *= SHORT_RU_SEGMENT_SCALE;
-            }
-            let estimate = |part: &str| self.estimate(part, &styles, segment.language);
-            let chunks = chunk::split(segment.text, policy, estimate)?;
-
-            for (chunk_index, chunk) in chunks.iter().enumerate() {
-                if cancelled.load(Ordering::Relaxed) {
-                    return Err(Error::Cancelled);
-                }
-                let (_, wave) =
-                    self.synth_chunk(&styles, &chunk.text, segment.language, &options)?;
-                let start_sec = samples_to_secs(summary.samples);
-                summary.parts += 1;
-                summary.samples += wave.samples.len();
-                emit(AudioPart {
-                    samples: &wave.samples,
-                    text_start: Some(segment.text_start + chunk.start),
-                    paragraph_break_after: chunk.paragraph_break_after,
-                    start_sec,
-                })?;
-
-                if chunk_index + 1 < chunks.len() {
-                    let pause_sec = if chunk.paragraph_break_after {
-                        policy.paragraph_pause_sec()
-                    } else {
-                        policy.segment_pause_sec()
-                    };
-                    emit_pause(&mut summary, emit, pause_sec, chunk.paragraph_break_after)?;
-                }
-            }
-
-            if index + 1 < segments.len() {
-                let pause_sec = f64::from(segment_pause_ms) / 1000.0;
-                emit_pause(&mut summary, emit, pause_sec, false)?;
-            }
-        }
-
+            Ok(())
+        })?;
         // Same cancellation contract as the buffered path: a cancel raised
         // during the last chunk still surfaces as `Cancelled`.
         if cancelled.load(Ordering::Relaxed) {
@@ -325,79 +371,153 @@ impl Engine {
         Ok(summary)
     }
 
-    fn synthesize_samples(
+    /// Split every segment into chunks under the policy and record where each
+    /// chunk goes, so the lanes only have to synthesize.
+    fn plan_chunks(
         &self,
-        text: &str,
+        segments: &[Segment<'_>],
         voice: &str,
-        language: Language,
         policy: &ChunkPolicy,
         cancelled: &AtomicBool,
-    ) -> Result<(Vec<f32>, Vec<Word>)> {
+    ) -> Result<(Arc<Styles>, Vec<PlannedChunk>)> {
         let styles = self.styles_for(voice)?;
-        // An isolated one- or two-letter Russian word (a conjunction or a
-        // preposition between English fragments) makes the duration predictor
-        // return a nearly fixed ~0.9 s, which sounds stretched. Scale only
-        // such short Russian segments down; longer text keeps the measured
-        // optimum.
-        let mut options = self.options;
-        if language == Language::Ru && text.trim().chars().count() <= 2 {
-            options.duration_scale *= SHORT_RU_SEGMENT_SCALE;
-        }
-        let estimate = |part: &str| self.estimate(part, &styles, language);
-        let chunks = chunk::split(text, policy, estimate)?;
-
-        let mut samples: Vec<f32> = Vec::new();
-        let mut timestamps: Vec<Word> = Vec::new();
-        for (index, chunk) in chunks.iter().enumerate() {
+        let mut plan = Vec::new();
+        for (index, segment) in segments.iter().enumerate() {
             if cancelled.load(Ordering::Relaxed) {
                 return Err(Error::Cancelled);
             }
-            let (prepared, wave) = self.synth_chunk(&styles, &chunk.text, language, &options)?;
-
-            let audio_start = samples.len() as f64 / synth::SAMPLE_RATE as f64;
-            let audio_end = audio_start + wave.duration_sec;
-            let silence = timestamps::leading_silence(&wave.samples);
-            let open = format!("<{}>", language.tag());
-            let close = format!("</{}>", language.tag());
-            let inner = prepared
-                .text
-                .strip_prefix(&open)
-                .and_then(|rest| rest.strip_suffix(&close))
-                .unwrap_or(&prepared.text);
-            let predict = |prefix: &str| {
-                let encoded = self.indexer.encode(&prefix.replace('+', ""));
-                synth::predict_raw(&self.sessions, encoded.ids, encoded.mask, &styles.dp)
-            };
-            let words = timestamps::chunk_timestamps(
-                &chunk.text,
-                inner,
-                &prepared.dropped,
-                timestamps::ChunkTiming {
-                    chunk_start: chunk.start,
-                    audio_start,
-                    audio_end,
-                    leading_silence: silence,
-                },
-                predict,
-            )?;
-            timestamps.extend(words);
-            samples.extend_from_slice(&wave.samples);
-
-            if index + 1 < chunks.len() {
-                let pause = if chunk.paragraph_break_after {
-                    policy.paragraph_pause_sec()
+            // An isolated one- or two-letter Russian word (a conjunction or a
+            // preposition between English fragments) makes the duration
+            // predictor return a nearly fixed ~0.9 s, which sounds stretched.
+            // Scale only such short Russian segments down; longer text keeps
+            // the measured optimum.
+            let mut options = self.options;
+            if segment.language == Language::Ru && segment.text.trim().chars().count() <= 2 {
+                options.duration_scale *= SHORT_RU_SEGMENT_SCALE;
+            }
+            let estimate = |part: &str| self.estimate(part, &styles, segment.language);
+            let chunks = chunk::split(segment.text, policy, estimate)?;
+            let last_segment = index + 1 == segments.len();
+            let chunk_count = chunks.len();
+            for (position, chunk) in chunks.iter().enumerate() {
+                let pause_after = if position + 1 < chunk_count {
+                    if chunk.paragraph_break_after {
+                        PauseAfter::Paragraph
+                    } else {
+                        PauseAfter::Chunk
+                    }
+                } else if last_segment {
+                    PauseAfter::None
                 } else {
-                    policy.segment_pause_sec()
+                    PauseAfter::Segment
                 };
-                let count = pause_samples(pause);
-                samples.extend(std::iter::repeat_n(0.0, count));
+                plan.push(PlannedChunk {
+                    text: chunk.text.clone(),
+                    text_start: segment.text_start + chunk.start,
+                    language: segment.language,
+                    options,
+                    paragraph_break_after: chunk.paragraph_break_after,
+                    pause_after,
+                });
             }
         }
+        Ok((styles, plan))
+    }
 
-        if cancelled.load(Ordering::Relaxed) {
-            return Err(Error::Cancelled);
+    /// Run the plan across the lane pool, delivering chunks in text order.
+    ///
+    /// `with_timestamps` is off for the streaming path, which never returns
+    /// timestamps and would pay a duration-predictor call per word for nothing.
+    fn run_plan(
+        &self,
+        plan: &[PlannedChunk],
+        styles: &Styles,
+        with_timestamps: bool,
+        cancelled: &AtomicBool,
+        mut emit: impl FnMut(&PlannedChunk, ChunkAudio) -> Result<()>,
+    ) -> Result<()> {
+        if plan.is_empty() {
+            return Ok(());
         }
-        Ok((samples, timestamps))
+        let next = AtomicUsize::new(0);
+        // Set when the consumer stops early (an error or a cancellation): the
+        // lanes then stop taking new chunks instead of draining the plan.
+        let stop = AtomicBool::new(false);
+        // Bounded so a slow consumer (a streaming sink) throttles the lanes:
+        // four queued results per lane plus one chunk per worker in flight,
+        // so the window stays O(lanes) regardless of the plan length.
+        let capacity = plan.len().min(self.sessions.lanes().len() * 4).max(1);
+        let (sender, receiver) = mpsc::sync_channel(capacity);
+        std::thread::scope(|scope| -> Result<()> {
+            let next = &next;
+            let stop = &stop;
+            for lane in self.sessions.lanes() {
+                let sender = sender.clone();
+                scope.spawn(move || {
+                    while !stop.load(Ordering::Relaxed) && !cancelled.load(Ordering::Relaxed) {
+                        let index = next.fetch_add(1, Ordering::Relaxed);
+                        if index >= plan.len() {
+                            break;
+                        }
+                        let result = self.synthesize_chunk(
+                            lane,
+                            styles,
+                            &plan[index],
+                            with_timestamps,
+                            cancelled,
+                        );
+                        if sender.send((index, result)).is_err() {
+                            break;
+                        }
+                    }
+                });
+            }
+            drop(sender);
+
+            // Dropping the receiver on the way out turns a lane blocked in
+            // `send` into an error, so the scope can always finish.
+            let outcome = (|| -> Result<()> {
+                let mut pending: BTreeMap<usize, Result<ChunkAudio>> = BTreeMap::new();
+                let mut expected = 0;
+                while expected < plan.len() {
+                    if cancelled.load(Ordering::Relaxed) {
+                        stop.store(true, Ordering::Relaxed);
+                        return Err(Error::Cancelled);
+                    }
+                    while !pending.contains_key(&expected) {
+                        match receiver.recv() {
+                            Ok((index, result)) => {
+                                pending.insert(index, result);
+                            }
+                            Err(_) => break,
+                        }
+                    }
+                    let Some(result) = pending.remove(&expected) else {
+                        if cancelled.load(Ordering::Relaxed) {
+                            return Err(Error::Cancelled);
+                        }
+                        return Err(Error::Synthesis(
+                            "chunk lanes stopped before delivering the next chunk".into(),
+                        ));
+                    };
+                    let audio = match result {
+                        Ok(audio) => audio,
+                        Err(error) => {
+                            stop.store(true, Ordering::Relaxed);
+                            return Err(error);
+                        }
+                    };
+                    if let Err(error) = emit(&plan[expected], audio) {
+                        stop.store(true, Ordering::Relaxed);
+                        return Err(error);
+                    }
+                    expected += 1;
+                }
+                Ok(())
+            })();
+            drop(receiver);
+            outcome
+        })
     }
 
     fn styles_for(&self, voice: &str) -> Result<Arc<Styles>> {
@@ -415,35 +535,79 @@ impl Engine {
         let prepared = text::prepare(part, &self.accentizer, &self.indexer, language)?;
         let duration_text = prepared.text.replace('+', "");
         let encoded = self.indexer.encode(&duration_text);
-        let raw = synth::predict_raw(&self.sessions, encoded.ids, encoded.mask, &styles.dp)?;
+        let raw = synth::predict_raw(self.sessions.lane(0), encoded.ids, encoded.mask, &styles.dp)?;
         Ok(raw * self.options.duration_scale as f64 / synth::SPEED as f64)
     }
 
-    /// Prepare one chunk and run the four sessions on it.
-    ///
-    /// Shared by the buffered and the streaming paths so a fix to the model
-    /// call cannot land in only one of them.
-    fn synth_chunk(
+    /// Prepare one chunk and run the four sessions on it, on its own lane.
+    fn synthesize_chunk(
         &self,
+        lane: &Sessions,
         styles: &Styles,
-        chunk_text: &str,
-        language: Language,
-        options: &SynthOptions,
-    ) -> Result<(text::PreparedText, synth::Waveform)> {
-        let prepared = text::prepare(chunk_text, &self.accentizer, &self.indexer, language)?;
+        chunk: &PlannedChunk,
+        with_timestamps: bool,
+        cancelled: &AtomicBool,
+    ) -> Result<ChunkAudio> {
+        if cancelled.load(Ordering::Relaxed) {
+            return Err(Error::Cancelled);
+        }
+        let prepared = text::prepare(&chunk.text, &self.accentizer, &self.indexer, chunk.language)?;
         let ids = self.indexer.encode(&prepared.text);
         let duration_text = prepared.text.replace('+', "");
         let duration_ids = self.indexer.encode(&duration_text);
         let wave = synth::synthesize(
-            &self.sessions,
+            lane,
             styles,
             ids.ids,
             ids.mask,
             duration_ids.ids,
             duration_ids.mask,
-            options,
+            &chunk.options,
         )?;
-        Ok((prepared, wave))
+        let timestamps = if with_timestamps {
+            self.chunk_timestamps(lane, styles, chunk, &prepared, &wave)?
+        } else {
+            Vec::new()
+        };
+        Ok(ChunkAudio {
+            samples: wave.samples,
+            timestamps,
+        })
+    }
+
+    /// Word timestamps of one chunk in chunk-local coordinates; the assembler
+    /// shifts the audio and codepoint origins to their place in the utterance.
+    fn chunk_timestamps(
+        &self,
+        lane: &Sessions,
+        styles: &Styles,
+        chunk: &PlannedChunk,
+        prepared: &text::PreparedText,
+        wave: &synth::Waveform,
+    ) -> Result<Vec<Word>> {
+        let open = format!("<{}>", chunk.language.tag());
+        let close = format!("</{}>", chunk.language.tag());
+        let inner = prepared
+            .text
+            .strip_prefix(&open)
+            .and_then(|rest| rest.strip_suffix(&close))
+            .unwrap_or(&prepared.text);
+        let predict = |prefix: &str| {
+            let encoded = self.indexer.encode(&prefix.replace('+', ""));
+            synth::predict_raw(lane, encoded.ids, encoded.mask, &styles.dp)
+        };
+        timestamps::chunk_timestamps(
+            &chunk.text,
+            inner,
+            &prepared.dropped,
+            timestamps::ChunkTiming {
+                chunk_start: 0,
+                audio_start: 0.0,
+                audio_end: wave.duration_sec,
+                leading_silence: timestamps::leading_silence(&wave.samples),
+            },
+            predict,
+        )
     }
 }
 
@@ -571,5 +735,54 @@ mod tests {
         );
         assert_eq!(summary.parts, 3);
         assert_eq!(summary.samples, 20_845);
+    }
+
+    #[test]
+    fn lane_split_caps_the_pool_and_never_starves_a_lane() {
+        assert_eq!(lane_split(12), (4, 3));
+        assert_eq!(lane_split(24), (4, 6));
+        assert_eq!(lane_split(4), (4, 1));
+        assert_eq!(lane_split(3), (3, 1));
+        assert_eq!(lane_split(1), (1, 1));
+        assert_eq!(lane_split(0), (1, 1), "a zero budget still yields one lane");
+    }
+
+    fn planned(pause_after: PauseAfter) -> PlannedChunk {
+        PlannedChunk {
+            text: String::new(),
+            text_start: 0,
+            language: Language::Ru,
+            options: SynthOptions::default(),
+            paragraph_break_after: false,
+            pause_after,
+        }
+    }
+
+    #[test]
+    fn the_pause_after_a_chunk_follows_its_kind() {
+        let policy = ChunkPolicy {
+            limit: tts_contract::Limit::Chars(40),
+            pauses: tts_contract::Pauses {
+                paragraph_ms: 250,
+                segment_ms: 200,
+            },
+        };
+
+        assert_eq!(chunk_pause(&planned(PauseAfter::None), &policy, 120), None);
+        assert_eq!(
+            chunk_pause(&planned(PauseAfter::Chunk), &policy, 120),
+            Some((0.2, false)),
+            "a plain chunk boundary uses the profile's segment pause"
+        );
+        assert_eq!(
+            chunk_pause(&planned(PauseAfter::Paragraph), &policy, 120),
+            Some((0.25, true)),
+            "a paragraph break uses the profile's paragraph pause"
+        );
+        assert_eq!(
+            chunk_pause(&planned(PauseAfter::Segment), &policy, 120),
+            Some((0.12, false)),
+            "between segments the caller's pause wins"
+        );
     }
 }

@@ -20,7 +20,8 @@ pub mod text;
 pub mod timestamps;
 
 pub use engine::{
-    AudioPart, Engine, ModelInfo, Segment, StreamSummary, Synthesis, default_threads,
+    AudioPart, DEFAULT_LANES, Engine, ModelInfo, Segment, StreamSummary, Synthesis,
+    default_threads, lane_split,
 };
 pub use error::{Error, Result};
 pub use synth::SAMPLE_RATE;

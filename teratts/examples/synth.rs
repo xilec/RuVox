@@ -8,9 +8,11 @@
 //!   cargo run --release --manifest-path teratts/Cargo.toml --example synth
 //! ```
 //!
-//! `TERATTS_VOICE` selects the voice (`ru_m5` by default), `TERATTS_THREADS`
-//! the ONNX intra-op thread count (default: half the cores). The example
-//! prints load time, synthesis time and the real-time factor.
+//! `TERATTS_VOICE` selects the voice (`ru_m5` by default), `TERATTS_LANES`
+//! the number of parallel lanes (default 4, capped by the thread budget) and
+//! `TERATTS_THREADS` the ONNX intra-op thread count per lane (default: the
+//! thread budget split across the lanes). The example prints load time,
+//! synthesis time and the real-time factor.
 
 use std::sync::atomic::AtomicBool;
 use std::time::Instant;
@@ -25,17 +27,29 @@ fn main() {
     let voice = std::env::var("TERATTS_VOICE").unwrap_or_else(|_| "ru_m5".to_string());
     let out = std::env::var("TERATTS_OUT").unwrap_or_else(|_| "teratts-smoke.wav".to_string());
 
+    // The engine's own split; the env vars exist for benchmarks that pin a
+    // configuration.
+    let (default_lanes, default_threads) = teratts::lane_split(teratts::default_threads());
+    let lanes = std::env::var("TERATTS_LANES")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(default_lanes);
     let threads = std::env::var("TERATTS_THREADS")
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
-        .unwrap_or_else(teratts::default_threads);
+        .unwrap_or_else(|| {
+            if lanes == default_lanes {
+                default_threads
+            } else {
+                (teratts::default_threads() / lanes.max(1)).max(1)
+            }
+        });
     let load_started = Instant::now();
-    let engine =
-        Engine::load_with_threads(std::path::Path::new(&bundle), threads).expect("load bundle");
+    let engine = Engine::load_with_lanes(std::path::Path::new(&bundle), lanes, threads)
+        .expect("load bundle");
     println!(
-        "load: {:.2} s ({} threads)",
+        "load: {:.2} s ({lanes} lanes x {threads} threads)",
         load_started.elapsed().as_secs_f64(),
-        threads
     );
 
     let policy = Chunk {

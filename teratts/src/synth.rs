@@ -103,6 +103,54 @@ impl Sessions {
     }
 }
 
+/// An independent set of session graphs for one parallel synthesis lane.
+///
+/// ONNX Runtime's Rust wrapper borrows the session for the duration of `run`,
+/// so concurrent calls cannot share one set; everything that is read-only —
+/// bundle, accentizer, indexer, style tensors — stays shared by the engine
+/// instead of being copied per lane.
+pub struct SessionPool {
+    lanes: Vec<Sessions>,
+    threads_per_lane: usize,
+}
+
+impl SessionPool {
+    /// Open `lanes` independent sets with `threads` intra-op threads each.
+    ///
+    /// The sets are opened one after another on purpose: creating sessions from
+    /// several threads at once makes ONNX Runtime occasionally hand out a
+    /// session with different numerics — one fresh four-lane load in ten
+    /// differed from the one-lane reference on a chunk, while sequential loads
+    /// were stable across every run.
+    pub fn open(bundle: &Bundle, lanes: usize, threads: usize) -> Result<Self> {
+        let lanes = lanes.max(1);
+        let threads = threads.max(1);
+        let mut opened = Vec::with_capacity(lanes);
+        for _ in 0..lanes {
+            opened.push(Sessions::open(bundle, threads)?);
+        }
+        Ok(Self {
+            lanes: opened,
+            threads_per_lane: threads,
+        })
+    }
+
+    /// The lane at `index`; a pool always holds at least one lane.
+    pub(crate) fn lane(&self, index: usize) -> &Sessions {
+        self.lanes
+            .get(index)
+            .expect("a session pool always holds at least one lane")
+    }
+
+    pub fn lanes(&self) -> &[Sessions] {
+        &self.lanes
+    }
+
+    pub fn threads_per_lane(&self) -> usize {
+        self.threads_per_lane
+    }
+}
+
 fn take_f32(outputs: &ort::session::SessionOutputs, name: &str) -> Result<(Vec<i64>, Vec<f32>)> {
     let value = outputs
         .get(name)

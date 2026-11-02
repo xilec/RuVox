@@ -43,19 +43,23 @@ with a clear error instead of a partial load.
 
 ## Performance
 
-Measured on the reference development machine (4 threads, `load-dynamic` ONNX
-Runtime 1.26):
+Measured on the reference development machine (Ryzen 9 7900, 24 logical
+cores, `load-dynamic` ONNX Runtime 1.27, release profile), on a 12 935-character
+article that becomes 408 segments and 18.7 minutes of audio:
 
 | Metric | Value |
 |--------|-------|
-| Model load (cold) | ~5.1 s |
-| Synthesis RTF, 4 threads | 0.063 (17 s of audio) |
-| Synthesis RTF, 12 threads | 0.049–0.071 |
-| Peak RSS (4 threads) | ~1.3 GiB (weights + activations + RUAccent dictionaries) |
+| Model load (cold) | ~7 s (four lanes, opened one after another) |
+| Synthesis RTF, one lane x 12 threads | 0.086 (96.7 s wall) |
+| Synthesis RTF, four lanes x 3 threads (default) | 0.035 (39.1 s wall) |
+| Peak RSS, one lane | ~1.6 GiB |
+| Peak RSS, four lanes | ~3.9 GiB |
 
-The RTF leaves ample headroom under the plan's ≤ 0.15 target; a long article
-is synthesized faster than real time. Memory is the known cost of the
-dictionary-mode accentizer and is the reason the bundle is optional.
+The lane pool cuts the wall time by ~2.4x: chunks are independent model calls,
+while intra-op threads stop scaling early (4 threads 55.6 s, 8 threads 43.2 s,
+12 threads 44.3 s on the same article). Memory is the cost — each lane owns its
+own copy of the four ONNX graphs, and the dictionary-mode accentizer stays
+shared — and is the reason the bundle is optional.
 
 ## Parity with the Python reference
 
