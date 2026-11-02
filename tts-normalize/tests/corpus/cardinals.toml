@@ -337,7 +337,7 @@ id = "cardinals/million-scale"
 subcategory = "scale"
 status = "target"
 input = "1 млн"
-expected = "один миллион"
+expected = "миллион"
 
 [[case]]
 id = "cardinals/thousand-scale"

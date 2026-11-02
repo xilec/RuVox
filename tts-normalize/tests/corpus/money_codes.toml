@@ -3,133 +3,133 @@
 # Nothing in this category is read correctly today, so every case is `target`.
 
 [[case]]
-id = "money/rubles-sign"
+id = "money_codes/rubles-sign"
 subcategory = "currency"
 status = "target"
 input = "100 ₽"
 expected = "сто рублей"
 
 [[case]]
-id = "money/rubles-sign-groups"
+id = "money_codes/rubles-sign-groups"
 subcategory = "currency"
 status = "target"
 input = "2 500 ₽"
 expected = "две тысячи пятьсот рублей"
 
 [[case]]
-id = "money/rubles-abbreviation"
+id = "money_codes/rubles-abbreviation"
 subcategory = "currency"
 status = "target"
 input = "100 руб."
 expected = "сто рублей"
 
 [[case]]
-id = "money/rubles-abbreviation-plural"
+id = "money_codes/rubles-abbreviation-plural"
 subcategory = "currency"
 status = "target"
 input = "50 руб."
 expected = "пятьдесят рублей"
 
 [[case]]
-id = "money/rubles-thousand"
+id = "money_codes/rubles-thousand"
 subcategory = "currency"
 status = "target"
 input = "1000 руб."
 expected = "тысяча рублей"
 
 [[case]]
-id = "money/dollars-prefix"
+id = "money_codes/dollars-prefix"
 subcategory = "currency"
 status = "target"
 input = "$5"
 expected = "пять долларов"
 
 [[case]]
-id = "money/dollars-suffix"
+id = "money_codes/dollars-suffix"
 subcategory = "currency"
 status = "target"
 input = "5$"
 expected = "пять долларов"
 
 [[case]]
-id = "money/dollars-space"
+id = "money_codes/dollars-space"
 subcategory = "currency"
 status = "target"
 input = "100 $"
 expected = "сто долларов"
 
 [[case]]
-id = "money/euro-prefix"
+id = "money_codes/euro-prefix"
 subcategory = "currency"
 status = "target"
 input = "€20"
 expected = "двадцать евро"
 
 [[case]]
-id = "money/euro-suffix"
+id = "money_codes/euro-suffix"
 subcategory = "currency"
 status = "target"
 input = "20 €"
 expected = "двадцать евро"
 
 [[case]]
-id = "money/million-rubles"
+id = "money_codes/million-rubles"
 subcategory = "scale"
 status = "target"
 input = "1,5 млн рублей"
 expected = "полтора миллиона рублей"
 
 [[case]]
-id = "money/billion-dollars"
+id = "money_codes/billion-dollars"
 subcategory = "scale"
 status = "target"
 input = "2 млрд долларов"
 expected = "два миллиарда долларов"
 
 [[case]]
-id = "money/thousand-rubles"
+id = "money_codes/thousand-rubles"
 subcategory = "scale"
 status = "target"
 input = "3 тыс. рублей"
 expected = "три тысячи рублей"
 
 [[case]]
-id = "money/number-sign"
+id = "money_codes/number-sign"
 subcategory = "reference"
 status = "target"
 input = "№ 5"
 expected = "номер пять"
 
 [[case]]
-id = "money/number-sign-glued"
+id = "money_codes/number-sign-glued"
 subcategory = "reference"
 status = "target"
 input = "№123"
 expected = "номер сто двадцать три"
 
 [[case]]
-id = "money/page-reference"
+id = "money_codes/page-reference"
 subcategory = "reference"
 status = "target"
 input = "стр. 15"
 expected = "страница пятнадцать"
 
 [[case]]
-id = "money/table-reference"
+id = "money_codes/table-reference"
 subcategory = "reference"
 status = "target"
 input = "табл. 3"
 expected = "таблица три"
 
 [[case]]
-id = "money/figure-reference"
+id = "money_codes/figure-reference"
 subcategory = "reference"
 status = "target"
 input = "рис. 3"
 expected = "рисунок три"
 
 [[case]]
-id = "money/chapter-reference"
+id = "money_codes/chapter-reference"
 subcategory = "reference"
 status = "target"
 input = "гл. 2"
@@ -137,7 +137,7 @@ expected = "глава вторая"
 note = "a chapter reference is an ordinal, unlike a page number"
 
 [[case]]
-id = "money/phone"
+id = "money_codes/phone"
 subcategory = "phone"
 status = "target"
 input = "тел. +7 999 123-45-67"
@@ -145,105 +145,105 @@ expected = "телефон плюс семь девятьсот девяност
 note = "a phone number is read in groups, unlike digit-by-digit IDs"
 
 [[case]]
-id = "money/inn"
+id = "money_codes/inn"
 subcategory = "identifier"
 status = "target"
 input = "ИНН 7707083893"
 expected = "ИНН семь семь ноль семь ноль восемь три восемь девять три"
 
 [[case]]
-id = "money/article"
+id = "money_codes/article"
 subcategory = "identifier"
 status = "target"
 input = "арт. 123456"
 expected = "артикул один два три четыре пять шесть"
 
 [[case]]
-id = "money/plus-sign"
+id = "money_codes/plus-sign"
 subcategory = "sign"
 status = "target"
 input = "+5"
 expected = "плюс пять"
 
 [[case]]
-id = "money/currency-after-number"
+id = "money_codes/currency-after-number"
 subcategory = "currency"
 status = "target"
 input = "билет за 199 ₽"
 expected = "билет за сто девяносто девять рублей"
 
 [[case]]
-id = "money/million-dollars"
+id = "money_codes/million-dollars"
 subcategory = "scale"
 status = "target"
 input = "1,5 млн $"
 expected = "полтора миллиона долларов"
 
 [[case]]
-id = "money/euro-space"
+id = "money_codes/euro-space"
 subcategory = "currency"
 status = "target"
 input = "€ 20"
 expected = "двадцать евро"
 
 [[case]]
-id = "money/thousand-rubles-sign"
+id = "money_codes/thousand-rubles-sign"
 subcategory = "currency"
 status = "target"
 input = "5 тыс. ₽"
 expected = "пять тысяч рублей"
 
 [[case]]
-id = "money/phone-parenthesized"
+id = "money_codes/phone-parenthesized"
 subcategory = "phone"
 status = "target"
 input = "тел.: +7 (999) 123-45-67"
 expected = "телефон плюс семь девятьсот девяносто девять сто двадцать три сорок пять шестьдесят семь"
 
 [[case]]
-id = "money/price-with-groups"
+id = "money_codes/price-with-groups"
 subcategory = "currency"
 status = "target"
 input = "цена 1 000 ₽"
 expected = "цена тысяча рублей"
 
 [[case]]
-id = "money/page-five"
+id = "money_codes/page-five"
 subcategory = "reference"
 status = "target"
 input = "стр. 5"
 expected = "страница пять"
 
 [[case]]
-id = "money/ruble-one"
+id = "money_codes/ruble-one"
 subcategory = "agreement"
 status = "locked"
 input = "1 рубль"
 expected = "один рубль"
 
 [[case]]
-id = "money/ruble-two"
+id = "money_codes/ruble-two"
 subcategory = "agreement"
 status = "locked"
 input = "2 рубля"
 expected = "два рубля"
 
 [[case]]
-id = "money/ruble-twenty-two"
+id = "money_codes/ruble-twenty-two"
 subcategory = "agreement"
 status = "locked"
 input = "22 рубля"
 expected = "двадцать два рубля"
 
 [[case]]
-id = "money/kopecks"
+id = "money_codes/kopecks"
 subcategory = "agreement"
 status = "target"
 input = "50 коп."
 expected = "пятьдесят копеек"
 
 [[case]]
-id = "money/city-abbreviation"
+id = "money_codes/city-abbreviation"
 subcategory = "reference"
 status = "target"
 input = "г. Москва"

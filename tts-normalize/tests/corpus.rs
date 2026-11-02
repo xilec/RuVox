@@ -23,6 +23,7 @@ use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use tts_normalize::pipeline::TTSPipeline;
@@ -36,17 +37,24 @@ const CORPUS_DIR: &str = "tests/corpus";
 /// `RUVOX_CORPUS_SAMPLE_BYTES` for the branch comparison on a fixed machine.
 const DEFAULT_SAMPLE_BYTES: usize = 256_000;
 const SAMPLE_BYTES_ENV: &str = "RUVOX_CORPUS_SAMPLE_BYTES";
-/// Same budget as `src-tauri/tests/perf.rs`: far above a healthy debug build,
-/// low enough to catch a quadratic or allocation-heavy regression.
-const RUNTIME_BUDGET: Duration = Duration::from_secs(60);
+/// Twice the 256 KB dense-markup budget in `src-tauri/tests/perf.rs`: the
+/// corpus sample is numbers-heavy, and the ceiling still catches quadratic or
+/// allocation-heavy regressions.
+const RUNTIME_BUDGET: Duration = Duration::from_secs(30);
+
+/// Tests in one binary run in parallel, so the wall-clock assertion takes this
+/// lock (same approach as `src-tauri/tests/perf.rs`).
+static CORPUS_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct CorpusFile {
     #[serde(default)]
     case: Vec<Case>,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Case {
     id: String,
     subcategory: String,
@@ -122,6 +130,12 @@ fn load_corpus() -> Vec<LoadedCase> {
             assert!(
                 seen_ids.insert(case.id.clone()),
                 "{}: duplicate case id {:?}",
+                path.display(),
+                case.id
+            );
+            assert!(
+                case.id.starts_with(&format!("{category}/")),
+                "{}: case {:?} must use the {category}/ id prefix",
                 path.display(),
                 case.id
             );
@@ -220,6 +234,7 @@ fn format_mismatches(failures: &[Mismatch<'_>]) -> String {
 
 #[test]
 fn corpus_locked_matches_current_behavior() {
+    let _guard = CORPUS_LOCK.lock().expect("corpus lock");
     let cases = load_corpus();
     let (table, failures) = evaluate(&cases, Status::Locked);
     assert!(
@@ -234,14 +249,58 @@ fn corpus_locked_matches_current_behavior() {
 /// otherwise deleting cases silently lowers the yardstick.
 #[test]
 fn corpus_distribution_is_balanced() {
+    let _guard = CORPUS_LOCK.lock().expect("corpus lock");
     let cases = load_corpus();
     let mut per_category: BTreeMap<&str, BTreeMap<&str, usize>> = BTreeMap::new();
+    let mut locked_per_category: BTreeMap<&str, usize> = BTreeMap::new();
     for loaded in &cases {
         *per_category
             .entry(loaded.category.as_str())
             .or_default()
             .entry(loaded.case.subcategory.as_str())
             .or_default() += 1;
+        if loaded.case.status == Status::Locked {
+            *locked_per_category
+                .entry(loaded.category.as_str())
+                .or_default() += 1;
+        }
+    }
+
+    // (category, minimum total cases, minimum locked cases). Flipping a locked
+    // case to target is exactly how a drift guard gets narrowed, and deleting a
+    // file is how a category disappears; both must fail here.
+    let expected: [(&str, usize, usize); 5] = [
+        ("cardinals", 70, 20),
+        ("dates", 60, 13),
+        ("money_codes", 35, 3),
+        ("ordinals", 52, 4),
+        ("ranges_percentages", 39, 17),
+    ];
+    assert!(
+        cases.len() >= 256,
+        "the corpus shrank to {} cases; floor is 256",
+        cases.len()
+    );
+    assert_eq!(
+        per_category.len(),
+        expected.len(),
+        "corpus categories changed: {:?}",
+        per_category.keys().collect::<Vec<_>>()
+    );
+    for (category, min_total, min_locked) in expected {
+        let total = per_category
+            .get(category)
+            .map(|buckets| buckets.values().sum::<usize>())
+            .unwrap_or(0);
+        assert!(
+            total >= min_total,
+            "category {category} shrank to {total} cases; floor is {min_total}"
+        );
+        let locked = locked_per_category.get(category).copied().unwrap_or(0);
+        assert!(
+            locked >= min_locked,
+            "category {category} has {locked} locked cases; floor is {min_locked}"
+        );
     }
 
     for (category, buckets) in &per_category {
@@ -269,7 +328,7 @@ fn corpus_distribution_is_balanced() {
                 .case
                 .input
                 .chars()
-                .any(|ch| ch.is_alphabetic() && !ch.is_ascii())
+                .any(|ch| matches!(ch, 'А'..='я' | 'Ё' | 'ё'))
         })
         .count();
     assert!(
@@ -282,6 +341,7 @@ fn corpus_distribution_is_balanced() {
 #[test]
 #[ignore = "phase B/C yardstick: expected to fail until the target corpus is implemented"]
 fn corpus_target_rate() {
+    let _guard = CORPUS_LOCK.lock().expect("corpus lock");
     let cases = load_corpus();
     let (table, failures) = evaluate(&cases, Status::Target);
     println!("\n{} corpus rate:\n{table}", Status::Target.label());
@@ -295,11 +355,14 @@ fn corpus_target_rate() {
 
 #[test]
 fn corpus_runtime_within_budget() {
+    let _guard = CORPUS_LOCK.lock().expect("corpus lock");
     let cases = load_corpus();
-    let sample_bytes = std::env::var(SAMPLE_BYTES_ENV)
-        .ok()
-        .and_then(|value| value.parse::<usize>().ok())
-        .unwrap_or(DEFAULT_SAMPLE_BYTES);
+    let sample_bytes = match std::env::var(SAMPLE_BYTES_ENV) {
+        Ok(value) => value
+            .parse::<usize>()
+            .unwrap_or_else(|_| panic!("{SAMPLE_BYTES_ENV} must be a byte count, got {value:?}")),
+        Err(_) => DEFAULT_SAMPLE_BYTES,
+    };
     let mut sample = String::with_capacity(sample_bytes + 1024);
     while sample.len() < sample_bytes {
         for loaded in &cases {

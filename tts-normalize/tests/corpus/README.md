@@ -36,8 +36,10 @@ When the winning implementation lands, the target cases it covers flip to
 Natural spoken Russian is the reference, not a word-by-word transliteration.
 
 - Years are ordinals: "в 2024 году" → "в две тысячи двадцать четвёртом году".
-  Years 1900–1999 drop the "одна тысяча" prefix. A lone scale word drops
-  "одна/один": "1000 рублей" → "тысяча рублей", "1 000 000" → "миллион".
+  Years 1900–1999 drop the leading "одна" but keep "тысяча": "с 1999 года" →
+  "с тысяча девятьсот девяносто девятого года". A lone scale word drops
+  "одна/один": "1000 рублей" → "тысяча рублей", "1 000 000" → "миллион",
+  "1 млн" → "миллион".
 - Dates: the day is a neuter ordinal, the year a genitive ordinal. A date used
   as a label reads nominative ("Релиз 2024-12-31"); after "от"/"до" it takes
   the genitive, after "с … по …" the genitive/accusative pair.
@@ -45,9 +47,10 @@ Natural spoken Russian is the reference, not a word-by-word transliteration.
   "в XX веке" → "в двадцатом веке".
 - Ordinal suffixes (`-й`, `-я`, `-е`, `-го`, `-му`, `-м`, `-ми`, `-ю`, and the
   plural `-х`) carry gender, number and case: "5-й этаж" → "пятый этаж".
-  `N-х` is ambiguous: an ordinal when a plural head noun follows ("в 5-х
-  классах" → "в пятых классах"), a cardinal genitive otherwise ("из 2-х
-  частей" → "из двух частей").
+  `N-х` is ambiguous: the cardinal genitive is the default ("из 2-х частей" →
+  "из двух частей", "в 2-х шагах" → "в двух шагах"); the ordinal plural
+  reading applies only to rank/class-like heads ("в 5-х классах" → "в пятых
+  классах"). Where context is ambiguous, the per-case note is authoritative.
 - Cardinal numerals agree with the head noun in gender and number: "42 книги" →
   "сорок две книги", "1 рубль" → "один рубль".
 - Bare decimals keep the technical register ("3.14" → "три точка четырнадцать",
@@ -57,9 +60,10 @@ Natural spoken Russian is the reference, not a word-by-word transliteration.
   десятых/сотых".
 - Ranges read "от … до …" with both bounds in the genitive ("5–10 кг" →
   "от пяти до десяти килограммов"). A year range followed by "годы"/"гг."
-  reads "с … по … год". A hyphen between two counts no greater than ten that
-  is followed by a counted noun keeps the hyphenated reading ("2-3 раза" →
-  "два-три раза").
+  reads "с … по … год". A hyphen between adjacent counts (they differ by one)
+  followed by a counted noun keeps the hyphenated reading ("2-3 раза" →
+  "два-три раза", "5-6 страниц" → "пять-шесть страниц"); wider spans read
+  "от … до …" ("5–10 минут").
 - Phones are read in groups ("+7 999 123-45-67" → "плюс семь девятьсот
   девяносто девять сто двадцать три сорок пять шестьдесят семь"); IDs, ИНН
   and article numbers are read digit by digit; reference numbers (№, стр.,
@@ -100,3 +104,12 @@ Some `locked` cases pin behavior that is intentionally not natural speech:
   `text-pipeline` spec.
 - An invalid clock time ("В 25:00 встреча" → "В двадцать пять:ноль встреча")
   pins the documented fall-through to the number phase, not a desired reading.
+
+## Relationship to the golden fixtures
+
+The app-level pipeline gate in `src-tauri/tests/` keeps its own goldens under
+`src-tauri/tests/fixtures/pipeline/`; a few of them overlap with this corpus
+(`ip_address`, `percentage_int`, `percentage_decimal`, `date_iso`,
+`range_years`). For numbers, ordinals and dates this corpus is the authoritative
+yardstick of the epic; when a change touches an overlapping reading, update both
+suites in the same commit so they cannot drift.
