@@ -565,7 +565,15 @@ fn parse_plain(text: &str, pos: usize, sign: Option<Sign>, expand_units: bool) -
         });
     }
 
-    let (trailing, end) = parse_trailing(text, number_end, &number, expand_units)?;
+    let (mut trailing, mut end) = parse_trailing(text, number_end, &number, expand_units)?;
+    // "с 1990 по 2020 годы" spreads a year range over two numbers; the right
+    // bound owns the plural so it reads as the final "... год".
+    if trailing.is_none() && matches!(word_before(text, pos).as_str(), "по" | "с") {
+        if let Some((year_trailing, year_end)) = year_plural_after(text, end) {
+            trailing = Some(year_trailing);
+            end = year_end;
+        }
+    }
     // A digit glued to a letter is an alphanumeric token ("3d", "42x") that the
     // mixed-token phase reads as a whole; a known unit ("100MB") already
     // claimed the letters above.
@@ -994,6 +1002,36 @@ fn parse_range_trailing(
         ));
     }
     parse_trailing(text, pos, right, expand_units)
+}
+
+/// The word immediately before `pos`, lowercased ("по" in "с 1990 по 2020").
+fn word_before(text: &str, pos: usize) -> String {
+    let before = text[..pos].trim_end_matches([' ', '\u{a0}', '\t', '\n']);
+    let start = before
+        .char_indices()
+        .rev()
+        .take_while(|(_, c)| c.is_alphabetic())
+        .last()
+        .map(|(i, _)| i)
+        .unwrap_or(before.len());
+    before[start..].to_lowercase()
+}
+
+/// A trailing "годы"/"гг." after the right bound of a word year range.
+fn year_plural_after(text: &str, pos: usize) -> Option<(Trailing, usize)> {
+    let start = skip_spaces(text, pos);
+    let (_, token) = read_token(text, start);
+    let token = token.trim_end_matches(['.', ',', ';', ':', '!', '?']);
+    if !matches!(token.to_lowercase().as_str(), "годы" | "гг") {
+        return None;
+    }
+    Some((
+        Trailing {
+            kind: TrailingKind::YearRange,
+            currency: None,
+        },
+        start + token.len(),
+    ))
 }
 
 fn currency_at(text: &str) -> Option<Currency> {

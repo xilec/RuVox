@@ -307,7 +307,7 @@ pub const YEAR_CONTEXT_WORDS: [&str; 8] = [
 
 /// Gender of a noun form the reader has to agree with, when the ending alone
 /// is not enough (plural and genitive forms like "книги", "рубля", "года").
-const NOUN_GENDERS: [(&str, Gender); 60] = [
+const NOUN_GENDERS: [(&str, Gender); 72] = [
     ("сервер", Gender::Masculine),
     ("сервера", Gender::Masculine),
     ("серверы", Gender::Masculine),
@@ -368,6 +368,20 @@ const NOUN_GENDERS: [(&str, Gender); 60] = [
     ("квартала", Gender::Masculine),
     ("том", Gender::Masculine),
     ("тома", Gender::Masculine),
+    // Genitive singular of neuter -о nouns also ends in -а, so the ending
+    // heuristic would call these feminine; list the frequent ones.
+    ("яблока", Gender::Neuter),
+    ("молока", Gender::Neuter),
+    ("озера", Gender::Neuter),
+    ("окна", Gender::Neuter),
+    ("письма", Gender::Neuter),
+    ("мяса", Gender::Neuter),
+    ("масла", Gender::Neuter),
+    ("пива", Gender::Neuter),
+    ("неба", Gender::Neuter),
+    ("слова", Gender::Neuter),
+    ("места", Gender::Neuter),
+    ("дела", Gender::Neuter),
 ];
 
 /// Gender of the noun a cardinal agrees with ("42 книги" → "сорок две книги").

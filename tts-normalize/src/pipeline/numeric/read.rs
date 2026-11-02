@@ -141,7 +141,12 @@ fn read_plain(
                 morphology::ordinal(value, Gender::Masculine, Case::Genitive)
             )
         }),
-        Some(TrailingKind::YearRange) => None,
+        Some(TrailingKind::YearRange) => is_year(value).then(|| {
+            format!(
+                "{} год",
+                morphology::ordinal(value, Gender::Masculine, Case::Accusative)
+            )
+        }),
         None => read_bare_number(number, text, span, forced),
     }
 }
