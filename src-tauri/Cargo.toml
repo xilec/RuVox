@@ -6,7 +6,7 @@ authors = []
 license = "GPL-3.0-only"
 repository = "https://github.com/xilec/RuVox"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.90"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

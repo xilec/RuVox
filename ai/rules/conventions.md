@@ -86,7 +86,7 @@ duplicate them. A new crate is not finished until its README exists.
 
 ## Rust
 
-- Edition 2024 (MSRV 1.85).
+- Edition 2024 (MSRV 1.90 for the app crate, 1.85 for the library crates).
 - `tracing` for logging, `thiserror` for domain errors, `anyhow::Result` only
   at boundaries.
 - No `unwrap` in production paths — use `?` + typed errors. `expect()` only for
