@@ -4,6 +4,7 @@
 //! fake player. Background synthesis runs in spawned tasks, so state
 //! transitions are awaited with `wait_until` instead of being assumed.
 
+use super::synthesis::*;
 use super::*;
 use crate::player::PlayerBackend;
 use crate::test_support::{
