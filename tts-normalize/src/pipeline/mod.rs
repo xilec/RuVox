@@ -522,7 +522,12 @@ impl TTSPipeline {
         // ── Phase 6: Markdown structure ───────────────────────────────────────
         self.process_markdown_tracked(&mut tracked, expand_digits);
 
-        // ── Phase 7: URLs ─────────────────────────────────────────────────────
+        // ── Phase 7: URLs, emails, IPs, paths ────────────────────────────────
+        // These stay static regexes even though the numeric span layer owns
+        // numbers: an address is one token whose reading (host words, group
+        // digits, path parts) belongs to `URLPathNormalizer`, not a numeric
+        // value. Claiming it here also keeps a dotted address ("192.168.0.1")
+        // from being scanned as a version number.
         {
             let num = &self.number_normalizer;
             let eng = &self.english_normalizer;
