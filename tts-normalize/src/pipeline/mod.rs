@@ -1,6 +1,7 @@
 pub mod constants;
 pub mod english_reading;
 pub mod normalizers;
+mod numeric;
 pub mod spans;
 pub mod tracked_text;
 
@@ -20,6 +21,7 @@ use crate::pipeline::normalizers::english::EnglishNormalizer;
 use crate::pipeline::normalizers::numbers::NumberNormalizer;
 use crate::pipeline::normalizers::symbols::SymbolNormalizer;
 use crate::pipeline::normalizers::urls::{URLPathNormalizer, is_known_tld};
+use crate::pipeline::numeric::NumericSpanNormalizer;
 use crate::pipeline::spans::{
     RecordedSpan, byte_to_char_offsets, debug_assert_spans, record_byte_ranges, record_native,
     resolve_spans,
@@ -76,104 +78,6 @@ fn re_path() -> &'static Regex {
         Regex::new(r"([~/][a-zA-Z0-9_./ \-]+\.[a-zA-Z0-9]+|[~/][a-zA-Z0-9_./\-]+)")
             .expect("valid regex")
     })
-}
-
-fn re_size() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| {
-        Regex::new(
-            r"(?i)\b(\d+(?:\.\d+)?)\s*(KB|MB|GB|TB|ms|sec|min|hr|px|em|rem|vh|vw|кб|мб|гб|тб)\b",
-        )
-        .expect("valid regex")
-    })
-}
-
-fn re_date_iso() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"\b(\d{4})-(\d{2})-(\d{2})\b").expect("valid regex"))
-}
-
-fn re_date_dot() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    // European DD.MM.YYYY. A 4-digit year is required so semver-like "1.2.3"
-    // and truncated forms like "10.04." are left for the version/number phases.
-    RE.get_or_init(|| Regex::new(r"\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b").expect("valid regex"))
-}
-
-fn re_time() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    // HH:MM or HH:MM:SS. Two-digit minutes avoid catching ratios like "1:2".
-    RE.get_or_init(|| Regex::new(r"\b(\d{1,2}):(\d{2})(?::(\d{2}))?\b").expect("valid regex"))
-}
-
-fn re_version() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| {
-        Regex::new(r"(?i)\bv?(\d+\.\d+(?:\.\d+)?(?:-(?:alpha|beta|rc|dev|stable|release)\d*)?)\b")
-            .expect("valid regex")
-    })
-}
-
-/// Bare decimal fraction without the integer part (".5"). The dot must be
-/// at text start or preceded by anything except a letter, digit,
-/// underscore, dot, or path separator — otherwise it is a float tail
-/// ("1.5"), dotted label ("example.5"), version chain, ellipsis, or path
-/// fragment owned by earlier phases. Group 1 is the boundary context kept
-/// verbatim, group 2 the fractional digits.
-fn re_leading_dot_decimal() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"(^|[^\p{L}\p{N}_./\\])\.(\d+)").expect("valid regex"))
-}
-
-fn re_range() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"\b(\d+)\s*-\s*(\d+)\b").expect("valid regex"))
-}
-
-fn re_percentage() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"\b(\d+(?:\.\d+)?)\s*%").expect("valid regex"))
-}
-
-/// Percentage range "10-20%": two integers around a dash with a single
-/// trailing "%". Must be matched before the plain percentage pattern,
-/// otherwise "20%" is consumed alone and the dash is left bare (#112).
-fn re_percentage_range() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"\b(\d+)\s*-\s*(\d+)\s*%").expect("valid regex"))
-}
-
-/// Units `re_size` accepts, lowercased: the guard below reads the word right
-/// after a number instead of scanning forward for a size match, which would
-/// rescan the rest of the document for every number.
-const SIZE_UNITS: [&str; 17] = [
-    "kb", "mb", "gb", "tb", "ms", "sec", "min", "hr", "px", "em", "rem", "vh", "vw", "кб", "мб",
-    "гб", "тб",
-];
-
-/// True when the number at `start..end` belongs to a percentage or a size,
-/// which the gated unit phases own as a whole.
-fn unit_owns(snapshot: &str, end: usize) -> bool {
-    let after = snapshot[end..].trim_start_matches(' ');
-    if after.starts_with('%') {
-        return true;
-    }
-
-    // Left bound of a percentage range ("10-20%"): dash, digits, percent sign.
-    if let Some(rest) = after.strip_prefix('-') {
-        let digit_bytes = rest.len() - rest.trim_start_matches(|c: char| c.is_ascii_digit()).len();
-        if digit_bytes > 0 && rest[digit_bytes..].trim_start_matches(' ').starts_with('%') {
-            return true;
-        }
-    }
-
-    // A size unit attached directly or after a single space ("100MB", "1.5 GB").
-    let word: String = after.chars().take_while(|c| c.is_alphanumeric()).collect();
-    let boundary = after
-        .chars()
-        .nth(word.chars().count())
-        .is_none_or(|c| !c.is_alphanumeric());
-    boundary && SIZE_UNITS.contains(&word.to_lowercase().as_str())
 }
 
 fn re_inline_code() -> &'static Regex {
@@ -336,14 +240,6 @@ fn re_user_dict_hyphenated() -> &'static Regex {
     })
 }
 
-fn re_number() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    // Match standalone integers: must be at a word boundary and not preceded/followed
-    // by a dot (which would indicate a float/version, already handled earlier).
-    // Since regex crate lacks lookbehind, we use \b which works for ASCII digit boundaries.
-    RE.get_or_init(|| Regex::new(r"\b\d+\b").expect("valid regex"))
-}
-
 fn re_multi_spaces() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r" +").expect("valid regex"))
@@ -372,14 +268,6 @@ fn re_collapse_newlines() -> &'static Regex {
 fn re_collapse_spaces() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"[ \t]+").expect("valid regex"))
-}
-
-fn re_tilde_approx() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    // Match ~<optional spaces><digit> — capture only the digit so that "~ 5"
-    // collapses to a single space ("около 5", not "около  5").
-    // Regex crate does not support lookahead, so we consume the digit and re-emit it.
-    RE.get_or_init(|| Regex::new(r"~\s*(\d)").expect("valid regex"))
 }
 
 // ── Multi-char operators processed in tracked mode (longest first) ────────────
@@ -413,6 +301,7 @@ pub struct ProcessedText {
 /// Owns all normalizer instances. Phase order matters: see `process_with_char_mapping`.
 pub struct TTSPipeline {
     number_normalizer: NumberNormalizer,
+    numeric_normalizer: NumericSpanNormalizer,
     english_normalizer: EnglishNormalizer,
     abbrev_normalizer: AbbreviationNormalizer,
     symbol_normalizer: SymbolNormalizer,
@@ -435,6 +324,7 @@ impl TTSPipeline {
     pub fn new() -> Self {
         Self {
             number_normalizer: NumberNormalizer::new(),
+            numeric_normalizer: NumericSpanNormalizer::new(),
             english_normalizer: EnglishNormalizer::new(),
             abbrev_normalizer: AbbreviationNormalizer::new(),
             symbol_normalizer: SymbolNormalizer::new(),
@@ -610,10 +500,6 @@ impl TTSPipeline {
         tracked.replace("\u{2018}", "'"); // '
         tracked.replace("\u{2019}", "'"); // '
 
-        // ── Phase 3: Dash normalization ───────────────────────────────────────
-        tracked.replace("\u{2014}", "-"); // em-dash —
-        tracked.replace("\u{2013}", "-"); // en-dash –
-
         // ── Phase 4: Whitespace normalization ─────────────────────────────────
         tracked.sub(re_collapse_newlines(), |_| "\n\n".to_string());
         tracked.sub(re_collapse_spaces(), |_| " ".to_string());
@@ -707,115 +593,26 @@ impl TTSPipeline {
             });
         }
 
-        // ── Phase 8: Sizes (e.g. 100MB, 50ms) ────────────────────────────────
-        // Unit expansion needs the number in words, so it runs only when the
-        // profile expands units (which implies digits — see `TextProfile::validate`).
-        if expand_units {
-            let num = &self.number_normalizer;
-            tracked.sub(re_size(), |caps| {
-                num.normalize_size(caps.get(0).unwrap().as_str())
-            });
-        }
-
-        // ── Phase 9: Dates and times ──────────────────────────────────────────
-        // Must precede versions/ranges/numbers so "12.05.2024" and "14:30" are
-        // read as calendar values instead of being torn apart by the version,
-        // range, or bare-number phases. Runs after URLs/emails/IPs/paths
-        // (Phases 7-8), whose regions are already consumed, so date-like
-        // substrings inside them are not re-matched here.
+        // ── Phase 8: Numeric spans ───────────────────────────────────────────
+        // One layer owns every numeric shape. Sizes, dates, times, ranges,
+        // percentage ranges, percentages, versions, leading-dot decimals and
+        // bare numbers used to be separate regex phases whose order was
+        // load-bearing ("10-20%" had to beat "20%", versions had to beat
+        // numbers); the span layer scans each candidate once and classifies it
+        // by shape and context, so no phase can race another for the digits.
         if expand_digits {
-            let num = &self.number_normalizer;
-            // normalize_date and normalize_time return their input unchanged on an
-            // invalid calendar/clock value, so out-of-range matches become no-ops
-            // and leave the region and its digits for the number phase.
-            let normalize_date =
-                |caps: &regex::Captures| num.normalize_date(caps.get(0).unwrap().as_str());
-            tracked.sub(re_date_iso(), normalize_date);
-            tracked.sub(re_date_dot(), normalize_date);
-            tracked.sub(re_time(), |caps| {
-                num.normalize_time(caps.get(0).unwrap().as_str())
-            });
+            self.numeric_normalizer.process(&mut tracked, expand_units);
         }
 
-        // ── Phase 9b: Percentage ranges (e.g. 10-20%) ────────────────────────
-        // Must precede plain percentages: otherwise the trailing "20%" is
-        // consumed alone, the range phase never sees "10-20", and the dash
-        // is left bare (#112). The range reading already puts both bounds in
-        // genitive, so the fixed genitive-plural "процентов" is always right
-        // after "до <genitive>".
-        if expand_units {
-            let num = &self.number_normalizer;
-            tracked.sub(re_percentage_range(), |caps| {
-                let range = format!(
-                    "{}-{}",
-                    caps.get(1).unwrap().as_str(),
-                    caps.get(2).unwrap().as_str()
-                );
-                let read = num.normalize_range(&range);
-                if read == range {
-                    // normalize_range refused the bounds (e.g. past i64):
-                    // leave the whole match untouched, like the plain
-                    // percentage phase does on unparsable input.
-                    return caps.get(0).unwrap().as_str().to_string();
-                }
-                format!("{read} процентов")
-            });
-        }
+        // ── Phase 12.9: Dash normalization ──────────────────────────────────
+        // Deliberately after the numeric span phase: a range keeps whatever
+        // dash the source used ("5–10"), and replacing the dash earlier would
+        // make the span overlap an already-replaced range, which the tracked
+        // text drops as double processing.
+        tracked.replace("\u{2014}", "-"); // em-dash —
+        tracked.replace("\u{2013}", "-"); // en-dash –
 
-        // ── Phase 10: Percentages ─────────────────────────────────────────────
-        // Must precede versions: re_version matches a bare "12.5" inside "12.5%",
-        // so running versions first would consume the number and leave a bare "%".
-        if expand_units {
-            let num = &self.number_normalizer;
-            tracked.sub(re_percentage(), |caps| {
-                num.normalize_percentage(caps.get(0).unwrap().as_str())
-            });
-        }
-
-        // ── Phase 11: Ranges (e.g. 10-20) ────────────────────────────────────
-        if expand_digits {
-            let num = &self.number_normalizer;
-            self.sub_number_phase(&mut tracked, re_range(), expand_units, |caps| {
-                num.normalize_range(caps.get(0).unwrap().as_str())
-            });
-        }
-
-        // ── Phase 12: Versions (e.g. v1.2.3) ─────────────────────────────────
-        if expand_digits {
-            let num = &self.number_normalizer;
-            self.sub_number_phase(&mut tracked, re_version(), expand_units, |caps| {
-                let v = caps.get(0).unwrap().as_str();
-                if v.contains('.') {
-                    num.normalize_version(v)
-                } else {
-                    v.to_string()
-                }
-            });
-        }
-
-        // ── Phase 12b: Leading-dot decimals (e.g. ".5" → "ноль точка пять") ───
-        // Must run after versions (so "1.5" keeps its version reading) and
-        // before operators/numbers (so the fraction digits are consumed
-        // before the number phase — and its dot guard — runs).
-        if expand_digits {
-            let num = &self.number_normalizer;
-            self.sub_number_phase(
-                &mut tracked,
-                re_leading_dot_decimal(),
-                expand_units,
-                |caps| {
-                    let boundary = caps.get(1).unwrap().as_str();
-                    let digits = caps.get(2).unwrap().as_str();
-                    format!(
-                        "{}{}",
-                        boundary,
-                        num.normalize_float(&format!("0.{digits}"))
-                    )
-                },
-            );
-        }
-
-        // ── Phase 13: Operators ───────────────────────────────────────────────
+        // ── Phase 13: Operators ────────────────────────────────────────
         // Operators run before symbols so that multi-char operators like "=="
         // are matched before single "=".
         for op in TRACKED_OPERATOR_KEYS {
@@ -861,14 +658,6 @@ impl TTSPipeline {
         for bracket in ["<", ">"] {
             let reading = self.symbol_normalizer.normalize(bracket);
             tracked.replace(bracket, &format!(" {reading} "));
-        }
-
-        // Tilde before a number means "approximately": ~46 → около 46.
-        // We capture the digit(s) after the tilde and emit them after "около ".
-        if expand_digits {
-            tracked.sub(re_tilde_approx(), |caps| {
-                format!("около {}", caps.get(1).unwrap().as_str())
-            });
         }
 
         // ── Phase 14.9: Hyphenated dictionary keys ───────────────────────────
@@ -955,11 +744,6 @@ impl TTSPipeline {
                 },
                 &mut recorded,
             );
-        }
-
-        // ── Phase 17: Numbers ─────────────────────────────────────────────────
-        if expand_digits {
-            self.process_numbers_tracked(&mut tracked, expand_units);
         }
 
         // ── Postprocess ───────────────────────────────────────────────────────
@@ -1395,79 +1179,6 @@ impl TTSPipeline {
         }));
         matches.retain(|(start, end, _)| !overlaps_ranges(&protected, *start, *end));
         matches.sort_unstable_by_key(|(start, _, _)| *start);
-
-        tracked.replace_byte_ranges(matches);
-    }
-
-    /// Runs a digit phase, skipping matches that belong to a unit construct
-    /// when the unit phases are gated off (`units: Native`).
-    ///
-    /// Without this the skipped unit phases would leave their number to the
-    /// digit phases below, which read "50 %" or "1.5 GB" as a bare number and
-    /// strand the unit.
-    fn sub_number_phase(
-        &self,
-        tracked: &mut TrackedText,
-        pattern: &Regex,
-        expand_units: bool,
-        mut replacer: impl FnMut(&regex::Captures) -> String,
-    ) {
-        if expand_units {
-            tracked.sub(pattern, |caps| replacer(caps));
-            return;
-        }
-        let snapshot = tracked.text().to_string();
-        tracked.sub(pattern, |caps| {
-            let m = caps.get(0).unwrap();
-            if unit_owns(&snapshot, m.end()) {
-                m.as_str().to_string()
-            } else {
-                replacer(caps)
-            }
-        });
-    }
-
-    fn process_numbers_tracked(&self, tracked: &mut TrackedText, expand_units: bool) {
-        // Effective pattern: `(?<![.])(\d+)(?![.]\d)` on top of the Unicode-aware
-        // `\b\d+\b` from re_number(). The regex crate lacks lookbehind/lookahead,
-        // and `\b` already rejects digits, letters, and underscore next to the
-        // match, so the manual guard below only needs to exclude the digit
-        // separator '.': a dot directly followed by another digit (float and
-        // version separators, owned by earlier pipeline phases; bare
-        // integer-less decimals like ".5" are consumed by the leading-dot
-        // decimal phase, so a surviving "dot + digit" fragment belongs to a
-        // dotted label like "example.5"). A dot followed
-        // by whitespace, end of text, or a non-digit is terminal punctuation,
-        // not a separator — the number before it is read normally.
-        let snapshot = tracked.text().to_string();
-
-        let matches: Vec<(usize, usize, String)> = re_number()
-            .find_iter(&snapshot)
-            .filter_map(|m| {
-                let start = m.start();
-                let end = m.end();
-
-                let preceded_ok = start == 0 || !snapshot[..start].ends_with('.');
-                // A percent sign is not a word character, so `\b` does not
-                // protect it, and a size unit may follow a space: with units
-                // left to the engine, the number phase would read the "50" of
-                // "50 %" or the "1.5" of "1.5 GB" and strand the unit. The
-                // skipped unit phases own that fragment, so the number stays
-                // with it.
-                let unit_follows = unit_owns(&snapshot, end);
-                let followed_ok = (expand_units || !unit_follows)
-                    && (end >= snapshot.len()
-                        || !snapshot[end..].starts_with('.')
-                        || !snapshot[end + 1..].starts_with(|c: char| c.is_ascii_digit()));
-
-                if preceded_ok && followed_ok {
-                    let replacement = self.number_normalizer.normalize_number(m.as_str());
-                    Some((start, end, replacement))
-                } else {
-                    None
-                }
-            })
-            .collect();
 
         tracked.replace_byte_ranges(matches);
     }
