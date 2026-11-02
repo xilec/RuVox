@@ -1,0 +1,508 @@
+# Cardinal numerals: integers, digit groups, decimals, units and codes.
+#
+# Sizes in engine units (KB/MB/GB, ms/sec/min) are covered by the size phase;
+# the metric and currency units below are not implemented yet, hence `target`.
+
+# ── locked: plain integers and engine size units ─────────────────────────────
+
+[[case]]
+id = "cardinals/small-int"
+subcategory = "integer"
+status = "locked"
+input = "5 яблок"
+expected = "пять яблок"
+
+[[case]]
+id = "cardinals/thousand-rubles"
+subcategory = "integer"
+status = "target"
+input = "1000 рублей"
+expected = "тысяча рублей"
+note = "a lone scale word drops 'одна': 'тысяча рублей', not 'одна тысяча рублей'"
+
+[[case]]
+id = "cardinals/million-rubles"
+subcategory = "integer"
+status = "target"
+input = "1000000 рублей"
+expected = "миллион рублей"
+note = "same scale policy as 'тысяча рублей'"
+
+[[case]]
+id = "cardinals/zero"
+subcategory = "integer"
+status = "locked"
+input = "0"
+expected = "ноль"
+
+[[case]]
+id = "cardinals/plain-int"
+subcategory = "integer"
+status = "locked"
+input = "123"
+expected = "сто двадцать три"
+
+[[case]]
+id = "cardinals/size-mb"
+subcategory = "engine-unit"
+status = "locked"
+input = "100MB"
+expected = "сто мегабайт"
+
+[[case]]
+id = "cardinals/duration-ms"
+subcategory = "engine-unit"
+status = "locked"
+input = "50ms"
+expected = "пятьдесят миллисекунд"
+
+[[case]]
+id = "cardinals/size-gb"
+subcategory = "engine-unit"
+status = "locked"
+input = "16GB"
+expected = "шестнадцать гигабайт"
+
+[[case]]
+id = "cardinals/em-unit"
+subcategory = "engine-unit"
+status = "locked"
+input = "1.5em"
+expected = "один точка пять эм"
+
+[[case]]
+id = "cardinals/version"
+subcategory = "engine-unit"
+status = "locked"
+input = "v2.3.1"
+expected = "два точка три точка один"
+
+# ── target: digit groups and decimal fractions ───────────────────────────────
+
+[[case]]
+id = "cardinals/group-space-ten-thousand"
+subcategory = "groups"
+status = "target"
+input = "10 000 рублей"
+expected = "десять тысяч рублей"
+
+[[case]]
+id = "cardinals/group-space-million"
+subcategory = "groups"
+status = "target"
+input = "1 000 000 долларов"
+expected = "миллион долларов"
+
+[[case]]
+id = "cardinals/group-space-1500"
+subcategory = "groups"
+status = "target"
+input = "1 500"
+expected = "тысяча пятьсот"
+
+[[case]]
+id = "cardinals/group-nbsp"
+subcategory = "groups"
+status = "target"
+input = "10\u00a0000"
+expected = "десять тысяч"
+note = "U+00A0 written as a TOML escape; the ASCII-space control is group-space-ten-thousand"
+
+[[case]]
+id = "cardinals/feminine-42"
+subcategory = "agreement"
+status = "target"
+input = "42 книги"
+expected = "сорок две книги"
+
+[[case]]
+id = "cardinals/feminine-21"
+subcategory = "agreement"
+status = "target"
+input = "21 книга"
+expected = "двадцать одна книга"
+
+[[case]]
+id = "cardinals/feminine-2"
+subcategory = "agreement"
+status = "target"
+input = "2 девочки"
+expected = "две девочки"
+
+[[case]]
+id = "cardinals/decimal-half-kg"
+subcategory = "decimal"
+status = "target"
+input = "1,5 кг"
+expected = "полтора килограмма"
+
+[[case]]
+id = "cardinals/decimal-half-feminine"
+subcategory = "decimal"
+status = "target"
+input = "1,5 недели"
+expected = "полторы недели"
+
+[[case]]
+id = "cardinals/decimal-two-five-km"
+subcategory = "decimal"
+status = "target"
+input = "2,5 км"
+expected = "два с половиной километра"
+
+[[case]]
+id = "cardinals/decimal-zero-five-l"
+subcategory = "decimal"
+status = "target"
+input = "0,5 л"
+expected = "ноль целых пять десятых литра"
+
+[[case]]
+id = "cardinals/decimal-1-25-m"
+subcategory = "decimal"
+status = "target"
+input = "1,25 м"
+expected = "одна целая двадцать пять сотых метра"
+
+[[case]]
+id = "cardinals/decimal-3-75-kg"
+subcategory = "decimal"
+status = "target"
+input = "3,75 кг"
+expected = "три целых семьдесят пять сотых килограмма"
+
+[[case]]
+id = "cardinals/decimal-dot-pi"
+subcategory = "decimal"
+status = "locked"
+input = "3.14"
+expected = "три точка четырнадцать"
+note = "a bare decimal keeps the technical register (точка), like versions and coordinates"
+
+[[case]]
+id = "cardinals/decimal-dot-half"
+subcategory = "decimal"
+status = "locked"
+input = "0.5"
+expected = "ноль точка пять"
+
+[[case]]
+id = "cardinals/decimal-hours"
+subcategory = "decimal"
+status = "target"
+input = "1,5 часа"
+expected = "полтора часа"
+
+[[case]]
+id = "cardinals/group-decimal"
+subcategory = "decimal"
+status = "target"
+input = "1 234,56"
+expected = "одна тысяча двести тридцать четыре целых пятьдесят шесть сотых"
+
+# ── target: metric units and symbols ─────────────────────────────────────────
+
+[[case]]
+id = "cardinals/unit-km"
+subcategory = "unit"
+status = "target"
+input = "5 км"
+expected = "пять километров"
+
+[[case]]
+id = "cardinals/unit-kg"
+subcategory = "unit"
+status = "target"
+input = "2 кг"
+expected = "два килограмма"
+
+[[case]]
+id = "cardinals/unit-g"
+subcategory = "unit"
+status = "target"
+input = "100 г"
+expected = "сто граммов"
+
+[[case]]
+id = "cardinals/unit-l"
+subcategory = "unit"
+status = "target"
+input = "1,5 л"
+expected = "полтора литра"
+
+[[case]]
+id = "cardinals/unit-celsius"
+subcategory = "unit"
+status = "target"
+input = "20 °C"
+expected = "двадцать градусов Цельсия"
+
+[[case]]
+id = "cardinals/unit-celsius-glued"
+subcategory = "unit"
+status = "target"
+input = "5°C"
+expected = "пять градусов Цельсия"
+
+[[case]]
+id = "cardinals/unit-kmh"
+subcategory = "unit"
+status = "target"
+input = "100 км/ч"
+expected = "сто километров в час"
+
+[[case]]
+id = "cardinals/unit-mps"
+subcategory = "unit"
+status = "target"
+input = "9 м/с"
+expected = "девять метров в секунду"
+
+[[case]]
+id = "cardinals/unit-cm"
+subcategory = "unit"
+status = "target"
+input = "25 см"
+expected = "двадцать пять сантиметров"
+
+[[case]]
+id = "cardinals/unit-mm"
+subcategory = "unit"
+status = "target"
+input = "3 мм"
+expected = "три миллиметра"
+
+[[case]]
+id = "cardinals/unit-m"
+subcategory = "unit"
+status = "target"
+input = "1 м"
+expected = "один метр"
+
+[[case]]
+id = "cardinals/unit-ml"
+subcategory = "unit"
+status = "target"
+input = "250 мл"
+expected = "двести пятьдесят миллилитров"
+
+# ── target: signs, fractions and zero-padded codes ───────────────────────────
+
+[[case]]
+id = "cardinals/negative"
+subcategory = "sign"
+status = "target"
+input = "-5"
+expected = "минус пять"
+
+[[case]]
+id = "cardinals/negative-unicode"
+subcategory = "sign"
+status = "target"
+input = "температура −5"
+expected = "температура минус пять"
+note = "U+2212 minus sign, not the ASCII hyphen"
+
+[[case]]
+id = "cardinals/mixed-fraction"
+subcategory = "fraction"
+status = "target"
+input = "3½"
+expected = "три с половиной"
+
+[[case]]
+id = "cardinals/fraction-half"
+subcategory = "fraction"
+status = "target"
+input = "1/2"
+expected = "одна вторая"
+
+[[case]]
+id = "cardinals/fraction-two-thirds"
+subcategory = "fraction"
+status = "target"
+input = "2/3"
+expected = "две третьих"
+
+[[case]]
+id = "cardinals/code-007"
+subcategory = "code"
+status = "target"
+input = "агент 007"
+expected = "агент ноль ноль семь"
+note = "a zero-padded token is a code, not the number seven"
+
+[[case]]
+id = "cardinals/million-scale"
+subcategory = "scale"
+status = "target"
+input = "1 млн"
+expected = "один миллион"
+
+[[case]]
+id = "cardinals/thousand-scale"
+subcategory = "scale"
+status = "target"
+input = "5 тыс."
+expected = "пять тысяч"
+
+[[case]]
+id = "cardinals/one-and-half-thousand"
+subcategory = "scale"
+status = "target"
+input = "1,5 тыс."
+expected = "полторы тысячи"
+
+[[case]]
+id = "cardinals/kilometers-42"
+subcategory = "agreement"
+status = "target"
+input = "42 км"
+expected = "сорок два километра"
+
+[[case]]
+id = "cardinals/days-seven"
+subcategory = "agreement"
+status = "locked"
+input = "7 дней"
+expected = "семь дней"
+
+[[case]]
+id = "cardinals/weeks-two"
+subcategory = "agreement"
+status = "target"
+input = "2 недели"
+expected = "две недели"
+
+[[case]]
+id = "cardinals/months-one-and-half"
+subcategory = "agreement"
+status = "target"
+input = "1,5 месяца"
+expected = "полтора месяца"
+
+[[case]]
+id = "cardinals/decimal-quarter-kg"
+subcategory = "decimal"
+status = "target"
+input = "0,25 кг"
+expected = "ноль целых двадцать пять сотых килограмма"
+
+[[case]]
+id = "cardinals/fraction-quarter"
+subcategory = "fraction"
+status = "target"
+input = "1/4"
+expected = "одна четвёртая"
+
+[[case]]
+id = "cardinals/fraction-three-quarters"
+subcategory = "fraction"
+status = "target"
+input = "3/4"
+expected = "три четвёртых"
+
+[[case]]
+id = "cardinals/mixed-fraction-two"
+subcategory = "fraction"
+status = "target"
+input = "2½"
+expected = "две с половиной"
+
+[[case]]
+id = "cardinals/group-ten-five-hundred"
+subcategory = "groups"
+status = "target"
+input = "10 500"
+expected = "десять тысяч пятьсот"
+
+[[case]]
+id = "cardinals/group-two-thousand"
+subcategory = "groups"
+status = "target"
+input = "2 000"
+expected = "две тысячи"
+
+[[case]]
+id = "cardinals/letter-digit-token"
+subcategory = "code"
+status = "locked"
+input = "x86"
+expected = "икс восемьдесят шесть"
+
+[[case]]
+id = "cardinals/prerelease-version"
+subcategory = "code"
+status = "locked"
+input = "1.2.0-beta"
+expected = "один точка два точка ноль бета"
+
+[[case]]
+id = "cardinals/ip-address"
+subcategory = "code"
+status = "locked"
+input = "Пинг 192.168.1.1"
+expected = "Пинг сто девяносто два точка сто шестьдесят восемь точка один точка один"
+
+[[case]]
+id = "cardinals/error-code"
+subcategory = "code"
+status = "locked"
+input = "ответ 404"
+expected = "ответ четыреста четыре"
+
+[[case]]
+id = "cardinals/year-agreement-one"
+subcategory = "agreement"
+status = "locked"
+input = "1 год"
+expected = "один год"
+
+[[case]]
+id = "cardinals/year-agreement-two"
+subcategory = "agreement"
+status = "locked"
+input = "2 года"
+expected = "два года"
+
+[[case]]
+id = "cardinals/year-agreement-five"
+subcategory = "agreement"
+status = "locked"
+input = "5 лет"
+expected = "пять лет"
+
+[[case]]
+id = "cardinals/suppletive-plural"
+subcategory = "agreement"
+status = "locked"
+input = "2 человека"
+expected = "два человека"
+
+[[case]]
+id = "cardinals/cyrillic-megabyte"
+subcategory = "engine-unit"
+status = "locked"
+input = "100 МБ"
+expected = "сто мегабайт"
+
+[[case]]
+id = "cardinals/bare-thousand"
+subcategory = "scale"
+status = "target"
+input = "1000"
+expected = "тысяча"
+
+[[case]]
+id = "cardinals/bare-million-grouped"
+subcategory = "scale"
+status = "target"
+input = "1 000 000"
+expected = "миллион"
+
+[[case]]
+id = "cardinals/negative-celsius"
+subcategory = "unit"
+status = "target"
+input = "−5 °C"
+expected = "минус пять градусов Цельсия"

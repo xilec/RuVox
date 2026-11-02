@@ -1,0 +1,437 @@
+# Dates: numeric formats, written dates, years, decades and clock times.
+#
+# `locked` cases pin behavior the pipeline already gets right; `target` cases
+# are the natural reading phases B and C implement (see README.md).
+
+# ── locked: numeric formats already read correctly ───────────────────────────
+
+[[case]]
+id = "dates/iso-release"
+subcategory = "iso"
+status = "locked"
+input = "Релиз 2024-12-31"
+expected = "Релиз тридцать первое декабря две тысячи двадцать четвёртого года"
+note = "a date used as a label reads nominative; a date after 'от'/'до' takes the genitive (date-after-ot, date-after-do)"
+
+[[case]]
+id = "dates/iso-deadline"
+subcategory = "iso"
+status = "locked"
+input = "Дедлайн 2000-01-01"
+expected = "Дедлайн первое января двухтысячного года"
+
+[[case]]
+id = "dates/iso-parenthesized"
+subcategory = "iso"
+status = "locked"
+input = "(2024-12-31)"
+expected = "(тридцать первое декабря две тысячи двадцать четвёртого года)"
+
+[[case]]
+id = "dates/iso-sentence-final"
+subcategory = "iso"
+status = "locked"
+input = "Релиз 2024-12-31."
+expected = "Релиз тридцать первое декабря две тысячи двадцать четвёртого года."
+
+[[case]]
+id = "dates/eu-dotted"
+subcategory = "eu-dotted"
+status = "locked"
+input = "Дата: 15.01.2024"
+expected = "Дата: пятнадцатое января две тысячи двадцать четвёртого года"
+
+[[case]]
+id = "dates/eu-dotted-year-start"
+subcategory = "eu-dotted"
+status = "locked"
+input = "01.12.2023"
+expected = "первое декабря две тысячи двадцать третьего года"
+
+[[case]]
+id = "dates/time-hours-minutes"
+subcategory = "time"
+status = "locked"
+input = "Встреча в 10:30"
+expected = "Встреча в десять часов тридцать минут"
+
+[[case]]
+id = "dates/time-with-seconds"
+subcategory = "time"
+status = "locked"
+input = "Запись 08:00:00"
+expected = "Запись восемь часов"
+
+[[case]]
+id = "dates/time-out-of-range"
+subcategory = "time"
+status = "locked"
+input = "В 25:00 встреча"
+expected = "В двадцать пять:ноль встреча"
+note = "spec scenario: an invalid clock time falls through to the number phase"
+
+[[case]]
+id = "dates/date-and-time"
+subcategory = "time"
+status = "locked"
+input = "Дата 31.12.2024 23:59"
+expected = "Дата тридцать первое декабря две тысячи двадцать четвёртого года двадцать три часа пятьдесят девять минут"
+
+# ── target: years, written dates, decades ────────────────────────────────────
+
+[[case]]
+id = "dates/year-prepositional"
+subcategory = "year-context"
+status = "target"
+input = "в 2024 году"
+expected = "в две тысячи двадцать четвёртом году"
+
+[[case]]
+id = "dates/year-nominative"
+subcategory = "year-context"
+status = "target"
+input = "2024 год"
+expected = "две тысячи двадцать четвёртый год"
+
+[[case]]
+id = "dates/year-from-to"
+subcategory = "year-context"
+status = "target"
+input = "с 2020 по 2024 год"
+expected = "с две тысячи двадцатого по две тысячи двадцать четвёртый год"
+
+[[case]]
+id = "dates/year-since"
+subcategory = "year-context"
+status = "target"
+input = "с 1999 года"
+expected = "с тысяча девятьсот девяносто девятого года"
+note = "years 1900-1999 drop the 'одна тысяча' prefix"
+
+[[case]]
+id = "dates/year-until"
+subcategory = "year-context"
+status = "target"
+input = "к 2030 году"
+expected = "к две тысячи тридцатому году"
+
+[[case]]
+id = "dates/year-1812"
+subcategory = "year-context"
+status = "target"
+input = "в 1812 году"
+expected = "в тысяча восемьсот двенадцатом году"
+
+[[case]]
+id = "dates/year-2005"
+subcategory = "year-context"
+status = "target"
+input = "в 2005 году"
+expected = "в две тысячи пятом году"
+
+[[case]]
+id = "dates/year-prepositional-soft"
+subcategory = "year-context"
+status = "target"
+input = "в 2024-м году"
+expected = "в две тысячи двадцать четвёртом году"
+
+[[case]]
+id = "dates/year-abbreviation"
+subcategory = "year-context"
+status = "target"
+input = "Выпуск 2024 г."
+expected = "Выпуск две тысячи двадцать четвёртого года"
+
+[[case]]
+id = "dates/decade-prepositional"
+subcategory = "decade"
+status = "target"
+input = "в 1990-х годах"
+expected = "в девяностых годах"
+
+[[case]]
+id = "dates/decade-nominative"
+subcategory = "decade"
+status = "target"
+input = "1990-е годы"
+expected = "девяностые годы"
+
+[[case]]
+id = "dates/decade-2000s"
+subcategory = "decade"
+status = "target"
+input = "в 2000-х"
+expected = "в двухтысячных"
+
+[[case]]
+id = "dates/decade-short"
+subcategory = "decade"
+status = "target"
+input = "в 90-е"
+expected = "в девяностые"
+
+[[case]]
+id = "dates/decade-thirties"
+subcategory = "decade"
+status = "target"
+input = "в 30-х годах"
+expected = "в тридцатых годах"
+
+[[case]]
+id = "dates/decade-end-of"
+subcategory = "decade"
+status = "target"
+input = "конец 1990-х"
+expected = "конец девяностых"
+
+[[case]]
+id = "dates/decade-2000s-nominative"
+subcategory = "decade"
+status = "target"
+input = "2000-е"
+expected = "двухтысячные"
+
+[[case]]
+id = "dates/written-date"
+subcategory = "written"
+status = "target"
+input = "31 декабря 2024"
+expected = "тридцать первое декабря две тысячи двадцать четвёртого года"
+note = "a written date is read as a label; the year keeps the genitive ordinal"
+
+[[case]]
+id = "dates/written-date-with-year-word"
+subcategory = "written"
+status = "target"
+input = "1 января 2024 года"
+expected = "первое января две тысячи двадцать четвёртого года"
+
+[[case]]
+id = "dates/written-day-month"
+subcategory = "written"
+status = "target"
+input = "5 марта"
+expected = "пятое марта"
+
+[[case]]
+id = "dates/two-digit-year"
+subcategory = "eu-dotted"
+status = "target"
+input = "15.01.24"
+expected = "пятнадцатое января две тысячи двадцать четвёртого года"
+note = "DD.MM.YY defaults to the Russian day-first order"
+
+[[case]]
+id = "dates/slash-iso"
+subcategory = "slash"
+status = "target"
+input = "Черновик 2024/01/15"
+expected = "Черновик пятнадцатое января две тысячи двадцать четвёртого года"
+
+[[case]]
+id = "dates/slash-eu"
+subcategory = "slash"
+status = "target"
+input = "Черновик 15/01/2024"
+expected = "Черновик пятнадцатое января две тысячи двадцать четвёртого года"
+
+[[case]]
+id = "dates/year-month-iso"
+subcategory = "year-month"
+status = "target"
+input = "2024-12"
+expected = "декабрь две тысячи двадцать четвёртого года"
+note = "an ISO year-month must not read as a range"
+
+[[case]]
+id = "dates/year-month-words"
+subcategory = "year-month"
+status = "target"
+input = "декабрь 2024"
+expected = "декабрь две тысячи двадцать четвёртого года"
+
+[[case]]
+id = "dates/century"
+subcategory = "century"
+status = "target"
+input = "в 20-м веке"
+expected = "в двадцатом веке"
+
+[[case]]
+id = "dates/season"
+subcategory = "season"
+status = "target"
+input = "лето 2024"
+expected = "лето две тысячи двадцать четвёртого года"
+
+[[case]]
+id = "dates/range-years-word"
+subcategory = "range"
+status = "target"
+input = "2020–2024 годы"
+note = "a year range followed by 'годы'/'гг.' reads 'с … по … год', unlike a bare numeric range (от … до …)"
+expected = "с две тысячи двадцатого по две тысячи двадцать четвёртый год"
+
+[[case]]
+id = "dates/range-abbreviation"
+subcategory = "range"
+status = "target"
+input = "2010–2015 гг."
+expected = "с две тысячи десятого по две тысячи пятнадцатый год"
+
+[[case]]
+id = "dates/date-after-ot"
+subcategory = "written"
+status = "target"
+input = "Отчёт от 15.01.2024"
+expected = "Отчёт от пятнадцатого января две тысячи двадцать четвёртого года"
+note = "a date after 'от' takes the genitive"
+
+[[case]]
+id = "dates/date-after-do"
+subcategory = "written"
+status = "target"
+input = "До 31.12.2024 осталось два дня"
+expected = "До тридцать первого декабря две тысячи двадцать четвёртого года осталось два дня"
+
+[[case]]
+id = "dates/date-range-s-po"
+subcategory = "range"
+status = "target"
+input = "С 01.01.2024 по 31.12.2024"
+expected = "С первого января две тысячи двадцать четвёртого года по тридцать первое декабря две тысячи двадцать четвёртого года"
+
+[[case]]
+id = "dates/time-midnight"
+subcategory = "time"
+status = "locked"
+input = "00:30"
+expected = "ноль часов тридцать минут"
+
+[[case]]
+id = "dates/time-noon"
+subcategory = "time"
+status = "locked"
+input = "12:00"
+expected = "двенадцать часов"
+
+[[case]]
+id = "dates/leap-day"
+subcategory = "written"
+status = "target"
+input = "29 февраля 2024"
+expected = "двадцать девятое февраля две тысячи двадцать четвёртого года"
+
+[[case]]
+id = "dates/written-day-only"
+subcategory = "written"
+status = "target"
+input = "15 января"
+expected = "пятнадцатое января"
+
+[[case]]
+id = "dates/year-after-do"
+subcategory = "year-context"
+status = "target"
+input = "до 2024 года"
+expected = "до две тысячи двадцать четвёртого года"
+
+[[case]]
+id = "dates/year-after-posle"
+subcategory = "year-context"
+status = "target"
+input = "после 2024 года"
+expected = "после две тысячи двадцать четвёртого года"
+
+[[case]]
+id = "dates/year-at-start"
+subcategory = "year-context"
+status = "target"
+input = "в начале 2024 года"
+expected = "в начале две тысячи двадцать четвёртого года"
+
+[[case]]
+id = "dates/year-suffix"
+subcategory = "year-context"
+status = "target"
+input = "2024-й год"
+expected = "две тысячи двадцать четвёртый год"
+
+[[case]]
+id = "dates/year-prepositional-soft-bare"
+subcategory = "year-context"
+status = "target"
+input = "в 2024-м"
+expected = "в две тысячи двадцать четвёртом"
+
+[[case]]
+id = "dates/year-and-percent"
+subcategory = "sentence"
+status = "target"
+input = "В 2024 году выросло на 15%."
+expected = "В две тысячи двадцать четвёртом году выросло на пятнадцать процентов."
+
+[[case]]
+id = "dates/year-accusative-na"
+subcategory = "year-context"
+status = "target"
+input = "на 2024 год"
+expected = "на две тысячи двадцать четвёртый год"
+
+[[case]]
+id = "dates/year-2000"
+subcategory = "year-context"
+status = "target"
+input = "2000 год"
+expected = "двухтысячный год"
+
+[[case]]
+id = "dates/year-1900"
+subcategory = "year-context"
+status = "target"
+input = "в 1900 году"
+expected = "в тысяча девятьсотом году"
+note = "the 1900-1999 rule also drops 'одна тысяча' at the boundary"
+
+[[case]]
+id = "dates/time-range"
+subcategory = "time"
+status = "target"
+input = "с 10:00 до 18:00"
+expected = "с десяти до восемнадцати часов"
+
+[[case]]
+id = "dates/time-zone"
+subcategory = "time"
+status = "locked"
+input = "10:30 по Москве"
+expected = "десять часов тридцать минут по Москве"
+
+[[case]]
+id = "dates/dotted-iso"
+subcategory = "iso"
+status = "target"
+input = "2024.12.31"
+expected = "тридцать первое декабря две тысячи двадцать четвёртого года"
+
+[[case]]
+id = "dates/roman-century"
+subcategory = "century"
+status = "target"
+input = "в XX веке"
+expected = "в двадцатом веке"
+
+[[case]]
+id = "dates/word-date-range"
+subcategory = "range"
+status = "target"
+input = "с 5 марта по 10 апреля"
+expected = "с пятого марта по десятое апреля"
+
+[[case]]
+id = "dates/word-date-range-may"
+subcategory = "range"
+status = "target"
+input = "с 1 по 5 мая"
+expected = "с первого по пятое мая"

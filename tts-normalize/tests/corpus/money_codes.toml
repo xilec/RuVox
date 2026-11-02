@@ -1,0 +1,251 @@
+# Money, reference markers (№, стр., рис., гл.), phones and identifiers.
+#
+# Nothing in this category is read correctly today, so every case is `target`.
+
+[[case]]
+id = "money/rubles-sign"
+subcategory = "currency"
+status = "target"
+input = "100 ₽"
+expected = "сто рублей"
+
+[[case]]
+id = "money/rubles-sign-groups"
+subcategory = "currency"
+status = "target"
+input = "2 500 ₽"
+expected = "две тысячи пятьсот рублей"
+
+[[case]]
+id = "money/rubles-abbreviation"
+subcategory = "currency"
+status = "target"
+input = "100 руб."
+expected = "сто рублей"
+
+[[case]]
+id = "money/rubles-abbreviation-plural"
+subcategory = "currency"
+status = "target"
+input = "50 руб."
+expected = "пятьдесят рублей"
+
+[[case]]
+id = "money/rubles-thousand"
+subcategory = "currency"
+status = "target"
+input = "1000 руб."
+expected = "тысяча рублей"
+
+[[case]]
+id = "money/dollars-prefix"
+subcategory = "currency"
+status = "target"
+input = "$5"
+expected = "пять долларов"
+
+[[case]]
+id = "money/dollars-suffix"
+subcategory = "currency"
+status = "target"
+input = "5$"
+expected = "пять долларов"
+
+[[case]]
+id = "money/dollars-space"
+subcategory = "currency"
+status = "target"
+input = "100 $"
+expected = "сто долларов"
+
+[[case]]
+id = "money/euro-prefix"
+subcategory = "currency"
+status = "target"
+input = "€20"
+expected = "двадцать евро"
+
+[[case]]
+id = "money/euro-suffix"
+subcategory = "currency"
+status = "target"
+input = "20 €"
+expected = "двадцать евро"
+
+[[case]]
+id = "money/million-rubles"
+subcategory = "scale"
+status = "target"
+input = "1,5 млн рублей"
+expected = "полтора миллиона рублей"
+
+[[case]]
+id = "money/billion-dollars"
+subcategory = "scale"
+status = "target"
+input = "2 млрд долларов"
+expected = "два миллиарда долларов"
+
+[[case]]
+id = "money/thousand-rubles"
+subcategory = "scale"
+status = "target"
+input = "3 тыс. рублей"
+expected = "три тысячи рублей"
+
+[[case]]
+id = "money/number-sign"
+subcategory = "reference"
+status = "target"
+input = "№ 5"
+expected = "номер пять"
+
+[[case]]
+id = "money/number-sign-glued"
+subcategory = "reference"
+status = "target"
+input = "№123"
+expected = "номер сто двадцать три"
+
+[[case]]
+id = "money/page-reference"
+subcategory = "reference"
+status = "target"
+input = "стр. 15"
+expected = "страница пятнадцать"
+
+[[case]]
+id = "money/table-reference"
+subcategory = "reference"
+status = "target"
+input = "табл. 3"
+expected = "таблица три"
+
+[[case]]
+id = "money/figure-reference"
+subcategory = "reference"
+status = "target"
+input = "рис. 3"
+expected = "рисунок три"
+
+[[case]]
+id = "money/chapter-reference"
+subcategory = "reference"
+status = "target"
+input = "гл. 2"
+expected = "глава вторая"
+note = "a chapter reference is an ordinal, unlike a page number"
+
+[[case]]
+id = "money/phone"
+subcategory = "phone"
+status = "target"
+input = "тел. +7 999 123-45-67"
+expected = "телефон плюс семь девятьсот девяносто девять сто двадцать три сорок пять шестьдесят семь"
+note = "a phone number is read in groups, unlike digit-by-digit IDs"
+
+[[case]]
+id = "money/inn"
+subcategory = "identifier"
+status = "target"
+input = "ИНН 7707083893"
+expected = "ИНН семь семь ноль семь ноль восемь три восемь девять три"
+
+[[case]]
+id = "money/article"
+subcategory = "identifier"
+status = "target"
+input = "арт. 123456"
+expected = "артикул один два три четыре пять шесть"
+
+[[case]]
+id = "money/plus-sign"
+subcategory = "sign"
+status = "target"
+input = "+5"
+expected = "плюс пять"
+
+[[case]]
+id = "money/currency-after-number"
+subcategory = "currency"
+status = "target"
+input = "билет за 199 ₽"
+expected = "билет за сто девяносто девять рублей"
+
+[[case]]
+id = "money/million-dollars"
+subcategory = "scale"
+status = "target"
+input = "1,5 млн $"
+expected = "полтора миллиона долларов"
+
+[[case]]
+id = "money/euro-space"
+subcategory = "currency"
+status = "target"
+input = "€ 20"
+expected = "двадцать евро"
+
+[[case]]
+id = "money/thousand-rubles-sign"
+subcategory = "currency"
+status = "target"
+input = "5 тыс. ₽"
+expected = "пять тысяч рублей"
+
+[[case]]
+id = "money/phone-parenthesized"
+subcategory = "phone"
+status = "target"
+input = "тел.: +7 (999) 123-45-67"
+expected = "телефон плюс семь девятьсот девяносто девять сто двадцать три сорок пять шестьдесят семь"
+
+[[case]]
+id = "money/price-with-groups"
+subcategory = "currency"
+status = "target"
+input = "цена 1 000 ₽"
+expected = "цена тысяча рублей"
+
+[[case]]
+id = "money/page-five"
+subcategory = "reference"
+status = "target"
+input = "стр. 5"
+expected = "страница пять"
+
+[[case]]
+id = "money/ruble-one"
+subcategory = "agreement"
+status = "locked"
+input = "1 рубль"
+expected = "один рубль"
+
+[[case]]
+id = "money/ruble-two"
+subcategory = "agreement"
+status = "locked"
+input = "2 рубля"
+expected = "два рубля"
+
+[[case]]
+id = "money/ruble-twenty-two"
+subcategory = "agreement"
+status = "locked"
+input = "22 рубля"
+expected = "двадцать два рубля"
+
+[[case]]
+id = "money/kopecks"
+subcategory = "agreement"
+status = "target"
+input = "50 коп."
+expected = "пятьдесят копеек"
+
+[[case]]
+id = "money/city-abbreviation"
+subcategory = "reference"
+status = "target"
+input = "г. Москва"
+expected = "город Москва"
+note = "the 'г.' homograph: city here, year in dates/year-abbreviation"

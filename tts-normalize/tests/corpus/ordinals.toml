@@ -1,0 +1,376 @@
+# Ordinal numerals: suffixed forms (`5-й`, `21-го`, …), list markers and
+# context-driven ordinals ("глава 2").
+
+# ── locked: Markdown list markers ────────────────────────────────────────────
+
+[[case]]
+id = "ordinals/list-marker-one"
+subcategory = "list-marker"
+status = "locked"
+input = "1. Первый пункт"
+expected = "первое:Первый пункт"
+
+[[case]]
+id = "ordinals/list-marker-two"
+subcategory = "list-marker"
+status = "locked"
+input = "2. Второй пункт"
+expected = "второе:Второй пункт"
+
+[[case]]
+id = "ordinals/list-marker-ten"
+subcategory = "list-marker"
+status = "locked"
+input = "10. Десятый пункт"
+expected = "десятое:Десятый пункт"
+
+[[case]]
+id = "ordinals/list-marker-eleven"
+subcategory = "list-marker"
+status = "locked"
+input = "11. Одиннадцатый пункт"
+expected = "одиннадцать:Одиннадцатый пункт"
+note = "spec: 1-10 read as ordinals, larger numbers as cardinals"
+
+# ── target: suffixed ordinals ────────────────────────────────────────────────
+
+[[case]]
+id = "ordinals/masculine-nominative"
+subcategory = "suffix-nominative"
+status = "target"
+input = "5-й этаж"
+expected = "пятый этаж"
+
+[[case]]
+id = "ordinals/feminine-nominative"
+subcategory = "suffix-nominative"
+status = "target"
+input = "2-я попытка"
+expected = "вторая попытка"
+
+[[case]]
+id = "ordinals/neuter-nominative"
+subcategory = "suffix-nominative"
+status = "target"
+input = "1-е место"
+expected = "первое место"
+
+[[case]]
+id = "ordinals/neuter-nominative-long"
+subcategory = "suffix-nominative"
+status = "target"
+input = "3-е отделение"
+expected = "третье отделение"
+
+[[case]]
+id = "ordinals/compound-feminine"
+subcategory = "suffix-nominative"
+status = "target"
+input = "22-я страница"
+expected = "двадцать вторая страница"
+
+[[case]]
+id = "ordinals/compound-neuter"
+subcategory = "suffix-nominative"
+status = "target"
+input = "23-е место"
+expected = "двадцать третье место"
+
+[[case]]
+id = "ordinals/hundredth"
+subcategory = "suffix-nominative"
+status = "target"
+input = "100-й километр"
+expected = "сотый километр"
+
+[[case]]
+id = "ordinals/thousandth"
+subcategory = "suffix-nominative"
+status = "target"
+input = "1000-й посетитель"
+expected = "тысячный посетитель"
+
+[[case]]
+id = "ordinals/fortieth"
+subcategory = "suffix-nominative"
+status = "target"
+input = "40-й день"
+expected = "сороковой день"
+
+[[case]]
+id = "ordinals/ninetieth"
+subcategory = "suffix-nominative"
+status = "target"
+input = "90-й год"
+expected = "девяностый год"
+
+[[case]]
+id = "ordinals/genitive-masculine"
+subcategory = "suffix-oblique"
+status = "target"
+input = "21-го числа"
+expected = "двадцать первого числа"
+
+[[case]]
+id = "ordinals/genitive-feminine"
+subcategory = "suffix-oblique"
+status = "target"
+input = "с 5-й страницы"
+expected = "с пятой страницы"
+
+[[case]]
+id = "ordinals/dative"
+subcategory = "suffix-oblique"
+status = "target"
+input = "к 1-му мая"
+expected = "к первому мая"
+
+[[case]]
+id = "ordinals/prepositional"
+subcategory = "suffix-oblique"
+status = "target"
+input = "на 4-м этаже"
+expected = "на четвёртом этаже"
+
+[[case]]
+id = "ordinals/instrumental"
+subcategory = "suffix-oblique"
+status = "target"
+input = "перед 3-м этажом"
+expected = "перед третьим этажом"
+
+[[case]]
+id = "ordinals/accusative-feminine"
+subcategory = "suffix-oblique"
+status = "target"
+input = "в 3-ю очередь"
+expected = "в третью очередь"
+
+[[case]]
+id = "ordinals/dative-march"
+subcategory = "suffix-oblique"
+status = "target"
+input = "к 8-му марта"
+expected = "к восьмому марта"
+
+[[case]]
+id = "ordinals/genitive-to-nominative-range"
+subcategory = "suffix-oblique"
+status = "target"
+input = "с 5-го по 10-й"
+expected = "с пятого по десятый"
+
+[[case]]
+id = "ordinals/prepositional-class"
+subcategory = "suffix-oblique"
+status = "target"
+input = "в 5-м классе"
+expected = "в пятом классе"
+
+[[case]]
+id = "ordinals/prepositional-place"
+subcategory = "suffix-oblique"
+status = "target"
+input = "на 2-м месте"
+expected = "на втором месте"
+
+[[case]]
+id = "ordinals/prepositional-chapter"
+subcategory = "suffix-oblique"
+status = "target"
+input = "в 5-й главе"
+expected = "в пятой главе"
+
+[[case]]
+id = "ordinals/genitive-chapter"
+subcategory = "suffix-oblique"
+status = "target"
+input = "из 5-й главы"
+expected = "из пятой главы"
+
+[[case]]
+id = "ordinals/accusative-date"
+subcategory = "suffix-oblique"
+status = "target"
+input = "на 1-е сентября"
+expected = "на первое сентября"
+
+[[case]]
+id = "ordinals/instrumental-pronoun"
+subcategory = "suffix-oblique"
+status = "target"
+input = "Он пришёл 1-м"
+expected = "Он пришёл первым"
+
+[[case]]
+id = "ordinals/plural-instrumental"
+subcategory = "suffix-oblique"
+status = "target"
+input = "Они пришли 1-ми"
+expected = "Они пришли первыми"
+
+[[case]]
+id = "ordinals/partitive-count"
+subcategory = "suffix-oblique"
+status = "target"
+input = "из 2-х частей"
+expected = "из двух частей"
+note = "`2-х` here is the cardinal genitive, not an ordinal: context decides the reading"
+
+[[case]]
+id = "ordinals/second-date"
+subcategory = "suffix-oblique"
+status = "target"
+input = "по 2-е число"
+expected = "по второе число"
+
+# ── target: ordinals from context, without a suffix ──────────────────────────
+
+[[case]]
+id = "ordinals/chapter-cardinal-looking"
+subcategory = "context"
+status = "target"
+input = "глава 2"
+expected = "глава вторая"
+
+[[case]]
+id = "ordinals/part-cardinal-looking"
+subcategory = "context"
+status = "target"
+input = "часть 3"
+expected = "часть третья"
+
+[[case]]
+id = "ordinals/quarter-nominative"
+subcategory = "context"
+status = "target"
+input = "3-й квартал"
+expected = "третий квартал"
+
+[[case]]
+id = "ordinals/quarter-prepositional"
+subcategory = "context"
+status = "target"
+input = "в 1-м квартале"
+expected = "в первом квартале"
+
+[[case]]
+id = "ordinals/half-feminine"
+subcategory = "context"
+status = "target"
+input = "1-я половина"
+expected = "первая половина"
+
+[[case]]
+id = "ordinals/half-feminine-two"
+subcategory = "context"
+status = "target"
+input = "2-я половина"
+expected = "вторая половина"
+
+[[case]]
+id = "ordinals/thirtieth-day"
+subcategory = "context"
+status = "target"
+input = "30-й день"
+expected = "тридцатый день"
+
+[[case]]
+id = "ordinals/twentieth-place"
+subcategory = "context"
+status = "target"
+input = "20-е место"
+expected = "двадцатое место"
+
+[[case]]
+id = "ordinals/two-steps"
+subcategory = "context"
+status = "target"
+input = "в 2-х шагах"
+expected = "в двух шагах"
+note = "cardinal genitive again: `2-х` after `в` is not an ordinal"
+
+[[case]]
+id = "ordinals/first-time"
+subcategory = "suffix-oblique"
+status = "target"
+input = "в 1-й раз"
+expected = "в первый раз"
+
+[[case]]
+id = "ordinals/second-time"
+subcategory = "suffix-oblique"
+status = "target"
+input = "во 2-й раз"
+expected = "во второй раз"
+
+[[case]]
+id = "ordinals/third-time"
+subcategory = "suffix-oblique"
+status = "target"
+input = "в 3-й раз"
+expected = "в третий раз"
+
+[[case]]
+id = "ordinals/fifth-chapter-fem"
+subcategory = "suffix-nominative"
+status = "target"
+input = "5-я глава"
+expected = "пятая глава"
+
+[[case]]
+id = "ordinals/sixth-sense"
+subcategory = "suffix-nominative"
+status = "target"
+input = "6-е чувство"
+expected = "шестое чувство"
+
+[[case]]
+id = "ordinals/seventh-number"
+subcategory = "suffix-oblique"
+status = "target"
+input = "7-го числа"
+expected = "седьмого числа"
+
+[[case]]
+id = "ordinals/eighth-dative"
+subcategory = "suffix-oblique"
+status = "target"
+input = "к 8-му"
+expected = "к восьмому"
+
+[[case]]
+id = "ordinals/ninth-prepositional"
+subcategory = "suffix-oblique"
+status = "target"
+input = "в 9-м"
+expected = "в девятом"
+
+[[case]]
+id = "ordinals/tenth-wagon"
+subcategory = "suffix-nominative"
+status = "target"
+input = "10-й вагон"
+expected = "десятый вагон"
+
+[[case]]
+id = "ordinals/thirty-first-december"
+subcategory = "suffix-oblique"
+status = "target"
+input = "31-го декабря"
+expected = "тридцать первого декабря"
+
+[[case]]
+id = "ordinals/plural-prepositional"
+subcategory = "suffix-oblique"
+status = "target"
+input = "в 5-х классах"
+expected = "в пятых классах"
+note = "the ordinal plural prepositional form; both other '-х' cases are cardinal genitives"
+
+[[case]]
+id = "ordinals/volume-context"
+subcategory = "context"
+status = "target"
+input = "том 2"
+expected = "том второй"
