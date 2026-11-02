@@ -13,6 +13,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   part entries keep working when no whole-word entry exists (#279).
 
 ### Changed
+- **TeraTTSv2 synthesizes chunks in parallel lanes** — the engine opens four
+  independent ONNX session sets and synthesizes chunks concurrently, cutting
+  the first synthesis of a long article by ~2.4× (96.7 s → 39.1 s for 18.7
+  minutes of audio) with the same audio and word timestamps; the cost is memory
+  (~3.9 GiB peak instead of ~1.6 GiB).
 - **English reading is a user setting** — Settings has an «Английский текст»
   control («Авто» / «Нативно» / «По-русски»): the choice now belongs to the
   listener instead of the engine profile, applies to the next synthesis
