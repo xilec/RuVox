@@ -20,11 +20,11 @@ description is Russian. Full policy: [Repository language policy](../AGENTS.md#r
 
 ## Extending dictionaries
 
-The normalization pipeline lives in `src-tauri/src/pipeline/normalizers/`. Each normalizer is a separate Rust file with its own substitution table. A golden test is **required** when extending a dictionary.
+The normalization pipeline lives in `tts-normalize/src/pipeline/normalizers/`. Each normalizer is a separate Rust file with its own substitution table. A golden test is **required** when extending a dictionary.
 
 ### Adding an IT term
 
-**1. File:** `src-tauri/src/pipeline/normalizers/english.rs`
+**1. File:** `tts-normalize/src/pipeline/normalizers/english.rs`
 
 An entry is a pronunciation fix, not a translation, and it must do work.
 `transliterate_simple` is a context-aware spelling-rule layer: silent/magic
@@ -67,20 +67,20 @@ nix develop -c cargo test --manifest-path src-tauri/Cargo.toml --test golden -- 
 
 ```bash
 git checkout -b feat/it-term-kubernetes
-git add src-tauri/src/pipeline/normalizers/english.rs src-tauri/tests/fixtures/pipeline/it_kubernetes.*
+git add tts-normalize/src/pipeline/normalizers/english.rs src-tauri/tests/fixtures/pipeline/it_kubernetes.*
 git commit -m "feat(pipeline): add 'kubernetes' to IT_TERMS dictionary"
 ```
 
 ### Adding an abbreviation
 
-File: `src-tauri/src/pipeline/normalizers/abbreviations.rs`.
+File: `tts-normalize/src/pipeline/normalizers/abbreviations.rs`.
 
 - **As a word** — the `AS_WORD` table (`"json" → "джейсон"`).
 - **Letter by letter** — no need to add: anything not in `AS_WORD` is read letter by letter via `LETTER_MAP` by default.
 
 ### Adding an operator / symbol
 
-File: `src-tauri/src/pipeline/normalizers/symbols.rs` or `src-tauri/src/pipeline/constants.rs` (for GREEK_LETTERS, MATH_SYMBOLS, ARROW_SYMBOLS).
+File: `tts-normalize/src/pipeline/normalizers/symbols.rs` or `tts-normalize/src/pipeline/constants.rs` (for GREEK_LETTERS, MATH_SYMBOLS, ARROW_SYMBOLS).
 
 Multi-character operators (`===`, `=>`, `>=`) are handled in `pipeline/mod.rs::TRACKED_OPERATOR_KEYS` — the "longest before shortest" order is mandatory.
 
@@ -139,6 +139,7 @@ chore(deps): bump tauri to 2.10
 ### Checklist
 
 - [ ] `nix develop -c cargo test --manifest-path src-tauri/Cargo.toml` is green.
+- [ ] `nix develop -c cargo test --manifest-path tts-normalize/Cargo.toml` is green (pipeline, dictionary, profiles).
 - [ ] `nix develop -c pnpm typecheck` is green.
 - [ ] `nix develop -c pnpm lint` is green.
 - [ ] If the pipeline was touched — a golden fixture has been added/updated.

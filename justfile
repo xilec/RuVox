@@ -14,7 +14,7 @@ dev:
     pnpm tauri dev
 
 # Run all tests (Rust + TS + Python)
-test: test-rust test-silero-native test-contract test-teratts test-ts test-python
+test: test-rust test-silero-native test-contract test-normalize test-teratts test-ts test-python
 
 # Rust tests (incl. golden pipeline fixtures)
 test-rust:
@@ -23,6 +23,10 @@ test-rust:
 # Shared text contract (profiles + chunker)
 test-contract:
     cargo test --manifest-path tts-contract/Cargo.toml
+
+# Text normalization: pipeline, user dictionary, per-engine profiles
+test-normalize:
+    cargo test --manifest-path tts-normalize/Cargo.toml
 
 # silero-native engine tests
 test-silero-native:
@@ -43,14 +47,8 @@ test-python:
 
 # All static checks (fmt, clippy, deny, eslint, knip, typecheck, ruff)
 lint:
-    cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
-    cargo fmt --manifest-path silero-native/Cargo.toml -- --check
-    cargo fmt --manifest-path tts-contract/Cargo.toml -- --check
-    cargo fmt --manifest-path teratts/Cargo.toml -- --check
-    cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --no-deps -- -D warnings
-    cargo clippy --manifest-path silero-native/Cargo.toml --all-targets --no-deps -- -D warnings
-    cargo clippy --manifest-path tts-contract/Cargo.toml --all-targets --no-deps -- -D warnings
-    cargo clippy --manifest-path teratts/Cargo.toml --all-targets --no-deps -- -D warnings
+    cargo fmt --all -- --check
+    cargo clippy --workspace --all-targets --no-deps -- -D warnings
     cargo deny --manifest-path src-tauri/Cargo.toml check
     pnpm lint
     pnpm knip

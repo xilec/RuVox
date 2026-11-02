@@ -47,7 +47,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: "src-tauri\nsilero-native"
+          workspaces: "."
           # Shared with the ci.yml windows-build job (same key, same cache).
           shared-key: win-msvc
 
@@ -85,7 +85,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          src=$(ls -d src-tauri/target/release/build/espeak-rs-sys-*/out/share/espeak-ng-data | head -1)
+          src=$(ls -d target/release/build/espeak-rs-sys-*/out/share/espeak-ng-data | head -1)
           # Sanity: the Russian pipeline needs these three at minimum.
           test -f "$src/ru_dict" && test -f "$src/phondata" && test -f "$src/intonations"
           # The destination dir exists in the checkout (committed PLACEHOLDER)
@@ -109,7 +109,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: updater-windows-sig
-          path: src-tauri/target/release/bundle/nsis/*_x64-setup.exe.sig
+          path: target/release/bundle/nsis/*_x64-setup.exe.sig
 
       # Extract the CHANGELOG.md section for this version so the draft release
       # body is the human-curated notes, not GitHub's auto-generated diff
@@ -125,8 +125,8 @@ jobs:
           draft: true
           body_path: release_notes.md
           files: |
-            src-tauri/target/release/bundle/nsis/*_x64-setup.exe
-            src-tauri/target/release/bundle/nsis/*_x64-setup.exe.sig
+            target/release/bundle/nsis/*_x64-setup.exe
+            target/release/bundle/nsis/*_x64-setup.exe.sig
 
   # Linux half of #94, split out by issue #218: build .deb + .AppImage on a
   # Linux runner and attach them to the SAME draft release the Windows job
@@ -168,7 +168,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: "src-tauri\nsilero-native"
+          workspaces: "."
           shared-key: linux-gnu-release
 
       - run: pnpm install --frozen-lockfile
@@ -189,7 +189,7 @@ jobs:
       - name: Extract espeak-ng-data into bundle resources
         run: |
           set -euo pipefail
-          src=$(ls -d src-tauri/target/release/build/espeak-rs-sys-*/out/share/espeak-ng-data | head -1)
+          src=$(ls -d target/release/build/espeak-rs-sys-*/out/share/espeak-ng-data | head -1)
           # Sanity: the Russian pipeline needs these three at minimum.
           test -f "$src/ru_dict" && test -f "$src/phondata" && test -f "$src/intonations"
           cp -r "$src/." src-tauri/resources/espeak-ng-data/
@@ -220,7 +220,7 @@ jobs:
       # builder applies the same fix; keep the two in sync).
       - name: Apply wayland fix to the AppImage
         run: |
-          appimage=$(ls src-tauri/target/release/bundle/appimage/*.AppImage | head -1)
+          appimage=$(ls target/release/bundle/appimage/*.AppImage | head -1)
           bash scripts/fix-appimage-wayland.sh "$appimage" "$appimage"
 
       # The updater signature must match the file we actually distribute, so
@@ -231,7 +231,7 @@ jobs:
       - name: Sign the repacked AppImage for the updater
         run: |
           set -euo pipefail
-          appimage=$(ls src-tauri/target/release/bundle/appimage/*.AppImage | head -1)
+          appimage=$(ls target/release/bundle/appimage/*.AppImage | head -1)
           rm -f "$appimage.sig"
           pnpm tauri signer sign "$appimage"
           test -s "$appimage.sig"
@@ -243,7 +243,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: updater-linux-sig
-          path: src-tauri/target/release/bundle/appimage/*.AppImage.sig
+          path: target/release/bundle/appimage/*.AppImage.sig
 
       - name: Extract changelog section for release notes
         run: bash scripts/release-notes.sh "${{ inputs.tag || github.ref_name }}"
@@ -255,9 +255,9 @@ jobs:
           draft: true
           body_path: release_notes.md
           files: |
-            src-tauri/target/release/bundle/deb/*.deb
-            src-tauri/target/release/bundle/appimage/*.AppImage
-            src-tauri/target/release/bundle/appimage/*.AppImage.sig
+            target/release/bundle/deb/*.deb
+            target/release/bundle/appimage/*.AppImage
+            target/release/bundle/appimage/*.AppImage.sig
 
   # tauri-plugin-updater manifest (#226): merges the per-platform updater
   # entries from both packaging jobs into the single latest.json the app

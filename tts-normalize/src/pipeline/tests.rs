@@ -525,7 +525,7 @@ fn pipeline_schemeless_skips_path_internal_segment() {
 
 /// The strictest and the most permissive profiles the pipeline supports.
 fn native_profile() -> &'static TextProfile {
-    &crate::tts::profiles::NATIVE_EN_PROFILE
+    &crate::profiles::NATIVE_EN_PROFILE
 }
 
 #[test]
@@ -582,15 +582,13 @@ fn english_reading_auto_follows_the_engine_capability() {
     let mut p = TTSPipeline::new();
     let native = p.process_for_engine(
         "Kubernetes нужен кластер",
-        &crate::tts::profiles::TERATTS_PROFILE,
+        &crate::profiles::TERATTS_PROFILE,
     );
     assert_eq!(native.text, "Kubernetes нужен кластер");
     assert_eq!(native.spans.len(), 1, "spans: {:?}", native.spans);
 
-    let narrated = p.process_for_engine(
-        "Kubernetes нужен кластер",
-        &crate::tts::profiles::SILERO_PROFILE,
-    );
+    let narrated =
+        p.process_for_engine("Kubernetes нужен кластер", &crate::profiles::SILERO_PROFILE);
     assert_eq!(narrated.text, "кубернетис нужен кластер");
     assert!(narrated.spans.is_empty(), "spans: {:?}", narrated.spans);
 }
@@ -599,10 +597,7 @@ fn english_reading_auto_follows_the_engine_capability() {
 fn english_reading_native_falls_back_when_the_engine_cannot_read_latin() {
     let mut p = TTSPipeline::new();
     p.set_english_reading(EnglishReading::Native);
-    let out = p.process_for_engine(
-        "Kubernetes нужен кластер",
-        &crate::tts::profiles::SILERO_PROFILE,
-    );
+    let out = p.process_for_engine("Kubernetes нужен кластер", &crate::profiles::SILERO_PROFILE);
     assert_eq!(out.text, "кубернетис нужен кластер");
     assert!(out.spans.is_empty(), "spans: {:?}", out.spans);
 }
@@ -613,7 +608,7 @@ fn english_reading_narrated_transliterates_on_a_capable_engine() {
     p.set_english_reading(EnglishReading::Narrated);
     let out = p.process_for_engine(
         "Kubernetes нужен кластер",
-        &crate::tts::profiles::TERATTS_PROFILE,
+        &crate::profiles::TERATTS_PROFILE,
     );
     assert_eq!(out.text, "кубернетис нужен кластер");
     assert!(out.spans.is_empty(), "spans: {:?}", out.spans);
@@ -630,7 +625,7 @@ fn narrated_prose_keeps_native_identifiers() {
     p.set_english_reading(EnglishReading::Narrated);
     let out = p.process_for_engine(
         "Kubernetes и getUserData()",
-        &crate::tts::profiles::TERATTS_PROFILE,
+        &crate::profiles::TERATTS_PROFILE,
     );
     assert_eq!(out.text, "кубернетис и getUserData()");
     assert_eq!(out.spans.len(), 1, "spans: {:?}", out.spans);
@@ -648,10 +643,7 @@ fn narrated_prose_keeps_native_identifiers_after_a_special_term() {
     // shifted offsets would let the phase transliterate the identifier.
     let mut p = TTSPipeline::new();
     p.set_english_reading(EnglishReading::Narrated);
-    let out = p.process_for_engine(
-        "C++ и getUserData()",
-        &crate::tts::profiles::TERATTS_PROFILE,
-    );
+    let out = p.process_for_engine("C++ и getUserData()", &crate::profiles::TERATTS_PROFILE);
     assert_eq!(out.text, "си плюс плюс и getUserData()");
     assert_eq!(out.spans.len(), 1, "spans: {:?}", out.spans);
     assert_eq!(span_text(&out.text, &out.spans[0]), "getUserData");
@@ -664,10 +656,7 @@ fn narrated_prose_keeps_native_identifiers_nested_in_a_kebab_token() {
     // transliterated while the rest stayed Latin.
     let mut p = TTSPipeline::new();
     p.set_english_reading(EnglishReading::Narrated);
-    let out = p.process_for_engine(
-        "my-app-getUserData-flag",
-        &crate::tts::profiles::TERATTS_PROFILE,
-    );
+    let out = p.process_for_engine("my-app-getUserData-flag", &crate::profiles::TERATTS_PROFILE);
     assert_eq!(out.text, "my-app-getUserData-flag");
     assert_eq!(out.spans.len(), 1, "spans: {:?}", out.spans);
     assert_eq!(
@@ -682,7 +671,7 @@ fn native_setting_keeps_both_native_routes_on_a_capable_engine() {
     p.set_english_reading(EnglishReading::Native);
     let out = p.process_for_engine(
         "Kubernetes и getUserData()",
-        &crate::tts::profiles::TERATTS_PROFILE,
+        &crate::profiles::TERATTS_PROFILE,
     );
     assert_eq!(out.text, "Kubernetes и getUserData()");
     let kinds: Vec<_> = out.spans.iter().map(|span| span.kind).collect();
@@ -738,7 +727,7 @@ fn a_glued_link_keeps_its_number_readable() {
     let mut p = TTSPipeline::new();
     let out = p.process_for_engine(
         "CVE.[12](#fn:12)\n\nТекст",
-        &crate::tts::profiles::TERATTS_PROFILE,
+        &crate::profiles::TERATTS_PROFILE,
     );
     assert_eq!(out.text, "CVE. двенадцать\n\nТекст");
 }
@@ -791,12 +780,12 @@ fn transliteration_is_not_applied_twice() {
     let once = p
         .process_for_engine(
             "Вызови getUserData() через API",
-            &crate::tts::profiles::SILERO_PROFILE,
+            &crate::profiles::SILERO_PROFILE,
         )
         .text;
     assert_eq!(once, "Вызови гет юзер дата() через эй пи ай");
     let again = p
-        .process_for_engine(&once, &crate::tts::profiles::SILERO_PROFILE)
+        .process_for_engine(&once, &crate::profiles::SILERO_PROFILE)
         .text;
     assert_eq!(again, once);
 }
@@ -805,11 +794,11 @@ fn transliteration_is_not_applied_twice() {
 fn number_expansion_is_not_applied_twice() {
     let mut p = TTSPipeline::new();
     let once = p
-        .process_for_engine("42 сервера", &crate::tts::profiles::SILERO_PROFILE)
+        .process_for_engine("42 сервера", &crate::profiles::SILERO_PROFILE)
         .text;
     assert_eq!(once, "сорок два сервера");
     let again = p
-        .process_for_engine(&once, &crate::tts::profiles::SILERO_PROFILE)
+        .process_for_engine(&once, &crate::profiles::SILERO_PROFILE)
         .text;
     assert_eq!(again, once);
 }
@@ -827,7 +816,7 @@ fn span_text(text: &str, span: &Span) -> String {
 #[test]
 fn alphanumeric_abbreviations_are_narrated_on_both_routes() {
     let mut p = TTSPipeline::new();
-    for profile in [&crate::tts::profiles::TERATTS_PROFILE, native_profile()] {
+    for profile in [&crate::profiles::TERATTS_PROFILE, native_profile()] {
         let out = p.process_for_engine("IPv6 и HTTP/2", profile);
         assert!(
             !out.text.contains("IPv") && !out.text.contains("HTTP"),
@@ -855,7 +844,7 @@ fn letter_digit_tokens_are_narrated_with_the_profile_route() {
         ("3d", "три ди"),
     ];
     for (input, expected) in cases {
-        let out = p.process_for_engine(input, &crate::tts::profiles::SILERO_PROFILE);
+        let out = p.process_for_engine(input, &crate::profiles::SILERO_PROFILE);
         assert_eq!(out.text, expected, "input: {input:?}");
         assert!(
             !out.text.chars().any(|c| c.is_ascii_alphabetic()),
@@ -881,7 +870,7 @@ fn letter_digit_token_respects_the_digits_route() {
     let profile = TextProfile {
         digits: Digits::Native,
         units: Units::Native,
-        ..crate::tts::profiles::SILERO_PROFILE
+        ..crate::profiles::SILERO_PROFILE
     };
     let out = p.process_for_engine("p95", &profile);
     assert_eq!(out.text, "пи 95");
@@ -892,7 +881,7 @@ fn narrating_profile_produces_no_spans() {
     let mut p = TTSPipeline::new();
     let out = p.process_for_engine(
         "Вызови getUserData() через API",
-        &crate::tts::profiles::SILERO_PROFILE,
+        &crate::profiles::SILERO_PROFILE,
     );
     assert!(out.spans.is_empty(), "unexpected spans: {:?}", out.spans);
 }
@@ -923,7 +912,7 @@ fn native_code_block_is_kept_verbatim_and_annotated() {
     let mut p = TTSPipeline::new();
     p.set_code_block_mode(CodeBlockMode::Full);
     let input = "Пример:\n\n```rust\nlet x = 42;\nif x == 0 { return; }\n```";
-    let out = p.process_for_engine(input, &crate::tts::profiles::TERATTS_PROFILE);
+    let out = p.process_for_engine(input, &crate::profiles::TERATTS_PROFILE);
 
     assert_eq!(out.text, "Пример:\n\nlet x = 42; if x == 0 { return; }");
     assert!(
@@ -956,7 +945,7 @@ fn brief_mode_wins_over_a_native_code_route() {
     p.set_code_block_mode(CodeBlockMode::Brief);
     let out = p.process_for_engine(
         "```rust\nlet x = 42;\n```",
-        &crate::tts::profiles::TERATTS_PROFILE,
+        &crate::profiles::TERATTS_PROFILE,
     );
 
     assert_eq!(out.text, "далее следует пример кода на раст");
@@ -969,7 +958,7 @@ fn piper_narrates_prose_but_keeps_code() {
     p.set_code_block_mode(CodeBlockMode::Full);
     let out = p.process_for_engine(
         "Kubernetes:\n```rust\nlet x = 42;\n```",
-        &crate::tts::profiles::PIPER_PROFILE,
+        &crate::profiles::PIPER_PROFILE,
     );
 
     assert_eq!(out.text, "кубернетис:\nlet x = 42;");
@@ -990,7 +979,7 @@ fn dictionary_does_not_rewrite_native_code() {
     p.set_user_dictionary(dict);
     let out = p.process_for_engine(
         "```rust\nlet x = 42;\n```",
-        &crate::tts::profiles::TERATTS_PROFILE,
+        &crate::profiles::TERATTS_PROFILE,
     );
 
     assert_eq!(out.text, "let x = 42;");
@@ -1002,7 +991,7 @@ fn every_native_block_is_restored_in_place() {
     p.set_code_block_mode(CodeBlockMode::Full);
     let out = p.process_for_engine(
         "```rust\nlet a = 1;\n```\nсередина\n```rust\nlet b = 2;\n```",
-        &crate::tts::profiles::TERATTS_PROFILE,
+        &crate::profiles::TERATTS_PROFILE,
     );
 
     assert_eq!(out.text, "let a = 1;\nсередина\nlet b = 2;");
@@ -1017,7 +1006,7 @@ fn pasted_private_use_glyphs_do_not_confuse_the_restore() {
     p.set_code_block_mode(CodeBlockMode::Full);
     let out = p.process_for_engine(
         "\u{e000}\u{e000}\n```rust\nlet a = 1;\n```",
-        &crate::tts::profiles::TERATTS_PROFILE,
+        &crate::profiles::TERATTS_PROFILE,
     );
 
     assert_eq!(out.text, "\u{e000}\u{e000}\nlet a = 1;");
@@ -1035,10 +1024,7 @@ fn dictionary_override_is_annotated_in_output_coordinates() {
         forms: Vec::new(),
     });
     p.set_user_dictionary(dict);
-    let out = p.process_for_engine(
-        "Запусти docker сейчас",
-        &crate::tts::profiles::SILERO_PROFILE,
-    );
+    let out = p.process_for_engine("Запусти docker сейчас", &crate::profiles::SILERO_PROFILE);
     assert_eq!(out.text, "Запусти доккер сейчас");
     assert_eq!(out.spans.len(), 1, "spans: {:?}", out.spans);
     assert_eq!(out.spans[0].kind, SpanKind::DictionaryOverride);
@@ -1140,10 +1126,7 @@ fn dictionary_with_mark() -> UserDictionary {
 fn stress_mark_reaches_a_profile_that_declares_it() {
     let mut p = TTSPipeline::new();
     p.set_user_dictionary(dictionary_with_mark());
-    let out = p.process_for_engine(
-        "в moskva сегодня",
-        &crate::tts::profiles::SILERO_NATIVE_PROFILE,
-    );
+    let out = p.process_for_engine("в moskva сегодня", &crate::profiles::SILERO_NATIVE_PROFILE);
     assert_eq!(out.text, "в М+осква сегодня");
     // The mark travels with the replacement, so the override span still
     // covers the whole word and maps back to the original token.
@@ -1170,18 +1153,18 @@ fn the_stress_decision_is_rederived_on_every_run() {
     let input = "в moskva сегодня";
 
     let marked = p
-        .process_for_engine(input, &crate::tts::profiles::SILERO_NATIVE_PROFILE)
+        .process_for_engine(input, &crate::profiles::SILERO_NATIVE_PROFILE)
         .text;
     assert_eq!(marked, "в М+осква сегодня");
 
     let stripped = p
-        .process_for_engine(input, &crate::tts::profiles::SILERO_PROFILE)
+        .process_for_engine(input, &crate::profiles::SILERO_PROFILE)
         .text;
     assert_eq!(stripped, "в Москва сегодня");
     assert!(!stripped.contains('+'), "no mark leaks: {stripped:?}");
 
     let marked_again = p
-        .process_for_engine(input, &crate::tts::profiles::SILERO_NATIVE_PROFILE)
+        .process_for_engine(input, &crate::profiles::SILERO_NATIVE_PROFILE)
         .text;
     assert_eq!(
         marked_again, marked,
@@ -1207,7 +1190,7 @@ fn a_cyrillic_entry_replaces_its_exact_word() {
     p.set_user_dictionary(dictionary_with_cyrillic_mark());
     let out = p.process_for_engine(
         "старый замок стоит",
-        &crate::tts::profiles::SILERO_NATIVE_PROFILE,
+        &crate::profiles::SILERO_NATIVE_PROFILE,
     );
     assert_eq!(out.text, "старый зам+ок стоит");
     assert_eq!(out.spans.len(), 1, "spans: {:?}", out.spans);
@@ -1225,16 +1208,14 @@ fn a_single_form_entry_matches_case_insensitively_but_not_inflections() {
     p.set_user_dictionary(dictionary_with_cyrillic_mark());
     let upper = p.process_for_engine(
         "старый ЗАМОК стоит",
-        &crate::tts::profiles::SILERO_NATIVE_PROFILE,
+        &crate::profiles::SILERO_NATIVE_PROFILE,
     );
     assert_eq!(
         upper.text, "старый зам+ок стоит",
         "the typed case is replaced"
     );
-    let inflected = p.process_for_engine(
-        "старого замка нет",
-        &crate::tts::profiles::SILERO_NATIVE_PROFILE,
-    );
+    let inflected =
+        p.process_for_engine("старого замка нет", &crate::profiles::SILERO_NATIVE_PROFILE);
     assert_eq!(
         inflected.text, "старого замка нет",
         "an inflected form is a different key"
@@ -1255,7 +1236,7 @@ fn listed_inflected_forms_are_replaced_and_unlisted_ones_are_left_alone() {
 
     let out = p.process_for_engine(
         "старого замка и замке нет, а замки стоят",
-        &crate::tts::profiles::SILERO_NATIVE_PROFILE,
+        &crate::profiles::SILERO_NATIVE_PROFILE,
     );
     assert_eq!(out.text, "старого зам+ок и зам+ок нет, а замки стоят");
     assert_eq!(out.spans.len(), 2, "spans: {:?}", out.spans);
@@ -1269,7 +1250,7 @@ fn listed_inflected_forms_are_replaced_and_unlisted_ones_are_left_alone() {
 fn a_cyrillic_entry_strips_the_mark_without_stress_support() {
     let mut p = TTSPipeline::new();
     p.set_user_dictionary(dictionary_with_cyrillic_mark());
-    let out = p.process_for_engine("старый замок стоит", &crate::tts::profiles::SILERO_PROFILE);
+    let out = p.process_for_engine("старый замок стоит", &crate::profiles::SILERO_PROFILE);
     // Stripping a mark from the entry's own word yields the input text, so
     // the recorded span is what proves the entry fired at all.
     assert_eq!(out.text, "старый замок стоит");
@@ -1291,10 +1272,7 @@ fn a_latin_only_dictionary_leaves_russian_words_alone() {
         forms: Vec::new(),
     });
     p.set_user_dictionary(dict);
-    let out = p.process_for_engine(
-        "Запусти docker и замок",
-        &crate::tts::profiles::SILERO_PROFILE,
-    );
+    let out = p.process_for_engine("Запусти docker и замок", &crate::profiles::SILERO_PROFILE);
     assert_eq!(out.text, "Запусти доккер и замок");
 }
 
@@ -1318,13 +1296,13 @@ fn entries_of_both_scripts_apply_in_text_order() {
 
     let cyrillic_first = p.process_for_engine(
         "старый замок и docker",
-        &crate::tts::profiles::SILERO_NATIVE_PROFILE,
+        &crate::profiles::SILERO_NATIVE_PROFILE,
     );
     assert_eq!(cyrillic_first.text, "старый зам+ок и доккер");
 
     let latin_first = p.process_for_engine(
         "docker и старый замок",
-        &crate::tts::profiles::SILERO_NATIVE_PROFILE,
+        &crate::profiles::SILERO_NATIVE_PROFILE,
     );
     assert_eq!(latin_first.text, "доккер и старый зам+ок");
 }
@@ -1382,7 +1360,7 @@ fn a_hyphenated_entry_replaces_the_whole_token() {
     // the whole-token pass has to resolve it first.
     let mut p = TTSPipeline::new();
     p.set_user_dictionary(dictionary_with_hyphenated(&[("UTF-8", "у тэф восемь")]));
-    let out = p.process_for_engine("Вызови UTF-8 сейчас", &crate::tts::profiles::SILERO_PROFILE);
+    let out = p.process_for_engine("Вызови UTF-8 сейчас", &crate::profiles::SILERO_PROFILE);
     assert_eq!(out.text, "Вызови у тэф восемь сейчас");
     assert_eq!(out.spans.len(), 1, "spans: {:?}", out.spans);
     assert_eq!(out.spans[0].kind, SpanKind::DictionaryOverride);
@@ -1394,11 +1372,11 @@ fn a_hyphenated_entry_replaces_the_whole_token() {
 fn a_hyphenated_entry_matches_case_insensitively() {
     let mut p = TTSPipeline::new();
     p.set_user_dictionary(dictionary_with_hyphenated(&[("UTF-8", "у тэф восемь")]));
-    let upper = p.process_for_engine("UTF-8", &crate::tts::profiles::SILERO_PROFILE);
+    let upper = p.process_for_engine("UTF-8", &crate::profiles::SILERO_PROFILE);
     assert_eq!(upper.text, "у тэф восемь");
-    let lower = p.process_for_engine("utf-8", &crate::tts::profiles::SILERO_PROFILE);
+    let lower = p.process_for_engine("utf-8", &crate::profiles::SILERO_PROFILE);
     assert_eq!(lower.text, "у тэф восемь");
-    let mixed = p.process_for_engine("Utf-8", &crate::tts::profiles::SILERO_PROFILE);
+    let mixed = p.process_for_engine("Utf-8", &crate::profiles::SILERO_PROFILE);
     assert_eq!(mixed.text, "у тэф восемь");
 }
 
@@ -1410,7 +1388,7 @@ fn a_whole_token_entry_outranks_its_parts() {
         ("mail", "мэйл"),
         ("e-mail", "имейл"),
     ]));
-    let out = p.process_for_engine("напиши e-mail", &crate::tts::profiles::SILERO_PROFILE);
+    let out = p.process_for_engine("напиши e-mail", &crate::profiles::SILERO_PROFILE);
     assert_eq!(out.text, "напиши имейл");
 }
 
@@ -1418,7 +1396,7 @@ fn a_whole_token_entry_outranks_its_parts() {
 fn part_entries_still_apply_without_a_whole_token_entry() {
     let mut p = TTSPipeline::new();
     p.set_user_dictionary(dictionary_with_hyphenated(&[("utf", "у тэф")]));
-    let out = p.process_for_engine("UTF-8", &crate::tts::profiles::SILERO_PROFILE);
+    let out = p.process_for_engine("UTF-8", &crate::profiles::SILERO_PROFILE);
     assert_eq!(out.text, "у тэф восемь");
 }
 
@@ -1428,7 +1406,7 @@ fn a_hyphenated_entry_does_not_rewrite_a_longer_identifier() {
     // ("имейл-signature") that no later phase owns.
     let mut p = TTSPipeline::new();
     p.set_user_dictionary(dictionary_with_hyphenated(&[("e-mail", "имейл")]));
-    let out = p.process_for_engine("e-mail-signature", &crate::tts::profiles::SILERO_PROFILE);
+    let out = p.process_for_engine("e-mail-signature", &crate::profiles::SILERO_PROFILE);
     assert!(!out.text.contains("имейл"), "text: {:?}", out.text);
     assert!(
         out.spans
@@ -1467,10 +1445,7 @@ fn a_hyphenated_entry_applies_under_a_native_identifier_route() {
 fn a_hyphenated_cyrillic_entry_replaces_the_whole_word() {
     let mut p = TTSPipeline::new();
     p.set_user_dictionary(dictionary_with_hyphenated(&[("по-русски", "по русски")]));
-    let out = p.process_for_engine(
-        "говори по-русски",
-        &crate::tts::profiles::SILERO_NATIVE_PROFILE,
-    );
+    let out = p.process_for_engine("говори по-русски", &crate::profiles::SILERO_NATIVE_PROFILE);
     assert_eq!(out.text, "говори по русски");
     assert_eq!(out.spans.len(), 1, "spans: {:?}", out.spans);
     assert_eq!(span_text(&out.text, &out.spans[0]), "по русски");
@@ -1482,10 +1457,7 @@ fn inline_code_resolves_a_hyphenated_entry_on_the_whole_token() {
     // the kebab normalizer has to carry the same whole-token lookup.
     let mut p = TTSPipeline::new();
     p.set_user_dictionary(dictionary_with_hyphenated(&[("e-mail", "имейл")]));
-    let out = p.process_for_engine(
-        "поле `e-mail` пустое",
-        &crate::tts::profiles::SILERO_PROFILE,
-    );
+    let out = p.process_for_engine("поле `e-mail` пустое", &crate::profiles::SILERO_PROFILE);
     assert_eq!(out.text, "поле имейл пустое");
 }
 

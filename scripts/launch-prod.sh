@@ -15,7 +15,7 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/tmp/ruvox-prod-target}"
 BIN="${CARGO_TARGET_DIR}/release/ruvox-tauri"
 if [ ! -x "${BIN}" ]; then
-  BIN="${REPO_DIR}/src-tauri/target/release/ruvox-tauri"
+  BIN="${REPO_DIR}/target/release/ruvox-tauri"
 fi
 
 if [ ! -x "${BIN}" ]; then

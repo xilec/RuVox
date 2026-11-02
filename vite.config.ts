@@ -15,9 +15,11 @@ export default defineConfig(() => ({
     setupFiles: ["src/test/setup.ts"],
     // tmp/ holds git worktrees (tmp/wt/<task>/) and scratch data; their test
     // files resolve against their own node_modules and fail with dual React.
+    // target/ is the cargo workspace's build dir at the repo root — nothing in
+    // it is a test file, but scanning it costs the whole tree.
     // Spread the defaults — a bare exclude array REPLACES them and drags
     // node_modules test files in (#259). Mirrors server.watch.ignored below.
-    exclude: [...configDefaults.exclude, "**/tmp/**"],
+    exclude: [...configDefaults.exclude, "**/tmp/**", "**/target/**"],
   },
 
   // react-rnd's Draggable reads `process.env.DRAGGABLE_DEBUG` at render
@@ -55,9 +57,10 @@ export default defineConfig(() => ({
     watch: {
       // tmp/ is the repo-local scratch dir (VM disks, xwin caches with
       // symlink loops, etc.) — watching it once crashed the dev server
-      // with ELOOP on a recursive symlink. src-tauri/ is covered by
-      // cargo's own watcher.
-      ignored: ["**/src-tauri/**", "**/tmp/**"],
+      // with ELOOP on a recursive symlink. target/ is the cargo workspace's
+      // build dir at the repo root, and src-tauri/ is covered by cargo's own
+      // watcher.
+      ignored: ["**/src-tauri/**", "**/target/**", "**/tmp/**"],
     },
   },
 }));

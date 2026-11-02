@@ -23,39 +23,7 @@ use crate::pipeline::Span;
 use crate::tts::profiles;
 use tts_contract::TextProfile;
 
-/// Identifies which engine implementation is currently active. Used for
-/// logging, telemetry, and (future) UI events that need to differentiate
-/// between Silero and Piper lifecycle.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum EngineKind {
-    Silero,
-    Piper,
-    SileroNative,
-    #[serde(rename = "teratts")]
-    TeraTts,
-}
-
-impl EngineKind {
-    /// Every variant, so a per-engine table (a profile, a test loop) is asserted
-    /// to cover all of them instead of relying on memory. Not every caller needs
-    /// it: the availability probe walks what the UI can offer, not this list.
-    pub const ALL: &'static [EngineKind] = &[
-        EngineKind::Silero,
-        EngineKind::Piper,
-        EngineKind::SileroNative,
-        EngineKind::TeraTts,
-    ];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            EngineKind::Silero => "silero",
-            EngineKind::Piper => "piper",
-            EngineKind::SileroNative => "silero_native",
-            EngineKind::TeraTts => "teratts",
-        }
-    }
-}
+pub use tts_normalize::EngineKind;
 
 /// Engine-agnostic TTS interface.
 ///

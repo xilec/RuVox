@@ -96,11 +96,14 @@
           src = ./.;
 
           cargoLock = {
-            lockFile = ./src-tauri/Cargo.lock;
+            lockFile = ./Cargo.lock;
           };
 
-          # cargo-tauri.hook uses both to know where the Tauri app lives.
-          cargoRoot = "src-tauri";
+          # cargo-tauri.hook builds from `buildAndTestSubdir` (the Tauri app)
+          # while keeping the target dir at the workspace root. `cargoRoot` stays
+          # unset on purpose: nixpkgs' cargoSetupHook validates
+          # `$cargoRoot/Cargo.lock` against the vendored lock, and the workspace
+          # lockfile lives at the repository root.
           buildAndTestSubdir = "src-tauri";
 
           # espeak-rs-sys 0.2.0 finds the system libsonic via CMake's

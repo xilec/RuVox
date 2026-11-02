@@ -1,0 +1,17 @@
+[workspace]
+resolver = "3"
+members = ["src-tauri", "teratts", "tts-contract", "tts-normalize", "silero-native"]
+
+# Workspace root on purpose: cargo resolves a git dependency by package name
+# against the repository's workspace members, so the DSH sidecar can depend on
+# `tts-normalize` and `teratts` straight from this repository. Profiles live here
+# because cargo ignores the profile tables of non-root packages.
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+
+[profile.dev]
+incremental = true

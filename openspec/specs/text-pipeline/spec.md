@@ -3,7 +3,7 @@
 ## Purpose
 
 Covers the normalization pipeline (`TTSPipeline`, implemented in Rust under
-`src-tauri/src/pipeline/`) that converts technical text — Markdown, code,
+`tts-normalize/src/pipeline/`) that converts technical text — Markdown, code,
 URLs, numbers, dates, English words — into Cyrillic-only Russian text suitable
 for Silero TTS, which cannot read English or special characters. The pipeline
 is the mandatory preprocessing step before every synthesis. Character-level
@@ -72,7 +72,7 @@ with the user-visible error "нормализация вернула пусто�
 ### Requirement: Fixed phase order
 
 The system SHALL execute normalization phases in a strictly fixed order
-(`src-tauri/src/pipeline/mod.rs`): BOM removal; fenced code blocks; quote
+(`tts-normalize/src/pipeline/mod.rs`): BOM removal; fenced code blocks; quote
 normalization; dash normalization; whitespace normalization; inline code;
 Markdown structure; URLs/emails/IPs/paths; sizes; dates and times; percentage
 ranges; percentages; ranges; versions; leading-dot decimals; operators; special

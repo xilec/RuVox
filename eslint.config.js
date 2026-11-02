@@ -6,8 +6,9 @@ export default tseslint.config(
   // tmp/ is the repo-designated scratch dir (spikes, benches, .venv's) —
   // none of it is app code to lint. Same for Python .venv's elsewhere
   // (e.g. silero-native/export) whose vendored torch .mjs files trip the
-  // type-aware parser.
-  { ignores: ['dist/', 'node_modules/', 'src-tauri/', 'silero-native/', 'ttsd/', 'scripts/', 'tmp/', '**/.venv/'] },
+  // type-aware parser. target/ is the cargo workspace's build dir at the repo
+  // root: it holds generated .ts/.js from cmake and tauri-codegen.
+  { ignores: ['dist/', 'node_modules/', 'src-tauri/', 'silero-native/', 'ttsd/', 'scripts/', 'tmp/', 'target/', '**/.venv/'] },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   reactHooks.configs.flat.recommended,

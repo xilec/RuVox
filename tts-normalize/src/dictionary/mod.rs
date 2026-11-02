@@ -18,7 +18,7 @@ pub use store::{DictionaryStore, export_to, parse_import};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::tts::EngineKind;
+use crate::EngineKind;
 
 /// Longest accepted `from`, in characters.
 pub const MAX_FROM_LEN: usize = 64;

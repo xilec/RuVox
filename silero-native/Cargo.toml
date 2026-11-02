@@ -38,10 +38,8 @@ unicode_categories = "0.1"
 tempfile = "3"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# Line tables in the release profile so `perf` / flamegraph attribute
-# samples to Rust source lines when profiling the bench example (issue
-# #164; commands in docs/architecture.md "Debugging guide"). Ignored when
-# the crate is built as a dependency of src-tauri — cargo takes profiles
-# from the top-level manifest only, so production binaries are unaffected.
-[profile.release]
-debug = "line-tables-only"
+# Profiling the bench example (issue #164) needs line tables, but the cargo
+# workspace takes profiles from the repository-root Cargo.toml only and the
+# shipped app is built without debug info. Pass
+# `CARGO_PROFILE_RELEASE_DEBUG=line-tables-only` for the profiling run — see
+# docs/architecture.md "Debugging guide".

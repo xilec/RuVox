@@ -59,12 +59,11 @@ The repo ships a project-level MCP config (`.kimi-code/mcp.json`) exposing
 rust-analyzer via the `rust-analyzer-mcp` server (tools: definition, references,
 hover, diagnostics, code actions, …). Prerequisites on the machine: `cargo
 install rust-analyzer-mcp` and `rust-analyzer` in `PATH`. The server starts with
-`src-tauri` as its workspace (passed as a CLI arg, resolved relative to the repo
-root). Path dependencies of `src-tauri` (e.g. the `silero-native` crate) are
-covered by this root automatically; if a genuinely separate cargo workspace
-appears in the repo, add a second named server entry to `.kimi-code/mcp.json`
-with that workspace's path as its CLI arg (the server accepts exactly one
-workspace). Cold indexing of the dependency tree takes ~1 minute; if the first
+the repository root as its workspace (passed as a CLI arg), which after the
+cargo-workspace extraction covers the application and every engine/text crate
+in one index. If a genuinely separate cargo workspace appears in the repo, add
+a second named server entry to `.kimi-code/mcp.json` with that workspace's path
+as its CLI arg (the server accepts exactly one workspace). Cold indexing of the dependency tree takes ~1 minute; if the first
 tool call returns an empty result, indexing is still in progress — wait and
 retry the call.
 
@@ -75,7 +74,6 @@ retry the call.
 ├── src/              # React + TypeScript frontend (Vite + Mantine 8)
 ├── src-tauri/        # Rust backend
 │   ├── src/
-│   │   ├── pipeline/ # Text normalization (port of legacy Python pipeline)
 │   │   ├── storage/  # JSON history + audio files
 │   │   ├── tts/      # ttsd subprocess manager
 │   │   ├── player/   # tauri-plugin-mpv wrapper
@@ -95,6 +93,8 @@ retry the call.
 │   ├── tests/        #   unit tier + bundle-gated parity suite
 │   └── docs/         #   architecture.md (pipeline, debugging), benchmarks.md
 ├── tts-contract/     # Shared text contract crate: profile types and the chunker
+├── tts-normalize/    # Normalization pipeline, user dictionary, per-engine text profiles
+├── Cargo.toml        # Cargo workspace root: app + engine/text crates, one lockfile
 ├── ai/rules/         # conventions.md + code-quality.md — hard rules & craft standard
 ├── docs/             # Project documentation (process docs; behavior specs live in openspec/)
 ├── openspec/         # OpenSpec: specs/ (behavior source of truth), changes/ (proposals), config.yaml
@@ -176,6 +176,7 @@ nix develop -c just test                                                   # eve
 nix develop -c cargo test --manifest-path src-tauri/Cargo.toml             # Rust (incl. golden pipeline fixtures)
 nix develop -c cargo test --manifest-path silero-native/Cargo.toml         # native Silero engine (bundle-gated tests skip without SILERO_NATIVE_BUNDLE)
 nix develop -c cargo test --manifest-path tts-contract/Cargo.toml          # shared profile types and chunker
+nix develop -c cargo test --manifest-path tts-normalize/Cargo.toml         # normalization: pipeline, dictionary, profiles
 nix develop -c pnpm typecheck                                              # TS typecheck
 nix develop -c pnpm test:unit                                              # TS unit tests
 nix develop -c bash -c "cd ttsd && uv run python -m pytest"                # Python subprocess tests

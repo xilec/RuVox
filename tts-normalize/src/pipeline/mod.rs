@@ -25,7 +25,7 @@ use crate::pipeline::spans::{
     resolve_spans,
 };
 use crate::pipeline::tracked_text::{CharMapping, TrackedText};
-use crate::tts::profiles;
+use crate::profiles;
 use tts_contract::{Digits, Reading, Stress, TextProfile, Units};
 
 // ── Static compiled regexes ───────────────────────────────────────────────────
