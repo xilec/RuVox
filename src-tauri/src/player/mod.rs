@@ -62,12 +62,11 @@ fn resolve_mpv_path(resource_dir: Option<&std::path::Path>) -> std::path::PathBu
 /// Windows variant above for the shared rationale).
 #[cfg(not(windows))]
 fn resolve_mpv_path(_resource_dir: Option<&std::path::Path>) -> std::path::PathBuf {
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(exe_dir) = exe.parent() {
-            if let Some(bundled) = crate::find_bundled_mpv(exe_dir) {
-                return bundled;
-            }
-        }
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(exe_dir) = exe.parent()
+        && let Some(bundled) = crate::find_bundled_mpv(exe_dir)
+    {
+        return bundled;
     }
     std::path::PathBuf::from("mpv")
 }

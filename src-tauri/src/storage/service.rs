@@ -595,10 +595,10 @@ fn write_atomic(path: &Path, data: &[u8]) -> Result<()> {
 }
 
 fn remove_file_if_exists(path: &Path) {
-    if path.exists() {
-        if let Err(e) = fs::remove_file(path) {
-            tracing::warn!("failed to remove file {}: {e}", path.display());
-        }
+    if path.exists()
+        && let Err(e) = fs::remove_file(path)
+    {
+        tracing::warn!("failed to remove file {}: {e}", path.display());
     }
 }
 

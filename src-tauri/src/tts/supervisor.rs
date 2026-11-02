@@ -207,12 +207,11 @@ impl TtsSupervisor {
 
         // Second-chance check: did somebody else replace the handle while we
         // were waiting on the mutex?
-        if let Some(dead) = dead {
-            if let Some(current) = self.current.read().await.as_ref() {
-                if !Arc::ptr_eq(&current.proc, dead) {
-                    return Ok(());
-                }
-            }
+        if let Some(dead) = dead
+            && let Some(current) = self.current.read().await.as_ref()
+            && !Arc::ptr_eq(&current.proc, dead)
+        {
+            return Ok(());
         }
 
         warn!(target: "tts::supervisor", "ttsd died — restarting");

@@ -128,12 +128,11 @@ pub fn decode_for_content_type(
     if let Some((enc, bom_len)) = Encoding::for_bom(bytes) {
         return decode_with_encoding(enc, &bytes[bom_len..]);
     }
-    if let Some(header) = content_type_header {
-        if let Some(label) = charset_param(header) {
-            if let Some(enc) = Encoding::for_label(label.as_bytes()) {
-                return decode_with_encoding(enc, bytes);
-            }
-        }
+    if let Some(header) = content_type_header
+        && let Some(label) = charset_param(header)
+        && let Some(enc) = Encoding::for_label(label.as_bytes())
+    {
+        return decode_with_encoding(enc, bytes);
     }
     detect_and_decode(bytes)
 }

@@ -74,12 +74,11 @@ fn channel_url(asset: &str) -> String {
 /// the cache is older than 24 hours. A failed refresh still returns any cached
 /// channels; the error is reported separately for the UI.
 pub async fn channels(force: bool) -> ChannelSnapshot {
-    if !force {
-        if let Some(entry) = CHANNEL_CACHE.lock().as_ref() {
-            if entry.at.elapsed() < CHANNEL_TTL {
-                return entry.snapshot.clone();
-            }
-        }
+    if !force
+        && let Some(entry) = CHANNEL_CACHE.lock().as_ref()
+        && entry.at.elapsed() < CHANNEL_TTL
+    {
+        return entry.snapshot.clone();
     }
 
     let client = match reqwest::Client::builder()
