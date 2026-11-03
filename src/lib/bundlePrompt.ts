@@ -1,10 +1,18 @@
-import type { AvailableEngines } from './tauri';
+import type { AvailableEngines, ModelAssetId } from './tauri';
 
-/** Engines whose first run needs a downloadable model bundle. */
-export type BundlePromptEngine = 'teratts' | 'silero_native';
+/** Engines whose first run needs a downloadable model bundle. Derived from the
+ *  model-asset catalog so a new bundle asset cannot be forgotten here: the
+ *  `PROMPTS` record in `BundlePrompt.tsx` is keyed by this type and stops
+ *  compiling until the prompt learns to offer the new bundle. */
+export type BundlePromptEngine = Exclude<ModelAssetId, `piper:${string}`>;
 
-/** Every engine the first-run prompt can be raised for. */
-const BUNDLE_ENGINES: readonly BundlePromptEngine[] = ['teratts', 'silero_native'];
+/** Every engine the first-run prompt can be raised for. `satisfies` ties the
+ *  list to `ModelAssetId`: a `piper:*` entry (or a typo) no longer compiles
+ *  and an engine dropped from the union is flagged as stale. */
+const BUNDLE_ENGINES = [
+  'teratts',
+  'silero_native',
+] as const satisfies readonly BundlePromptEngine[];
 
 function isBundleEngine(engine: string): engine is BundlePromptEngine {
   return (BUNDLE_ENGINES as readonly string[]).includes(engine);

@@ -60,48 +60,77 @@ const PROMPTS: Record<BundlePromptEngine, BundlePromptCopy> = {
  * prompt). The engine, size, download command and activation call come from
  * PROMPTS; the progress, error and decline mechanics are shared. Declining
  * persists nothing, so the prompt reappears on the next launch while the
- * bundle is still missing.
+ * bundle is still missing. Closing the prompt mid-download does not cancel the
+ * backend transfer, so the outcome is still applied: activation and a green
+ * confirmation on success, a notification carrying the backend message on
+ * failure. The event listener therefore lives for the component's lifetime
+ * instead of only while the dialog is open.
  */
 export function BundlePrompt({ opened, engine, onClose }: BundlePromptProps) {
   const tt = useT();
   const prompt = engine === null ? null : PROMPTS[engine];
   const [download, setDownload] = useState<BundleProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Engine of the download this prompt started, or `null` when none is in
+  // flight. A ref, not state: the listener below stays subscribed for the
+  // component's lifetime, so it must read the current value without the
+  // subscription churning when `opened` goes false.
+  const downloadEngineRef = useRef<BundlePromptEngine | null>(null);
   // True between bundle_download_started and bundle_download_finished so a
   // rejected command promise can tell a pre-start failure from a mid-download
   // one (the latter already surfaced via the finished event).
   const downloadActiveRef = useRef(false);
+  // The handlers pick the inline error or a notification by whether the prompt
+  // is still open. A ref because the subscription does not re-run when
+  // `opened` changes.
+  const openedRef = useRef(opened);
+
+  useEffect(() => {
+    openedRef.current = opened;
+  }, [opened]);
+
+  // A closed prompt must start clean when it is raised again: an error from a
+  // previous attempt would otherwise greet the next opening. The download path
+  // manages its own progress state.
+  useEffect(() => {
+    if (!opened) setError(null);
+  }, [opened]);
 
   // Live bundle-download progress, driven by the backend's
-  // bundle_download_* events. Subscribed only while the prompt is open and
-  // filtered to the prompted engine: Settings can start its own download, and
-  // its events must not close this prompt or activate the wrong engine.
+  // bundle_download_* events. Subscribed for the component's lifetime:
+  // closing the prompt does not stop the backend download, so its outcome
+  // must still be delivered — otherwise the bundle lands on disk silently,
+  // the engine is never activated for this session and the failure message is
+  // lost. Filtered to the engine this prompt started (`downloadEngineRef`):
+  // Settings can start its own download and its events must not close this
+  // prompt or activate the wrong engine.
   useEffect(() => {
-    if (!opened || engine === null) return;
     const unlisteners = [
       events.bundleDownloadStarted((p) => {
-        if (p.engine !== engine) return;
+        if (p.engine !== downloadEngineRef.current) return;
         downloadActiveRef.current = true;
         setDownload({ file: 'manifest.json', percent: 0 });
       }),
       events.bundleDownloadProgress((p) => {
-        if (p.engine !== engine) return;
+        if (p.engine !== downloadEngineRef.current) return;
         setDownload({ file: p.file, percent: bundleDownloadPercent(p) });
       }),
       events.bundleDownloadFinished((p) => {
-        if (p.engine !== engine) return;
+        const target = downloadEngineRef.current;
+        if (target === null || p.engine !== target) return;
+        downloadEngineRef.current = null;
         downloadActiveRef.current = false;
         setDownload(null);
         if (p.ok) {
           // The persisted engine already names this engine; the update only
           // makes the EngineSwitcher rebuild onto it for this session now
-          // that the bundle exists.
+          // that the bundle exists. Runs after the prompt was closed too.
           commands
-            .updateConfig({ engine })
+            .updateConfig({ engine: target })
             .then(() => {
               notifications.show({
-                title: tt(PROMPTS[engine].readyTitle),
-                message: tt(PROMPTS[engine].readyMessage),
+                title: tt(PROMPTS[target].readyTitle),
+                message: tt(PROMPTS[target].readyMessage),
                 color: 'green',
               });
             })
@@ -116,7 +145,18 @@ export function BundlePrompt({ opened, engine, onClose }: BundlePromptProps) {
             });
           onClose();
         } else {
-          setError(p.message ?? tt('bundle.unknown_error'));
+          const message = p.message ?? tt('bundle.unknown_error');
+          if (openedRef.current) {
+            setError(message);
+          } else {
+            // The prompt is already closed, so an inline alert would be
+            // invisible: surface the backend message as a notification.
+            notifications.show({
+              title: tt('bundle.prompt.error_title'),
+              message,
+              color: 'red',
+            });
+          }
         }
       }),
     ];
@@ -125,26 +165,40 @@ export function BundlePrompt({ opened, engine, onClose }: BundlePromptProps) {
         u.then((fn) => fn()).catch(() => {});
       });
     };
-    // onClose is a per-render inline closure; resubscribing on it would churn
-    // listeners every render — subscribing on `opened`/`engine` is sufficient
-    // (`tt` re-subscribes on locale switch so toasts use the active catalog).
+    // onClose is a per-render inline closure; including it would resubscribe
+    // the listener every render. `tt` re-subscribes on locale switch so
+    // notifications use the active catalog.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opened, engine, tt]);
+  }, [tt]);
 
   const handleDownload = () => {
-    if (prompt === null) return;
+    if (prompt === null || engine === null) return;
     setError(null);
     // Switch to the progress view immediately — the started event lands one
     // IPC round-trip later, and without this the button stays clickable and
     // the user can queue a second download.
     setDownload({ file: 'manifest.json', percent: 0 });
+    downloadEngineRef.current = engine;
     prompt.start().catch((err) => {
-      // Mid-download failures are already reported by the
-      // bundle_download_finished { ok: false } event; only a command that
-      // failed before starting needs the inline error here.
-      if (!downloadActiveRef.current) {
-        setDownload(null);
-        setError(formatError(err));
+      // A finished event already settled this download (it clears the ref
+      // before the rejected promise arrives): keep the backend's message
+      // instead of overwriting it with the generic IPC one.
+      if (downloadEngineRef.current === null) return;
+      // Mid-download failures are reported by the finished event; only a
+      // command that failed before starting needs the error here.
+      if (downloadActiveRef.current) return;
+      downloadEngineRef.current = null;
+      setDownload(null);
+      const message = formatError(err);
+      setError((prev) => prev ?? message);
+      if (!openedRef.current) {
+        // The download could not even start and the prompt is already gone:
+        // the inline alert would be invisible.
+        notifications.show({
+          title: tt('bundle.prompt.error_title'),
+          message,
+          color: 'red',
+        });
       }
     });
   };

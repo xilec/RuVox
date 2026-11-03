@@ -41,6 +41,17 @@ describe('bundlePromptEngine', () => {
     ).toBeNull();
   });
 
+  it('mirrors the decision: offers Silero when only the TeraTTS bundle is present', () => {
+    // Persisted engine wins in this direction too: the new default's bundle
+    // being installed must not steal the prompt from an existing Silero user.
+    expect(
+      bundlePromptEngine(
+        { engine: 'silero_native' },
+        { ...BUNDLE_PRESENT, silero_native: BUNDLE_MISSING.silero_native },
+      ),
+    ).toBe('silero_native');
+  });
+
   it('stays silent once the Silero Native bundle is on disk', () => {
     expect(bundlePromptEngine({ engine: 'silero_native' }, BUNDLE_PRESENT)).toBeNull();
   });

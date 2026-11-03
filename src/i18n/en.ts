@@ -190,7 +190,7 @@ export const en: Record<MessageKey, string> = {
     'It reads Russian prose, English terms and code more naturally. It needs a one-time model bundle (~410 MB), downloaded once and run locally. The trade: the first synthesis is slower and memory use is higher (~3.9 GiB peak).',
   'bundle.prompt.teratts.download': 'Download (~410 MB)',
   'bundle.prompt.teratts.alternative':
-    'Faster and lighter: Silero Native (~230 MB) — in Settings.',
+    'Faster and lighter: Silero (native) (~230 MB) — in Settings.',
   'bundle.prompt.silero_native.title': 'Download the Silero engine?',
   'bundle.prompt.silero_native.body':
     'Your saved engine, "Silero (native)", sounds considerably better than the built-in Piper but requires a one-time model download (~230 MB). Until the models are downloaded, the app runs on Piper.',
@@ -227,7 +227,7 @@ export const en: Record<MessageKey, string> = {
     'Scales the whole text and its content like browser zoom: headings, code, tables and images grow together.',
   'settings.engine.label': 'Engine',
   'settings.engine.description':
-    'TeraTTSv2 is the default; its ~410 MB bundle is downloaded once. Piper and Silero (native) are built in and require no Python.',
+    'TeraTTSv2 is the default; its ~410 MB bundle is downloaded once. Silero (native) also needs its own ~230 MB bundle, but no Python. Piper is built in, with no download and no Python.',
   'settings.engine.silero_native': 'Silero (native)',
   'settings.engine.piper': 'Piper',
   'settings.engine.silero': 'Silero (Python)',

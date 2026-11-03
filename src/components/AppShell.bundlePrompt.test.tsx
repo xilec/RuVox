@@ -5,7 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MantineProvider } from '@mantine/core';
 import { ModalsProvider } from '@mantine/modals';
 import { Notifications } from '@mantine/notifications';
-import type { AvailableEngines, UIConfig } from '../lib/tauri';
+import type {
+  AvailableEngines,
+  BundleDownloadFinishedPayload,
+  BundleDownloadProgressPayload,
+  UIConfig,
+} from '../lib/tauri';
 
 /** Command/event stubs shared with the `../lib/tauri` mock below. The proxy
  *  materializes a resolving stub for any command the mounted tree calls, so
@@ -23,10 +28,10 @@ const { commands, events, mocks, eventHandlers } = vi.hoisted(() => ({
   eventHandlers: {
     finished: null as
       | null
-      | ((payload: { engine: string; ok: boolean; message?: string }) => void),
+      | ((payload: BundleDownloadFinishedPayload) => void),
     progress: null as
       | null
-      | ((payload: { engine: string; file: string; percent?: number }) => void),
+      | ((payload: BundleDownloadProgressPayload) => void),
   },
 }));
 
@@ -188,13 +193,13 @@ describe('first-run bundle prompt', () => {
     );
     events.bundleDownloadStarted = vi.fn().mockResolvedValue(() => {});
     events.bundleDownloadProgress = vi.fn(
-      (handler: (payload: { engine: string; file: string }) => void) => {
+      (handler: (payload: BundleDownloadProgressPayload) => void) => {
         eventHandlers.progress = handler;
         return Promise.resolve(() => {});
       },
     );
     events.bundleDownloadFinished = vi.fn(
-      (handler: (payload: { engine: string; ok: boolean; message?: string }) => void) => {
+      (handler: (payload: BundleDownloadFinishedPayload) => void) => {
         eventHandlers.finished = handler;
         return Promise.resolve(() => {});
       },
@@ -217,7 +222,7 @@ describe('first-run bundle prompt', () => {
     expect(promptText()).toContain('~410 МБ');
     expect(promptText()).toContain('Скачать (~410 МБ)');
     expect(promptText()).toContain('Остаться на Piper');
-    expect(promptText()).toContain('Быстрее и легче: Silero Native (~230 МБ) — в Настройках.');
+    expect(promptText()).toContain('Быстрее и легче: Silero (нативный) (~230 МБ) — в Настройках.');
   });
 
   it('declining persists nothing and the prompt returns on the next launch', async () => {
@@ -284,5 +289,138 @@ describe('first-run bundle prompt', () => {
     });
     expect(promptText()).toContain('Скачать (~230 МБ)');
     expect(promptText()).not.toContain('Движок по умолчанию — TeraTTSv2');
+  });
+
+  it('shows the current file and the overall percent while downloading', async () => {
+    await renderShell();
+    await vi.waitFor(() => expect(promptText()).not.toBe(''));
+
+    await act(async () => {
+      findButton('Скачать (~410 МБ)')!.click();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      eventHandlers.progress!({
+        engine: 'teratts',
+        file: 'ru_m5.onnx',
+        file_idx: 1,
+        total_files: 2,
+        downloaded_bytes: 10,
+        total_bytes: 20,
+        skipped: false,
+      });
+      await Promise.resolve();
+    });
+
+    expect(promptText()).toContain('Скачивается: ru_m5.onnx');
+    const bar = document.querySelector('[role="dialog"] [role="progressbar"]');
+    expect(bar?.getAttribute('aria-valuenow')).toBe('75');
+  });
+
+  it('shows a failed download inline and offers a retry', async () => {
+    await renderShell();
+    await vi.waitFor(() => expect(promptText()).not.toBe(''));
+
+    await act(async () => {
+      findButton('Скачать (~410 МБ)')!.click();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      eventHandlers.finished!({ engine: 'teratts', ok: false, message: 'Нет места на диске' });
+      await Promise.resolve();
+    });
+
+    expect(promptText()).toContain('Нет места на диске');
+    const retry = findButton('Скачать (~410 МБ)');
+    expect(retry).toBeTruthy();
+    expect(retry!.hasAttribute('disabled')).toBe(false);
+
+    await act(async () => {
+      retry!.click();
+      await Promise.resolve();
+    });
+    expect(mocks.downloadTerattsBundle).toHaveBeenCalledTimes(2);
+  });
+
+  it('activates the engine when the download finishes after the prompt closed', async () => {
+    await renderShell();
+    await vi.waitFor(() => expect(promptText()).not.toBe(''));
+
+    await act(async () => {
+      findButton('Скачать (~410 МБ)')!.click();
+      await Promise.resolve();
+    });
+
+    // Escape closes the prompt; the backend download keeps running.
+    await act(async () => {
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await Promise.resolve();
+    });
+    await vi.waitFor(() => expect(promptText()).toBe(''));
+
+    await act(async () => {
+      eventHandlers.finished!({ engine: 'teratts', ok: true });
+      await Promise.resolve();
+    });
+
+    expect(mocks.updateConfig).toHaveBeenCalledWith({ engine: 'teratts' });
+    expect(mocks.showNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Движок TeraTTSv2 готов', color: 'green' }),
+    );
+  });
+
+  it('reports a failed download after the prompt closed', async () => {
+    await renderShell();
+    await vi.waitFor(() => expect(promptText()).not.toBe(''));
+
+    await act(async () => {
+      findButton('Скачать (~410 МБ)')!.click();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      findButton('Остаться на Piper')!.click();
+      await Promise.resolve();
+    });
+    await vi.waitFor(() => expect(promptText()).toBe(''));
+
+    await act(async () => {
+      eventHandlers.finished!({ engine: 'teratts', ok: false, message: 'Сервер недоступен' });
+      await Promise.resolve();
+    });
+
+    expect(mocks.updateConfig).not.toHaveBeenCalled();
+    expect(mocks.showNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Не удалось скачать бандл',
+        message: 'Сервер недоступен',
+        color: 'red',
+      }),
+    );
+  });
+
+  it('reports a downloaded bundle that failed to activate', async () => {
+    mocks.updateConfig.mockRejectedValueOnce({ type: 'config_error', code: 'config.unknown' });
+    await renderShell();
+    await vi.waitFor(() => expect(promptText()).not.toBe(''));
+
+    await act(async () => {
+      findButton('Скачать (~410 МБ)')!.click();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      eventHandlers.finished!({ engine: 'teratts', ok: true });
+      await Promise.resolve();
+    });
+
+    expect(mocks.showNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Бандл скачан, но движок не запустился',
+        color: 'red',
+      }),
+    );
+    expect(mocks.showNotification).not.toHaveBeenCalledWith(
+      expect.objectContaining({ color: 'green' }),
+    );
   });
 });
