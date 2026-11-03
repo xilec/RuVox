@@ -1645,17 +1645,42 @@ fn identifier_beside_a_number_is_not_english_prose() {
 }
 
 #[test]
-fn constructs_keep_their_russian_reading_in_english_prose() {
+fn constructs_read_in_english_in_english_prose() {
     let mut p = TTSPipeline::new();
     let percent = p.process_for_engine("In 5% we trust", &crate::profiles::SILERO_PROFILE);
-    assert!(percent.text.contains("пять процентов"), "{}", percent.text);
+    assert!(percent.text.contains("файв персент"), "{}", percent.text);
 
     let money = p.process_for_engine("In $5 we trust", &crate::profiles::SILERO_PROFILE);
-    assert!(money.text.contains("пять долларов"), "{}", money.text);
+    assert!(money.text.contains("файв долларс"), "{}", money.text);
+}
 
+#[test]
+fn a_bare_approximated_number_keeps_the_russian_reading() {
+    let mut p = TTSPipeline::new();
     let approx = p.process_for_engine("In ~5 we trust", &crate::profiles::SILERO_PROFILE);
     assert!(approx.text.contains("около"), "{}", approx.text);
     assert!(!approx.text.contains("файв"), "{}", approx.text);
+}
+
+#[test]
+fn a_construct_in_a_cyrillic_sentence_keeps_the_russian_reading() {
+    let mut p = TTSPipeline::new();
+    let out = p.process_for_engine("Установи 5 кг.", &crate::profiles::SILERO_PROFILE);
+    assert!(out.text.contains("пять килограммов"), "{}", out.text);
+}
+
+#[test]
+fn the_native_route_keeps_the_russian_construct_reading() {
+    let mut p = TTSPipeline::new();
+    let out = p.process_for_engine("In 5% we trust", &crate::profiles::TERATTS_PROFILE);
+    assert!(out.text.contains("пять процентов"), "{}", out.text);
+}
+
+#[test]
+fn an_english_ordinal_reads_on_the_narrated_route() {
+    let mut p = TTSPipeline::new();
+    let out = p.process_for_engine("In the 1st release", &crate::profiles::SILERO_PROFILE);
+    assert!(out.text.contains("фёст"), "{}", out.text);
 }
 
 #[test]

@@ -5,6 +5,12 @@
 //! their Cyrillic readings, so the native route (the Latin words replace the
 //! digits in the text) and the narrating route (Cyrillic synthesized by a
 //! Russian-only engine) cannot drift apart.
+//!
+//! [`constructs`] owns the wording of a construct that is not a bare cardinal
+//! (a unit, a date, an ordinal, a version); its word table joins [`reading`],
+//! so one lookup serves every word this layer emits.
+
+pub(crate) mod constructs;
 
 /// Above this value every digit is read separately, the same cutoff the
 /// Russian reader applies.
@@ -105,6 +111,24 @@ pub(crate) fn digits(digits: &str) -> String {
     words.join(" ")
 }
 
+/// The English words of a digit run: a cardinal while the reader names the
+/// value, the digit-by-digit reading otherwise.
+pub(crate) fn number_words(run: &str) -> String {
+    match run.parse::<u64>() {
+        Ok(value) if value <= LIMIT => cardinal(value).expect("a value inside the limit"),
+        _ => digits(run),
+    }
+}
+
+/// The English ordinal words of `value` ("twenty-first", "one hundredth").
+pub(crate) fn ordinal(value: u64) -> Option<String> {
+    let words = cardinal(value)?;
+    let split = words.rfind([' ', '-']).map(|index| index + 1).unwrap_or(0);
+    let (head, last) = words.split_at(split);
+    let last = constructs::ordinal_word(last)?;
+    Some(format!("{head}{last}"))
+}
+
 /// The Cyrillic reading of a Latin numeral phrase ("twenty-four" →
 /// "твенти-фо").
 pub(crate) fn transliterate(latin: &str) -> String {
@@ -142,9 +166,10 @@ fn reading(word: &str) -> Option<&'static str> {
     let table = UNITS
         .iter()
         .chain(TENS.iter())
-        .chain([ZERO, HUNDRED, THOUSAND, MILLION, OH].iter());
+        .chain([ZERO, HUNDRED, THOUSAND, MILLION, OH].iter())
+        .chain(constructs::WORDS.iter());
     table
-        .filter(|(latin, _)| *latin == word)
+        .filter(|(latin, _)| latin.eq_ignore_ascii_case(word))
         .map(|(_, cyrillic)| *cyrillic)
         .next()
 }

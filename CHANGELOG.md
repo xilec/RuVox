@@ -50,6 +50,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   part entries keep working when no whole-word entry exists (#279).
 
 ### Changed
+- **English constructs are read in English on the narrated route** — a number
+  that owns a unit, percentage, currency, date, time, version, range, reference
+  or ordinal suffix inside English prose now reads in English and is
+  transliterated for a Russian-only engine («the API grew 50%» → «…фифти
+  пёрсэнт…», «100 MB» → «уан хандрэд мегабайтс», «12.05.2024» → «зэ твелфс ов
+  мэй…»), while Russian sentences, the native route and every other construct
+  keep their Russian reading (#371).
 - **TeraTTSv2 is the default engine** — a fresh config starts on it and the
   first launch offers its ~410 MB bundle; declining runs the session on Piper
   without persisting anything. Existing configs keep their engine, Silero

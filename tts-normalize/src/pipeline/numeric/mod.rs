@@ -30,6 +30,7 @@ mod morphology;
 mod parse;
 mod read;
 
+use self::english::constructs;
 use crate::dictionary::UserDictionary;
 use crate::pipeline::spans::{RecordedSpan, SpanKind, byte_to_char_offsets, record_byte_ranges};
 use crate::pipeline::tracked_text::TrackedText;
@@ -72,6 +73,14 @@ enum EnglishNumber {
     Cardinal(u64),
     /// A value above the reader's range: every digit reads on its own.
     Digits(String),
+}
+
+/// What the layer decided to read in English for one span.
+enum EnglishClaim {
+    /// A standalone cardinal (#369): the route chooses the register.
+    Number(EnglishNumber),
+    /// A construct: only the narrated route reads it in English today.
+    Construct(String),
 }
 
 impl EnglishNumber {
@@ -137,6 +146,7 @@ impl NumericSpanNormalizer {
         span: (usize, usize),
         original_start: usize,
         sentences: &context::SentenceMap,
+        letters: &context::LetterPrefix,
         identifiers: &[(usize, usize)],
         dictionary: &UserDictionary,
     ) -> bool {
@@ -146,6 +156,7 @@ impl NumericSpanNormalizer {
             offsets,
             span.0,
             true,
+            letters,
             identifiers,
             dictionary,
         );
@@ -160,6 +171,7 @@ impl NumericSpanNormalizer {
             offsets,
             span.1,
             false,
+            letters,
             identifiers,
             dictionary,
         );
@@ -175,12 +187,14 @@ impl NumericSpanNormalizer {
     /// The side a word takes, or `None` for a word the pipeline itself
     /// inserted: a markdown list marker becomes "первое:", and that marker must
     /// not veto the English context of the item text.
+    #[allow(clippy::too_many_arguments)]
     fn side(
         tracked: &mut TrackedText,
         snapshot: &str,
         offsets: &[usize],
         pos: usize,
         before: bool,
+        letters: &context::LetterPrefix,
         identifiers: &[(usize, usize)],
         dictionary: &UserDictionary,
     ) -> context::Side {
@@ -210,6 +224,7 @@ impl NumericSpanNormalizer {
                 offsets,
                 token,
                 (word.start, word.end),
+                letters,
                 identifiers,
                 dictionary,
             ) {
@@ -225,26 +240,16 @@ impl NumericSpanNormalizer {
         offsets: &[usize],
         token: &str,
         range: (usize, usize),
+        letters: &context::LetterPrefix,
         identifiers: &[(usize, usize)],
         dictionary: &UserDictionary,
     ) -> Option<context::Side> {
         if token.chars().any(context::is_cyrillic) {
             let (start, end) = tracked.original_range(offsets[range.0], offsets[range.1]);
-            let mut has_cyrillic = false;
-            let mut has_latin = false;
-            for ch in tracked
-                .original
-                .chars()
-                .skip(start)
-                .take(end.saturating_sub(start))
-            {
-                has_cyrillic |= context::is_cyrillic(ch);
-                has_latin |= ch.is_ascii_alphabetic();
-            }
             // A label the pipeline produced from digits or punctuation (a
             // markdown list marker) is not a neighbour; a Cyrillic reading of a
             // URL, path or inline code is not prose and still vetoes the number.
-            return if has_cyrillic || has_latin {
+            return if letters.has_letters(start, end) {
                 Some(context::Side::Word)
             } else {
                 None
@@ -279,7 +284,10 @@ impl NumericSpanNormalizer {
         let recorded = &mut *routing.recorded;
         let claimed = &mut *routing.claimed;
 
-        let needs_context = spans.iter().any(|span| Self::english_words(span).is_some());
+        let needs_context = spans.iter().any(|span| {
+            Self::english_words(span).is_some()
+                || (route == NumberRoute::Narrate && constructs::read(span, expand_units).is_some())
+        });
         let offsets = if needs_context {
             byte_to_char_offsets(&snapshot)
         } else {
@@ -295,34 +303,44 @@ impl NumericSpanNormalizer {
         } else {
             context::SentenceMap::build("")
         };
+        let letters = if needs_context {
+            context::LetterPrefix::build(&tracked.original)
+        } else {
+            context::LetterPrefix::build("")
+        };
 
         let mut replacements: Vec<(usize, usize, String)> = Vec::new();
         let mut native_ranges: Vec<(usize, usize)> = Vec::new();
         for span in &spans {
-            let english = match Self::english_words(span) {
-                Some(latin) => {
+            let claim = match Self::english_words(span) {
+                Some(number) => Some(EnglishClaim::Number(number)),
+                None if route == NumberRoute::Narrate => {
+                    constructs::read(span, expand_units).map(EnglishClaim::Construct)
+                }
+                None => None,
+            };
+            let english = match claim {
+                Some(claim) => {
                     let original_start = tracked
                         .original_range(offsets[span.start], offsets[span.end])
                         .0;
-                    if Self::english_context(
+                    let matched = Self::english_context(
                         &mut *tracked,
                         &snapshot,
                         &offsets,
                         (span.start, span.end),
                         original_start,
                         &sentences,
+                        &letters,
                         &identifiers,
                         dictionary,
-                    ) {
-                        Some(latin)
-                    } else {
-                        None
-                    }
+                    );
+                    if matched { Some(claim) } else { None }
                 }
                 None => None,
             };
             match english {
-                Some(number) => match route {
+                Some(EnglishClaim::Number(number)) => match route {
                     NumberRoute::Narrate => replacements.push((
                         span.start,
                         span.end,
@@ -338,6 +356,9 @@ impl NumericSpanNormalizer {
                         native_ranges.push((span.start, span.end));
                     }
                 },
+                Some(EnglishClaim::Construct(latin)) => {
+                    replacements.push((span.start, span.end, english::transliterate(&latin)))
+                }
                 None => {
                     if let Some(reading) = span.read(&snapshot, expand_units) {
                         replacements.push((span.start, span.end, reading));

@@ -634,6 +634,9 @@ fn version_digits(digits: &str) -> String {
 // ── Suffixes ─────────────────────────────────────────────────────────────────
 
 fn read_suffix(number: &Number, suffix: OrdinalSuffix, text: &str, span: &Span) -> Option<String> {
+    // An English ordinal suffix ("1st") has no Russian case: the Russian
+    // reader leaves the token to the alphanumeric phase, and the English
+    // construct reader owns it.
     let value = readable_value(number)?;
     if let Some(case) = decade_case(value, suffix, text, span.end) {
         if let Some(word) = morphology::decade(value, case) {
@@ -642,6 +645,10 @@ fn read_suffix(number: &Number, suffix: OrdinalSuffix, text: &str, span: &Span) 
     }
 
     let reading = match suffix {
+        // An English ordinal suffix ("1st") has no Russian case: the Russian
+        // reader leaves the token to the alphanumeric phase, and the English
+        // construct reader owns it.
+        OrdinalSuffix::English => return None,
         OrdinalSuffix::AmbiguousX => {
             let next = next_word(text, span.end);
             if lexicon::plural_ordinal_head(&next) {

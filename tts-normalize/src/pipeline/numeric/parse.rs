@@ -57,6 +57,9 @@ pub(crate) enum OrdinalSuffix {
     AmbiguousM,
     /// `-й` — masculine nominative or feminine oblique.
     AmbiguousFeminine,
+    /// `st` / `nd` / `rd` / `th` glued to the digits ("1st"): an English
+    /// ordinal, which the Russian reader leaves untouched.
+    English,
 }
 
 impl OrdinalSuffix {
@@ -801,6 +804,20 @@ fn parse_number_tail(
         }
     }
 
+    // An English ordinal suffix is glued to the digits ("1st", "21st"); it
+    // has no Russian case, so only the English construct reader uses it and
+    // the Russian reader leaves the token to the alphanumeric phase.
+    if number.ordinal_suffix.is_none()
+        && number.dot_groups.is_empty()
+        && number.comma_frac.is_none()
+        && number.slash_groups.is_empty()
+    {
+        if let Some((suffix, length)) = english_ordinal_suffix_at(&parser.text[parser.pos..]) {
+            number.ordinal_suffix = Some(suffix);
+            parser.pos += length;
+        }
+    }
+
     if let Some((half, length)) = half_at(&parser.text[parser.pos..]) {
         number.half = Some(half);
         parser.pos += length;
@@ -1237,6 +1254,25 @@ fn is_year_value(digits: &str) -> bool {
 
 // ── Suffix tables ────────────────────────────────────────────────────────────
 
+/// An English ordinal suffix glued to the digits ("1st", "22nd", "3rd",
+/// "4th"): the two letters must not be the beginning of a longer word.
+fn english_ordinal_suffix_at(text: &str) -> Option<(OrdinalSuffix, usize)> {
+    const SUFFIXES: [&str; 4] = ["st", "nd", "rd", "th"];
+    let head = text.get(..2)?;
+    if !SUFFIXES
+        .iter()
+        .any(|suffix| head.eq_ignore_ascii_case(suffix))
+    {
+        return None;
+    }
+    if text
+        .get(2..)
+        .is_some_and(|rest| rest.starts_with(|ch: char| ch.is_ascii_alphabetic()))
+    {
+        return None;
+    }
+    Some((OrdinalSuffix::English, 2))
+}
 fn version_suffix_at(text: &str) -> Option<(&'static str, Option<String>, usize)> {
     let rest = text.strip_prefix('-')?;
     let letters: String = rest
