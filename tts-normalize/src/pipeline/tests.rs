@@ -1680,7 +1680,15 @@ fn the_native_route_keeps_the_russian_construct_reading() {
 fn an_english_ordinal_reads_on_the_narrated_route() {
     let mut p = TTSPipeline::new();
     let out = p.process_for_engine("In the 1st release", &crate::profiles::SILERO_PROFILE);
-    assert!(out.text.contains("фёст"), "{}", out.text);
+    assert_eq!(out.text, "ин те фёст релиз");
+}
+
+#[test]
+fn an_identifier_in_the_sentence_does_not_veto_a_construct() {
+    let mut p = TTSPipeline::new();
+    let out = p.process_for_engine("In 100 MB of getUserData", &crate::profiles::SILERO_PROFILE);
+    assert!(out.text.contains("уан хандред мегабайтс"), "{}", out.text);
+    assert!(!out.text.contains("100"), "{}", out.text);
 }
 
 #[test]

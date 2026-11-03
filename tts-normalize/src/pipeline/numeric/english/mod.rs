@@ -111,6 +111,12 @@ pub(crate) fn digits(digits: &str) -> String {
     words.join(" ")
 }
 
+/// Whether a digit run is a zero-padded code: three or more digits starting
+/// with zero read digit by digit, the same cutoff the Russian reader applies.
+pub(crate) fn is_code_run(run: &str) -> bool {
+    run.len() >= 3 && run.starts_with('0')
+}
+
 /// The English words of a digit run: a cardinal while the reader names the
 /// value, the digit-by-digit reading otherwise.
 pub(crate) fn number_words(run: &str) -> String {

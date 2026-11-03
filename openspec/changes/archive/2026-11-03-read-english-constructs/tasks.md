@@ -45,4 +45,4 @@
       `cargo fmt --all`.
 - [x] 5.3 Golden fixtures: all 119 cases.
 - [x] 5.4 Perf budgets.
-- [ ] 5.5 Archive the change and sync the delta specs.
+- [x] 5.5 Archive the change and sync the delta specs.

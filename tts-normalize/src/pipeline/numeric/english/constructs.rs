@@ -30,7 +30,7 @@ pub(crate) fn read(span: &Span, expand_units: bool) -> Option<String> {
             month_name(*month)?,
             native(u64::from(*year))
         )),
-        Body::Range { left, right } => read_range(span, left, right, expand_units),
+        Body::Range { left, right } => read_range(span, left, right),
         Body::Reference { kind, number } => read_reference(*kind, number),
         Body::Phone { .. } | Body::City | Body::Roman { .. } => None,
     }
@@ -53,6 +53,24 @@ fn read_number(span: &Span, number: &Number, expand_units: bool) -> Option<Strin
     {
         return None;
     }
+    // A size or duration unit, percentage, currency or scale is a measurement
+    // the profile decides about: without `expand_units` the engine reads the
+    // symbol itself, so the construct keeps the Russian reading. A currency
+    // prefix ("$5") is a measurement in the same sense.
+    if !expand_units
+        && (number.currency_prefix.is_some()
+            || trailing.is_some_and(|trailing| {
+                matches!(
+                    trailing.kind,
+                    TrailingKind::Percent
+                        | TrailingKind::Unit(_)
+                        | TrailingKind::Currency(_)
+                        | TrailingKind::Scale(_)
+                )
+            }))
+    {
+        return None;
+    }
 
     let mut words = if number.ordinal_suffix.is_some() {
         ordinal(number.int.parse::<u64>().ok()?)?
@@ -71,7 +89,7 @@ fn read_number(span: &Span, number: &Number, expand_units: bool) -> Option<Strin
         words.push_str(currency_words(currency, !counts_as_one(number)));
     }
     if let Some(trailing) = trailing {
-        let attach = trailing_words(trailing, number, expand_units)?;
+        let attach = trailing_words(trailing, number)?;
         if !attach.is_empty() {
             words.push(' ');
             words.push_str(&attach);
@@ -89,17 +107,11 @@ fn read_number(span: &Span, number: &Number, expand_units: bool) -> Option<Strin
 /// The words of the integer part, digit by digit for a zero-padded code run.
 fn integer_words(number: &Number) -> Option<String> {
     let run = number.int.as_str();
-    Some(if is_code_run(run) {
+    Some(if super::is_code_run(run) {
         digits(run)
     } else {
         number_words(run)
     })
-}
-
-/// A zero-padded run of three or more digits is a code, the same cutoff the
-/// Russian reader applies.
-fn is_code_run(run: &str) -> bool {
-    run.len() >= 3 && run.starts_with('0')
 }
 
 /// One dotted group: a leading zero carries information ("v1.02"), so the
@@ -152,12 +164,12 @@ fn date_words(date: Date) -> Option<String> {
     })
 }
 
-fn read_range(span: &Span, left: &Number, right: &Number, expand_units: bool) -> Option<String> {
+fn read_range(span: &Span, left: &Number, right: &Number) -> Option<String> {
     let left_words = bound_words(left)?;
     let right_words = bound_words(right)?;
     let mut words = format!("{left_words} to {right_words}");
     if let Some(trailing) = span.trailing {
-        let attach = trailing_words(trailing, right, expand_units)?;
+        let attach = trailing_words(trailing, right)?;
         if !attach.is_empty() {
             words.push(' ');
             words.push_str(&attach);
@@ -192,31 +204,13 @@ fn read_reference(kind: Reference, number: &Number) -> Option<String> {
     Some(format!("{head} {}", integer_words(number)?))
 }
 
-fn trailing_words(trailing: Trailing, number: &Number, expand_units: bool) -> Option<String> {
+fn trailing_words(trailing: Trailing, number: &Number) -> Option<String> {
     let plural = !counts_as_one(number);
     Some(match trailing.kind {
-        TrailingKind::Percent => {
-            if !expand_units {
-                return None;
-            }
-            "percent".to_string()
-        }
-        TrailingKind::Unit(unit) => {
-            if !expand_units {
-                return None;
-            }
-            unit_words(unit, plural)?.to_string()
-        }
-        TrailingKind::Currency(currency) => {
-            if !expand_units {
-                return None;
-            }
-            currency_words(currency, plural).to_string()
-        }
+        TrailingKind::Percent => "percent".to_string(),
+        TrailingKind::Unit(unit) => unit_words(unit, plural)?.to_string(),
+        TrailingKind::Currency(currency) => currency_words(currency, plural).to_string(),
         TrailingKind::Scale(scale) => {
-            if !expand_units {
-                return None;
-            }
             let mut words = scale_word(scale).to_string();
             if let Some(currency) = trailing.currency {
                 words.push(' ');
@@ -436,10 +430,11 @@ pub(super) const WORDS: &[(&str, &str)] = &[
     ("terabytes", "терабайтс"),
     ("millisecond", "миллисеконд"),
     ("milliseconds", "миллисекондс"),
+    // Serves the unit ("seconds") and the second ordinal.
     ("second", "секонд"),
     ("seconds", "секондс"),
     ("minute", "минит"),
-    ("minutes", "миниц"),
+    ("minutes", "минитс"),
     ("hour", "ауэр"),
     ("hours", "ауэрс"),
     ("pixel", "пиксел"),
@@ -481,11 +476,10 @@ pub(super) const WORDS: &[(&str, &str)] = &[
     // Ordinals.
     ("zeroth", "зирос"),
     ("first", "фёст"),
-    ("second", "секонд"),
     ("third", "сёд"),
     ("fourth", "фос"),
     ("fifth", "фифс"),
-    ("sixth", "сикс"),
+    ("sixth", "сикст"),
     ("seventh", "сэвенс"),
     ("eighth", "эйтс"),
     ("ninth", "найнс"),
@@ -605,6 +599,23 @@ mod tests {
     fn ordinals_read_the_ordinal_word() {
         assert_eq!(english_all("1st release"), "фёст release");
         assert_eq!(english_all("21st release"), "твенти-фёст release");
+    }
+
+    #[test]
+    fn signs_and_approximations_prefix_the_reading() {
+        assert_eq!(english_all("-5%"), "майнус файв персент");
+        assert_eq!(english_all("~5%"), "эбаут файв персент");
+        assert_eq!(english_all("5 млн"), "файв миллион");
+    }
+
+    #[test]
+    fn every_construct_word_has_a_reading() {
+        for (latin, cyrillic) in WORDS {
+            assert!(
+                !cyrillic.is_empty() && !cyrillic.chars().any(|ch| ch.is_ascii_alphabetic()),
+                "{latin} has no Cyrillic reading: {cyrillic:?}"
+            );
+        }
     }
 
     #[test]

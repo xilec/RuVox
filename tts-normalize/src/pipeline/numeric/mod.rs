@@ -83,6 +83,13 @@ enum EnglishClaim {
     Construct(String),
 }
 
+/// The inputs the neighbour scan consults for every token besides the text.
+struct Neighbours<'a> {
+    letters: &'a context::LetterPrefix,
+    identifiers: &'a [(usize, usize)],
+    dictionary: &'a UserDictionary,
+}
+
 impl EnglishNumber {
     /// The cardinal Latin words, which the narrated route transliterates.
     fn latin(&self) -> String {
@@ -138,7 +145,6 @@ impl NumericSpanNormalizer {
     }
 
     /// Whether the span sits in English context (see the Numbers requirement).
-    #[allow(clippy::too_many_arguments)]
     fn english_context(
         tracked: &mut TrackedText,
         snapshot: &str,
@@ -146,35 +152,15 @@ impl NumericSpanNormalizer {
         span: (usize, usize),
         original_start: usize,
         sentences: &context::SentenceMap,
-        letters: &context::LetterPrefix,
-        identifiers: &[(usize, usize)],
-        dictionary: &UserDictionary,
+        neighbours: &Neighbours<'_>,
     ) -> bool {
-        let left = Self::side(
-            &mut *tracked,
-            snapshot,
-            offsets,
-            span.0,
-            true,
-            letters,
-            identifiers,
-            dictionary,
-        );
+        let left = Self::side(&mut *tracked, snapshot, offsets, span.0, true, neighbours);
         // One foreign word is enough: the other side cannot make the number
         // English, and scanning it would only add work.
         if left == context::Side::Word {
             return false;
         }
-        let right = Self::side(
-            &mut *tracked,
-            snapshot,
-            offsets,
-            span.1,
-            false,
-            letters,
-            identifiers,
-            dictionary,
-        );
+        let right = Self::side(&mut *tracked, snapshot, offsets, span.1, false, neighbours);
         if right == context::Side::Word {
             return false;
         }
@@ -187,16 +173,13 @@ impl NumericSpanNormalizer {
     /// The side a word takes, or `None` for a word the pipeline itself
     /// inserted: a markdown list marker becomes "первое:", and that marker must
     /// not veto the English context of the item text.
-    #[allow(clippy::too_many_arguments)]
     fn side(
         tracked: &mut TrackedText,
         snapshot: &str,
         offsets: &[usize],
         pos: usize,
         before: bool,
-        letters: &context::LetterPrefix,
-        identifiers: &[(usize, usize)],
-        dictionary: &UserDictionary,
+        neighbours: &Neighbours<'_>,
     ) -> context::Side {
         let origin = pos;
         let mut cursor = pos;
@@ -224,9 +207,7 @@ impl NumericSpanNormalizer {
                 offsets,
                 token,
                 (word.start, word.end),
-                letters,
-                identifiers,
-                dictionary,
+                neighbours,
             ) {
                 Some(side) => return side,
                 None => cursor = if before { word.start } else { word.end },
@@ -240,16 +221,14 @@ impl NumericSpanNormalizer {
         offsets: &[usize],
         token: &str,
         range: (usize, usize),
-        letters: &context::LetterPrefix,
-        identifiers: &[(usize, usize)],
-        dictionary: &UserDictionary,
+        neighbours: &Neighbours<'_>,
     ) -> Option<context::Side> {
         if token.chars().any(context::is_cyrillic) {
             let (start, end) = tracked.original_range(offsets[range.0], offsets[range.1]);
             // A label the pipeline produced from digits or punctuation (a
             // markdown list marker) is not a neighbour; a Cyrillic reading of a
             // URL, path or inline code is not prose and still vetoes the number.
-            return if letters.has_letters(start, end) {
+            return if neighbours.letters.has_letters(start, end) {
                 Some(context::Side::Word)
             } else {
                 None
@@ -257,8 +236,11 @@ impl NumericSpanNormalizer {
         }
         let latin = token.chars().all(|ch| ch.is_ascii_alphabetic());
         if latin
-            && !super::overlaps_ranges(identifiers, range.0, range.1)
-            && dictionary.resolve(&token.to_lowercase(), false).is_none()
+            && !super::overlaps_ranges(neighbours.identifiers, range.0, range.1)
+            && neighbours
+                .dictionary
+                .resolve(&token.to_lowercase(), false)
+                .is_none()
         {
             Some(context::Side::English)
         } else {
@@ -308,6 +290,11 @@ impl NumericSpanNormalizer {
         } else {
             context::LetterPrefix::build("")
         };
+        let neighbours = Neighbours {
+            letters: &letters,
+            identifiers: &identifiers,
+            dictionary,
+        };
 
         let mut replacements: Vec<(usize, usize, String)> = Vec::new();
         let mut native_ranges: Vec<(usize, usize)> = Vec::new();
@@ -331,9 +318,7 @@ impl NumericSpanNormalizer {
                         (span.start, span.end),
                         original_start,
                         &sentences,
-                        &letters,
-                        &identifiers,
-                        dictionary,
+                        &neighbours,
                     );
                     if matched { Some(claim) } else { None }
                 }
