@@ -1637,3 +1637,71 @@ fn identifier_beside_a_number_is_not_english_prose() {
     assert_eq!(out.spans.len(), 1, "spans: {:?}", out.spans);
     assert_eq!(span_text(&out.text, &out.spans[0]), "getUserData");
 }
+
+#[test]
+fn constructs_keep_their_russian_reading_in_english_prose() {
+    let mut p = TTSPipeline::new();
+    let percent = p.process_for_engine("In 5% we trust", &crate::profiles::SILERO_PROFILE);
+    assert!(percent.text.contains("пять процентов"), "{}", percent.text);
+
+    let money = p.process_for_engine("In $5 we trust", &crate::profiles::SILERO_PROFILE);
+    assert!(money.text.contains("пять долларов"), "{}", money.text);
+
+    let approx = p.process_for_engine("In ~5 we trust", &crate::profiles::SILERO_PROFILE);
+    assert!(approx.text.contains("около"), "{}", approx.text);
+    assert!(!approx.text.contains("файв"), "{}", approx.text);
+}
+
+#[test]
+fn zero_padded_pair_is_still_a_cardinal() {
+    let mut p = TTSPipeline::new();
+    let out = p.process_for_engine("In 07 we trust", &crate::profiles::SILERO_PROFILE);
+    assert!(out.text.contains("сэвен"), "{}", out.text);
+
+    let native = p.process_for_engine("In 07 we trust", &crate::profiles::TERATTS_PROFILE);
+    assert_eq!(native.text, "In 07 we trust");
+    assert!(
+        native
+            .spans
+            .iter()
+            .any(|span| span_text(&native.text, span) == "07"),
+        "spans: {:?}",
+        native.spans
+    );
+}
+
+#[test]
+fn grouped_cardinal_reads_in_english() {
+    let mut p = TTSPipeline::new();
+    let out = p.process_for_engine("In 10 000 words", &crate::profiles::SILERO_PROFILE);
+    assert!(out.text.contains("тен саузенд"), "{}", out.text);
+}
+
+#[test]
+fn a_list_marker_does_not_veto_the_item_number() {
+    let mut p = TTSPipeline::new();
+    let out = p.process_for_engine("1. 2024 was the year.", &crate::profiles::TERATTS_PROFILE);
+    assert!(out.text.contains("первое"), "marker: {}", out.text);
+    assert_eq!(out.text, "первое:2024 was the year.");
+    assert!(
+        out.spans
+            .iter()
+            .any(|span| span_text(&out.text, span) == "2024"),
+        "spans: {:?}",
+        out.spans
+    );
+}
+
+#[test]
+fn a_url_reading_is_not_english_prose() {
+    let mut p = TTSPipeline::new();
+    let out = p.process_for_engine(
+        "Check https://example.com 2024 now",
+        &crate::profiles::SILERO_PROFILE,
+    );
+    assert!(
+        out.text.contains("две тысячи двадцать четыре"),
+        "{}",
+        out.text
+    );
+}

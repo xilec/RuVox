@@ -56,7 +56,14 @@ the narrated route must not pollute the dictionary's unknown-words map.
   inline code are already consumed there, so they cannot masquerade as English
   prose; identifiers are recognised with the existing `find_identifier_ranges`
   and the user dictionary is consulted directly. Rejected: classifying on the
-  original text — a URL would look like a Latin word.
+  original text — a URL would look like a Latin word. One exception proves the
+  rule: a Cyrillic word the pipeline produced from digits or punctuation (the
+  markdown list marker «1.» → «первое:») has no letters in its original range,
+  so it is a label, not a neighbour, and the scan skips it — otherwise
+  «1. 2024 was the year.» would read the item number in Russian. A Cyrillic
+  reading of a URL, path or inline code keeps its Latin original and still
+  vetoes the number. The scan is bounded by the sentence and paragraph edges
+  plus a fixed window, so a run of integers cannot make the layer quadratic.
 - **One reader, curated readings.** The English numeral words and their
   Cyrillic readings live in one table in `numeric/english` ("уан", "зиро",
   "сэвен" follow the `IT_TERMS` style), so the general transliteration rules

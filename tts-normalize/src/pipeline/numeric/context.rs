@@ -1,15 +1,28 @@
-//! English context of a numeric span: the language of its sentence and of the
+//! English context of a numeric span: the language of its sentence and the
 //! nearest word on each side.
 
-/// Where the neighbour scan stopped.
+/// How far a neighbour scan goes before it gives up. A number separated from
+/// every word by a long run of digits or punctuation is not "between English
+/// words", and an unbounded scan over a run of integers would make the layer
+/// quadratic in the length of the text.
+pub(crate) const NEIGHBOUR_WINDOW: usize = 128;
+
+/// A word the neighbour scan found, in snapshot byte offsets.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Word {
+    pub start: usize,
+    pub end: usize,
+}
+
+/// The language of one side of a numeric span.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Side {
     /// English prose.
     English,
-    /// A word that is not English prose: Cyrillic, a Latin identifier, a
+    /// A word that is not English prose: a Cyrillic word, a Latin identifier, a
     /// user-dictionary key, a mixed letter-digit token.
     Word,
-    /// The text starts or ends here, or a paragraph breaks.
+    /// The text, a sentence or a paragraph ends here.
     Edge,
 }
 
@@ -32,6 +45,10 @@ impl SentenceMap {
         let mut starts = vec![0usize];
         let mut cyrillic = vec![false];
         let mut has_cyrillic = false;
+        // A blank line is a paragraph break; a single newline is whitespace, so
+        // a soft-wrapped line stays in the same sentence. Counting newlines
+        // also covers CRLF input, where "\r" sits between them.
+        let mut pending_newline = false;
 
         for (index, &ch) in chars.iter().enumerate() {
             if is_cyrillic(ch) {
@@ -41,12 +58,22 @@ impl SentenceMap {
             // of the text, so "3.14" and "e.g." stay inside one sentence.
             let terminal =
                 is_sentence_end(ch) && chars.get(index + 1).is_none_or(|next| next.is_whitespace());
-            let paragraph = ch == '\n' && chars.get(index + 1) == Some(&'\n');
+            let paragraph = if ch == '\n' {
+                let break_here = pending_newline;
+                pending_newline = true;
+                break_here
+            } else {
+                if !ch.is_whitespace() {
+                    pending_newline = false;
+                }
+                false
+            };
             if terminal || paragraph {
                 *cyrillic.last_mut().expect("one sentence") = has_cyrillic;
                 has_cyrillic = false;
                 starts.push(index + 1);
                 cyrillic.push(false);
+                pending_newline = false;
             }
         }
         *cyrillic.last_mut().expect("one sentence") = has_cyrillic;
@@ -71,52 +98,36 @@ impl SentenceMap {
     }
 }
 
-/// Whether the span at `[start, end)` (byte offsets in `text`) is English
-/// context: English prose on both sides, or English prose on one side and a
-/// sentence edge on the other, inside a sentence without Cyrillic words.
-pub(crate) fn english_context(
-    text: &str,
-    start: usize,
-    end: usize,
-    original_pos: usize,
-    sentences: &SentenceMap,
-    is_english: &dyn Fn(&str, (usize, usize)) -> bool,
-) -> bool {
-    let left = side_before(text, start, is_english);
-    let right = side_after(text, end, is_english);
-    if left == Side::Word || right == Side::Word {
-        return false;
-    }
-    if left != Side::English && right != Side::English {
-        return false;
-    }
-    !sentences.has_cyrillic_at(original_pos)
-}
-
-/// The language of the nearest word before `pos`.
-pub(crate) fn side_before(
-    text: &str,
-    pos: usize,
-    is_english: &dyn Fn(&str, (usize, usize)) -> bool,
-) -> Side {
+/// The nearest word before `pos`, or `None` when the text, a sentence or a
+/// paragraph ends first.
+///
+/// Whitespace, punctuation and digits are transparent: "In 2024, 3" finds "In"
+/// before the second number. The scan is bounded by [`NEIGHBOUR_WINDOW`], so a
+/// long run of digits reads as an edge, not as an ever-growing search.
+pub(crate) fn word_before(text: &str, pos: usize) -> Option<Word> {
     let mut end = pos;
-    loop {
-        while end > 0 {
-            let ch = text[..end].chars().next_back().expect("a char before end");
-            if !ch.is_whitespace() {
-                break;
+    let mut newlines = 0u32;
+    while pos.saturating_sub(end) <= NEIGHBOUR_WINDOW {
+        if end == 0 {
+            return None;
+        }
+        let ch = text[..end]
+            .chars()
+            .next_back()
+            .expect("a char before the cursor");
+        if ch.is_whitespace() {
+            if ch == '\n' {
+                newlines += 1;
+                if newlines >= 2 {
+                    return None;
+                }
             }
             end -= ch.len_utf8();
-            if ch == '\n' && text[..end].ends_with('\n') {
-                return Side::Edge;
-            }
+            continue;
         }
-        if end == 0 {
-            return Side::Edge;
-        }
-        let ch = text[..end].chars().next_back().expect("a char before end");
+        newlines = 0;
         if is_sentence_end(ch) {
-            return Side::Edge;
+            return None;
         }
         if ch.is_ascii_digit() {
             end -= 1;
@@ -127,34 +138,34 @@ pub(crate) fn side_before(
             continue;
         }
         let start = word_start_before(text, end);
-        return classify(&text[start..end], (start, end), is_english);
+        return Some(Word { start, end });
     }
+    None
 }
 
-/// The language of the nearest word after `pos`.
-pub(crate) fn side_after(
-    text: &str,
-    pos: usize,
-    is_english: &dyn Fn(&str, (usize, usize)) -> bool,
-) -> Side {
+/// The nearest word after `pos`, or `None` when the text, a sentence or a
+/// paragraph ends first.
+pub(crate) fn word_after(text: &str, pos: usize) -> Option<Word> {
     let mut start = pos;
-    loop {
-        while start < text.len() {
-            let ch = text[start..].chars().next().expect("a char at start");
-            if !ch.is_whitespace() {
-                break;
+    let mut newlines = 0u32;
+    while start.saturating_sub(pos) <= NEIGHBOUR_WINDOW {
+        if start >= text.len() {
+            return None;
+        }
+        let ch = text[start..].chars().next().expect("a char at the cursor");
+        if ch.is_whitespace() {
+            if ch == '\n' {
+                newlines += 1;
+                if newlines >= 2 {
+                    return None;
+                }
             }
             start += ch.len_utf8();
-            if ch == '\n' && text[start..].starts_with('\n') {
-                return Side::Edge;
-            }
+            continue;
         }
-        if start >= text.len() {
-            return Side::Edge;
-        }
-        let ch = text[start..].chars().next().expect("a char at start");
+        newlines = 0;
         if is_sentence_end(ch) {
-            return Side::Edge;
+            return None;
         }
         if ch.is_ascii_digit() {
             start += 1;
@@ -165,24 +176,9 @@ pub(crate) fn side_after(
             continue;
         }
         let end = word_end_after(text, start);
-        return classify(&text[start..end], (start, end), is_english);
+        return Some(Word { start, end });
     }
-}
-
-fn classify(
-    token: &str,
-    range: (usize, usize),
-    is_english: &dyn Fn(&str, (usize, usize)) -> bool,
-) -> Side {
-    if token.chars().any(is_cyrillic) {
-        return Side::Word;
-    }
-    let latin = token.chars().all(|ch| ch.is_ascii_alphabetic());
-    if latin && is_english(token, range) {
-        Side::English
-    } else {
-        Side::Word
-    }
+    None
 }
 
 fn word_start_before(text: &str, end: usize) -> usize {
@@ -218,19 +214,15 @@ fn is_sentence_end(ch: char) -> bool {
     matches!(ch, '.' | '!' | '?' | '…')
 }
 
-fn is_cyrillic(ch: char) -> bool {
+/// A Cyrillic letter; the sentence guard and the pipeline-insertion check use
+/// the same definition.
+pub(crate) fn is_cyrillic(ch: char) -> bool {
     ('\u{0400}'..='\u{04ff}').contains(&ch) && ch.is_alphabetic()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// English prose: ASCII letters only. The layer passes a predicate that
-    /// also rejects identifiers and dictionary keys.
-    fn latin(token: &str, _range: (usize, usize)) -> bool {
-        token.chars().all(|ch| ch.is_ascii_alphabetic())
-    }
 
     #[test]
     fn sentence_map_marks_only_cyrillic_sentences() {
@@ -247,6 +239,13 @@ mod tests {
     }
 
     #[test]
+    fn sentence_map_splits_at_crlf_paragraph_breaks() {
+        let map = SentenceMap::build("In 2024 we shipped\r\n\r\nПотом починили");
+        assert!(!map.has_cyrillic_at(3));
+        assert!(map.has_cyrillic_at(32));
+    }
+
+    #[test]
     fn sentence_map_keeps_a_dot_between_digits() {
         let map = SentenceMap::build("In 3.14 we shipped");
         // The dot is not a sentence end, so the whole text is one sentence.
@@ -255,76 +254,49 @@ mod tests {
     }
 
     #[test]
-    fn side_skips_punctuation_and_digits() {
-        assert_eq!(side_before("In 2024, 3", 10, &latin), Side::English);
-        assert_eq!(side_after("3, 2024 shipped", 1, &latin), Side::English);
+    fn word_before_skips_punctuation_and_digits() {
+        assert_eq!(
+            word_before("In 2024, 3", 10),
+            Some(Word { start: 0, end: 2 })
+        );
+        assert_eq!(
+            word_before("Установи 2024", 17),
+            Some(Word { start: 0, end: 16 })
+        );
     }
 
     #[test]
-    fn side_stops_at_a_sentence_end() {
-        assert_eq!(side_after("2024. We shipped", 4, &latin), Side::Edge);
-        assert_eq!(side_before("In 2024. 3", 10, &latin), Side::Edge);
+    fn word_after_skips_punctuation_and_digits() {
+        assert_eq!(
+            word_after("3, 2024 shipped", 1),
+            Some(Word { start: 8, end: 15 })
+        );
     }
 
     #[test]
-    fn side_treats_a_paragraph_break_as_an_edge() {
-        assert_eq!(side_after("2024\n\nwe shipped", 4, &latin), Side::Edge);
-        assert_eq!(side_before("In 2024\n\n3", 10, &latin), Side::Edge);
+    fn word_scans_stop_at_a_sentence_end() {
+        assert_eq!(word_after("2024. We shipped", 4), None);
+        assert_eq!(word_before("In 2024. 3", 10), None);
     }
 
     #[test]
-    fn side_reads_the_nearest_word() {
-        assert_eq!(side_before("In 2024", 7, &latin), Side::English);
-        assert_eq!(side_before("Установи 2024", 17, &latin), Side::Word);
-        assert_eq!(side_after("2024 releases", 5, &latin), Side::English);
+    fn word_scans_stop_at_a_paragraph_break() {
+        assert_eq!(word_after("2024\n\nwe shipped", 4), None);
+        assert_eq!(word_before("In 2024\n\n3", 10), None);
     }
 
     #[test]
-    fn context_needs_english_on_one_side_and_no_word_on_the_other() {
-        let english = SentenceMap::build("In 2024 we shipped");
-        assert!(english_context(
-            "In 2024 we shipped",
-            3,
-            7,
-            3,
-            &english,
-            &latin
-        ));
-
-        let cyrillic = SentenceMap::build("In 2024 we shipped в Казань");
-        assert!(!english_context(
-            "In 2024 we shipped в Казань",
-            3,
-            7,
-            3,
-            &cyrillic,
-            &latin
-        ));
-
-        let russian = SentenceMap::build("Установи Python 2024");
-        assert!(!english_context(
-            "Установи Python 2024",
-            24,
-            28,
-            24,
-            &russian,
-            &latin
-        ));
+    fn word_scans_stop_at_a_crlf_paragraph_break() {
+        assert_eq!(word_after("2024\r\n\r\nwe shipped", 4), None);
+        assert_eq!(word_before("In 2024\r\n\r\n3", 11), None);
     }
 
     #[test]
-    fn identifier_neighbour_is_not_english_prose() {
-        let predicate = |token: &str, _range: (usize, usize)| {
-            token.chars().all(|ch| ch.is_ascii_alphabetic()) && token != "getUserData"
-        };
-        let sentences = SentenceMap::build("getUserData 3");
-        assert!(!english_context(
-            "getUserData 3",
-            12,
-            13,
-            12,
-            &sentences,
-            &predicate
-        ));
+    fn a_long_digit_run_reads_as_an_edge() {
+        let digits = "1 ".repeat(NEIGHBOUR_WINDOW);
+        let text = format!("word {digits}");
+        assert_eq!(word_before(&text, text.len()), None);
+        let text = format!("{digits}word");
+        assert_eq!(word_after(&text, 0), None);
     }
 }
