@@ -701,8 +701,9 @@ including a plain source, which has no display-mode switch:
   (`"narrow"` | `"wide"`);
 - a `[ − ] N% [ + ]` stepper bound to `UIConfig.reading_scale` with the ladder
   80/100/125/150/175/200 percent: `−` moves to the nearest lower step, `+` to
-  the nearest higher step, clicking the percentage resets it to 100, and the
-  bound buttons are disabled at 80 % and 200 %.
+  the nearest higher step, and a separate `↺` reset button returns the scale to
+  100 %; the bound buttons are disabled at 80 % and 200 %, and the reset button
+  is disabled while the scale is 100 %.
 
 Each control SHALL persist its change immediately through
 `commands.updateConfig` (`{ reading_width }` or `{ reading_scale }`) with
@@ -745,12 +746,13 @@ changes, and the wide layout still fills the pane.
 - **WHEN** the viewer renders
 - **THEN** the stepper shows `93 %`, `−` moves it to 80 %, and `+` moves it to 100 %
 
-#### Scenario: Clicking the percentage resets the scale
+#### Scenario: The reset button returns the scale to 100 %
 
 - **GIVEN** the saved `reading_scale` is 175
-- **WHEN** the user clicks the percentage value
+- **WHEN** the user clicks `↺`
 - **THEN** the scale becomes 100 % and `update_config` receives
   `reading_scale: 100`
+- **AND** the `↺` button is disabled while the scale is 100 %
 
 #### Scenario: Failed persistence reverts the control
 
