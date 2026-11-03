@@ -83,6 +83,20 @@ enum EnglishClaim {
     Construct(String),
 }
 
+impl EnglishClaim {
+    /// The Latin words of the reading: the cardinal in the route's register, or
+    /// the construct wording, which both routes share.
+    fn words(&self, route: NumberRoute) -> String {
+        match self {
+            Self::Number(number) => match route {
+                NumberRoute::Narrate => number.latin(),
+                NumberRoute::Native => number.native(),
+            },
+            Self::Construct(words) => words.clone(),
+        }
+    }
+}
+
 /// The inputs the neighbour scan consults for every token besides the text.
 struct Neighbours<'a> {
     letters: &'a context::LetterPrefix,
@@ -321,36 +335,25 @@ impl NumericSpanNormalizer {
                 None => None,
             };
             match english {
-                Some(EnglishClaim::Number(number)) => match route {
-                    NumberRoute::Narrate => replacements.push((
-                        span.start,
-                        span.end,
-                        english::transliterate(&number.latin()),
-                    )),
-                    NumberRoute::Native => {
-                        let (orig_start, orig_end) =
-                            tracked.original_range(offsets[span.start], offsets[span.end]);
-                        if orig_end > orig_start {
-                            claimed.push((orig_start, orig_end));
+                Some(claim) => {
+                    let words = claim.words(route);
+                    match route {
+                        NumberRoute::Narrate => replacements.push((
+                            span.start,
+                            span.end,
+                            english::transliterate(&words),
+                        )),
+                        NumberRoute::Native => {
+                            let (orig_start, orig_end) =
+                                tracked.original_range(offsets[span.start], offsets[span.end]);
+                            if orig_end > orig_start {
+                                claimed.push((orig_start, orig_end));
+                            }
+                            replacements.push((span.start, span.end, words));
+                            native_ranges.push((span.start, span.end));
                         }
-                        replacements.push((span.start, span.end, number.native()));
-                        native_ranges.push((span.start, span.end));
                     }
-                },
-                Some(EnglishClaim::Construct(latin)) => match route {
-                    NumberRoute::Narrate => {
-                        replacements.push((span.start, span.end, english::transliterate(&latin)))
-                    }
-                    NumberRoute::Native => {
-                        let (orig_start, orig_end) =
-                            tracked.original_range(offsets[span.start], offsets[span.end]);
-                        if orig_end > orig_start {
-                            claimed.push((orig_start, orig_end));
-                        }
-                        replacements.push((span.start, span.end, latin));
-                        native_ranges.push((span.start, span.end));
-                    }
-                },
+                }
                 None => {
                     if let Some(reading) = span.read(&snapshot, expand_units) {
                         replacements.push((span.start, span.end, reading));

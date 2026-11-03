@@ -1723,6 +1723,63 @@ fn a_russian_context_construct_keeps_the_russian_reading_on_the_native_route() {
 
 #[test]
 fn the_native_route_spells_every_construct_family() {
+    let cases = [
+        ("In 5% we trust", "In five percent we trust", "five percent"),
+        (
+            "Loaded 100 MB today",
+            "Loaded one hundred megabytes today",
+            "one hundred megabytes",
+        ),
+        (
+            "Version 1.2.3 shipped",
+            "Version one point two point three shipped",
+            "one point two point three",
+        ),
+        (
+            "It landed on 12.05.2024 today",
+            "It landed on the twelfth of May, twenty twenty-four today",
+            "the twelfth of May, twenty twenty-four",
+        ),
+        (
+            "It grew 10-20 builds",
+            "It grew ten to twenty builds",
+            "ten to twenty",
+        ),
+        (
+            "The clock showed 09:30 today",
+            "The clock showed nine thirty today",
+            "nine thirty",
+        ),
+        ("Paid 5 € today", "Paid five euros today", "five euros"),
+        (
+            "In 2024-12 we shipped",
+            "In December twenty twenty-four we shipped",
+            "December twenty twenty-four",
+        ),
+        ("See № 5 here", "See number five here", "number five"),
+        ("The 1st release", "The first release", "first"),
+    ];
+    for (input, expected, reading) in cases {
+        let mut p = TTSPipeline::new();
+        let out = p.process_for_engine(input, &crate::profiles::TERATTS_PROFILE);
+        assert_eq!(out.text, expected, "{input}");
+        let spans: Vec<_> = out
+            .spans
+            .iter()
+            .filter(|span| span_text(&out.text, span) == reading)
+            .collect();
+        assert_eq!(spans.len(), 1, "{input}: spans {:?}", out.spans);
+        assert_eq!(
+            spans[0].kind,
+            crate::pipeline::spans::SpanKind::ProseLatin,
+            "{input}"
+        );
+        assert_eq!(spans[0].lang, Some("en"), "{input}");
+    }
+}
+
+#[test]
+fn a_native_sentence_with_several_constructs_gets_one_span_each() {
     let mut p = TTSPipeline::new();
     let out = p.process_for_engine(
         "Version 1.2.3 shipped on 12.05.2024 in 10-20 builds.",
@@ -1731,6 +1788,39 @@ fn the_native_route_spells_every_construct_family() {
     assert_eq!(
         out.text,
         "Version one point two point three shipped on the twelfth of May, twenty twenty-four in ten to twenty builds."
+    );
+    let spans: Vec<_> = out
+        .spans
+        .iter()
+        .map(|span| span_text(&out.text, span))
+        .collect();
+    for reading in [
+        "one point two point three",
+        "the twelfth of May, twenty twenty-four",
+        "ten to twenty",
+    ] {
+        assert_eq!(
+            spans.iter().filter(|text| *text == reading).count(),
+            1,
+            "spans: {spans:?}"
+        );
+    }
+}
+
+#[test]
+fn a_spelled_date_is_not_relabelled_as_an_identifier() {
+    let mut p = TTSPipeline::new();
+    let out = p.process_for_engine(
+        "The release landed on 12.05.2024.",
+        &crate::profiles::TERATTS_PROFILE,
+    );
+    assert!(out.text.contains("twenty twenty-four"), "{}", out.text);
+    assert!(
+        !out.spans
+            .iter()
+            .any(|span| span.kind == crate::pipeline::spans::SpanKind::CodeIdentifier),
+        "spans: {:?}",
+        out.spans
     );
 }
 

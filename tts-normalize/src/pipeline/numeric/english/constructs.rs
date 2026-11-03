@@ -4,8 +4,9 @@
 //! version, range, reference or ordinal as one span and reads it in Russian in
 //! [`super::super::read`]. This module owns the English wording of the same
 //! span: [`read`] returns Latin words with the same shape [`super::cardinal`]
-//! returns, and the route translates them (the narrated route transliterates
-//! through [`super::transliterate`], the native route can spell them later).
+//! returns, and the route renders them: the narrated route transliterates them
+//! into Cyrillic through [`super::transliterate`], the native route spells them
+//! in Latin.
 //!
 //! A share of shapes has no wording here on purpose and keeps the Russian
 //! reading: phone numbers, Roman numerals, city abbreviations, comma decimals,
