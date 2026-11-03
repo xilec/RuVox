@@ -152,6 +152,28 @@ The load-bearing summary: code and comments in English, user-facing UI strings i
 
 When a CI step, script flag, or workaround exists because of a specific incident, leave a comment explaining why it is load-bearing (see the slim/full gate in `.github/workflows/ci.yml`, the `shellHook` comments in `nix/devshell.nix`).
 
+## UI mockups in issues and discussions
+
+When an issue, discussion, or PR description concerns a screen or a layout
+change, show the UI as an ASCII wireframe in a fenced `text` block instead of
+long prose — agreeing on placement before coding is cheaper than reworking it
+afterwards:
+
+```text
+┌─ RuVox ─────────────────────────────┐
+│ [Добавить текст]   [Настройки]      │
+├─ История ─┬─ Текст ─────────────────┤
+│ • Статья  │ Вызови гет юзер дата…   │
+│ • Заметка │                         │
+└───────────┴─────────────────────────┘
+```
+
+Keep the mockup schematic — window chrome, panes, controls — with the real
+Russian UI labels, and under ~80 columns so it stays readable in the GitHub web
+UI, in review tools, and in a terminal. Screenshots may supplement the mockup
+when pixel detail matters, but the ASCII sketch is the artifact that survives in
+text: it can be diffed, grepped, and edited in place.
+
 ## Repository language policy
 
 RuVox targets Russian-speaking end users but is developed in English. The split is
