@@ -61,6 +61,18 @@ function failureTone(entry: TextEntry): 'error' | 'warning' | null {
   return null;
 }
 
+/** Immutable set removal: keeps the previous reference when the id is absent,
+ * so a no-op busy-state update does not re-render the queue. */
+function withoutId(
+  ids: ReadonlySet<EntryId>,
+  id: EntryId,
+): ReadonlySet<EntryId> {
+  if (!ids.has(id)) return ids;
+  const next = new Set(ids);
+  next.delete(id);
+  return next;
+}
+
 interface FailureNoteProps {
   tone: 'error' | 'warning';
   /** Raw stored `TextEntry.error_message`; identifies the failure across a UI
@@ -163,6 +175,94 @@ function FailureNote({
   );
 }
 
+/** How often the elapsed timer recomputes the displayed seconds. */
+const ELAPSED_TICK_MS = 1000;
+
+interface SynthesisProgressLineProps {
+  entry: TextEntry;
+  /** Card preview, used by the cancel button's accessible label so the
+   * action names the entry. */
+  entryLabel: string;
+  cancelBusy: boolean;
+  onCancelSynthesis: (id: string) => void;
+}
+
+/**
+ * Per-card synthesis stage line: the indeterminate bar and elapsed time for
+ * `processing`, «В очереди» for `pending`, plus the always-visible cancel
+ * action.
+ *
+ * The tick lives in this component on purpose: its state update re-renders
+ * only this line, not `QueueItem` or the queue list. `TextEntry` carries no
+ * start timestamp, so the clock starts when the card observes `processing`
+ * (on mount or on a `pending -> processing` update) and restarts after an
+ * application restart.
+ */
+function SynthesisProgressLine({
+  entry,
+  entryLabel,
+  cancelBusy,
+  onCancelSynthesis,
+}: SynthesisProgressLineProps) {
+  const tt = useT();
+  const isProcessing = entry.status === 'processing';
+  const [elapsedSec, setElapsedSec] = useState(0);
+  const startedAtRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!isProcessing) {
+      startedAtRef.current = null;
+      return;
+    }
+    startedAtRef.current = Date.now();
+    setElapsedSec(0);
+    const interval = window.setInterval(() => {
+      if (startedAtRef.current === null) return;
+      setElapsedSec(Math.floor((Date.now() - startedAtRef.current) / 1000));
+    }, ELAPSED_TICK_MS);
+    return () => {
+      // Terminal status or unmount: no runner is left to count.
+      window.clearInterval(interval);
+      startedAtRef.current = null;
+    };
+  }, [isProcessing]);
+
+  if (entry.status !== 'pending' && entry.status !== 'processing') return null;
+
+  return (
+    <div className={classes.synthesisLine} data-synthesis-progress={entry.status}>
+      {isProcessing ? (
+        <>
+          <div className={classes.synthesisTrack} aria-hidden="true">
+            <div className={classes.synthesisBar} />
+          </div>
+          <Text className={classes.synthesisStage} data-synthesis-elapsed>
+            {tt('queue.synthesis.progress', [formatDuration(elapsedSec)])}
+          </Text>
+        </>
+      ) : (
+        <Text className={classes.synthesisStage}>{tt('queue.synthesis.queued')}</Text>
+      )}
+      <Button
+        className={classes.synthesisCancel}
+        size="compact-xs"
+        variant="subtle"
+        color="gray"
+        disabled={cancelBusy}
+        aria-busy={cancelBusy}
+        aria-label={tt('queue.synthesis.cancel_aria', [entryLabel])}
+        data-synthesis-cancel
+        onClick={(e) => {
+          e.stopPropagation();
+          onCancelSynthesis(entry.id);
+        }}
+      >
+        {tt('queue.synthesis.cancel')}
+      </Button>
+    </div>
+  );
+}
+
 interface QueueItemProps {
   entry: TextEntry;
   isSelected: boolean;
@@ -175,6 +275,11 @@ interface QueueItemProps {
    * the list so the busy state survives item re-renders. */
   onRetry: (id: string) => void;
   retryBusy: boolean;
+  /** True while this entry's `cancel_synthesis` call is in flight. */
+  cancelBusy: boolean;
+  /** Inline cancel for `pending`/`processing` cards; owned by the list so the
+   * busy state survives item re-renders. */
+  onCancelSynthesis: (id: string) => void;
 }
 
 function QueueItem({
@@ -182,6 +287,8 @@ function QueueItem({
   isSelected,
   isPlaying,
   retryBusy,
+  cancelBusy,
+  onCancelSynthesis,
   onSelect,
   onPlay,
   onContextMenu,
@@ -190,6 +297,8 @@ function QueueItem({
 }: QueueItemProps) {
   const tt = useT();
   const preview = entry.original_text.slice(0, 60);
+  const previewLabel =
+    entry.original_text.length > 60 ? `${preview}\u2026` : preview;
   const isProcessing = entry.status === 'processing';
   const canPlay = entry.status === 'ready' || entry.status === 'playing';
   const tone = failureTone(entry);
@@ -229,9 +338,14 @@ function QueueItem({
       <Group justify="space-between" gap="xs" wrap="nowrap">
         <Stack gap={2} style={{ minWidth: 0, flex: 1 }}>
           <Text className={classes.preview} title={entry.original_text}>
-            {preview}
-            {entry.original_text.length > 60 ? '\u2026' : ''}
+            {previewLabel}
           </Text>
+          <SynthesisProgressLine
+            entry={entry}
+            entryLabel={previewLabel}
+            cancelBusy={cancelBusy}
+            onCancelSynthesis={onCancelSynthesis}
+          />
           {entry.error_message !== null && tone !== null && (
             <FailureNote
               tone={tone}
@@ -341,16 +455,18 @@ export function QueueList({ onRegenerate }: QueueListProps) {
   const [retryingIds, setRetryingIds] = useState<ReadonlySet<EntryId>>(
     () => new Set(),
   );
+
+  // Entries whose cancel command is in flight. The inline button and the
+  // context-menu item share one handler, so the set keeps the button disabled
+  // until the invoke settles and a double click cannot cancel twice.
+  const [cancellingIds, setCancellingIds] = useState<ReadonlySet<EntryId>>(
+    () => new Set(),
+  );
   const handleRetry = useCallback(
     (id: string) => {
       setRetryingIds((prev) => new Set(prev).add(id));
       void commands.regenerateEntry(id, false).catch((err) => {
-        setRetryingIds((prev) => {
-          if (!prev.has(id)) return prev;
-          const next = new Set(prev);
-          next.delete(id);
-          return next;
-        });
+        setRetryingIds((prev) => withoutId(prev, id));
         notifications.show({
           title: tt('errors.title'),
           message: tt('queue.notify.regenerate_failed', [formatError(err)]),
@@ -385,12 +501,7 @@ export function QueueList({ onRegenerate }: QueueListProps) {
         // A retry stops being busy once the entry leaves the retryable
         // failure state; regenerate_entry clears `error_message` first.
         if (payload.entry.error_message === null) {
-          setRetryingIds((prev) => {
-            if (!prev.has(payload.entry.id)) return prev;
-            const next = new Set(prev);
-            next.delete(payload.entry.id);
-            return next;
-          });
+          setRetryingIds((prev) => withoutId(prev, payload.entry.id));
         }
 
         // Keep the selected entry in sync so TextViewer reflects latest status
@@ -465,6 +576,7 @@ export function QueueList({ onRegenerate }: QueueListProps) {
   }, [tt]);
 
   const handleCancelSynthesis = useCallback(async (id: string) => {
+    setCancellingIds((prev) => new Set(prev).add(id));
     try {
       await commands.cancelSynthesis(id);
       notifications.show({
@@ -478,6 +590,10 @@ export function QueueList({ onRegenerate }: QueueListProps) {
         message: tt('queue.notify.cancel_failed', [formatError(e)]),
         color: 'red',
       });
+    } finally {
+      // A rejection re-enables the button; on success the `cancelled` entry
+      // update removes the whole progress line.
+      setCancellingIds((prev) => withoutId(prev, id));
     }
   }, [tt]);
 
@@ -571,6 +687,8 @@ export function QueueList({ onRegenerate }: QueueListProps) {
                 onOpenParams={handleOpenParams}
                 onRetry={handleRetry}
                 retryBusy={retryingIds.has(entry.id)}
+                cancelBusy={cancellingIds.has(entry.id)}
+                onCancelSynthesis={handleCancelSynthesis}
               />
             ))}
           </Stack>

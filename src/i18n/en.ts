@@ -79,6 +79,10 @@ export const en: Record<MessageKey, string> = {
   'queue.error.regeneration_failed_hint': 'The previous recording still plays.',
   'queue.notify.cancelled.message': 'Entry synthesis stopped',
   'queue.notify.cancel_failed': 'Failed to cancel synthesis: {0}',
+  'queue.synthesis.progress': 'Synthesizing… {0}',
+  'queue.synthesis.queued': 'Queued',
+  'queue.synthesis.cancel': 'Cancel',
+  'queue.synthesis.cancel_aria': 'Cancel synthesis: {0}',
 
   // ── Generation-params dialog (#243) ─────────────────────────────────────
   'generation.title': 'Recording parameters',
