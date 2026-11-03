@@ -232,10 +232,10 @@ The system SHALL store synthesized audio per entry as `audio/{uuid}.opus`, where
 | Container | Ogg |
 | Codec | Opus (RFC 6716, RFC 7845) |
 | Channels | 1 (mono) |
-| Sample rate | One of 8 / 12 / 16 / 24 / 48 kHz — the rates libopus accepts natively (RFC 6716 §2). The TTS engine SHOULD write one of these; if it writes any other rate (e.g. a Piper voice at 22050 Hz, or 44100 Hz), the Rust side SHALL resample it to the nearest native rate before encoding. `OpusHead` SHALL record the native (resampled) rate the encoder actually used, not the original off-list rate |
+| Sample rate | One of the five Opus-native rates — 8 / 12 / 16 / 24 / 48 kHz (RFC 6716 §2). The TTS engine SHOULD write one of these; if it writes any other rate (e.g. a Piper voice at 22050 Hz, or 44100 Hz), the Rust side SHALL resample it to the nearest native rate before encoding. `OpusHead` SHALL record the native (resampled) rate the encoder actually used, not the original off-list rate |
 | Bitrate | 32 000 bps (VOIP application) |
 | Frame size | 20 ms |
-| Pre-skip | Queried from `libopus`'s lookahead, scaled to 48 kHz output ticks |
+| Pre-skip | Queried from the encoder's lookahead, scaled to 48 kHz output ticks |
 
 The encoding pipeline is: the TTS engine (ttsd subprocess, Piper, or Silero Native) writes a mono WAV as either 32-bit-float PCM (ttsd, Piper) or 16-bit int PCM (Silero Native, matching upstream `save_wav`); the Rust side transcodes it to Opus and removes the source WAV. The transcode SHALL accept both formats, converting 16-bit int samples to float internally; any other sample format or bit width SHALL be rejected. If the WAV's sample rate is not one of the Opus-native rates, the Rust side SHALL resample it to the nearest native rate first. On encode failure the source `.wav` SHALL be left in place as a playback fallback. `save_audio` SHALL return the relative filename for `TextEntry.audio_path`.
 

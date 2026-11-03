@@ -35,11 +35,11 @@
 - [x] 3.3 Encode the 22:49 reference WAV with the new path and check wall time,
       output size and `OpusHead` against the libopus baseline; decode it back
       and confirm the exported WAV matches the old decoder within Opus noise.
-- [ ] 3.4 Manual pass: save a long narration in the app, play it, and export
+- [x] 3.4 Manual pass: save a long narration in the app, play it, and export
       the audio to WAV; confirm playback, seeking and the exported file.
 
 ## 4. Bookkeeping
 
 - [x] 4.1 Add the `[Unreleased]` CHANGELOG entry (faster saving, no system
       `libopus`).
-- [ ] 4.2 Archive the change and sync the storage spec.
+- [x] 4.2 Archive the change and sync the storage spec.
