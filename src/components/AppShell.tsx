@@ -35,6 +35,7 @@ import { useSearchQuery } from '../stores/searchQuery';
 import { PreviewDialog } from '../dialogs/PreviewDialog';
 import { SettingsModal } from '../dialogs/Settings';
 import { DictionaryModal } from '../dialogs/DictionaryModal';
+import { RegeneratePrompt } from '../dialogs/RegeneratePrompt';
 import { SileroBundlePrompt } from '../dialogs/SileroBundlePrompt';
 import { EncodingDialog } from '../dialogs/EncodingDialog';
 import { UrlImportDialog } from '../dialogs/UrlImportDialog';
@@ -87,6 +88,14 @@ export function AppShell() {
   // stored original_text; only a confirmed «Перегенерировать» reaches the
   // backend, so cancelling never touches the existing audio.
   const [regenEntry, setRegenEntry] = useState<TextEntry | null>(null);
+  // Viewer quick-add session (user-dictionary spec, "Viewer quick-add"): the
+  // entry whose recording a dictionary save can make stale, and whether the
+  // editor actually wrote anything before it closed. Refs, not state, so the
+  // editor callbacks never capture a stale session.
+  const dictQuickAddEntry = useRef<TextEntry | null>(null);
+  const dictQuickAddSaved = useRef(false);
+  // «Переозвучить сейчас?» offer raised after a viewer quick-add save.
+  const [regenPromptEntry, setRegenPromptEntry] = useState<TextEntry | null>(null);
   const [config, setConfig] = useState<UIConfig | null>(null);
   const configLoaded = useRef(false);
   const [bundlePromptOpen, setBundlePromptOpen] = useState(false);
@@ -617,12 +626,46 @@ export function AppShell() {
     setPending(false);
   }
 
+  /** Viewer context menu «В словарь» (user-dictionary spec, "Viewer
+   *  quick-add"): open the existing editor prefilled with the selected word
+   *  and remember the entry whose audio a save can make stale. The player is
+   *  not touched here: only a confirmed regeneration stops playback. */
+  function openDictionaryFromViewer(word: string) {
+    dictQuickAddEntry.current = selectedEntry;
+    dictQuickAddSaved.current = false;
+    setDictInitialFrom(word);
+    setDictModalOpened(true);
+  }
+
+  /** Close the dictionary editor: restore Settings when it was the opener and
+   *  offer a regeneration when a viewer quick-add session saved anything. */
+  function closeDictionary() {
+    const quickAddEntry = dictQuickAddEntry.current;
+    const saved = dictQuickAddSaved.current;
+    dictQuickAddEntry.current = null;
+    dictQuickAddSaved.current = false;
+    setDictModalOpened(false);
+    setDictInitialFrom(null);
+    setDictRevision((n) => n + 1);
+    if (dictReturnToSettings) {
+      setDictReturnToSettings(false);
+      setSettingsOpened(true);
+    }
+    // Only a session that wrote to the dictionary makes the recording stale;
+    // opening the editor to browse and closing it must not nag.
+    if (saved && quickAddEntry) setRegenPromptEntry(quickAddEntry);
+  }
+
   // Regeneration confirm: the delete-then-synthesize sequence lives entirely
   // behind the backend command, so the old audio is only dropped now that the
   // user has seen the preview and confirmed (preview-dialog spec, "Regeneration
   // preview"). Cancel never reaches here.
-  function handleRegenConfirm(playWhenReady: boolean) {
-    const entry = regenEntry;
+  function handleRegenConfirm(
+    playWhenReady: boolean,
+    // Explicit entry for callers that do not go through the preview dialog
+    // (the viewer quick-add offer); the preview path passes nothing.
+    entry: TextEntry | null = regenEntry,
+  ) {
     setRegenEntry(null);
     if (!entry) return;
     commands
@@ -677,15 +720,24 @@ export function AppShell() {
         opened={dictModalOpened}
         initialFrom={dictInitialFrom}
         onInitialFromConsumed={() => setDictInitialFrom(null)}
-        onClose={() => {
-          setDictModalOpened(false);
-          setDictInitialFrom(null);
-          setDictRevision((n) => n + 1);
-          if (dictReturnToSettings) {
-            setDictReturnToSettings(false);
-            setSettingsOpened(true);
-          }
+        onSaved={() => {
+          // Any successful write makes the selected recording stale; the
+          // editor is the one that knows a write succeeded.
+          if (dictQuickAddEntry.current) dictQuickAddSaved.current = true;
         }}
+        onClose={closeDictionary}
+      />
+
+      <RegeneratePrompt
+        opened={regenPromptEntry !== null}
+        onConfirm={() => {
+          const entry = regenPromptEntry;
+          setRegenPromptEntry(null);
+          // Reuse the existing regeneration path; no auto-play — the prompt
+          // only replaces the stale audio.
+          handleRegenConfirm(false, entry);
+        }}
+        onCancel={() => setRegenPromptEntry(null)}
       />
 
       <SileroBundlePrompt
@@ -835,6 +887,7 @@ export function AppShell() {
           onReadingConfigChange={(patch) => {
             setConfig((prev) => (prev ? { ...prev, ...patch } : prev));
           }}
+          onAddToDictionary={openDictionaryFromViewer}
         />
       </MantineAppShell.Main>
 
