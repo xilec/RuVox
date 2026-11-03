@@ -13,6 +13,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   part entries keep working when no whole-word entry exists (#279).
 
 ### Changed
+- **Numbers, ordinals and dates are read naturally** — one numeric span layer
+  replaces the interleaved number, date, time, version, range, percentage and
+  size phases and reads every candidate in context: «в 2024 году» → «в две
+  тысячи двадцать четвёртом году», «5-й этаж» → «пятый этаж», «10 000 рублей»
+  → «десять тысяч рублей», «1,5 кг» → «полтора килограмма», plus dates,
+  ranges, money, phones and identifiers; 199 corpus cases pin the readings and
+  normalization of the 1 MB sample is ~1.35× faster (11.8 s → 8.8 s, #343).
 - **TeraTTSv2 synthesizes chunks in parallel lanes** — the engine opens four
   independent ONNX session sets and synthesizes chunks concurrently, cutting
   the first synthesis of a long article by ~2.4× (96.7 s → 39.1 s for 18.7
