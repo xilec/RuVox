@@ -274,12 +274,17 @@ describe('SettingsModal sections', () => {
 
   /**
    * Mantine's modal transition mounts the body on the next animation frame;
-   * jsdom only fires it through a real timer tick.
+   * jsdom only fires it through a real timer tick. Poll instead of sleeping a
+   * fixed delay, so a slow CI machine cannot race the transition.
    */
-  const waitForModalTransition = async () => {
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 350));
-    });
+  const waitForNestedDialog = async () => {
+    const deadline = Date.now() + 3000;
+    while (Date.now() < deadline) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+      if (document.querySelectorAll('[role="dialog"]').length > 1) return;
+    }
   };
 
   it('renders every settings row in exactly one section', async () => {
@@ -519,7 +524,7 @@ describe('SettingsModal sections', () => {
     await renderDialog();
     await clickNav('storage');
     await clickButton('Очистить кэш…');
-    await waitForModalTransition();
+    await waitForNestedDialog();
 
     expect(document.body.textContent ?? '').toContain('Очистить полностью');
     await clickButton('Отмена');
