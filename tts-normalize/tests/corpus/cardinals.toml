@@ -563,6 +563,14 @@ expected = "один точка ноль два"
 note = "a leading zero in a dotted group carries information and is read digit by digit"
 
 [[case]]
+id = "cardinals/version-prerelease-dot"
+subcategory = "code"
+status = "locked"
+input = "1.0.0-beta.2"
+expected = "один точка ноль точка ноль бета два"
+note = "a dot group after the pre-release suffix is read after the suffix word"
+
+[[case]]
 id = "cardinals/degree-bare"
 subcategory = "unit"
 status = "locked"

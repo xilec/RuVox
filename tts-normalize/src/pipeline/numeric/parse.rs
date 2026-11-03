@@ -779,8 +779,13 @@ fn parse_number_tail(
             number.version_suffix = Some(word);
             number.version_suffix_digits = digits;
             parser.pos += length;
+            // A dot group after the suffix belongs to the suffix digits, so
+            // "1.0.0-beta.2" reads "…бета два" and not "…два бета".
             if let Some(group) = parser.dot_group() {
-                number.dot_groups.push(group);
+                match &mut number.version_suffix_digits {
+                    Some(digits) => digits.push_str(&group),
+                    None => number.version_suffix_digits = Some(group),
+                }
             }
         }
     }
