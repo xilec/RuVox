@@ -17,7 +17,7 @@
 - [x] 2.2 TeraTTS engine test: an English paragraph with a percentage, a size
       unit, a version, a range and a date yields one `en` segment and no
       Russian words.
-- [ ] 2.3 Perf: the 1 MB budgets keep holding.
+- [x] 2.3 Perf: the 1 MB budgets keep holding.
 
 ## 3. Fixtures and docs
 
@@ -27,8 +27,8 @@
 
 ## 4. Validation
 
-- [ ] 4.1 `cargo test -p tts-normalize` (lib and corpus suites).
-- [ ] 4.2 `cargo clippy -p tts-normalize --all-targets -- -D warnings` and
+- [x] 4.1 `cargo test -p tts-normalize` (lib and corpus suites).
+- [x] 4.2 `cargo clippy -p tts-normalize --all-targets -- -D warnings` and
       `cargo fmt --all`.
-- [ ] 4.3 Golden fixtures and perf budgets.
-- [ ] 4.4 Archive the change and sync the delta specs.
+- [x] 4.3 Golden fixtures and perf budgets.
+- [x] 4.4 Archive the change and sync the delta specs.

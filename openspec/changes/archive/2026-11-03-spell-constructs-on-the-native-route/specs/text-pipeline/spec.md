@@ -35,6 +35,17 @@ point three"). The reading SHALL be transliterated into Cyrillic by the effectiv
 prose route, and a construct carrying a size or duration unit SHALL be claimed
 only when the profile expands units.
 
+In English context a size, duration or version construct SHALL be spelled as
+Latin English words on the native route, replacing the construct in the text: a
+size or duration unit takes its English singular at exactly one and its English
+plural otherwise ("100 MB" → "one hundred megabytes"), a unit with a fixed
+reading keeps its English name ("1.5em" → "one point five em"), and a version or
+dot decimal joins its groups with " point ", reading a leading-zero group digit
+by digit ("1.2.3" → "one point two point three"). The replacement SHALL be
+covered by one prose-Latin span (see Span annotation output) so the construct
+continues the English block, and a size or duration construct SHALL be spelled
+only when the profile expands units.
+
 #### Scenario: Size with declension
 
 - GIVEN the input "Файл весит 100MB"
@@ -78,17 +89,6 @@ only when the profile expands units.
 - GIVEN the Silero profile and the input "the cache holds 50 MB"
 - WHEN the pipeline processes it
 - THEN the size reads "фифти мегабайтс" and no Russian unit word appears
-
-In English context a size, duration or version construct SHALL be spelled as
-Latin English words on the native route, replacing the construct in the text: a
-size or duration unit takes its English singular at exactly one and its English
-plural otherwise ("100 MB" → "one hundred megabytes"), a unit with a fixed
-reading keeps its English name ("1.5em" → "one point five em"), and a version or
-dot decimal joins its groups with " point ", reading a leading-zero group digit
-by digit ("1.2.3" → "one point two point three"). The replacement SHALL be
-covered by one prose-Latin span (see Span annotation output) so the construct
-continues the English block, and a size or duration construct SHALL be spelled
-only when the profile expands units.
 
 #### Scenario: English-context size is spelled on the native route
 
@@ -143,6 +143,15 @@ twenty-four"), a year-month reads "<Month> <year register>" ("2024-12" →
 "nine thirty", "09:05" → "nine oh five"), with non-zero seconds appended as "and
 <n> seconds". The readings SHALL be transliterated into Cyrillic on the narrated
 route.
+
+In English context a date or time construct SHALL be spelled as Latin English
+words on the native route: a date reads "the <day ordinal> of <Month>, <year
+register>" ("12.05.2024" → "the twelfth of May, twenty twenty-four"), a
+year-month reads "<Month> <year register>" ("2024-12" → "December twenty
+twenty-four"), and a clock time reads "<hour> <minutes>" with "oh" before a
+one-digit minute and the hour alone at zero minutes ("09:30" → "nine thirty",
+"09:05" → "nine oh five"), with non-zero seconds appended as "and <n> seconds".
+The replacement SHALL be covered by one prose-Latin span.
 
 #### Scenario: ISO date
 
@@ -222,15 +231,6 @@ route.
 - THEN the date reads "зе твелфс ов мэй, твенти твенти-фо" and no Russian month
   or ordinal appears
 
-In English context a date or time construct SHALL be spelled as Latin English
-words on the native route: a date reads "the <day ordinal> of <Month>, <year
-register>" ("12.05.2024" → "the twelfth of May, twenty twenty-four"), a
-year-month reads "<Month> <year register>" ("2024-12" → "December twenty
-twenty-four"), and a clock time reads "<hour> <minutes>" with "oh" before a
-one-digit minute and the hour alone at zero minutes ("09:30" → "nine thirty",
-"09:05" → "nine oh five"), with non-zero seconds appended as "and <n> seconds".
-The replacement SHALL be covered by one prose-Latin span.
-
 #### Scenario: English-context date is spelled on the native route
 
 - GIVEN the TeraTTS profile and the input "the release landed on 12.05.2024"
@@ -280,6 +280,15 @@ twenty-four"), a percentage reads the cardinal plus the invariant "percent"
 percentage or currency attaches to the right bound ("10–20%" → "ten to twenty
 percent"). The English reading carries no genitive agreement: a genitive trigger
 in an English sentence does not change the wording.
+
+In English context a range or percentage construct SHALL be spelled as Latin
+English words on the native route: a range reads "<left> to <right>" ("10-20" →
+"ten to twenty"), a range whose bounds are calendar years reads both bounds in
+the year register ("2020–2024" → "twenty twenty to twenty twenty-four"), a
+percentage reads the cardinal plus the invariant "percent" ("50%" → "fifty
+percent"), and a shared trailing unit, percentage or currency attaches to the
+right bound ("10–20%" → "ten to twenty percent"). The replacement SHALL be
+covered by one prose-Latin span.
 
 #### Scenario: Simple range
 
@@ -361,15 +370,6 @@ in an English sentence does not change the wording.
 - THEN the range reads "тен ту твенти персент" and neither bound is a Russian
   numeral
 
-In English context a range or percentage construct SHALL be spelled as Latin
-English words on the native route: a range reads "<left> to <right>" ("10-20" →
-"ten to twenty"), a range whose bounds are calendar years reads both bounds in
-the year register ("2020–2024" → "twenty twenty to twenty twenty-four"), a
-percentage reads the cardinal plus the invariant "percent" ("50%" → "fifty
-percent"), and a shared trailing unit, percentage or currency attaches to the
-right bound ("10–20%" → "ten to twenty percent"). The replacement SHALL be
-covered by one prose-Latin span.
-
 #### Scenario: English-context range is spelled on the native route
 
 - GIVEN the TeraTTS profile and the input "growth of 10-20%"
@@ -449,6 +449,13 @@ percentages), transliterated into Cyrillic on the narrated route. A construct
 outside those families — a phone number, a Roman numeral, a city abbreviation, a
 comma decimal, a slash fraction or a pre-release version suffix — SHALL keep its
 Russian reading.
+
+On the `Native` route such a construct SHALL be spelled as Latin English
+words, replace the source construct in the text and carry one prose-Latin span
+(see Span annotation output), so the construct continues the English block; the
+`Narrate` route SHALL transliterate it into Cyrillic and SHALL produce no
+span. A construct outside those families SHALL keep its Russian reading on both
+routes.
 
 #### Scenario: Plain number
 
@@ -591,13 +598,6 @@ Russian reading.
 - WHEN the pipeline processes it
 - THEN the construct reads "уан хандред мегабайтс" and no Russian unit word
   appears
-
-On the `Native` route such a construct SHALL be spelled as Latin English
-words, replace the source construct in the text and carry one prose-Latin span
-(see Span annotation output), so the construct continues the English block; the
-`Narrate` route SHALL transliterate it into Cyrillic and SHALL produce no
-span. A construct outside those families SHALL keep its Russian reading on both
-routes.
 
 #### Scenario: English-context construct on the native route
 
