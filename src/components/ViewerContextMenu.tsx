@@ -6,6 +6,7 @@ import {
   copyLinkAddress,
   copySelection,
 } from '../lib/viewerCopy';
+import { isSingleSourceToken } from '../lib/userDictionary';
 import { useT } from '../lib/i18n';
 
 interface MenuTarget {
@@ -18,15 +19,19 @@ interface MenuTarget {
 
 interface Props {
   containerRef: RefObject<HTMLDivElement | null>;
+  /** Add the selected word to the pronunciation dictionary (user-dictionary
+   *  spec, "Viewer quick-add"); shown only for a single valid source token. */
+  onAddToDictionary?: (word: string) => void;
 }
 
 /**
  * Custom right-click context menu for the viewer (viewer-copy-actions spec).
- * The webview provides no native context menu; this one shows only the copy
- * actions applicable to the click target: link address, selected text,
- * image bitmap and image address.
+ * The webview provides no native context menu; this one shows only the
+ * actions applicable to the click target: the dictionary quick-add for a
+ * single-word selection, and the copy actions (link address, selected text,
+ * image bitmap and image address).
  */
-export function ViewerContextMenu({ containerRef }: Props) {
+export function ViewerContextMenu({ containerRef, onAddToDictionary }: Props) {
   const tt = useT();
   const [target, setTarget] = useState<MenuTarget | null>(null);
 
@@ -61,6 +66,16 @@ export function ViewerContextMenu({ containerRef }: Props) {
     return () => container.removeEventListener('contextmenu', handleContextMenu);
   }, [containerRef]);
 
+  // The dictionary editor can prefill only a single valid source token
+  // (user-dictionary spec, "Viewer quick-add"): a multi-word or invalid
+  // selection keeps the copy-only menu.
+  const dictionaryWord =
+    target !== null &&
+    onAddToDictionary !== undefined &&
+    isSingleSourceToken(target.selection)
+      ? target.selection.trim()
+      : null;
+
   // Anchored to a 1px fixed-position dummy at the pointer coordinates:
   // Mantine Menu positions the dropdown against its target element.
   return (
@@ -84,6 +99,11 @@ export function ViewerContextMenu({ containerRef }: Props) {
         />
       </Menu.Target>
       <Menu.Dropdown>
+        {dictionaryWord !== null && (
+          <Menu.Item onClick={() => onAddToDictionary?.(dictionaryWord)}>
+            {tt('dictionary.quickadd.button')}
+          </Menu.Item>
+        )}
         {target?.linkHref && (
           <Menu.Item onClick={() => void copyLinkAddress(target.linkHref ?? '')}>
             {tt('viewer.menu.copy_link_address')}

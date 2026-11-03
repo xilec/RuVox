@@ -45,11 +45,17 @@ afterEach(() => {
   container.remove();
 });
 
-async function renderModal() {
+interface RenderOptions {
+  initialFrom?: string;
+  onInitialFromConsumed?: () => void;
+  onSaved?: () => void;
+}
+
+async function renderModal(options: RenderOptions = {}) {
   act(() => {
     root.render(
       <MantineProvider>
-        <DictionaryModal opened onClose={() => {}} />
+        <DictionaryModal opened onClose={() => {}} {...options} />
       </MantineProvider>,
     );
   });
@@ -185,5 +191,49 @@ describe('DictionaryModal field help', () => {
   it('says that a Russian word is matched exactly', () => {
     expect(translate('ru', 'dictionary.form.from.hint')).toContain('точной форме');
     expect(translate('en', 'dictionary.form.from.hint')).toContain('exact form');
+  });
+});
+
+/** Read the current value of the input labelled `label`. */
+function fieldValue(label: string): string {
+  const labelEl = [...document.querySelectorAll('label')].find(
+    (candidate) => candidate.textContent?.trim() === label,
+  );
+  const field = labelEl?.htmlFor
+    ? (document.getElementById(labelEl.htmlFor) as HTMLInputElement | null)
+    : null;
+  return field?.value ?? '';
+}
+
+describe('DictionaryModal quick-add', () => {
+  it('prefills the add form from initialFrom and consumes it once', async () => {
+    const onInitialFromConsumed = vi.fn();
+    await renderModal({ initialFrom: 'getUserData', onInitialFromConsumed });
+
+    await vi.waitFor(() => {
+      expect(fieldValue('Слово')).toBe('getUserData');
+    });
+    expect(onInitialFromConsumed).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a successful save through onSaved', async () => {
+    const onSaved = vi.fn();
+    vi.mocked(commands.saveDictionary).mockClear();
+    await renderModal({ onSaved });
+    clickButton('Добавить слово');
+    typeInto('Слово', 'замок');
+    typeInto('Как произносить', 'зам+ок');
+    clickButton('Сохранить');
+
+    await vi.waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    expect(commands.saveDictionary).toHaveBeenCalledWith('global', [
+      { from: 'замок', to: 'зам+ок', forms: [] },
+    ]);
+  });
+
+  it('does not report a save when nothing was written', async () => {
+    const onSaved = vi.fn();
+    await renderModal({ onSaved });
+    expect(onSaved).not.toHaveBeenCalled();
   });
 });

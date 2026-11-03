@@ -71,6 +71,9 @@ interface Props {
   /** Reports a persisted reading-typography patch so AppShell's config mirror
    *  follows the toolbar (the Settings dialog refreshes it through onSaved). */
   onReadingConfigChange?: (patch: ReadingConfigPatch) => void;
+  /** Add the selected word to the pronunciation dictionary (forwarded to the
+   *  context menu; user-dictionary spec, "Viewer quick-add"). */
+  onAddToDictionary?: (word: string) => void;
 }
 
 export function TextViewer({
@@ -78,6 +81,7 @@ export function TextViewer({
   readingWidth: readingWidthProp,
   readingScale: readingScaleProp = READING_SCALE_DEFAULT,
   onReadingConfigChange,
+  onAddToDictionary,
 }: Props) {
   const tt = useT();
   // Local mirror of the persisted reading typography: seeded from the config
@@ -571,7 +575,16 @@ export function TextViewer({
         />
       </ScrollArea>
 
-      <ViewerContextMenu containerRef={containerRef} />
+      {/* Keyed by entry (prefixed so it never collides with the sibling
+          EntryHeader, which uses the bare id): the menu captures the
+          selection (and the copy targets) when it opens, so switching the
+          entry must remount it instead of leaving a stale item that would
+          act on the new entry. */}
+      <ViewerContextMenu
+        key={`menu-${entry.id}`}
+        containerRef={containerRef}
+        onAddToDictionary={onAddToDictionary}
+      />
 
       <Modal
         opened={zoomedSvg !== null}
