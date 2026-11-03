@@ -138,8 +138,13 @@ General branch/workspace rules live in the global `~/.agents/AGENTS.md` (work in
 6. **Lightweight paths:**
    - **CI/tooling changes** go through a PR but may skip the OpenSpec change. The pre-PR gate still applies.
    - **Trivial docs / typo fixes** may skip both the OpenSpec change and the PR: push the task branch straight to remote `main` via `git push origin HEAD:main` (fast-forward only). If rejected because `origin/main` moved, rebase the task branch onto fresh `origin/main` and push again.
+7. **Post-merge cleanup (autonomous).** A successfully merged task is not done until its traces are gone — tidy up without asking:
+   - **Worktree task** → remove the worktree (`tmp/wt/<task>/`), delete the local branch and the remote one.
+   - **Workspace task** → delete the merged branch locally and on the remote.
+   - **Refs and scratch** → `git fetch --prune` to drop stale remote-tracking refs, stop background jobs/dev servers the task started, and remove its leftovers under `tmp/`.
+   - **Never** clean other agents' worktrees or uncommitted changes in the shared workspace — those are not yours.
 
-The only sanctioned ways anything reaches `main` are a PR (points 2–4) or the fast-forward branch push for trivial fixes (point 6). After the merge, clean up: worktree tasks → remove the worktree + local branch and delete the remote branch; workspace tasks → delete the merged branch (local + remote).
+The only sanctioned ways anything reaches `main` are a PR (points 2–4) or the fast-forward branch push for trivial fixes (point 6). Every merged task is followed by the cleanup in point 7.
 
 ## Development rules
 
