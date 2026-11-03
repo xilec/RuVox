@@ -39,6 +39,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   library to build or run. WAV export decodes through the same pure-Rust codec
   — a valid decode of the stored stream, not bit-identical to `libopus` on
   x86-64 (#19).
+- **Settings split into sections with search** — the dialog is now a two-pane
+  window with a section nav (engine and voice, text reading, notifications,
+  storage, interface, dictionary, about), a search field that matches labels
+  from both the RU and EN catalogs, highlights the matched text and hides
+  sections without matches, a per-section unsaved dot with «Изменено: N» in
+  the footer, a footer that never scrolls away, and a section `Select` in a
+  narrow window; every control and the save semantics are unchanged (#355).
 - **The viewer's format switch moved into the entry header** — it now sits at
   the right of the metadata row next to the reading width/scale controls, so
   the reading area starts directly with the text (#353).

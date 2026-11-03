@@ -1,38 +1,37 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import {
   Alert,
-  Badge,
   Button,
   Checkbox,
-  Divider,
   Group,
   Modal,
   NumberInput,
-  SegmentedControl,
   Select,
   Stack,
-  Switch,
   Text,
-  Tooltip,
+  TextInput,
+  UnstyledButton,
   useMantineColorScheme,
 } from '@mantine/core';
 import type { MantineColorScheme } from '@mantine/core';
-import { useForm } from '@mantine/form';
+import { useForm, type FormErrors } from '@mantine/form';
+import { useMediaQuery } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { getVersion } from '@tauri-apps/api/app';
 import { commands } from '../lib/tauri';
 import { formatMb as formatMbValue } from '../lib/format';
-import type { CleanupMode, EngineKind, ReadingWidth, UIConfigPatch } from '../lib/tauri';
+import type { CleanupMode, EngineKind, UIConfigPatch } from '../lib/tauri';
 import type { MessageKey } from '../i18n/ru';
 import { formatError } from '../lib/errors';
 import { canonicalReadingWidth, READING_SCALE_DEFAULT } from '../lib/reading';
-import { ReadingScaleControl, ReadingWidthControl } from '../components/ReadingControls';
 import { t, useT } from '../lib/i18n';
 import { setLocale, toLocale } from '../stores/locale';
 import { PIPER_VOICES } from '../lib/piperVoices';
 import { SILERO_SPEAKERS } from '../lib/sileroVoices';
+import { IconSearch } from '../components/icons';
 import { ModelAssetsDialog } from './ModelAssets';
+import { SettingsSections } from './SettingsSections';
 import { checkForUpdatesManual, updaterSupported } from '../lib/updater';
 import {
   applyEngineChange,
@@ -41,25 +40,18 @@ import {
   RANDOM_SPEAKER,
   type AvailabilityMap,
 } from '../lib/engineSelection';
-
-interface SettingsFormValues {
-  engine: EngineKind;
-  piper_voice: string;
-  teratts_voice: string;
-  speaker: string;
-  sample_rate: number;
-  notify_on_ready: boolean;
-  notify_on_error: boolean;
-  preview_dialog_enabled: boolean;
-  hide_to_tray_on_close: boolean;
-  max_cache_size_mb: number;
-  code_block_mode: string;
-  english_reading: string;
-  reading_width: ReadingWidth;
-  reading_scale: number;
-  theme: string;
-  language: string;
-}
+import {
+  changedSettingsFields,
+  changedSettingsSections,
+  firstMatchingRow,
+  sectionForField,
+  sectionHasMatches,
+  SETTINGS_SECTIONS,
+  type SettingsFormValues,
+  type SettingsRowId,
+  type SettingsSectionId,
+} from '../lib/settingsSections';
+import classes from './Settings.module.css';
 
 const ENGINE_OPTIONS: ReadonlyArray<{ value: EngineKind; key: MessageKey }> = [
   { value: 'silero_native', key: 'settings.engine.silero_native' },
@@ -139,16 +131,27 @@ function speakerOptionsForEngine(engine: EngineKind) {
 
 const SAMPLE_RATES = [8000, 24000, 48000];
 
-const THEME_OPTIONS: ReadonlyArray<{ value: string; key: MessageKey }> = [
-  { value: 'light', key: 'settings.theme.light' },
-  { value: 'dark', key: 'settings.theme.dark' },
-  { value: 'auto', key: 'settings.theme.auto' },
-];
-
-const LANGUAGE_OPTIONS = [
-  { value: 'ru', label: 'Русский' },
-  { value: 'en', label: 'English' },
-];
+// Factory defaults for Reset. A module-level constant (not read back from the
+// form): form state updates are async, so form.getValues() inside the click
+// handler still returns the pre-reset values.
+const SETTINGS_DEFAULTS: SettingsFormValues = {
+  engine: 'silero_native',
+  piper_voice: 'ruslan',
+  teratts_voice: 'ru_m5',
+  speaker: 'aidar',
+  sample_rate: 24000,
+  notify_on_ready: true,
+  notify_on_error: true,
+  preview_dialog_enabled: true,
+  hide_to_tray_on_close: false,
+  max_cache_size_mb: 500,
+  code_block_mode: 'brief',
+  english_reading: 'auto',
+  reading_width: canonicalReadingWidth(null),
+  reading_scale: READING_SCALE_DEFAULT,
+  theme: 'auto',
+  language: 'ru',
+};
 
 function formatMb(bytes: number, t: Translator): string {
   return `${formatMbValue(bytes)} ${t('common.mb')}`;
@@ -316,27 +319,16 @@ export function SettingsModal({
   // picking «Silero (нативный)» follows it only while the user made no
   // explicit choice.
   const sampleRateTouchedRef = useRef(false);
-  // Factory defaults for Reset. A module-level constant (not read back from
-  // the form): form state updates are async, so form.getValues() inside the
-  // click handler still returns the pre-reset values.
-  const SETTINGS_DEFAULTS: SettingsFormValues = {
-    engine: 'silero_native',
-    piper_voice: 'ruslan',
-    teratts_voice: 'ru_m5',
-    speaker: 'aidar',
-    sample_rate: 24000,
-    notify_on_ready: true,
-    notify_on_error: true,
-    preview_dialog_enabled: true,
-    hide_to_tray_on_close: false,
-    max_cache_size_mb: 500,
-    code_block_mode: 'brief',
-    english_reading: 'auto',
-    reading_width: canonicalReadingWidth(null),
-    reading_scale: READING_SCALE_DEFAULT,
-    theme: 'auto',
-    language: 'ru',
-  };
+  const [baseline, setBaseline] = useState<SettingsFormValues>(SETTINGS_DEFAULTS);
+  const [activeSection, setActiveSection] = useState<SettingsSectionId>('engine');
+  const [query, setQuery] = useState('');
+  /** Row the search Enter should reveal once its section is rendered. */
+  const [jumpTarget, setJumpTarget] = useState<SettingsRowId | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  /** Below this width the nav collapses into a select above the content. */
+  const isNarrow = useMediaQuery('(max-width: 700px)', false, {
+    getInitialValueInEffect: false,
+  });
   const form = useForm<SettingsFormValues>({
     initialValues: SETTINGS_DEFAULTS,
     validate: {
@@ -387,8 +379,9 @@ export function SettingsModal({
         };
         form.setValues(loaded);
         // Dirty tracking compares against the saved config, not the static
-        // initialValues.
-        form.resetDirty(loaded);
+        // initialValues (and stores the coerced engine, so an engine the user
+        // never picked is not reported as a change).
+        setBaseline(loaded);
         setCoercedAlert(initial.coercedAwayFromUnavailable);
       })
       .catch((err) => {
@@ -443,6 +436,16 @@ export function SettingsModal({
     return options;
   }, [terattsVoices, form.values.teratts_voice]);
 
+  const engineOptions = useMemo(
+    () =>
+      ENGINE_OPTIONS.map((opt) => ({
+        value: opt.value,
+        label: tt(opt.key),
+        disabled: !availability[opt.value].available,
+      })),
+    [tt, availability],
+  );
+
   const handleEngineChange = (next: EngineKind) => {
     const current = {
       engine: form.values.engine,
@@ -471,6 +474,7 @@ export function SettingsModal({
     if (!opened) {
       setCleanupOpen(false);
       setModelsOpen(false);
+      setQuery('');
     }
   }, [opened]);
 
@@ -555,380 +559,269 @@ export function SettingsModal({
             ...form.values,
             hide_to_tray_on_close: config.hide_to_tray_on_close,
           });
+          // The rejected value is not the stored one: move the baseline with
+          // it so the rollback does not look like an unsaved change.
+          setBaseline((current) => ({
+            ...current,
+            hide_to_tray_on_close: config.hide_to_tray_on_close,
+          }));
         })
         .catch(() => {});
     }
   };
+
+  const handleSampleRateChange = (next: number) => {
+    sampleRateTouchedRef.current = true;
+    form.setFieldValue('sample_rate', next);
+  };
+
+  const handleLanguageChange = (next: string) => {
+    if (!next) return;
+    // Spec: the locale store updates IMMEDIATELY so the whole UI relabels
+    // before the dialog is saved.
+    form.setFieldValue('language', next);
+    setLocale(toLocale(next));
+  };
+
+  const handleReset = () => {
+    // Reset restores factory defaults and clears field errors. The language
+    // selector relabels the whole UI on change; form state updates are async,
+    // so sync the locale store from the defaults constant, not getValues().
+    form.reset();
+    form.setValues(SETTINGS_DEFAULTS);
+    setLocale(toLocale(SETTINGS_DEFAULTS.language));
+  };
+
+  const activeQuery = query.trim();
+
+  const handleSearchEnter = () => {
+    const first = firstMatchingRow(query);
+    if (!first) return;
+    setActiveSection(first.section);
+    setJumpTarget(first.id);
+  };
+
+  const handleFormKeyDown = (event: KeyboardEvent<HTMLFormElement>) => {
+    if (event.key === 'Escape' && activeQuery !== '') {
+      // Esc peels the query off first; `closeOnEscape` is off while it is set.
+      event.preventDefault();
+      setQuery('');
+    }
+  };
+
+  const handleValidationFailure = (errors: FormErrors) => {
+    const firstField = Object.keys(errors)[0];
+    if (!firstField) return;
+    // The field's section may not be the active one: jump there instead of
+    // failing validation silently behind another section.
+    const section = sectionForField(firstField);
+    if (section) setActiveSection(section);
+  };
+
+  const matchingSections = SETTINGS_SECTIONS.filter((section) =>
+    sectionHasMatches(section.id, query),
+  );
+  const visibleSections = activeQuery ? matchingSections : SETTINGS_SECTIONS;
+  const currentSection =
+    visibleSections.find((section) => section.id === activeSection) ??
+    visibleSections[0] ??
+    null;
+
+  const changedFields = changedSettingsFields(form.values, baseline);
+  const dirtySections = changedSettingsSections(changedFields);
+  const dirtyCount = changedFields.length;
+  const piperVoiceRecommended =
+    PIPER_VOICES.find((voice) => voice.id === form.values.piper_voice)?.recommended === true;
+
+  // The panes swap their content in place; keep the reading position
+  // predictable when the section changes (including a search-driven jump).
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, [currentSection?.id]);
+
+  // Enter moves from the query to the first match: scroll it into view after
+  // the section swap has committed.
+  useEffect(() => {
+    if (!jumpTarget) return;
+    const element = scrollRef.current?.querySelector(
+      `[data-settings-field="${jumpTarget}"]`,
+    );
+    element?.scrollIntoView({ block: 'nearest' });
+    setJumpTarget(null);
+  }, [jumpTarget, currentSection?.id]);
+
+  const searchInput = (
+    <div data-settings-search>
+      <TextInput
+        size="sm"
+        placeholder={tt('settings.search.placeholder')}
+        aria-label={tt('settings.search.placeholder')}
+        leftSection={<IconSearch size={14} />}
+        value={query}
+        onChange={(event) => setQuery(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            // Enter in a text input submits the form by default; the query
+            // belongs to navigation, not to saving.
+            event.preventDefault();
+            handleSearchEnter();
+          }
+        }}
+      />
+    </div>
+  );
 
   return (
     <Modal
       opened={opened}
       onClose={onClose}
       title={tt('settings.title')}
-      size="md"
+      size={900}
+      classNames={{ content: classes.content, body: classes.body }}
       // While the nested cleanup modal is up, let it own Escape and outside-
       // click handling — otherwise Mantine fires both modals' onClose at once.
-      closeOnEscape={!cleanupOpen}
+      // A non-empty query takes Esc for itself (clears the search first).
+      closeOnEscape={!cleanupOpen && activeQuery === ''}
       closeOnClickOutside={!cleanupOpen}
     >
-      <form onSubmit={form.onSubmit(handleSubmit)}>
-        <Stack gap="sm">
-          <Text size="sm" fw={500} c="dimmed">
-            {tt('settings.section.speech')}
-          </Text>
-
-          {coercedAlert && (
-            <Alert color="yellow" variant="light">
-              {tt('settings.coerced_alert')}
-            </Alert>
-          )}
-
-          <Group justify="space-between" wrap="nowrap">
-            <div>
-              <Text size="sm" fw={500}>
-                {tt('settings.models.title')}
-              </Text>
-              <Text size="xs" c="dimmed">
-                {tt('settings.models.description')}
-              </Text>
-            </div>
-            <Button variant="default" size="xs" onClick={() => setModelsOpen(true)}>
-              {tt('settings.models.open')}
-            </Button>
-          </Group>
-
-          <Select
-            label={tt('settings.engine.label')}
-            description={tt('settings.engine.description')}
-            data={ENGINE_OPTIONS.map((opt) => ({
-              value: opt.value,
-              label: tt(opt.key),
-              disabled: !availability[opt.value].available,
-            }))}
-            value={form.values.engine}
-            onChange={(v) => v && handleEngineChange(v as EngineKind)}
-          />
-
-          {!availability.silero.available && availability.silero.reason && (
-            <Text size="xs" c="dimmed" mt={-8}>
-              {tt('settings.engine.reason_silero', [formatError(availability.silero.reason)])}
-            </Text>
-          )}
-
-          {!availability.silero_native.available && availability.silero_native.reason && (
-            <Text size="xs" c="dimmed" mt={-8}>
-              {tt('settings.engine.reason_silero_native', [formatError(availability.silero_native.reason)])}
-            </Text>
-          )}
-
-          {!availability.teratts.available && availability.teratts.reason && (
-            <Text size="xs" c="dimmed" mt={-8}>
-              {tt('settings.engine.reason_teratts', [formatError(availability.teratts.reason)])}
-            </Text>
-          )}
-
-          {form.values.engine === 'teratts' && (
-            <Select
-              label={tt('settings.teratts_voice.label')}
-              description={tt('settings.teratts_voice.description')}
-              data={terattsVoiceOptions}
-              key={form.key('teratts_voice')}
-              {...form.getInputProps('teratts_voice')}
-            />
-          )}
-
-          {form.values.engine === 'piper' ? (
-            <Stack gap={6}>
+      <form
+        className={classes.form}
+        onSubmit={form.onSubmit(handleSubmit, handleValidationFailure)}
+        onKeyDown={handleFormKeyDown}
+      >
+        {isNarrow && (
+          <div className={classes.narrowTop}>
+            {searchInput}
+            <div data-settings-nav-select>
               <Select
-                label={tt('settings.piper_voice.label')}
-                description={tt('settings.piper_voice.description')}
-                data={piperVoiceOptions}
-                key={form.key('piper_voice')}
-                {...form.getInputProps('piper_voice')}
-                rightSection={
-                  PIPER_VOICES.find((v) => v.id === form.values.piper_voice)?.recommended ? (
-                    <Tooltip label={tt('settings.piper_voice.recommended_tooltip')}>
-                      <Badge size="xs" color="blue" variant="light">
-                        {tt('settings.piper_voice.recommended_badge')}
-                      </Badge>
-                    </Tooltip>
-                  ) : null
-                }
-                rightSectionWidth={60}
+                size="sm"
+                label={tt('settings.nav.select_label')}
+                data={visibleSections.map((section) => ({
+                  value: section.id,
+                  label: tt(section.titleKey),
+                }))}
+                value={currentSection?.id ?? null}
+                onChange={(value) => {
+                  if (value) setActiveSection(value as SettingsSectionId);
+                }}
+                allowDeselect={false}
+                renderOption={({ option }) => {
+                  const section = SETTINGS_SECTIONS.find(
+                    (candidate) => candidate.id === option.value,
+                  );
+                  const dirty = section ? dirtySections.has(section.id) : false;
+                  return (
+                    <Group justify="space-between" wrap="nowrap" gap="xs" w="100%">
+                      <span>{option.label}</span>
+                      {dirty && (
+                        <span
+                          className={classes.dirtyDot}
+                          data-settings-dirty-dot
+                          title={tt('settings.dirty.section')}
+                          aria-hidden="true"
+                        />
+                      )}
+                    </Group>
+                  );
+                }}
               />
-            </Stack>
-          ) : form.values.engine === 'silero' || form.values.engine === 'silero_native' ? (
-            <Select
-              label={tt('settings.speaker.label')}
-              data={speakerOptions}
-              key={form.key('speaker')}
-              {...form.getInputProps('speaker')}
-            />
-          ) : null}
+            </div>
+          </div>
+        )}
 
-          <Select
-            label={tt('settings.sample_rate.label')}
-            data={sampleRateOptions}
-            value={String(form.values.sample_rate)}
-            onChange={(v) => {
-              sampleRateTouchedRef.current = true;
-              form.setFieldValue('sample_rate', v ? parseInt(v, 10) : 24000);
-            }}
-            error={form.errors.sample_rate}
-          />
+        <div className={classes.panes}>
+          {!isNarrow && (
+            <div className={classes.nav} data-settings-nav>
+              {searchInput}
+              <nav className={classes.navList} aria-label={tt('settings.nav.label')}>
+                {visibleSections.map((section) => {
+                  const dirty = dirtySections.has(section.id);
+                  const current = currentSection?.id === section.id;
+                  return (
+                    <UnstyledButton
+                      key={section.id}
+                      id={`settings-nav-${section.id}`}
+                      type="button"
+                      aria-current={current ? 'true' : undefined}
+                      className={`${classes.navItem} ${current ? classes.navItemActive : ''}`}
+                      onClick={() => setActiveSection(section.id)}
+                    >
+                      <span className={classes.navLabel}>{tt(section.titleKey)}</span>
+                      {dirty && (
+                        <span
+                          className={classes.dirtyDot}
+                          data-settings-dirty-dot
+                          title={tt('settings.dirty.section')}
+                          aria-hidden="true"
+                        />
+                      )}
+                    </UnstyledButton>
+                  );
+                })}
+              </nav>
+            </div>
+          )}
 
-          <Stack gap={4}>
-            <Text size="sm">{tt('settings.code_block.label')}</Text>
-            <SegmentedControl
-              name="code_block_mode"
-              value={form.values.code_block_mode}
-              onChange={(v) => form.setFieldValue('code_block_mode', v)}
-              data={[
-                { label: tt('settings.code_block.brief'), value: 'brief' },
-                { label: tt('settings.code_block.read'), value: 'read' },
-              ]}
-            />
-            <Text size="xs" c="dimmed">
-              {tt('settings.code_block.description')}
-            </Text>
-          </Stack>
-
-          <Stack gap={4}>
-            <Text size="sm">{tt('settings.english_reading.label')}</Text>
-            <SegmentedControl
-              name="english_reading"
-              value={form.values.english_reading}
-              onChange={(v) => form.setFieldValue('english_reading', v)}
-              data={[
-                { label: tt('settings.english_reading.auto'), value: 'auto' },
-                { label: tt('settings.english_reading.native'), value: 'native' },
-                { label: tt('settings.english_reading.narrated'), value: 'narrated' },
-              ]}
-            />
-            <Text size="xs" c="dimmed">
-              {tt('settings.english_reading.description')}
-            </Text>
-            {availabilityProbed &&
-              form.values.english_reading === 'native' &&
-              !availability[form.values.engine].reads_latin_natively && (
-                <Text size="xs" c="orange.7">
-                  {tt('settings.english_reading.fallback_hint')}
-                </Text>
+          <div className={classes.contentPane}>
+            <div className={classes.scroll} ref={scrollRef} data-settings-scroll>
+              {currentSection ? (
+                <>
+                  <div data-settings-section-title={currentSection.id}>
+                    <Text className={classes.sectionTitle}>
+                      {tt(currentSection.titleKey)}
+                    </Text>
+                  </div>
+                  <SettingsSections
+                    section={currentSection.id}
+                    query={query}
+                    form={form}
+                    availability={availability}
+                    availabilityProbed={availabilityProbed}
+                    coercedAlert={coercedAlert}
+                    engineOptions={engineOptions}
+                    piperVoiceOptions={piperVoiceOptions}
+                    piperVoiceRecommended={piperVoiceRecommended}
+                    speakerOptions={speakerOptions}
+                    sampleRateOptions={sampleRateOptions}
+                    terattsVoiceOptions={terattsVoiceOptions}
+                    cacheDir={cacheDir}
+                    logDir={logDir}
+                    appVersion={appVersion}
+                    updaterEnabled={updaterEnabled}
+                    dictionaryCount={dictionaryCount}
+                    onEngineChange={handleEngineChange}
+                    onSampleRateChange={handleSampleRateChange}
+                    onOpenModels={() => setModelsOpen(true)}
+                    onOpenCacheDir={() => void handleOpenCacheDir()}
+                    onOpenLogDir={() => void handleOpenLogDir()}
+                    onOpenCleanup={() => setCleanupOpen(true)}
+                    onOpenDictionary={() => onOpenDictionary?.()}
+                    onCheckUpdates={() => void checkForUpdatesManual()}
+                    onLanguageChange={handleLanguageChange}
+                  />
+                </>
+              ) : (
+                <div data-settings-no-results>
+                  <Text size="sm" c="dimmed">
+                    {tt('settings.search.no_results')}
+                  </Text>
+                </div>
               )}
-          </Stack>
+            </div>
+          </div>
+        </div>
 
-          <Divider />
-
-          <Text size="sm" fw={500} c="dimmed">
-            {tt('settings.section.dictionary')}
+        <footer className={classes.footer} data-settings-footer>
+          <Text size="sm" c="dimmed">
+            {tt('settings.dirty.count', [dirtyCount])}
           </Text>
-
-          <Group justify="flex-start">
-            <Text size="xs" c="dimmed">
-              {tt('settings.dictionary.entries_count', [dictionaryCount ?? '—'])}
-            </Text>
-            <Button variant="default" onClick={() => onOpenDictionary?.()}>
-              {tt('settings.dictionary.open')}
-            </Button>
-          </Group>
-
-          <Divider />
-
-          <Text size="sm" fw={500} c="dimmed">
-            {tt('settings.section.notifications')}
-          </Text>
-
-          <Switch
-            label={tt('settings.notify_on_ready')}
-            key={form.key('notify_on_ready')}
-            {...form.getInputProps('notify_on_ready', { type: 'checkbox' })}
-          />
-
-          <Switch
-            label={tt('settings.notify_on_error')}
-            key={form.key('notify_on_error')}
-            {...form.getInputProps('notify_on_error', { type: 'checkbox' })}
-          />
-
-          <Divider />
-
-          <Text size="sm" fw={500} c="dimmed">
-            {tt('settings.section.preview')}
-          </Text>
-
-          <Switch
-            label={tt('settings.preview_dialog_enabled')}
-            key={form.key('preview_dialog_enabled')}
-            {...form.getInputProps('preview_dialog_enabled', {
-              type: 'checkbox',
-            })}
-          />
-
-          <Divider />
-
-          <Text size="sm" fw={500} c="dimmed">
-            {tt('settings.section.cache')}
-          </Text>
-
-          <NumberInput
-            label={tt('settings.max_cache_size.label')}
-            description={tt('settings.max_cache_size.description')}
-            min={100}
-            key={form.key('max_cache_size_mb')}
-            {...form.getInputProps('max_cache_size_mb')}
-          />
-
-          {cacheDir && (
-            <Stack gap={4}>
-              <Text size="xs" c="dimmed">
-                {tt('settings.data_folder')}
-              </Text>
-              <Text size="sm" style={{ wordBreak: 'break-all', fontFamily: 'var(--mantine-font-family-monospace)' }}>
-                {cacheDir}
-              </Text>
-            </Stack>
-          )}
-
-          <Group justify="flex-start">
-            <Button variant="default" onClick={handleOpenCacheDir} disabled={!cacheDir}>
-              {tt('settings.open_folder')}
-            </Button>
-            <Button variant="default" onClick={() => setCleanupOpen(true)}>
-              {tt('settings.cleanup.button')}
-            </Button>
-          </Group>
-
-          <Divider />
-
-          <Text size="sm" fw={500} c="dimmed">
-            {tt('settings.section.logs')}
-          </Text>
-
-          {logDir && (
-            <Stack gap={4}>
-              <Text size="xs" c="dimmed">
-                {tt('settings.logs_folder')}
-              </Text>
-              <Text size="sm" style={{ wordBreak: 'break-all', fontFamily: 'var(--mantine-font-family-monospace)' }}>
-                {logDir}
-              </Text>
-            </Stack>
-          )}
-
-          <Group justify="flex-start">
-            <Button variant="default" onClick={handleOpenLogDir} disabled={!logDir}>
-              {tt('settings.open_folder')}
-            </Button>
-          </Group>
-
-          <Divider />
-
-          <Text size="sm" fw={500} c="dimmed">
-            {tt('settings.section.reading')}
-          </Text>
-
-          <Stack gap={4}>
-            <Text size="sm">{tt('viewer.reading_width.label')}</Text>
-            <ReadingWidthControl
-              name="settings_reading_width"
-              value={form.values.reading_width}
-              onChange={(v) => form.setFieldValue('reading_width', v)}
-              size="sm"
-            />
-            <Text size="xs" c="dimmed">
-              {tt('settings.reading.width.description')}
-            </Text>
-          </Stack>
-
-          <Stack gap={4}>
-            <Text size="sm">{tt('viewer.reading_scale.label')}</Text>
-            <ReadingScaleControl
-              value={form.values.reading_scale}
-              onChange={(v) => form.setFieldValue('reading_scale', v)}
-              size="compact-sm"
-            />
-            <Text size="xs" c="dimmed">
-              {tt('settings.reading.scale.description')}
-            </Text>
-          </Stack>
-
-          <Divider />
-
-          <Text size="sm" fw={500} c="dimmed">
-            {tt('settings.section.interface')}
-          </Text>
-
-          <Switch
-            label={tt('settings.hide_to_tray_on_close')}
-            description={tt('settings.hide_to_tray_on_close.description')}
-            key={form.key('hide_to_tray_on_close')}
-            {...form.getInputProps('hide_to_tray_on_close', {
-              type: 'checkbox',
-            })}
-          />
-
-          <Select
-            label={tt('settings.theme.label')}
-            data={THEME_OPTIONS.map((opt) => ({ value: opt.value, label: tt(opt.key) }))}
-            key={form.key('theme')}
-            {...form.getInputProps('theme')}
-          />
-
-          <Select
-            label={tt('settings.language.label')}
-            data={LANGUAGE_OPTIONS}
-            key={form.key('language')}
-            value={form.values.language}
-            onChange={(v) => {
-              if (!v) return;
-              // Spec: the locale store updates IMMEDIATELY so the whole UI
-              // relabels before the dialog is saved.
-              form.setFieldValue('language', v);
-              setLocale(toLocale(v));
-            }}
-          />
-
-          {updaterEnabled && (
-            <>
-              <Divider />
-
-              <Text size="sm" fw={500} c="dimmed">
-                {tt('settings.section.updates')}
-              </Text>
-
-              <Group justify="flex-start">
-                <Button variant="default" onClick={() => void checkForUpdatesManual()}>
-                  {tt('settings.check_updates')}
-                </Button>
-              </Group>
-            </>
-          )}
-
-          <Text size="xs" c="dimmed" ta="right" mt="md">
-            {tt('settings.version', [appVersion || '—'])}
-          </Text>
-
-          <Group justify="flex-end" mt="md">
-            <Button
-              variant="subtle"
-              onClick={() => {
-                // Reset restores factory defaults. Mantine's reset() restores
-                // the last values snapshot — which the dialog-open effect
-                // overwrites with the loaded config via resetDirty(loaded) —
-                // so set the defaults explicitly afterwards. The language
-                // selector relabels the whole UI on change; form state
-                // updates are async, so sync the locale store from the
-                // defaults constant, not from getValues().
-                form.reset();
-                form.setValues(SETTINGS_DEFAULTS);
-                setLocale(toLocale(SETTINGS_DEFAULTS.language));
-              }}
-            >
+          <Group gap="sm">
+            <Button variant="subtle" onClick={handleReset}>
               {tt('settings.reset')}
             </Button>
             <Button type="submit">{tt('common.save')}</Button>
           </Group>
-        </Stack>
+        </footer>
       </form>
 
       <ModelAssetsDialog

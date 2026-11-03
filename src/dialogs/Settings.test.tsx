@@ -169,6 +169,16 @@ describe('SettingsModal code block narration', () => {
     });
   };
 
+  /** Settings is split into sections; open the one that owns a control. */
+  const openSection = async (section: string) => {
+    const button = document.getElementById(`settings-nav-${section}`);
+    expect(button, `settings section ${section} rendered`).toBeTruthy();
+    await act(async () => {
+      button!.click();
+      await Promise.resolve();
+    });
+  };
+
   /**
    * Open the TeraTTS voice dropdown (its input mirrors the selected id) and
    * read the options of *that* listbox — closed selects also keep role=option
@@ -202,12 +212,14 @@ describe('SettingsModal code block narration', () => {
   it('renders the saved mode as the selected segment', async () => {
     getConfig.mockResolvedValue(makeConfig({ code_block_mode: 'read' }));
     await renderDialog();
+    await openSection('reading');
 
     expect(activeSegment('code_block_mode', ['brief', 'read'])).toBe('read');
   });
 
   it('submits the picked mode in the config patch', async () => {
     await renderDialog();
+    await openSection('reading');
 
     const segment = document.querySelector<HTMLInputElement>('input[value="read"]');
     expect(segment, 'segment rendered').toBeTruthy();
@@ -232,6 +244,7 @@ describe('SettingsModal code block narration', () => {
   it('renders the saved English reading as the selected segment', async () => {
     getConfig.mockResolvedValue(makeConfig({ english_reading: 'narrated' }));
     await renderDialog();
+    await openSection('reading');
 
     expect(activeSegment('english_reading', ['auto', 'native', 'narrated'])).toBe(
       'narrated',
@@ -240,6 +253,7 @@ describe('SettingsModal code block narration', () => {
 
   it('submits the picked English reading in the config patch', async () => {
     await renderDialog();
+    await openSection('reading');
 
     const segment = document.querySelector<HTMLInputElement>(
       'input[name="english_reading"][value="native"]',
@@ -265,6 +279,7 @@ describe('SettingsModal code block narration', () => {
     // The default fixture engine (silero_native) has no native Latin reading.
     getConfig.mockResolvedValue(makeConfig({ english_reading: 'native' }));
     await renderDialog();
+    await openSection('reading');
 
     expect(document.body.textContent ?? '').toContain(
       'Этот движок не читает английский нативно',
@@ -292,11 +307,13 @@ describe('SettingsModal code block narration', () => {
     );
     getAvailableEngines.mockResolvedValue(terattsAvailable());
     await renderDialog();
+    await openSection('reading');
     const hint = 'Этот движок не читает английский нативно';
     expect(document.body.textContent ?? '').not.toContain(hint);
 
     // Pick Piper in the engine selector without saving: the hint follows the
     // form value, not the persisted config.
+    await openSection('engine');
     const engineInput = document.querySelector<HTMLInputElement>(
       'input[value="TeraTTSv2"]',
     );
@@ -316,12 +333,14 @@ describe('SettingsModal code block narration', () => {
       await Promise.resolve();
     });
 
+    await openSection('reading');
     expect(document.body.textContent ?? '').toContain(hint);
     expect(updateConfig).not.toHaveBeenCalled();
   });
 
   it('submits hide_to_tray_on_close when the toggle is enabled', async () => {
     await renderDialog();
+    await openSection('interface');
 
     const traySwitch = [
       ...document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
@@ -418,6 +437,7 @@ describe('SettingsModal code block narration', () => {
       code: 'config.tray_unavailable',
     });
     await renderDialog();
+    await openSection('interface');
 
     const traySwitch = [
       ...document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
@@ -442,6 +462,7 @@ describe('SettingsModal code block narration', () => {
       makeConfig({ reading_width: 'wide', reading_scale: 150 }),
     );
     await renderDialog();
+    await openSection('reading');
 
     expect(activeSegment('settings_reading_width', ['narrow', 'wide'])).toBe('wide');
     const scaleGroup = document.querySelector('[role="group"][aria-label="Масштаб чтения"]');
@@ -450,6 +471,7 @@ describe('SettingsModal code block narration', () => {
 
   it('submits the picked reading width and scale', async () => {
     await renderDialog();
+    await openSection('reading');
 
     const wide = document.querySelector<HTMLInputElement>(
       'input[name="settings_reading_width"][value="wide"]',
