@@ -391,7 +391,7 @@ id = "dates/year-1900"
 subcategory = "year-context"
 status = "target"
 input = "в 1900 году"
-expected = "в тысяча девятьсотом году"
+expected = "в тысяча девятисотом году"
 note = "the 1900-1999 rule also drops 'одна тысяча' at the boundary"
 
 [[case]]
