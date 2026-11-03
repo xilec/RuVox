@@ -57,7 +57,7 @@ interface TextEntry {
   normalized_text: string | null;
   status: EntryStatus;
   format: TextFormat | null;         // immutable source format; null = not recorded (derived at render)
-  display_mode: DisplayMode | null;  // viewer display choice; null = rendered default
+  display_mode: DisplayMode | null;  // viewer display choice; null = default view of the source format (verbatim for a plain source)
   html_source: string | null;        // sanitized HTML for rendering; HTML-ingested entries only
   created_at: string;              // naive datetime, e.g. "2026-02-15T11:46:51.504055"
   audio_path: string | null;       // filename relative to the cache audio dir

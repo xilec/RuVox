@@ -50,9 +50,12 @@ text. An explicit `markdown`/`plain` is the user's ingestion choice and is
 trusted — the old toggle could also have produced those values, but there is
 no evidence to distinguish them, and overriding a legitimate explicit choice
 (e.g. the dialog's "Plain" pick on markdown-looking text) is the more visible
-breakage. `html` without stored markup is impossible as a genuine source
-(HTML ingestion always stores `html_source`), so it is always the stale
-toggle and falls back to detection.
+breakage. A stored `html` without markup is not trusted as a genuine source
+(HTML ingestion always stores `html_source`): the dialog-less Add path
+records the detection result, so such a value is re-derived by detection.
+Detection may yield `html` again; the viewer then renders `original_text`
+through the sanitized HTML path rather than treating the state as
+impossible.
 
 This matches the issue's rule: `format: null` / legacy derive via
 `html_source.is_some()` or `detectFormat`; a contradictory stale `format` is
@@ -101,10 +104,12 @@ mounting the viewer.
 
 ### 5. Command and schema surface
 
-`set_entry_display_mode` writes only `display_mode` and emits
-`entry_updated`; it deliberately does not touch `format`, `normalized_text`,
-audio or timestamps, and needs no `Processing` guard because synthesis status
-transitions use the compare-and-set storage update. The persisted JSON gains
+`set_entry_display_mode` mutates only `display_mode` under the storage lock
+(`update_entry_if`) and emits `entry_updated`; it deliberately does not
+touch `format`, `normalized_text`, audio or timestamps, and needs no
+`Processing` guard because the write is a single atomic in-place mutation,
+not a read-decide-write of the whole entry, so it cannot roll back a
+synthesis completion. The persisted JSON gains
 one optional key; existing `history.json` files load unchanged, and re-saving
 adds `display_mode: null`.
 
@@ -112,7 +117,10 @@ adds `display_mode: null`.
 
 - A legacy entry whose old toggle wrote `plain` or `markdown` over the true
   source is indistinguishable from an explicit ingestion choice, so it may
-  render in that format. The wrong-view damage is limited to a formatting
-  mismatch, and the user can switch to the verbatim view; no data is lost.
+  render in that format. When the stale value is `plain`, the viewer treats
+  the source as plain and offers no switch, so the rendered view cannot be
+  recovered without a future source-format editor; `markdown` / `html`
+  residues keep both views. This is an accepted limitation of the
+  no-migration approach — no data is lost, only the view choice.
 - `format: null` entries still re-run detection on every entry selection
   (memoized per entry object), acceptable for the text sizes involved.

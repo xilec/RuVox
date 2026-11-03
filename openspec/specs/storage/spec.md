@@ -76,7 +76,7 @@ interface TextEntry {
   normalized_text: string | null;       // Output of the Rust TTS pipeline
   status: EntryStatus;
   format: TextFormat | null;            // Immutable source format recorded at ingestion; null = not recorded
-  display_mode: DisplayMode | null;     // Viewer display choice; null = never chosen (rendered default)
+  display_mode: DisplayMode | null;     // Viewer display choice; null = never chosen (default view of the source format, verbatim for a plain source)
   html_source: string | null;           // Sanitized HTML for rendering; set only for HTML-ingested entries
   source: EntrySource | null;           // Where the text came from; null for legacy entries
   created_at: string;                   // Naive UTC timestamp, e.g. "2026-02-15T11:46:51.504055" (no TZ suffix)
@@ -108,7 +108,7 @@ interface ModelParams {
 }
 ```
 
-Status, format and display-mode values SHALL serialize as lowercase strings. `format` SHALL be written once at ingestion and SHALL NOT be rewritten afterwards; the viewer's display choice lives in `display_mode`. `created_at` and `audio_generated_at` SHALL be stored as naive timestamps without a timezone suffix; both SHALL be generated from the UTC clock (`Utc::now().naive_utc()`), and readers treat the values as UTC. `audio_path` and `timestamps_path` SHALL store the filename only; the full path resolves as `<cache_root>/audio/{filename}`. All optional `TextEntry` fields SHALL default when absent from the JSON, so entries written by older builds keep parsing; a missing `format` SHALL default to `null`, meaning the viewer derives the source format from the content, and a missing `display_mode` SHALL default to `null`, meaning the viewer renders the source format; a missing `html_source` SHALL default to `null`, a missing `generation` SHALL default to `null`, a missing `generation_count` SHALL default to `0`, and a missing `source` SHALL default to `null`. Snapshots written by earlier builds may carry a `read_operators` field; readers MUST ignore it, and re-saving the entry drops it. For HTML-ingested entries, `original_text` SHALL hold the extracted plain text (the TTS pipeline input) and `html_source` SHALL hold the sanitized markup.
+Status, format and display-mode values SHALL serialize as lowercase strings. `format` SHALL be written once at ingestion and SHALL NOT be rewritten afterwards; the viewer's display choice lives in `display_mode`. `created_at` and `audio_generated_at` SHALL be stored as naive timestamps without a timezone suffix; both SHALL be generated from the UTC clock (`Utc::now().naive_utc()`), and readers treat the values as UTC. `audio_path` and `timestamps_path` SHALL store the filename only; the full path resolves as `<cache_root>/audio/{filename}`. All optional `TextEntry` fields SHALL default when absent from the JSON, so entries written by older builds keep parsing; a missing `format` SHALL default to `null`, meaning the viewer derives the source format from the content, and a missing `display_mode` SHALL default to `null`, meaning the viewer shows the default view of the source format (verbatim for a plain source); a missing `html_source` SHALL default to `null`, a missing `generation` SHALL default to `null`, a missing `generation_count` SHALL default to `0`, and a missing `source` SHALL default to `null`. Snapshots written by earlier builds may carry a `read_operators` field; readers MUST ignore it, and re-saving the entry drops it. For HTML-ingested entries, `original_text` SHALL hold the extracted plain text (the TTS pipeline input) and `html_source` SHALL hold the sanitized markup.
 
 #### Scenario: New entry is persisted
 - GIVEN an empty history
@@ -506,11 +506,11 @@ use serde defaults so older JSON parses cleanly, and fields that no longer
 exist in the current schema SHALL be silently ignored on read.
 
 Entries written before `display_mode` existed SHALL load with
-`display_mode: null`, and their source format SHALL be derived at render time
-by the viewer: a stored `html_source` identifies an HTML source, an explicit
-`format` of `markdown` or `plain` is used as recorded, and a `null` format (or
-the stale `html` an old viewer toggle could write without stored markup) falls
-back to content detection. No migration SHALL rewrite the stored entries.
+`display_mode: null`; no migration SHALL rewrite the stored entries. Their
+allowed views and effective display mode follow the source-format
+derivation and render-time clamping defined by the text-display spec,
+"Display mode switching"; the storage layer only defaults the missing
+field to `null`.
 
 #### Scenario: PyQt-era history file loads
 - GIVEN a `history.json` written by the pre-Tauri build (including a legacy `.wav` `audio_path` and no `was_regenerated` field)

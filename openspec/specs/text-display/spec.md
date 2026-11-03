@@ -3,9 +3,11 @@
 ## Purpose
 
 Covers how the selected entry's original text is displayed in the
-`TextViewer`: the three display modes (plain, markdown, HTML), markdown
-rendering with word-position spans, HTML sanitization, and mermaid diagram
-rendering including theme sync and click-to-zoom.
+`TextViewer`: the rendered view of the entry's source format (markdown or
+HTML) and the verbatim view («Исходный»), markdown rendering with
+word-position spans, HTML sanitization, and mermaid diagram rendering
+including theme sync and click-to-zoom. The source format is resolved when
+the entry is ingested and clamped at render time.
 ## Requirements
 ### Requirement: Display mode switching
 
@@ -14,10 +16,16 @@ format and SHALL NOT offer a view that reinterprets the text as another
 format. The source format is resolved as follows: a stored `html_source`
 means `html`; an explicit `format` of `markdown` or `plain` is used as
 recorded; a `null` format (older builds, the tray ingestion path) and a
-stale `format: "html"` without stored markup fall back to content
-detection (`detectFormat(original_text)`). A stale `format` that contradicts
-the derived source (the old viewer toggle wrote its display choice into
-`format`) SHALL be clamped at render time; no data migration is performed.
+stored `html` without markup fall back to content detection
+(`detectFormat(original_text)`). A stored `html` without `html_source` is
+not trusted on its own: HTML ingestion always stores the markup, so such a
+value came from a path that recorded the detection result without keeping
+the markup (the dialog-less Add path). Detection remains authoritative
+there and may yield `html` again; the viewer then renders `original_text`
+through the sanitized HTML path instead of treating the state as
+impossible. A stale `format` that contradicts the derived source (the old
+viewer toggle wrote its display choice into `format`) SHALL be clamped at
+render time; no data migration is performed.
 
 The allowed views are:
 
@@ -36,11 +44,12 @@ an entry without one SHALL show the default view of its source format. The
 persisted choice is display-only: it does not change the stored text, audio,
 or timestamps.
 
-The rendered HTML view SHALL use the stored `html_source`. A legacy entry
-whose HTML source was inferred from content has no stored markup and SHALL
-render its `original_text` as the fallback. A plain source SHALL render
-`original_text` verbatim even when a stale `display_mode: "rendered"` is
-stored.
+The rendered HTML view SHALL use the stored `html_source`. An entry whose
+HTML source was inferred from content (a legacy entry or a stored `format:
+"html"` without markup) has no stored markup and SHALL render its
+`original_text` as the fallback, sanitized through the same HTML path. A
+plain source SHALL render `original_text` verbatim even when a stale
+`display_mode: "rendered"` is stored.
 
 The labels SHALL come from the translation catalog: the rendered option
 names its format (`Markdown` / `HTML`), the verbatim option reads
@@ -100,6 +109,14 @@ names its format (`Markdown` / `HTML`), the verbatim option reads
 - GIVEN an entry with `format: "html"`, no `html_source`, and markdown text
 - WHEN the entry is displayed
 - THEN the viewer offers `Markdown` / «Исходный» and does not render HTML
+
+#### Scenario: HTML source without stored markup renders its text
+
+- GIVEN an entry with `format: "html"`, no `html_source`, and its text
+  detected as `html`
+- WHEN the entry is displayed
+- THEN the viewer offers `HTML` / «Исходный» and the rendered view sanitizes
+  and shows `original_text` instead of reporting an impossible state
 
 #### Scenario: Switching the view never rewrites the source format
 

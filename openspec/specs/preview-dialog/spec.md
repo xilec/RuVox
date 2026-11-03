@@ -37,7 +37,12 @@ no dialog asked the user, these paths SHALL record the source format the
 system actually ingested by content detection (`detectFormat(text)`) as the
 entry's immutable `format`; the plain-flavour fallback SHALL be classified
 the same way. The same detection-based rule applies to an import that falls
-back to the direct path without a dialog.
+back to the direct path without a dialog. A detected `html` recorded on
+this path carries no stored markup (the markup was not retained): the
+viewer does not trust it as proof of an HTML source, re-derives the
+source, and — when detection still yields `html` — renders the original
+text through the sanitized HTML path (text-display spec, "Display mode
+switching").
 
 An empty clipboard or a clipboard read failure SHALL surface the neutral
 «Буфер обмена пуст» hint, not an error notification (on Windows an empty
@@ -344,7 +349,7 @@ re-trigger the debounced preview.
 - THEN the plain clipboard text is ingested as a normal entry and no error
   is shown
 
-#### Scenario: Markdown choice persists display format
+#### Scenario: Markdown choice persists the source format
 
 - GIVEN the dialog is open and `markdown` is the effective format
 - WHEN the user presses "Синтезировать"
