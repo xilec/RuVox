@@ -9,6 +9,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MantineProvider } from '@mantine/core';
 import type { UIConfig } from '../lib/tauri';
+import { updaterSupported } from '../lib/updater';
 import { setLocale } from '../stores/locale';
 import { SettingsModal } from './Settings';
 
@@ -133,6 +134,7 @@ describe('SettingsModal sections', () => {
     getConfig.mockResolvedValue(makeConfig());
     getAvailableEngines.mockResolvedValue(availability());
     getTerattsVoices.mockResolvedValue([]);
+    vi.mocked(updaterSupported).mockResolvedValue(true);
     eventHandlers.bundleDownloadFinished = null;
   });
 
@@ -274,18 +276,21 @@ describe('SettingsModal sections', () => {
 
   /**
    * Mantine's modal transition mounts the body on the next animation frame;
-   * jsdom only fires it through a real timer tick. Poll instead of sleeping a
-   * fixed delay, so a slow CI machine cannot race the transition.
+   * jsdom only fires it through a real timer tick. Poll with the repo's
+   * `vi.waitFor` convention instead of a fixed delay, so a slow CI machine
+   * cannot race the transition.
    */
-  const waitForNestedDialog = async () => {
-    const deadline = Date.now() + 3000;
-    while (Date.now() < deadline) {
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      });
-      if (document.querySelectorAll('[role="dialog"]').length > 1) return;
-    }
-  };
+  const waitForNestedDialog = () =>
+    vi.waitFor(
+      async () => {
+        // Let the transition timer fire inside act, then assert.
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        });
+        expect(document.querySelectorAll('[role="dialog"]').length).toBeGreaterThan(1);
+      },
+      { timeout: 3000, interval: 50 },
+    );
 
   it('renders every settings row in exactly one section', async () => {
     await renderDialog();
@@ -385,18 +390,25 @@ describe('SettingsModal sections', () => {
       .mockImplementation(function (this: Element) {
         scrolled.push(this);
       });
-    await renderDialog();
+    try {
+      await renderDialog();
 
-    await typeSearch('логи');
-    expect(navTitles()).toEqual(['О программе']);
+      await typeSearch('логи');
+      expect(navTitles()).toEqual(['О программе']);
 
-    await pressKey(searchInput(), 'Enter');
-    expect(updateConfig).not.toHaveBeenCalled();
-    expect(sectionTitle()).toBe('О программе');
-    expect(scrolled.map((element) => element.getAttribute('data-settings-field'))).toContain(
-      'logs_folder',
-    );
-    scrollSpy.mockRestore();
+      await pressKey(searchInput(), 'Enter');
+      expect(updateConfig).not.toHaveBeenCalled();
+      expect(sectionTitle()).toBe('О программе');
+      expect(
+        scrolled.map((element) => element.getAttribute('data-settings-field')),
+      ).toContain('logs_folder');
+      // The jump hands keyboard focus to the section title, not the search.
+      expect(document.activeElement?.hasAttribute('data-settings-section-title')).toBe(
+        true,
+      );
+    } finally {
+      scrollSpy.mockRestore();
+    }
   });
 
   it('clears the query on Esc first and closes the dialog afterwards', async () => {
@@ -411,6 +423,120 @@ describe('SettingsModal sections', () => {
 
     await pressKey(searchInput(), 'Escape');
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears the query on Esc from the dialog header, outside the form', async () => {
+    const onClose = vi.fn();
+    await renderDialog({ onClose });
+
+    await typeSearch('тема');
+    const title = document.querySelector<HTMLElement>('[role="dialog"] h2');
+    expect(title, 'dialog title rendered').toBeTruthy();
+
+    // The header sits outside the <form>: the key never reaches a form handler.
+    await pressKey(title, 'Escape');
+    expect(onClose).not.toHaveBeenCalled();
+    expect(searchInput()?.value).toBe('');
+    expect(navTitles()).toHaveLength(7);
+
+    await pressKey(title, 'Escape');
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('reveals and focuses an invalid field after saving from another section', async () => {
+    await renderDialog();
+    await clickNav('storage');
+
+    const cacheInput = document.querySelector<HTMLInputElement>(
+      '[data-settings-field="max_cache_size_mb"] input',
+    );
+    expect(cacheInput, 'cache size input rendered').toBeTruthy();
+    const setValue = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      'value',
+    )!.set!;
+    await act(async () => {
+      setValue.call(cacheInput, '50');
+      cacheInput!.dispatchEvent(new Event('input', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    await clickNav('notifications');
+    await clickSave();
+
+    expect(updateConfig).not.toHaveBeenCalled();
+    expect(sectionTitle()).toBe('Хранилище');
+    expect(document.body.textContent ?? '').toContain('Минимум 100 МБ');
+    const focused = document.querySelector<HTMLInputElement>(
+      '[data-settings-field="max_cache_size_mb"] input',
+    );
+    expect(document.activeElement).toBe(focused);
+  });
+
+  it('does not search rows the updater gate hides', async () => {
+    vi.mocked(updaterSupported).mockResolvedValueOnce(false);
+    await renderDialog();
+
+    await typeSearch('обновление');
+    expect(navTitles()).toEqual([]);
+    expect(document.querySelector('[data-settings-no-results]')).toBeTruthy();
+
+    // Enter on a query with no rendered match must not target a missing row.
+    await pressKey(searchInput(), 'Enter');
+    expect(document.querySelector('[data-settings-no-results]')).toBeTruthy();
+    expect(updateConfig).not.toHaveBeenCalled();
+  });
+
+  it('finds the update row when the updater is supported', async () => {
+    await renderDialog();
+
+    await typeSearch('обновление');
+    // The updater probe resolves after the first render; wait for the row.
+    await vi.waitFor(() => expect(navTitles()).toEqual(['О программе']));
+
+    await pressKey(searchInput(), 'Enter');
+    expect(sectionTitle()).toBe('О программе');
+    expect(rowFields()).toEqual(['updates']);
+  });
+
+  it('marks the no-results state and the dirty counter as live regions', async () => {
+    await renderDialog();
+
+    const counter = document.querySelector<HTMLElement>(
+      '[data-settings-footer] [role="status"]',
+    );
+    expect(counter?.getAttribute('aria-live')).toBe('polite');
+
+    await typeSearch('zzzz');
+    const empty = document.querySelector<HTMLElement>('[data-settings-no-results]');
+    expect(empty?.getAttribute('role')).toBe('status');
+    expect(empty?.getAttribute('aria-live')).toBe('polite');
+  });
+
+  it('keeps every rendered control inside a searchable settings row', async () => {
+    await renderDialog();
+
+    for (const section of [
+      'engine',
+      'reading',
+      'notifications',
+      'storage',
+      'interface',
+      'dictionary',
+      'about',
+    ]) {
+      await clickNav(section);
+      const controls = document.querySelectorAll<HTMLElement>(
+        '[data-settings-scroll] input, [data-settings-scroll] select, [data-settings-scroll] button',
+      );
+      expect(controls.length, `controls of ${section}`).toBeGreaterThan(0);
+      for (const control of controls) {
+        expect(
+          control.closest('[data-settings-field]'),
+          `control outside a settings row in ${section}`,
+        ).toBeTruthy();
+      }
+    }
   });
 
   it('relabels sections, footer and search on a language switch', async () => {
@@ -517,6 +643,7 @@ describe('SettingsModal sections', () => {
 
     await clickButton('Сбросить');
     expect(footerText()).toContain('Изменено: 0');
+    expect(document.querySelectorAll('[data-settings-dirty-dot]')).toHaveLength(0);
     expect(document.querySelector<HTMLInputElement>('input[value="Авто"]')).toBeTruthy();
   });
 
