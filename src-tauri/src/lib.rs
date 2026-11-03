@@ -427,6 +427,7 @@ pub(crate) fn invoke_handler<R: Runtime>()
         add_clipboard_entry,
         add_text_entry,
         preview_normalize,
+        preview_pronunciation,
         get_entries,
         get_entry,
         delete_entry,
@@ -1003,6 +1004,16 @@ pub fn run() {
                 app.handle().clone(),
             );
 
+            // Ephemeral pronunciation previews (dictionary editor, issue
+            // #349): the app cache dir keeps them out of user data, and the
+            // command deletes each file as soon as it is read.
+            let preview_dir = app.path().app_cache_dir().unwrap_or_else(|e| {
+                tracing::warn!(
+                    "preview: app cache dir unavailable ({e}); falling back to the data dir"
+                );
+                storage.data_dir().join("preview-cache")
+            });
+
             app.manage(AppState {
                 storage,
                 tts,
@@ -1020,6 +1031,8 @@ pub fn run() {
                 user_quit: Arc::new(AtomicBool::new(false)),
                 synthesis_tasks,
                 synthesize_entered,
+                preview_dir,
+                preview_lock: tokio::sync::Mutex::new(()),
             });
 
             // Startup channel check is intentionally fire-and-forget and

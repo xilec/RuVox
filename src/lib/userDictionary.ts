@@ -10,7 +10,7 @@
  */
 
 const MAX_FROM_LEN = 64;
-const MAX_TO_LEN = 256;
+export const MAX_TO_LEN = 256;
 
 /** The explicit stress mark a spoken form may carry: `+` before the vowel. */
 const STRESS_MARK = '+';

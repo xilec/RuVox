@@ -28,6 +28,27 @@ function coerceSpeakerForEngine(engine: EngineKind, speaker: string): string {
     : speaker;
 }
 
+/**
+ * Voice id the backend will use for `engine` — mirrors `voice_for_engine` in
+ * `src-tauri/src/commands/synthesis.rs`: Piper uses `piper_voice`, both Silero
+ * engines use `speaker`, TeraTTS uses `teratts_voice`. Used as part of the
+ * dictionary preview cache key, so a voice change cannot serve stale audio.
+ */
+export function voiceForEngine(
+  engine: EngineKind,
+  config: Pick<UIConfig, 'piper_voice' | 'speaker' | 'teratts_voice'>,
+): string {
+  switch (engine) {
+    case 'piper':
+      return config.piper_voice || DEFAULT_PIPER_VOICE;
+    case 'teratts':
+      return config.teratts_voice || DEFAULT_TERATTS_VOICE;
+    case 'silero':
+    case 'silero_native':
+      return config.speaker || DEFAULT_SILERO_SPEAKER;
+  }
+}
+
 export interface EngineFormState {
   engine: EngineKind;
   /** Voice the user picked for Piper. Persisted across engine flips so the

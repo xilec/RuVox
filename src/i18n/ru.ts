@@ -610,6 +610,23 @@ export const ru = {
   'dictionary.form.from.help': 'Справка о поиске слова',
   'dictionary.form.warning.latin':
     'В произношении есть латиница или цифры — они прозвучат как есть.',
+  // ── Pronunciation preview (issue #349) ──────────────────────────
+  'dictionary.preview.from.aria': 'Прослушать, как читается слово',
+  'dictionary.preview.from.hint':
+    'Как слово читается сейчас: встроенные таблицы и сохранённый словарь. Добавляемая запись ещё не действует.',
+  'dictionary.preview.to.aria': 'Прослушать, как произносится',
+  'dictionary.preview.to.hint':
+    'Как прозвучит набранное произношение. Знак «+» применяется только движками, которые поддерживают ударение.',
+  'dictionary.preview.stop': 'Остановить прослушивание',
+  'dictionary.preview.busy': 'Синтез…',
+  'dictionary.preview.engine_hint':
+    'Прослушивание — движком «{0}»; запись для {1} может звучать иначе.',
+  'dictionary.preview.error': 'Не удалось прослушать: {0}',
+  'dictionary.preview.error.model_missing': 'модель не установлена',
+  'dictionary.preview.error.voice_missing': 'голос не установлен',
+  'dictionary.preview.error.engine_busy': 'движок занят озвучиванием',
+  'dictionary.preview.error.invalid_stress': 'неверное ударение',
+  'dictionary.preview.error.play_failed': 'Не удалось воспроизвести звук.',
   'dictionary.status.saved': 'Все изменения сохранены',
   'dictionary.status.saving': 'Сохранение…',
   'dictionary.status.error': 'Не сохранено — повторить',

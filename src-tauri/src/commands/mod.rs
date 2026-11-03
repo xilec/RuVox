@@ -5,6 +5,7 @@
 //! "message": "..." }`) which the frontend localizes by `code` and falls back
 //! to `message` for unknown codes.
 
+use base64::Engine as _;
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -35,7 +36,7 @@ use crate::tts::{
     AvailableEngines, CharMappingEntry, ModelInfo, SynthesizeOutput, TtsEngine, TtsError,
     availability,
 };
-use tts_contract::TextProfile;
+use tts_contract::{Stress, TextProfile};
 
 // ── Error type ─────────────────────────────────────────────────────────────────
 
@@ -372,6 +373,137 @@ pub async fn preview_normalize(
 #[derive(Debug, Serialize)]
 pub struct PreviewNormalizeResult {
     pub normalized: String,
+}
+
+/// Response of [`preview_pronunciation`]: the text that was actually spoken
+/// (the normalized reading, or the stress-adjusted spoken form) plus the WAV
+/// bytes as base64 and the rendered duration.
+#[derive(Debug, Serialize)]
+pub struct PreviewPronunciationResult {
+    pub spoken_text: String,
+    pub wav_base64: String,
+    pub duration_sec: f64,
+}
+
+/// Speak one dictionary word without touching the entry lifecycle (issue
+/// #349): the editor's play controls call this to hear «Слово» as the
+/// pipeline reads it today (`mode = "normalize"`) or «Как произносить» as the
+/// typed spoken form will sound (`mode = "spoken"`).
+///
+/// The audio is synthesized by the active engine only, into a unique file
+/// under the app cache directory, read into memory and deleted before the
+/// response leaves the command — no entry, timestamp, queue state or
+/// synthesis event is created (this deliberately bypasses
+/// [`synthesis::synthesize_audio`]).
+#[tauri::command]
+pub async fn preview_pronunciation(
+    state: State<'_, AppState>,
+    text: String,
+    mode: String,
+) -> CmdResult<PreviewPronunciationResult> {
+    // One preview at a time: a double click racing the disabled state (or a
+    // second editor) must not synthesize over the first one.
+    let _preview = state.preview_lock.lock().await;
+
+    // A queue entry inside `tts.synthesize` owns the engine. Every engine
+    // tolerates a second caller structurally, but the preview would wait
+    // behind a narration that can run for minutes, and TeraTTS shares one
+    // cancellation flag between runs — so refuse instead of queueing.
+    if !state.synthesize_entered.lock().is_empty() {
+        return Err(CommandError::internal("preview.engine_busy", vec![]));
+    }
+
+    let spoken_text = match mode.as_str() {
+        "normalize" => {
+            // Same pass as `preview_normalize`: the saved dictionary is
+            // applied and the entry being added does not exist yet (in edit
+            // mode the saved entry is part of the dictionary).
+            let (normalized, _mapping) =
+                preview_normalization(Arc::clone(&state.pipeline), text, state.tts.text_profile())
+                    .await?;
+            normalized.trim().to_string()
+        }
+        "spoken" => {
+            // `spoken_form` validates the mark and returns the text without
+            // it; the mark reaches the engine only when its profile renders
+            // stress — the same rule the pipeline applies to an entry's `to`.
+            let stripped = tts_normalize::dictionary::spoken_form(&text)
+                .map_err(|e| {
+                    CommandError::internal("preview.invalid_stress", vec![])
+                        .with_message(e.to_string())
+                })?
+                .trim()
+                .to_string();
+            if state.tts.text_profile().stress == Stress::None {
+                stripped
+            } else {
+                text.trim().to_string()
+            }
+        }
+        other => {
+            return Err(CommandError::internal(
+                "preview.invalid_mode",
+                vec![other.to_string()],
+            ));
+        }
+    };
+
+    if spoken_text.is_empty() {
+        return Err(CommandError::internal("preview.empty_text", vec![]));
+    }
+
+    let config = state.storage.load_config().unwrap_or_default();
+    let voice = synthesis::voice_for_engine(state.tts.kind(), &config);
+    let preview_dir = state.preview_dir.join("preview");
+    tokio::fs::create_dir_all(&preview_dir).await.map_err(|e| {
+        CommandError::internal("preview.dir_create_failed", vec![]).with_message(e.to_string())
+    })?;
+    let out_path = preview_dir.join(format!("{}.wav", uuid::Uuid::new_v4()));
+
+    let synthesis = state
+        .tts
+        .synthesize(
+            spoken_text.clone(),
+            voice,
+            config.sample_rate,
+            out_path.to_string_lossy().into_owned(),
+            None,
+        )
+        .await;
+
+    // Read-then-delete in one pass: the file is ephemeral by contract, and a
+    // failed synthesis may still have left a partial WAV behind.
+    let bytes = match &synthesis {
+        Ok(_) => tokio::fs::read(&out_path).await.ok(),
+        Err(_) => None,
+    };
+    match tokio::fs::remove_file(&out_path).await {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => warn!("failed to remove preview wav {}: {e}", out_path.display()),
+    }
+
+    let output = synthesis.map_err(|e| match e {
+        // Keep the engine's site id so the form can say "model not installed"
+        // instead of a generic sentence.
+        TtsError::Ttsd { code, message } => {
+            CommandError::synthesis(&code, vec![]).with_message(message)
+        }
+        other => CommandError::synthesis("preview.synthesis_failed", vec![])
+            .with_message(other.to_string()),
+    })?;
+    let bytes = bytes.ok_or_else(|| {
+        CommandError::internal("preview.audio_read_failed", vec![]).with_message(format!(
+            "preview wav {} disappeared before it could be read",
+            out_path.display()
+        ))
+    })?;
+
+    Ok(PreviewPronunciationResult {
+        spoken_text,
+        wav_base64: base64::engine::general_purpose::STANDARD.encode(bytes),
+        duration_sec: output.duration_sec,
+    })
 }
 
 /// Return all entries sorted by created_at descending.

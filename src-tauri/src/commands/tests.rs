@@ -1148,3 +1148,163 @@ fn seed_opus_entry_from_sine(storage: &StorageService) -> (EntryId, TempDir) {
     storage.update_entry(entry).unwrap();
     (id, dir)
 }
+
+// ── preview_pronunciation ────────────────────────────────────────────────────
+
+/// The dictionary editor's preview speaks the pipeline reading of one word
+/// and returns it with a playable WAV — and leaves no trace in the history,
+/// the queue or the synthesis-event stream (issue #349).
+#[tokio::test]
+async fn preview_pronunciation_normalize_speaks_the_current_reading() {
+    use crate::test_support::{build_test_app, record_events};
+
+    let t = build_test_app();
+    let events = record_events(
+        &t.app,
+        &[
+            "entry_updated",
+            "tts_error",
+            "tts_fatal",
+            "model_loading",
+            "model_loaded",
+        ],
+    );
+
+    let result = preview_pronunciation(t.state(), "IPv6".to_string(), "normalize".to_string())
+        .await
+        .unwrap();
+
+    // The pipeline reading, not the raw token.
+    assert_eq!(result.spoken_text, "ай пи ви шесть");
+    assert!(result.duration_sec > 0.0);
+    let wav = base64::engine::general_purpose::STANDARD
+        .decode(&result.wav_base64)
+        .expect("wav_base64 is valid base64");
+    assert_eq!(&wav[..4], b"RIFF", "preview must return a WAV file");
+
+    // No entry, no queue marker, no synthesis event.
+    assert!(t.state().storage.get_all_entries().is_empty());
+    assert!(t.state().synthesize_entered.lock().is_empty());
+    assert!(events.lock().unwrap().is_empty());
+
+    // The ephemeral WAV is gone; only the (empty) preview directory remains.
+    let preview_dir = t.state().preview_dir.join("preview");
+    assert_eq!(std::fs::read_dir(&preview_dir).unwrap().count(), 0);
+}
+
+/// The spoken-form preview keeps the `+` mark exactly when the active
+/// engine's profile renders stress (Silero Native: `Stress::Auto`).
+#[tokio::test]
+async fn preview_pronunciation_spoken_keeps_the_mark_for_a_stress_engine() {
+    use crate::test_support::build_test_app_with_kind;
+
+    let t = build_test_app_with_kind(EngineKind::SileroNative);
+    assert_ne!(t.state().tts.text_profile().stress, Stress::None);
+
+    let result = preview_pronunciation(
+        t.state(),
+        "айпи ви ш+есть".to_string(),
+        "spoken".to_string(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result.spoken_text, "айпи ви ш+есть");
+}
+
+/// ... and strips it for an engine whose profile has `Stress::None` (Piper's
+/// eSpeak-ng frontend has no stress control of its own).
+#[tokio::test]
+async fn preview_pronunciation_spoken_strips_the_mark_for_a_stressless_engine() {
+    use crate::test_support::build_test_app_with_kind;
+
+    let t = build_test_app_with_kind(EngineKind::Piper);
+    assert_eq!(t.state().tts.text_profile().stress, Stress::None);
+
+    let result = preview_pronunciation(
+        t.state(),
+        "айпи ви ш+есть".to_string(),
+        "spoken".to_string(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result.spoken_text, "айпи ви шесть");
+}
+
+/// A malformed mark is a typed rejection, not a silent strip.
+#[tokio::test]
+async fn preview_pronunciation_rejects_a_malformed_mark() {
+    use crate::test_support::build_test_app;
+
+    let t = build_test_app();
+    let err = preview_pronunciation(t.state(), "Моск+ва".to_string(), "spoken".to_string())
+        .await
+        .unwrap_err();
+
+    match err {
+        CommandError::Internal { code, .. } => assert_eq!(code, "preview.invalid_stress"),
+        other => panic!("expected preview.invalid_stress, got {other:?}"),
+    }
+}
+
+/// Nothing to speak is a typed rejection (the frontend disables the control,
+/// the backend still refuses instead of asking the engine for silence).
+#[tokio::test]
+async fn preview_pronunciation_rejects_empty_text() {
+    use crate::test_support::build_test_app;
+
+    let t = build_test_app();
+    let err = preview_pronunciation(t.state(), "   ".to_string(), "spoken".to_string())
+        .await
+        .unwrap_err();
+
+    match err {
+        CommandError::Internal { code, .. } => assert_eq!(code, "preview.empty_text"),
+        other => panic!("expected preview.empty_text, got {other:?}"),
+    }
+}
+
+/// An unknown mode is a typed rejection.
+#[tokio::test]
+async fn preview_pronunciation_rejects_an_unknown_mode() {
+    use crate::test_support::build_test_app;
+
+    let t = build_test_app();
+    let err = preview_pronunciation(t.state(), "IPv6".to_string(), "shout".to_string())
+        .await
+        .unwrap_err();
+
+    match err {
+        CommandError::Internal { code, params, .. } => {
+            assert_eq!(code, "preview.invalid_mode");
+            assert_eq!(params, vec!["shout".to_string()]);
+        }
+        other => panic!("expected preview.invalid_mode, got {other:?}"),
+    }
+}
+
+/// A queue entry inside `tts.synthesize` owns the engine: the preview refuses
+/// instead of queueing behind a narration or sharing its cancel flag.
+#[tokio::test]
+async fn preview_pronunciation_refuses_while_the_queue_synthesizes() {
+    use crate::test_support::build_test_app;
+
+    let t = build_test_app();
+    t.state()
+        .synthesize_entered
+        .lock()
+        .insert(uuid::Uuid::new_v4());
+
+    let err = preview_pronunciation(t.state(), "IPv6".to_string(), "normalize".to_string())
+        .await
+        .unwrap_err();
+
+    match err {
+        CommandError::Internal { code, .. } => assert_eq!(code, "preview.engine_busy"),
+        other => panic!("expected preview.engine_busy, got {other:?}"),
+    }
+    // The engine was never reached, so no preview file was staged.
+    let preview_dir = t.state().preview_dir.join("preview");
+    assert!(!preview_dir.exists() || std::fs::read_dir(&preview_dir).unwrap().count() == 0);
+}

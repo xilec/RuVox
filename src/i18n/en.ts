@@ -605,6 +605,23 @@ export const en: Record<MessageKey, string> = {
   'dictionary.form.from.help': 'Word matching help',
   'dictionary.form.warning.latin':
     'The spoken form contains Latin letters or digits — they will be read as-is.',
+  // ── Pronunciation preview (issue #349) ──────────────────────────
+  'dictionary.preview.from.aria': 'Listen to how the word is read',
+  'dictionary.preview.from.hint':
+    'How the word reads today: built-in tables and the saved dictionary. The entry being added does not apply yet.',
+  'dictionary.preview.to.aria': 'Listen to the pronunciation',
+  'dictionary.preview.to.hint':
+    'How the typed pronunciation will sound. The "+" mark applies only to engines that support stress.',
+  'dictionary.preview.stop': 'Stop the preview',
+  'dictionary.preview.busy': 'Synthesizing…',
+  'dictionary.preview.engine_hint':
+    'Preview plays with the {0} engine; the {1} recording may sound different.',
+  'dictionary.preview.error': 'Preview failed: {0}',
+  'dictionary.preview.error.model_missing': 'the model is not installed',
+  'dictionary.preview.error.voice_missing': 'the voice is not installed',
+  'dictionary.preview.error.engine_busy': 'the engine is busy narrating',
+  'dictionary.preview.error.invalid_stress': 'invalid stress mark',
+  'dictionary.preview.error.play_failed': 'Could not play the audio.',
   'dictionary.status.saved': 'All changes saved',
   'dictionary.status.saving': 'Saving…',
   'dictionary.status.error': 'Not saved — retry',

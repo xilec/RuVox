@@ -150,7 +150,7 @@ fn mark_processing<R: Runtime>(
 /// `speaker` (e.g. "xenia"). Keyed on the active engine kind, not the
 /// persisted `config.engine`, so a session with a startup-fallback engine
 /// still gets its own voice choice.
-fn voice_for_engine(kind: EngineKind, config: &UIConfig) -> String {
+pub(super) fn voice_for_engine(kind: EngineKind, config: &UIConfig) -> String {
     match kind {
         EngineKind::Piper => config.piper_voice.clone(),
         EngineKind::Silero | EngineKind::SileroNative => config.speaker.clone(),
