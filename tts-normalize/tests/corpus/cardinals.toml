@@ -584,3 +584,90 @@ status = "locked"
 input = "1.2.0-rc1"
 expected = "один точка два точка ноль эр си один"
 note = "digits after a pre-release suffix are part of the reading, not dropped"
+
+[[case]]
+id = "cardinals/unit-preposition-dative"
+subcategory = "case"
+status = "locked"
+input = "к 5 кг"
+expected = "к пяти килограммам"
+note = "a dative preposition puts the numeral and the unit into the same case"
+
+[[case]]
+id = "cardinals/unit-preposition-prepositional"
+subcategory = "case"
+status = "locked"
+input = "об 1 кг"
+expected = "об одном килограмме"
+note = "a prepositional preposition keeps the numeral and the unit in one case"
+
+[[case]]
+id = "cardinals/unit-preposition-plural"
+subcategory = "case"
+status = "locked"
+input = "о 2 кг"
+expected = "о двух килограммах"
+note = "a count other than one takes the plural in the prepositional"
+
+[[case]]
+id = "cardinals/scale-preposition-dative"
+subcategory = "case"
+status = "locked"
+input = "к 2 тыс."
+expected = "к двум тысячам"
+
+[[case]]
+id = "cardinals/scale-preposition-one"
+subcategory = "case"
+status = "locked"
+input = "к 1 млн"
+expected = "к миллиону"
+note = "a lone scale word keeps the case: 'к миллиону', not 'к миллион'"
+
+[[case]]
+id = "cardinals/slash-half-about-kg"
+subcategory = "fraction"
+status = "locked"
+input = "около 1/2 кг"
+expected = "около одной второй килограмма"
+note = "an adjectival fraction keeps the unit in the genitive singular"
+
+[[case]]
+id = "cardinals/mixed-fraction-preposition"
+subcategory = "fraction"
+status = "locked"
+input = "к 1,5 кг"
+expected = "к полутора килограммам"
+note = "'полтора' becomes 'полутора' in oblique cases and the unit follows in the plural"
+
+[[case]]
+id = "cardinals/dotted-group-long"
+subcategory = "decimal"
+status = "locked"
+input = "1.1758881234567"
+expected = "один точка один семь пять восемь восемь восемь один два три четыре пять шесть семь"
+note = "a dotted group above 999_999_999_999 is read digit by digit, not through the cardinal builder"
+
+[[case]]
+id = "cardinals/dotted-group-exact-trillion"
+subcategory = "decimal"
+status = "locked"
+input = "1.1000000000000"
+expected = "один точка один ноль ноль ноль ноль ноль ноль ноль ноль ноль ноль ноль ноль"
+note = "an exact 1e12 group has no cardinal form; digit-by-digit keeps the reading complete"
+
+[[case]]
+id = "cardinals/prerelease-leading-zero"
+subcategory = "code"
+status = "locked"
+input = "1.0.0-rc01"
+expected = "один точка ноль точка ноль эр си ноль один"
+note = "a leading zero in the pre-release digits is a code, not a count"
+
+[[case]]
+id = "cardinals/technical-fraction-unit"
+subcategory = "fraction"
+status = "locked"
+input = "0,0000001 кг"
+expected = "ноль точка ноль ноль ноль ноль ноль ноль один килограммов"
+note = "a fraction tail longer than six digits keeps the technical register and still names the unit"

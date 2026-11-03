@@ -301,3 +301,27 @@ subcategory = "currency"
 status = "locked"
 input = "5 р."
 expected = "пять рублей"
+
+[[case]]
+id = "money_codes/dollars-preposition"
+subcategory = "currency"
+status = "locked"
+input = "к $5"
+expected = "к пяти долларам"
+note = "the currency noun follows the numeral into the dative"
+
+[[case]]
+id = "money_codes/euro-preposition"
+subcategory = "currency"
+status = "locked"
+input = "к €5"
+expected = "к пяти евро"
+note = "an indeclinable currency keeps its form in the dative"
+
+[[case]]
+id = "money_codes/usd-sentence-dot"
+subcategory = "currency"
+status = "locked"
+input = "Счёт 5 USD."
+expected = "Счёт пять долларов."
+note = "the sentence period after a currency word stays outside the span"

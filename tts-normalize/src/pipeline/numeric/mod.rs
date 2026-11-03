@@ -231,12 +231,26 @@ mod tests {
     fn dative_and_prepositional_contexts() {
         assert_eq!(read_all("к 8 марта", true), "к восьмому марта");
         assert_eq!(read_all("к 5-й главе", true), "к пятой главе");
+        assert_eq!(read_all("к 5 кг", true), "к пяти килограммам");
+        assert_eq!(read_all("об 1 кг", true), "об одном килограмме");
+        assert_eq!(read_all("о 2 кг", true), "о двух килограммах");
+        assert_eq!(read_all("при 10 %", true), "при десяти процентах");
+        assert_eq!(read_all("к $5", true), "к пяти долларам");
+        assert_eq!(read_all("к €5", true), "к пяти евро");
+        assert_eq!(read_all("к 1 млн", true), "к миллиону");
+        assert_eq!(read_all("к 2 тыс.", true), "к двум тысячам");
+        assert_eq!(read_all("к 1 °C", true), "к одному градусу Цельсия");
     }
 
     #[test]
     fn slash_and_mixed_fractions_own_their_unit() {
         assert_eq!(read_all("1/2 кг", true), "одна вторая килограмма");
         assert_eq!(read_all("1½ кг", true), "полтора килограмма");
+        assert_eq!(
+            read_all("около 1/2 кг", true),
+            "около одной второй килограмма"
+        );
+        assert_eq!(read_all("к 1,5 кг", true), "к полутора килограммам");
     }
 
     #[test]
@@ -250,6 +264,18 @@ mod tests {
     #[test]
     fn dotted_groups_keep_leading_zeros() {
         assert_eq!(read_all("v1.02", true), "один точка ноль два");
+    }
+
+    #[test]
+    fn dotted_groups_above_the_cardinal_limit_read_digit_by_digit() {
+        assert_eq!(
+            read_all("1.1758881234567", true),
+            "один точка один семь пять восемь восемь восемь один два три четыре пять шесть семь"
+        );
+        assert_eq!(
+            read_all("1.1000000000000", true),
+            "один точка один ноль ноль ноль ноль ноль ноль ноль ноль ноль ноль ноль ноль"
+        );
     }
 
     #[test]
@@ -269,6 +295,10 @@ mod tests {
         assert_eq!(
             read_all("1.2.0-rc1", true),
             "один точка два точка ноль эр си один"
+        );
+        assert_eq!(
+            read_all("1.0.0-rc01", true),
+            "один точка ноль точка ноль эр си ноль один"
         );
     }
 
@@ -311,10 +341,25 @@ mod tests {
     }
 
     #[test]
+    fn currency_words_keep_the_sentence_period() {
+        assert_eq!(read_all("5 USD.", true), "пять долларов.");
+        assert_eq!(read_all("5 руб.", true), "пять рублей");
+    }
+
+    #[test]
+    fn year_range_word_does_not_claim_a_non_year_range() {
+        assert_eq!(read_all("5–10 годы", true), "5–10 годы");
+    }
+
+    #[test]
     fn long_fraction_tails_use_the_technical_register() {
         assert_eq!(
             read_all("0,0000001", true),
             "ноль точка ноль ноль ноль ноль ноль ноль один"
+        );
+        assert_eq!(
+            read_all("0,0000001 кг", true),
+            "ноль точка ноль ноль ноль ноль ноль ноль один килограммов"
         );
     }
 
