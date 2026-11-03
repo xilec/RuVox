@@ -21,7 +21,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   switch and a `[ − ] 100% [ + ]` scale stepper (80–200 %) applied as CSS
   `zoom` to the whole rendered document, so text, headings, code, tables and
   images grow together in every display mode; both choices persist and are
-  mirrored in a new Settings «Чтение» block (#354, #357).
+  mirrored in a new Settings «Чтение текста» block (#354, #357).
 - **Synthesis progress and inline cancel in the queue** — a running entry
   shows «Синтез… 0:42», a queued one «В очереди», and both offer «Отменить» (#352).
 - **Synthesis failures stay on the queue card** — the stored engine reason and
@@ -32,13 +32,6 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   part entries keep working when no whole-word entry exists (#279).
 
 ### Changed
-- **Audio saving is faster and needs no system libopus** — the WAV → Ogg-Opus
-  transcode now uses the pure-Rust `opus1` encoder (SSE4.1/AVX2 SILK kernels)
-  instead of the C `libopus` FFI: ~1.5× faster on a 22-minute narration (8.7 s
-  → 5.7 s) at the same 32 kbps, and the app no longer needs a native Opus
-  library to build or run. WAV export decodes through the same pure-Rust codec
-  — a valid decode of the stored stream, not bit-identical to `libopus` on
-  x86-64 (#19).
 - **Settings split into sections with search** — the dialog is now a two-pane
   window with a section nav (engine and voice, text reading, notifications,
   storage, interface, dictionary, about), a search field that matches labels
@@ -46,6 +39,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   sections without matches, a per-section unsaved dot with «Изменено: N» in
   the footer, a footer that never scrolls away, and a section `Select` in a
   narrow window; every control and the save semantics are unchanged (#355).
+- **Audio saving is faster and needs no system libopus** — the WAV → Ogg-Opus
+  transcode now uses the pure-Rust `opus1` encoder (SSE4.1/AVX2 SILK kernels)
+  instead of the C `libopus` FFI: ~1.5× faster on a 22-minute narration (8.7 s
+  → 5.7 s) at the same 32 kbps, and the app no longer needs a native Opus
+  library to build or run. WAV export decodes through the same pure-Rust codec
+  — a valid decode of the stored stream, not bit-identical to `libopus` on
+  x86-64 (#19).
 - **The viewer's format switch moved into the entry header** — it now sits at
   the right of the metadata row next to the reading width/scale controls, so
   the reading area starts directly with the text (#353).

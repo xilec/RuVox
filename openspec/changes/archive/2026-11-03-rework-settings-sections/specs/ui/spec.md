@@ -6,7 +6,11 @@ The system SHALL provide a modal Settings dialog (`src/dialogs/Settings.tsx`) bu
 
 Settings SHALL be grouped into seven sections in this order: «Движок и голос» (engine, the engine-specific voice, sample rate, the models dialog entry and the coerced-engine alert), «Чтение текста» (code block narration, English text with its fallback hint, the preview-dialog toggle and the reading width/scale controls), «Уведомления» (`notify_on_ready`, `notify_on_error`), «Хранилище» (`max_cache_size_mb`, the data folder with its reveal action and «Очистить кэш…»), «Интерфейс» (`hide_to_tray_on_close`, theme, language), «Словарь» (the entry count and the button opening the nested dictionary editor) and «О программе» (version, the update check when the updater is supported, and the logs folder with its reveal action). Every control SHALL live in exactly one section, and switching sections SHALL not change any form value.
 
-Above the section nav the dialog SHALL show a search field filtering the settings rows by their labels. The index SHALL match both the RU and EN catalogs — a Russian query finds a setting while the UI runs in English and vice versa — plus a small synonym map, case- and ё-insensitively. Sections without a matching row SHALL be hidden from the nav; matching rows SHALL render with the matched substring highlighted; a query with no matches SHALL show a localized no-results state instead of rows. Enter SHALL jump to the first matching row in nav order — switching to its section and scrolling it into view — without submitting the form. Esc with a non-empty query SHALL clear the query and keep the dialog open; with an empty query it closes the dialog.
+Above the section nav the dialog SHALL show a search field filtering the settings rows by their labels. The index SHALL cover both the RU and EN catalogs — a Russian query finds a setting while the UI runs in English and vice versa — plus a small synonym map, case- and ё-insensitively, and SHALL contain only the rows the dialog actually renders in the current environment (for example, the update check when the updater is supported, the data and logs folder rows when their paths are available), so Enter always lands on a visible row. Sections without a matching row SHALL be hidden from the nav, and a query with no matches SHALL show a localized no-results state instead of rows.
+
+A matching row SHALL always be filtered, but SHALL be highlighted only when the query is a literal substring of its visible label; a cross-catalog or synonym match filters the row without a highlight.
+
+Enter SHALL jump to the first matching row in nav order — switching to its section and scrolling it into view — without submitting the form. Esc with a non-empty query SHALL clear the query and keep the dialog open; with an empty query it closes the dialog.
 
 Unsaved changes SHALL be tracked against the loaded config, not against the factory defaults: every section owning a field whose value differs from the loaded config SHALL show a dot in the nav, and the footer SHALL show «Изменено: N» with N being the number of changed fields. The coerced engine SHALL NOT count as a change and SHALL NOT mark «Движок и голос» dirty; choosing a new value and restoring the saved one SHALL clear the marker.
 
@@ -109,15 +113,25 @@ A "Очистить кэш…" button SHALL open a nested `CleanupCacheModal` wi
 - **WHEN** the user switches through the section nav
 - **THEN** every setting control is rendered in exactly one section, and the form values stay unchanged while switching
 
-#### Scenario: Search matches labels in both catalogs
+#### Scenario: Search matches a label in the active catalog
+- **GIVEN** the dialog runs with the RU catalog
+- **WHEN** the user types «тема» in the search field
+- **THEN** only «Интерфейс» stays in the nav, only the «Тема оформления» row is shown, and the matched «Тема» substring is highlighted
+
+#### Scenario: Cross-catalog match filters without a highlight
 - **GIVEN** the dialog runs with the RU catalog
 - **WHEN** the user types "theme" in the search field
-- **THEN** only «Интерфейс» stays in the nav, only the «Тема» row is shown, and the matched substring is highlighted
+- **THEN** only «Интерфейс» stays in the nav and only the «Тема оформления» row is shown, with no highlighted substring because the visible label does not contain the query
 
 #### Scenario: Search finds Russian labels while the UI runs in English
 - **GIVEN** the dialog has been relabelled to the EN catalog
 - **WHEN** the user types «тема» in the search field
-- **THEN** the «Интерфейс» section is shown with the «Тема» row, because the index covers both catalogs
+- **THEN** the "Interface" section is shown with the "Color theme" row, because the index covers both catalogs, and no substring is highlighted
+
+#### Scenario: Enter never targets a hidden row
+- **GIVEN** the updater is unsupported, so the update-check row is not rendered
+- **WHEN** the user types «обновление» in the search field
+- **THEN** «О программе» does not match and Enter leaves the active section unchanged, because the index covers only the rendered rows
 
 #### Scenario: Search hides sections without matches
 - **GIVEN** the Settings dialog is open
@@ -174,4 +188,3 @@ A "Очистить кэш…" button SHALL open a nested `CleanupCacheModal` wi
 - **GIVEN** the user opened the cleanup dialog from «Хранилище» or the dictionary editor from «Словарь»
 - **WHEN** the nested dialog is closed
 - **THEN** the Settings dialog is still on that section, and the cleanup dialog keeps its `closeOnEscape` gating
-
