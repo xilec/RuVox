@@ -56,7 +56,12 @@ interface Props {
 
 export function TextViewer({ entry }: Props) {
   const tt = useT();
-  const [displayMode, setDisplayMode] = useState<DisplayMode>('rendered');
+  // Seed from the entry so the first paint already shows the persisted
+  // choice: a post-paint effect would render the default view once and could
+  // flash the wrong format (e.g. markdown/mermaid before «Исходный»).
+  const [displayMode, setDisplayMode] = useState<DisplayMode>(() =>
+    entry ? resolveDisplayMode(entry, deriveSourceFormat(entry)) : 'rendered',
+  );
   const [zoomedSvg, setZoomedSvg] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const colorScheme = useComputedColorScheme("light");

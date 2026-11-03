@@ -229,7 +229,7 @@ impl StorageService {
         self.add_entry_with_source(original_text, None, None, None)
     }
 
-    /// Add a new entry with explicit display format, sanitized HTML source
+    /// Add a new entry with an explicit source format, sanitized HTML source
     /// (HTML ingestion path) and the ingestion source annotation. Persists
     /// history.
     pub fn add_entry_with_source(
@@ -608,7 +608,7 @@ fn remove_file_if_exists(path: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::schema::GenerationParams;
+    use crate::storage::schema::{DisplayMode, GenerationParams};
     use crate::storage::test_util::{
         add_entry_at, make_service, update_entry_with, write_history, write_sine_wav,
         write_sine_wav_i16,
@@ -1473,6 +1473,48 @@ mod tests {
         let applied = svc.update_entry_if(&missing, |_| true, |e| e.status = EntryStatus::Error);
         assert!(!applied);
         assert!(svc.get_entry(&missing).is_none());
+    }
+
+    /// A display-mode mutation applied through the conditional update must
+    /// not roll back fields written by a neighbouring path (issue #179).
+    /// The old command read the whole entry, changed one field and persisted
+    /// the stale clone, so a synthesis completion landing in between
+    /// reverted `status` / `audio_path`.
+    #[test]
+    fn display_mode_update_preserves_fields_written_by_another_path() {
+        let (svc, _dir) = make_service();
+        let entry = svc.add_entry("viewer".to_string()).unwrap();
+        let id = entry.id;
+
+        // The stale snapshot the old read-decide-write command would hold.
+        let stale = svc.get_entry(&id).unwrap();
+        assert_eq!(stale.status, EntryStatus::Pending);
+
+        // A neighbouring path (synthesis completion) commits first.
+        let applied = svc.update_entry_if(
+            &id,
+            |_| true,
+            |e| {
+                e.status = EntryStatus::Ready;
+                e.audio_path = Some(format!("{id}.opus"));
+            },
+        );
+        assert!(applied);
+
+        // The display-mode write mutates the live entry under the same lock
+        // instead of persisting the stale clone.
+        let applied =
+            svc.update_entry_if(&id, |_| true, |e| e.display_mode = Some(DisplayMode::Plain));
+        assert!(applied);
+
+        let stored = svc.get_entry(&id).unwrap();
+        assert_eq!(stored.display_mode, Some(DisplayMode::Plain));
+        assert_eq!(
+            stored.status,
+            EntryStatus::Ready,
+            "the display-mode write must not roll back the parallel completion"
+        );
+        assert_eq!(stored.audio_path, Some(format!("{id}.opus")));
     }
 
     /// A legacy `.wav` at an off-list rate (Piper's 22050 Hz) must migrate to

@@ -215,4 +215,37 @@ describe('TextViewer display modes', () => {
     expect(host.querySelector('h2')?.textContent).toBe('Установка');
     expect(host.textContent).not.toContain('## Установка');
   });
+
+  it('keeps an optimistic switch when an unrelated entry update arrives', async () => {
+    let resolvePersist: () => void = () => {};
+    setEntryDisplayMode.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolvePersist = resolve;
+        }),
+    );
+    renderWith(makeEntry());
+
+    const plainOption = host.querySelector<HTMLInputElement>('input[value="plain"]');
+    await act(async () => {
+      plainOption!.click();
+      await Promise.resolve();
+    });
+    expect(host.querySelector('h2')).toBeNull();
+
+    // entry_updated with the same display_mode (null) but a changed status:
+    // only the derived view fields may reset the optimistic switch.
+    renderWith(makeEntry({ status: 'playing' }));
+    expect(host.querySelector('h2')).toBeNull();
+    expect(host.textContent).toContain('## Установка');
+
+    // Persistence resolves later and the echoed entry confirms the choice.
+    await act(async () => {
+      resolvePersist();
+      await Promise.resolve();
+    });
+    renderWith(makeEntry({ display_mode: 'plain', status: 'ready' }));
+    expect(host.querySelector('h2')).toBeNull();
+    expect(setEntryDisplayMode).toHaveBeenCalledWith('entry-1', 'plain');
+  });
 });

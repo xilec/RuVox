@@ -1,4 +1,5 @@
 import type { EntryFormat } from './tauri';
+import { detectFormat } from './detectFormat';
 
 /**
  * Outcome of the Add-button flow decision (preview-dialog spec,
@@ -59,4 +60,23 @@ export function resolveAddAction(input: {
   if (html !== null) return { kind: 'direct-html', html, plainFallback: plain };
   if (plain !== null) return { kind: 'direct-plain', text: plain };
   return { kind: 'empty' };
+}
+
+/**
+ * Source format recorded on a new entry (preview-dialog spec, "Add flow
+ * gating"). An explicit format wins: the preview dialog's effective format,
+ * the import route and the HTML path already know what they ingested. A
+ * sanitized `html_source` without an explicit format still identifies an
+ * HTML source. Otherwise the dialog-less Add paths classify the text with
+ * the shared detector, so the entry records what it was ingested as instead
+ * of staying unclassified.
+ */
+export function sourceFormatFor(
+  text: string,
+  format?: EntryFormat,
+  htmlSource?: string,
+): EntryFormat {
+  if (format !== undefined) return format;
+  if (htmlSource) return 'html';
+  return detectFormat(text);
 }

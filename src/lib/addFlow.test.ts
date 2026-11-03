@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { resolveAddAction } from './addFlow';
+import { resolveAddAction, sourceFormatFor } from './addFlow';
 
 const HTML = '<p>Раз <b>два</b></p>';
 const PLAIN = 'Раз два';
@@ -104,5 +104,22 @@ describe('resolveAddAction', () => {
         previewEnabled: true,
       }),
     ).toEqual({ kind: 'preview', text: PLAIN, plainFallback: null });
+  });
+});
+
+describe('sourceFormatFor', () => {
+  it('uses an explicit ingestion format as recorded', () => {
+    expect(sourceFormatFor('## Заголовок', 'plain', undefined)).toBe('plain');
+    expect(sourceFormatFor('Просто текст', 'markdown', undefined)).toBe('markdown');
+    expect(sourceFormatFor('<p>Раз</p>', 'html', '<p>Раз</p>')).toBe('html');
+  });
+
+  it('detects markdown and plain when no format was recorded', () => {
+    expect(sourceFormatFor('## Заголовок', undefined, undefined)).toBe('markdown');
+    expect(sourceFormatFor('Просто заметка', undefined, undefined)).toBe('plain');
+  });
+
+  it('treats a sanitized html source as html even without an explicit format', () => {
+    expect(sourceFormatFor('Раз два', undefined, '<p>Раз <b>два</b></p>')).toBe('html');
   });
 });
