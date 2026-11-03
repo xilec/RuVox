@@ -739,7 +739,11 @@ impl TTSPipeline {
             // re-read a fragment the identifier route left to the engine.
             self.process_english_tracked(&mut tracked, expand_digits, !narrate_identifiers);
         } else {
-            record_native(
+            // Words the numeric phase produced are already inside its span:
+            // annotating them here would split a spelled number or construct
+            // into word-sized fragments (a reference reading reuses a source
+            // word, so "page 5" would otherwise become "page" + "five").
+            record_native_excluding(
                 &mut tracked,
                 SpanKind::ProseLatin,
                 native_lang,
@@ -749,6 +753,7 @@ impl TTSPipeline {
                         .map(|m| (m.start(), m.end()))
                         .collect()
                 },
+                &numeric_claimed,
                 &mut recorded,
             );
             // A letter+digit token is identifier-like: the adapter sends it to

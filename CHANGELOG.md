@@ -50,6 +50,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   part entries keep working when no whole-word entry exists (#279).
 
 ### Changed
+- **English constructs are spelled in English on the native route** — a number
+  that owns a unit, percentage, currency, date, time, version, range, reference
+  or ordinal suffix inside English prose now becomes Latin English words on a
+  Latin-native engine («the API grew 50%» → «the API grew fifty percent»,
+  «100 MB» → «one hundred megabytes»), carries one prose-Latin span so the
+  English block is not split, and keeps the transliterated reading on the
+  narrated route (#372).
 - **English readings are corrected** — «the» is read «зэ», «and» — «энд»,
   «three» — «фри», «thirty» — «фёти», «hundred» — «хандрэд», «percent» —
   «пёрсэнт»; the Latin words, the native route and its fixtures are unchanged

@@ -79,8 +79,22 @@ enum EnglishNumber {
 enum EnglishClaim {
     /// A standalone cardinal (#369): the route chooses the register.
     Number(EnglishNumber),
-    /// A construct: only the narrated route reads it in English today.
+    /// A construct: the route chooses the rendering, the wording is shared.
     Construct(String),
+}
+
+impl EnglishClaim {
+    /// The Latin words of the reading: the cardinal in the route's register, or
+    /// the construct wording, which both routes share.
+    fn words(&self, route: NumberRoute) -> String {
+        match self {
+            Self::Number(number) => match route {
+                NumberRoute::Narrate => number.latin(),
+                NumberRoute::Native => number.native(),
+            },
+            Self::Construct(words) => words.clone(),
+        }
+    }
 }
 
 /// The inputs the neighbour scan consults for every token besides the text.
@@ -267,8 +281,7 @@ impl NumericSpanNormalizer {
         let claimed = &mut *routing.claimed;
 
         let needs_context = spans.iter().any(|span| {
-            Self::english_words(span).is_some()
-                || (route == NumberRoute::Narrate && constructs::read(span, expand_units).is_some())
+            Self::english_words(span).is_some() || constructs::read(span, expand_units).is_some()
         });
         let offsets = if needs_context {
             byte_to_char_offsets(&snapshot)
@@ -301,10 +314,7 @@ impl NumericSpanNormalizer {
         for span in &spans {
             let claim = match Self::english_words(span) {
                 Some(number) => Some(EnglishClaim::Number(number)),
-                None if route == NumberRoute::Narrate => {
-                    constructs::read(span, expand_units).map(EnglishClaim::Construct)
-                }
-                None => None,
+                None => constructs::read(span, expand_units).map(EnglishClaim::Construct),
             };
             let english = match claim {
                 Some(claim) => {
@@ -325,24 +335,24 @@ impl NumericSpanNormalizer {
                 None => None,
             };
             match english {
-                Some(EnglishClaim::Number(number)) => match route {
-                    NumberRoute::Narrate => replacements.push((
-                        span.start,
-                        span.end,
-                        english::transliterate(&number.latin()),
-                    )),
-                    NumberRoute::Native => {
-                        let (orig_start, orig_end) =
-                            tracked.original_range(offsets[span.start], offsets[span.end]);
-                        if orig_end > orig_start {
-                            claimed.push((orig_start, orig_end));
+                Some(claim) => {
+                    let words = claim.words(route);
+                    match route {
+                        NumberRoute::Narrate => replacements.push((
+                            span.start,
+                            span.end,
+                            english::transliterate(&words),
+                        )),
+                        NumberRoute::Native => {
+                            let (orig_start, orig_end) =
+                                tracked.original_range(offsets[span.start], offsets[span.end]);
+                            if orig_end > orig_start {
+                                claimed.push((orig_start, orig_end));
+                            }
+                            replacements.push((span.start, span.end, words));
+                            native_ranges.push((span.start, span.end));
                         }
-                        replacements.push((span.start, span.end, number.native()));
-                        native_ranges.push((span.start, span.end));
                     }
-                },
-                Some(EnglishClaim::Construct(latin)) => {
-                    replacements.push((span.start, span.end, english::transliterate(&latin)))
                 }
                 None => {
                     if let Some(reading) = span.read(&snapshot, expand_units) {
