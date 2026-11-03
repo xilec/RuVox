@@ -71,20 +71,16 @@ fn read_number(span: &Span, number: &Number, text: &str, units: bool) -> Option<
         let value = readable_value(number)?;
         let case = case_at(text, span.start, forced);
         let (nom, gen_sg, gen_pl, _) = currency.forms();
-        // A fraction already names the quantity ("полтора доллара"); a whole
-        // count agrees with the currency noun ("два доллара", "двадцать один
-        // доллар", "около одного доллара").
+        // A whole count agrees with the currency noun ("два доллара",
+        // "двадцать один доллар", "около одного доллара"); a fraction names
+        // the quantity itself ("полтора доллара").
         let noun = if has_fraction(number) {
-            if case == Case::Genitive {
-                gen_pl
-            } else {
-                gen_sg
-            }
+            fraction_noun((nom, gen_sg, gen_pl), case, false)
         } else {
             noun_after_count(value, (nom, gen_sg, gen_pl), case)
         };
         reading.push(' ');
-        reading.push_str(noun);
+        reading.push_str(&noun);
     }
 
     if let Some(approx) = number.approx {
@@ -270,7 +266,7 @@ fn read_unit(value: u64, unit: Unit, case: Case) -> String {
     if forms.fixed {
         return format!(
             "{} {}",
-            morphology::count(value, forms.gender, Case::Nominative),
+            morphology::count(value, forms.gender, case),
             forms.sg_nom
         );
     }
@@ -294,7 +290,7 @@ fn read_scale(value: u64, scale: Scale, currency: Option<Currency>, case: Case) 
     let mut out = if value == 1 {
         // A lone scale word drops "один" but keeps the case: "около
         // миллиона", not "около миллион".
-        noun_after_count(1, (nom, gen_sg, gen_pl), case).to_string()
+        noun_after_count(1, (nom, gen_sg, gen_pl), case)
     } else {
         format!(
             "{} {}",
@@ -508,6 +504,25 @@ fn trailing_reading(
                 suffix: None,
             }
         }
+    }
+}
+
+/// Noun after a fractional quantity: an adjectival fraction keeps the
+/// genitive singular ("одна вторая килограмма"); a numeral-like one takes the
+/// genitive plural, and the dative/prepositional plural when the preposition
+/// puts the quantity into an oblique case ("к полутора килограммам").
+fn fraction_noun(
+    forms: (&'static str, &'static str, &'static str),
+    case: Case,
+    adjectival: bool,
+) -> String {
+    if adjectival {
+        return forms.1.to_string();
+    }
+    match case {
+        Case::Genitive => forms.2.to_string(),
+        Case::Dative | Case::Prepositional => oblique_plural(forms.0, case == Case::Dative),
+        _ => forms.1.to_string(),
     }
 }
 
@@ -980,19 +995,64 @@ fn decline_numbered(value: u64, forms: (&'static str, &'static str, &'static str
 
 /// Noun form after a count in `case`.
 ///
-/// The genitive is the exception the plain 1/2–4/other rule cannot express:
-/// a count ending in one takes the singular genitive ("около одного
-/// килограмма"), every other count the plural genitive ("около двух
-/// килограммов").
+/// A count ending in one takes the singular form, every other count the
+/// plural. The genitive is the exception the plain 1/2–4/other rule cannot
+/// express: it takes the singular genitive ("около одного килограмма") after
+/// a count ending in one and the plural genitive otherwise ("около двух
+/// килограммов"). The dative and prepositional forms are derived from the
+/// nominative singular; a noun whose three forms coincide ("евро") does not
+/// decline and keeps its only form.
 fn noun_after_count(
     value: u64,
     forms: (&'static str, &'static str, &'static str),
     case: Case,
-) -> &'static str {
-    if case == Case::Genitive {
-        if ends_in_one(value) { forms.1 } else { forms.2 }
+) -> String {
+    let (nom, gen_sg, gen_pl) = forms;
+    if nom == gen_sg && gen_sg == gen_pl {
+        return nom.to_string();
+    }
+    match case {
+        Case::Genitive => {
+            let form = if ends_in_one(value) { gen_sg } else { gen_pl };
+            form.to_string()
+        }
+        Case::Dative | Case::Prepositional => {
+            let dative = case == Case::Dative;
+            if ends_in_one(value) {
+                oblique_singular(nom, dative)
+            } else {
+                oblique_plural(nom, dative)
+            }
+        }
+        _ => decline_numbered(value, forms).to_string(),
+    }
+}
+
+/// Dative or prepositional singular of a regular noun, derived from its
+/// nominative form ("килограмм" → "килограмму"/"килограмме").
+fn oblique_singular(nom: &str, dative: bool) -> String {
+    if let Some(stem) = nom.strip_suffix('ь') {
+        format!("{stem}{}", if dative { "ю" } else { "е" })
+    } else if let Some(stem) = nom.strip_suffix('а').or_else(|| nom.strip_suffix('я')) {
+        format!("{stem}е")
+    } else if let Some(stem) = nom.strip_suffix('о') {
+        format!("{stem}{}", if dative { "у" } else { "е" })
     } else {
-        decline_numbered(value, forms)
+        format!("{nom}{}", if dative { "у" } else { "е" })
+    }
+}
+
+/// Dative or prepositional plural of a regular noun ("килограмм" →
+/// "килограммам"/"килограммах").
+fn oblique_plural(nom: &str, dative: bool) -> String {
+    if let Some(stem) = nom.strip_suffix('ь').or_else(|| nom.strip_suffix('я')) {
+        format!("{stem}{}", if dative { "ям" } else { "ях" })
+    } else if let Some(stem) = nom.strip_suffix('а').or_else(|| nom.strip_suffix('о')) {
+        format!("{stem}{}", if dative { "ам" } else { "ах" })
+    } else if let Some(stem) = nom.strip_suffix('е') {
+        format!("{stem}{}", if dative { "ям" } else { "ях" })
+    } else {
+        format!("{nom}{}", if dative { "ам" } else { "ах" })
     }
 }
 
