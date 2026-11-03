@@ -201,18 +201,22 @@ export const ru = {
 
   // ── Settings dialog ─────────────────────────────────────────────────────
   'settings.title': 'Настройки',
-  'settings.section.speech': 'Синтез речи',
+  'settings.section.engine': 'Движок и голос',
+  'settings.section.reading': 'Чтение текста',
   'settings.section.notifications': 'Уведомления',
-  'settings.section.preview': 'Предпросмотр',
-  'settings.section.cache': 'Кэш',
-  'settings.section.logs': 'Логи',
+  'settings.section.storage': 'Хранилище',
   'settings.section.interface': 'Интерфейс',
-  'settings.section.reading': 'Чтение',
+  'settings.section.about': 'О программе',
+  'settings.search.placeholder': 'Поиск по настройкам',
+  'settings.search.no_results': 'Ничего не найдено',
+  'settings.nav.label': 'Разделы настроек',
+  'settings.nav.select_label': 'Раздел',
+  'settings.dirty.count': 'Изменено: {0}',
+  'settings.dirty.section': 'Есть несохранённые изменения',
   'settings.reading.width.description':
     '«Узко» ограничивает строку примерно 70 символами и центрирует колонку, «Широко» занимает всю ширину панели.',
   'settings.reading.scale.description':
     'Масштабирует весь текст и содержимое, как zoom в браузере: заголовки, код, таблицы и картинки растут вместе.',
-  'settings.section.updates': 'Обновления',
   'settings.engine.label': 'Движок',
   'settings.engine.description':
     'Piper и Silero (нативный) — встроенные, не требуют Python.',

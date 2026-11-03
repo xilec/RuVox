@@ -1,0 +1,151 @@
+/* Two-pane Settings layout: fixed-height modal, independently scrolling
+ * section content, footer pinned below the panes so Save stays visible. */
+
+.content {
+  display: flex;
+  flex-direction: column;
+  /* A fixed footprint keeps the footer on screen; the cap matches the modal's
+   * own 90dvh content limit minus its vertical offsets. */
+  height: min(80dvh, 760px);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: var(--mantine-spacing-md);
+}
+
+.panes {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  gap: var(--mantine-spacing-lg);
+}
+
+.nav {
+  flex: 0 0 210px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-sm);
+  padding-right: var(--mantine-spacing-md);
+  border-right: 1px solid var(--mantine-color-default-border);
+}
+
+.navList {
+  display: flex;
+  flex-direction: column;
+  /* One-off hairline gap between nav rows; no Mantine spacing token is small
+   * enough for a flush list. */
+  gap: 2px;
+  overflow-y: auto;
+}
+
+.navItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mantine-spacing-xs);
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
+  border-radius: var(--mantine-radius-sm);
+  color: var(--mantine-color-text);
+  font-size: var(--mantine-font-size-sm);
+  line-height: var(--mantine-line-height-sm);
+  text-align: start;
+}
+
+/* Keyboard focus needs a visible ring: the nav is a list of UnstyledButtons,
+ * so without it Tab moves through the sections with no on-screen cue (matches
+ * the EntryHeader title button and the viewer content pane). */
+.navItem:focus-visible {
+  outline: 2px solid var(--mantine-color-blue-5);
+  outline-offset: 2px;
+}
+
+.navItem:hover {
+  background: var(--mantine-color-default-hover);
+}
+
+.navItemActive,
+.navItemActive:hover {
+  background: var(--mantine-color-default-hover);
+  font-weight: 600;
+}
+
+.navLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dirtyDot {
+  flex: 0 0 auto;
+  /* One-off indicator size: Mantine has no dot token, and the footer count
+   * already spells the number out for assistive tech. */
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--mantine-color-yellow-6);
+}
+
+.narrowTop {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-sm);
+}
+
+.contentPane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  gap: var(--mantine-spacing-sm);
+}
+
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: var(--mantine-spacing-xs);
+}
+
+.sectionTitle {
+  font-weight: 600;
+  font-size: var(--mantine-font-size-md);
+  margin-bottom: var(--mantine-spacing-sm);
+}
+
+.footer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mantine-spacing-md);
+  padding-top: var(--mantine-spacing-md);
+  border-top: 1px solid var(--mantine-color-default-border);
+}
+
+.row {
+  display: block;
+}
+
+.path {
+  word-break: break-all;
+  font-family: var(--mantine-font-family-monospace);
+}
+
+.highlight {
+  background-color: var(--mantine-color-yellow-2);
+  color: var(--mantine-color-black);
+  border-radius: var(--mantine-radius-xs);
+}

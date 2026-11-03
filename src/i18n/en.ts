@@ -200,18 +200,22 @@ export const en: Record<MessageKey, string> = {
 
   // ── Settings dialog ─────────────────────────────────────────────────────
   'settings.title': 'Settings',
-  'settings.section.speech': 'Speech synthesis',
+  'settings.section.engine': 'Engine and voice',
+  'settings.section.reading': 'Text reading',
   'settings.section.notifications': 'Notifications',
-  'settings.section.preview': 'Preview',
-  'settings.section.cache': 'Cache',
-  'settings.section.logs': 'Logs',
+  'settings.section.storage': 'Storage',
   'settings.section.interface': 'Interface',
-  'settings.section.reading': 'Reading',
+  'settings.section.about': 'About',
+  'settings.search.placeholder': 'Search settings',
+  'settings.search.no_results': 'No settings found',
+  'settings.nav.label': 'Settings sections',
+  'settings.nav.select_label': 'Section',
+  'settings.dirty.count': 'Changed: {0}',
+  'settings.dirty.section': 'Unsaved changes',
   'settings.reading.width.description':
     'Narrow caps a line at about 70 characters and centers the column; Wide uses the full pane width.',
   'settings.reading.scale.description':
     'Scales the whole text and its content like browser zoom: headings, code, tables and images grow together.',
-  'settings.section.updates': 'Updates',
   'settings.engine.label': 'Engine',
   'settings.engine.description':
     'Piper and Silero (native) are built in and require no Python.',
