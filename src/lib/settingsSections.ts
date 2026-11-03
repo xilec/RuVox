@@ -231,32 +231,88 @@ export const SETTINGS_ROWS: readonly SettingsRowSpec[] = [
   },
 ];
 
-/** Form fields owned by each section, used for the dirty dots and the count. */
-const SECTION_FIELDS: Record<SettingsSectionId, readonly SettingsField[]> = {
-  engine: ['engine', 'piper_voice', 'teratts_voice', 'speaker', 'sample_rate'],
-  reading: [
-    'code_block_mode',
-    'english_reading',
-    'preview_dialog_enabled',
-    'reading_width',
-    'reading_scale',
-  ],
-  notifications: ['notify_on_ready', 'notify_on_error'],
-  storage: ['max_cache_size_mb'],
-  interface: ['hide_to_tray_on_close', 'theme', 'language'],
-  dictionary: [],
-  about: [],
+/** Runtime state that gates the conditionally rendered rows. */
+interface SettingsRowAvailability {
+  readonly updaterEnabled: boolean;
+  readonly cacheDir: string;
+  readonly logDir: string;
+}
+
+/**
+ * Rows the dialog actually renders for the current runtime state. The render
+ * and the search index share this predicate: a row hidden by its runtime gate
+ * (updates on Linux/.deb, a folder whose path has not resolved) must not match
+ * a query either, otherwise `sectionHasMatches` keeps the section and Enter
+ * targets a `data-settings-field` that is not in the DOM.
+ */
+export function availableSettingsRows(
+  state: SettingsRowAvailability,
+): ReadonlySet<SettingsRowId> {
+  const available = new Set<SettingsRowId>();
+  for (const row of SETTINGS_ROWS) {
+    if (row.id === 'updates' && !state.updaterEnabled) continue;
+    if (row.id === 'data_folder' && state.cacheDir === '') continue;
+    if (row.id === 'logs_folder' && state.logDir === '') continue;
+    available.add(row.id);
+  }
+  return available;
+}
+
+/**
+ * The one section each dirty-tracked form field belongs to. Typed as an
+ * exhaustive `Record<SettingsField, …>`, so a new form field fails the
+ * typecheck until it is assigned a section — and thereby joins the dirty
+ * count and the validation jump — instead of silently falling out of both.
+ */
+export const SECTION_OF: Record<SettingsField, SettingsSectionId> = {
+  engine: 'engine',
+  piper_voice: 'engine',
+  teratts_voice: 'engine',
+  speaker: 'engine',
+  sample_rate: 'engine',
+  code_block_mode: 'reading',
+  english_reading: 'reading',
+  preview_dialog_enabled: 'reading',
+  reading_width: 'reading',
+  reading_scale: 'reading',
+  notify_on_ready: 'notifications',
+  notify_on_error: 'notifications',
+  max_cache_size_mb: 'storage',
+  hide_to_tray_on_close: 'interface',
+  theme: 'interface',
+  language: 'interface',
 };
 
 /** All dirty-tracked fields, in section order (a field lives in one section). */
 export const SETTINGS_FIELDS: readonly SettingsField[] = SETTINGS_SECTIONS.flatMap(
-  (section) => SECTION_FIELDS[section.id],
+  (section) =>
+    (Object.keys(SECTION_OF) as SettingsField[]).filter(
+      (field) => SECTION_OF[field] === section.id,
+    ),
 );
+
+/** Form fields owned by each section, used for the dirty dots and the count. */
+const SECTION_FIELDS: Record<SettingsSectionId, readonly SettingsField[]> =
+  SETTINGS_SECTIONS.reduce<Record<SettingsSectionId, readonly SettingsField[]>>(
+    (fields, section) => {
+      fields[section.id] = SETTINGS_FIELDS.filter(
+        (field) => SECTION_OF[field] === section.id,
+      );
+      return fields;
+    },
+    {} as Record<SettingsSectionId, readonly SettingsField[]>,
+  );
 
 /**
  * Fields whose value differs from the saved config the dialog opened with.
  * The baseline is the loaded config, not the form defaults, so a value the
  * user picks and then reverts stops counting as changed.
+ *
+ * Deliberately a pure function over explicit `values`/`baseline` rather than a
+ * `@mantine/form` `isDirty()` refactor: the dialog moves its baseline when the
+ * saved engine is coerced and when a backend rollback rewrites a value, and a
+ * plain reducer keeps that rule unit-testable without mounting the modal (the
+ * same reason the section/search catalogue is a plain module).
  */
 export function changedSettingsFields(
   values: SettingsFormValues,
@@ -319,13 +375,30 @@ export function rowMatchesQuery(id: SettingsRowId, query: string): boolean {
   return tokens.every((token) => terms.some((term) => term.includes(token)));
 }
 
-export function sectionHasMatches(section: SettingsSectionId, query: string): boolean {
-  return SETTINGS_ROWS.some((row) => row.section === section && rowMatchesQuery(row.id, query));
+/**
+ * Whether a section has at least one match among the rows the dialog renders.
+ * `available` is the same set the section body gates its conditional rows on,
+ * so a hidden row can neither keep its section in the nav nor be Enter-target.
+ */
+export function sectionHasMatches(
+  section: SettingsSectionId,
+  query: string,
+  available: ReadonlySet<SettingsRowId>,
+): boolean {
+  return SETTINGS_ROWS.some(
+    (row) => row.section === section && available.has(row.id) && rowMatchesQuery(row.id, query),
+  );
 }
 
 /** First match in nav order — Enter jumps here. */
-export function firstMatchingRow(query: string): SettingsRowSpec | null {
-  return SETTINGS_ROWS.find((row) => rowMatchesQuery(row.id, query)) ?? null;
+export function firstMatchingRow(
+  query: string,
+  available: ReadonlySet<SettingsRowId>,
+): SettingsRowSpec | null {
+  return (
+    SETTINGS_ROWS.find((row) => available.has(row.id) && rowMatchesQuery(row.id, query)) ??
+    null
+  );
 }
 
 export interface HighlightPart {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Button,
@@ -41,6 +41,7 @@ import {
   type AvailabilityMap,
 } from '../lib/engineSelection';
 import {
+  availableSettingsRows,
   changedSettingsFields,
   changedSettingsSections,
   firstMatchingRow,
@@ -324,6 +325,8 @@ export function SettingsModal({
   const [query, setQuery] = useState('');
   /** Row the search Enter should reveal once its section is rendered. */
   const [jumpTarget, setJumpTarget] = useState<SettingsRowId | null>(null);
+  /** Form field a failed submit should focus once its section is rendered. */
+  const [validationFocus, setValidationFocus] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   /** Below this width the nav collapses into a select above the content. */
   const isNarrow = useMediaQuery('(max-width: 700px)', false, {
@@ -593,33 +596,49 @@ export function SettingsModal({
   };
 
   const activeQuery = query.trim();
+  // One availability predicate feeds both the rendered rows and the search
+  // index, so a row the dialog hides cannot match or be an Enter target.
+  const availableRows = useMemo(
+    () => availableSettingsRows({ updaterEnabled, cacheDir, logDir }),
+    [updaterEnabled, cacheDir, logDir],
+  );
 
   const handleSearchEnter = () => {
-    const first = firstMatchingRow(query);
+    const first = firstMatchingRow(query, availableRows);
     if (!first) return;
     setActiveSection(first.section);
     setJumpTarget(first.id);
   };
 
-  const handleFormKeyDown = (event: KeyboardEvent<HTMLFormElement>) => {
-    if (event.key === 'Escape' && activeQuery !== '') {
-      // Esc peels the query off first; `closeOnEscape` is off while it is set.
+  // Escape peels the query off first; the handler sits on the document because
+  // the modal header and the padding around the form never reach the form's
+  // key events. Once the query is empty the modal's own `closeOnEscape` takes
+  // over, and the nested cleanup modal keeps Escape to itself.
+  useEffect(() => {
+    if (!opened) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || cleanupOpen || activeQuery === '') return;
       event.preventDefault();
       setQuery('');
-    }
-  };
+    };
+    document.addEventListener('keydown', handleKeyDown, true);
+    return () => document.removeEventListener('keydown', handleKeyDown, true);
+  }, [opened, cleanupOpen, activeQuery]);
 
   const handleValidationFailure = (errors: FormErrors) => {
     const firstField = Object.keys(errors)[0];
     if (!firstField) return;
-    // The field's section may not be the active one: jump there instead of
-    // failing validation silently behind another section.
+    // The invalid field may live in another section, or be filtered out by the
+    // search: drop the query, jump there and focus the control so the error
+    // cannot hide behind an inactive pane.
     const section = sectionForField(firstField);
+    setQuery('');
     if (section) setActiveSection(section);
+    setValidationFocus(firstField);
   };
 
   const matchingSections = SETTINGS_SECTIONS.filter((section) =>
-    sectionHasMatches(section.id, query),
+    sectionHasMatches(section.id, query, availableRows),
   );
   const visibleSections = activeQuery ? matchingSections : SETTINGS_SECTIONS;
   const currentSection =
@@ -643,12 +662,26 @@ export function SettingsModal({
   // the section swap has committed.
   useEffect(() => {
     if (!jumpTarget) return;
-    const element = scrollRef.current?.querySelector(
-      `[data-settings-field="${jumpTarget}"]`,
-    );
+    const container = scrollRef.current;
+    const element = container?.querySelector(`[data-settings-field="${jumpTarget}"]`);
     element?.scrollIntoView({ block: 'nearest' });
+    // Hand keyboard focus to the section title so a screen-reader user hears
+    // where the jump landed instead of being left on the search input.
+    container?.querySelector<HTMLElement>('[data-settings-section-title]')?.focus();
     setJumpTarget(null);
   }, [jumpTarget, currentSection?.id]);
+
+  // A failed submit lands on the invalid control after the section swap.
+  useEffect(() => {
+    if (!validationFocus) return;
+    const row = scrollRef.current?.querySelector<HTMLElement>(
+      `[data-settings-field="${validationFocus}"]`,
+    );
+    const control =
+      row?.querySelector<HTMLElement>('input, select, textarea, button') ?? row;
+    control?.focus();
+    setValidationFocus(null);
+  }, [validationFocus, currentSection?.id]);
 
   const searchInput = (
     <div data-settings-search>
@@ -687,7 +720,6 @@ export function SettingsModal({
       <form
         className={classes.form}
         onSubmit={form.onSubmit(handleSubmit, handleValidationFailure)}
-        onKeyDown={handleFormKeyDown}
       >
         {isNarrow && (
           <div className={classes.narrowTop}>
@@ -766,7 +798,7 @@ export function SettingsModal({
             <div className={classes.scroll} ref={scrollRef} data-settings-scroll>
               {currentSection ? (
                 <>
-                  <div data-settings-section-title={currentSection.id}>
+                  <div data-settings-section-title={currentSection.id} tabIndex={-1}>
                     <Text className={classes.sectionTitle}>
                       {tt(currentSection.titleKey)}
                     </Text>
@@ -774,6 +806,7 @@ export function SettingsModal({
                   <SettingsSections
                     section={currentSection.id}
                     query={query}
+                    available={availableRows}
                     form={form}
                     availability={availability}
                     availabilityProbed={availabilityProbed}
@@ -787,7 +820,6 @@ export function SettingsModal({
                     cacheDir={cacheDir}
                     logDir={logDir}
                     appVersion={appVersion}
-                    updaterEnabled={updaterEnabled}
                     dictionaryCount={dictionaryCount}
                     onEngineChange={handleEngineChange}
                     onSampleRateChange={handleSampleRateChange}
@@ -801,7 +833,7 @@ export function SettingsModal({
                   />
                 </>
               ) : (
-                <div data-settings-no-results>
+                <div data-settings-no-results role="status" aria-live="polite">
                   <Text size="sm" c="dimmed">
                     {tt('settings.search.no_results')}
                   </Text>
@@ -812,7 +844,7 @@ export function SettingsModal({
         </div>
 
         <footer className={classes.footer} data-settings-footer>
-          <Text size="sm" c="dimmed">
+          <Text size="sm" c="dimmed" role="status" aria-live="polite">
             {tt('settings.dirty.count', [dirtyCount])}
           </Text>
           <Group gap="sm">

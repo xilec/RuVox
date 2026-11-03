@@ -63,6 +63,14 @@
   text-align: start;
 }
 
+/* Keyboard focus needs a visible ring: the nav is a list of UnstyledButtons,
+ * so without it Tab moves through the sections with no on-screen cue (matches
+ * the EntryHeader title button and the viewer content pane). */
+.navItem:focus-visible {
+  outline: 2px solid var(--mantine-color-blue-5);
+  outline-offset: 2px;
+}
+
 .navItem:hover {
   background: var(--mantine-color-default-hover);
 }

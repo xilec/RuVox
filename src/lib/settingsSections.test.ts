@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { translate } from './i18n';
 import {
+  availableSettingsRows,
   changedSettingsFields,
   changedSettingsSections,
   firstMatchingRow,
@@ -8,6 +9,7 @@ import {
   rowMatchesQuery,
   sectionForField,
   sectionHasMatches,
+  SECTION_OF,
   SETTINGS_FIELDS,
   SETTINGS_ROWS,
   SETTINGS_SECTIONS,
@@ -33,6 +35,13 @@ const DEFAULTS: SettingsFormValues = {
   theme: 'auto',
   language: 'ru',
 };
+
+/** Every row the dialog can render: both gates on, both folder paths known. */
+const ALL_ROWS = availableSettingsRows({
+  updaterEnabled: true,
+  cacheDir: '/home/test/data',
+  logDir: '/home/test/logs',
+});
 
 describe('settings section catalogue', () => {
   it('gives every row a unique id and a known section', () => {
@@ -60,6 +69,11 @@ describe('settings section catalogue', () => {
   });
 
   it('maps every dirty-tracked form field to exactly one section', () => {
+    expect(new Set(Object.keys(SECTION_OF))).toEqual(new Set(Object.keys(DEFAULTS)));
+    for (const section of Object.values(SECTION_OF)) {
+      expect(SETTINGS_SECTIONS.some((candidate) => candidate.id === section)).toBe(true);
+    }
+    expect(new Set(SETTINGS_FIELDS)).toEqual(new Set(Object.keys(DEFAULTS)));
     expect(SETTINGS_FIELDS).toHaveLength(Object.keys(DEFAULTS).length);
     expect(new Set(SETTINGS_FIELDS).size).toBe(SETTINGS_FIELDS.length);
   });
@@ -88,19 +102,62 @@ describe('settings search', () => {
   });
 
   it('reports whether a section has a match', () => {
-    expect(sectionHasMatches('notifications', 'уведомл')).toBe(true);
-    expect(sectionHasMatches('notifications', 'код')).toBe(false);
+    expect(sectionHasMatches('notifications', 'уведомл', ALL_ROWS)).toBe(true);
+    expect(sectionHasMatches('notifications', 'код', ALL_ROWS)).toBe(false);
   });
 
   it('picks the first match in nav order', () => {
-    expect(firstMatchingRow('логи')?.id).toBe('logs_folder');
-    expect(firstMatchingRow('уведомл')?.id).toBe('notify_on_ready');
-    expect(firstMatchingRow('zzzz')).toBeNull();
+    expect(firstMatchingRow('логи', ALL_ROWS)?.id).toBe('logs_folder');
+    expect(firstMatchingRow('уведомл', ALL_ROWS)?.id).toBe('notify_on_ready');
+    // «размер» also appears in the storage row synonym list; nav order wins.
+    expect(firstMatchingRow('размер', ALL_ROWS)?.id).toBe('reading_scale');
+    expect(firstMatchingRow('zzzz', ALL_ROWS)).toBeNull();
   });
 
   it('matches everything for an empty or blank query', () => {
     expect(rowMatchesQuery('engine', '')).toBe(true);
-    expect(sectionHasMatches('about', '   ')).toBe(true);
+    expect(sectionHasMatches('about', '   ', ALL_ROWS)).toBe(true);
+  });
+});
+
+describe('settings row availability', () => {
+  it('drops rows whose runtime gate is off', () => {
+    const available = availableSettingsRows({
+      updaterEnabled: false,
+      cacheDir: '',
+      logDir: '',
+    });
+    expect(available.has('updates')).toBe(false);
+    expect(available.has('data_folder')).toBe(false);
+    expect(available.has('logs_folder')).toBe(false);
+    expect(available.has('version')).toBe(true);
+    expect(available.has('max_cache_size_mb')).toBe(true);
+  });
+
+  it('keeps a hidden update row out of the search index when the updater is unsupported', () => {
+    const noUpdater = availableSettingsRows({
+      updaterEnabled: false,
+      cacheDir: '/home/test/data',
+      logDir: '/home/test/logs',
+    });
+    // «обновление» exists only in the update row: hiding it must drop the
+    // section, otherwise the nav keeps «О программе» without a visible match
+    // and Enter targets a `data-settings-field` that is not in the DOM.
+    expect(sectionHasMatches('about', 'обновление', noUpdater)).toBe(false);
+    expect(firstMatchingRow('обновление', noUpdater)).toBeNull();
+    expect(sectionHasMatches('about', 'обновление', ALL_ROWS)).toBe(true);
+    expect(firstMatchingRow('обновление', ALL_ROWS)?.id).toBe('updates');
+  });
+
+  it('keeps folder rows out of the index until their path resolves', () => {
+    const noFolders = availableSettingsRows({
+      updaterEnabled: true,
+      cacheDir: '',
+      logDir: '',
+    });
+    expect(firstMatchingRow('логи', noFolders)).toBeNull();
+    expect(firstMatchingRow('журнал', noFolders)).toBeNull();
+    expect(firstMatchingRow('очистить', noFolders)?.id).toBe('cleanup');
   });
 });
 
@@ -148,6 +205,15 @@ describe('settings dirty fields', () => {
     // baseline, so the fallback itself is not a change.
     const coerced = { ...DEFAULTS, engine: 'piper' as const };
     expect(changedSettingsFields(coerced, coerced)).toEqual([]);
+  });
+
+  it('reports an explicit engine change against a coerced baseline', () => {
+    // The saved engine was coerced to the fallback; picking another engine is
+    // a real change and only that field is dirty.
+    const coerced = { ...DEFAULTS, engine: 'piper' as const };
+    expect(changedSettingsFields({ ...coerced, engine: 'silero' }, coerced)).toEqual([
+      'engine',
+    ]);
   });
 
   it('resolves the section of a validation error path', () => {

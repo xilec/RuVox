@@ -41,6 +41,8 @@ interface SelectOption {
 export interface SettingsSectionsProps {
   section: SettingsSectionId;
   query: string;
+  /** Rows the current runtime state renders; see `availableSettingsRows`. */
+  available: ReadonlySet<SettingsRowId>;
   form: UseFormReturnType<SettingsFormValues>;
   availability: AvailabilityMap;
   availabilityProbed: boolean;
@@ -54,7 +56,6 @@ export interface SettingsSectionsProps {
   cacheDir: string;
   logDir: string;
   appVersion: string;
-  updaterEnabled: boolean;
   dictionaryCount: number | null;
   onEngineChange: (next: EngineKind) => void;
   onSampleRateChange: (next: number) => void;
@@ -340,7 +341,7 @@ export function SettingsSections(props: SettingsSectionsProps) {
             />
           </SettingsRow>
 
-          {props.cacheDir && (
+          {props.available.has('data_folder') && (
             <SettingsRow field="data_folder" query={query}>
               <Stack gap={4}>
                 <Text size="xs" c="dimmed">
@@ -434,7 +435,7 @@ export function SettingsSections(props: SettingsSectionsProps) {
             <Text size="sm">{tt('settings.version', [props.appVersion || '—'])}</Text>
           </SettingsRow>
 
-          {props.updaterEnabled && (
+          {props.available.has('updates') && (
             <SettingsRow field="updates" query={query}>
               <Group>
                 <Button variant="default" onClick={props.onCheckUpdates}>
@@ -444,7 +445,7 @@ export function SettingsSections(props: SettingsSectionsProps) {
             </SettingsRow>
           )}
 
-          {props.logDir && (
+          {props.available.has('logs_folder') && (
             <SettingsRow field="logs_folder" query={query}>
               <Stack gap={4}>
                 <Text size="xs" c="dimmed">
