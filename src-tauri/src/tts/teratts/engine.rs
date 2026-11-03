@@ -254,7 +254,8 @@ fn segments_for<'a>(text: &'a str, spans: &[Span]) -> Vec<teratts::Segment<'a>> 
         .collect();
     let slice = |start: usize, end: usize| &text[byte_offsets[start]..byte_offsets[end]];
 
-    let mut segments = Vec::new();
+    // A word-bearing run of one language; adjacent runs are merged below.
+    let mut runs: Vec<(usize, usize, teratts::Language)> = Vec::new();
     let mut push = |start: usize, end: usize, language: teratts::Language| {
         if start >= end {
             return;
@@ -262,8 +263,8 @@ fn segments_for<'a>(text: &'a str, spans: &[Span]) -> Vec<teratts::Segment<'a>> 
         let part = slice(start, end);
         // Whitespace and punctuation-only gaps carry no words; synthesizing
         // them alone makes the model vocalize the punctuation. A word-bearing
-        // segment may still start with the previous sentence's punctuation
-        // (an English span ends before its period), so drop that prefix too.
+        // run may still start with the previous sentence's punctuation (an
+        // English span ends before its period), so drop that prefix too.
         let Some(prefix) = part
             .char_indices()
             .find(|(_, character)| character.is_alphanumeric())
@@ -271,13 +272,7 @@ fn segments_for<'a>(text: &'a str, spans: &[Span]) -> Vec<teratts::Segment<'a>> 
         else {
             return;
         };
-        let text = &part[prefix..];
-        let text_start = start + part[..prefix].chars().count();
-        segments.push(teratts::Segment {
-            text,
-            language,
-            text_start,
-        });
+        runs.push((start + part[..prefix].chars().count(), end, language));
     };
 
     let mut cursor = 0usize;
@@ -298,6 +293,34 @@ fn segments_for<'a>(text: &'a str, spans: &[Span]) -> Vec<teratts::Segment<'a>> 
     if cursor < char_count {
         push(cursor, char_count, teratts::Language::Ru);
     }
+    // The prose phase annotates Latin words one by one, so an English sentence
+    // arrives as one run per word and every run boundary would cost a segment
+    // pause. Merge adjacent runs of the same language whose gap carries no
+    // words: the chunker inside the engine still splits the merged text by
+    // sentence and paragraph, and a language flip keeps its own pause.
+    let mut merged: Vec<(usize, usize, teratts::Language)> = Vec::new();
+    for (start, end, language) in runs {
+        match merged.last_mut() {
+            Some((_, last_end, last_language))
+                if *last_language == language
+                    && !slice(*last_end, start)
+                        .chars()
+                        .any(|character| character.is_alphanumeric()) =>
+            {
+                *last_end = end;
+            }
+            _ => merged.push((start, end, language)),
+        }
+    }
+
+    let mut segments: Vec<teratts::Segment<'a>> = merged
+        .into_iter()
+        .map(|(start, end, language)| teratts::Segment {
+            text: slice(start, end),
+            language,
+            text_start: start,
+        })
+        .collect();
     if segments.is_empty() {
         segments.push(teratts::Segment {
             text,
@@ -524,11 +547,31 @@ mod tests {
             .iter()
             .map(|segment| (segment.text, segment.language))
             .collect();
+        assert_eq!(
+            segments.len(),
+            1,
+            "one English block is one segment: {summary:?}"
+        );
+        assert_eq!(segments[0].language, teratts::Language::En);
+    }
+
+    #[test]
+    fn a_language_flip_keeps_one_segment_per_language_run() {
+        let mut pipeline = crate::pipeline::TTSPipeline::new();
+        let processed = pipeline.process_for_engine(
+            "In 2024 we shipped 3 releases. Установи Python 3.",
+            &crate::tts::profiles::TERATTS_PROFILE,
+        );
+        let segments = segments_for(&processed.text, &processed.spans);
+        let summary: Vec<_> = segments
+            .iter()
+            .map(|segment| (segment.text, segment.language))
+            .collect();
         assert!(
             segments
-                .iter()
-                .all(|segment| segment.language == teratts::Language::En),
-            "segments: {summary:?}"
+                .windows(2)
+                .all(|pair| pair[0].language != pair[1].language),
+            "adjacent segments share a language: {summary:?}"
         );
     }
 

@@ -77,7 +77,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   shipped 3 releases.» → «In twenty twenty-four we shipped three releases.»), so
   the preview shows what is spoken and the number stays inside the English
   block; a year reads as two pairs there, and the narrated route keeps its
-  transliterated cardinal (#370).
+  transliterated cardinal. A native English block is synthesized as one segment
+  now, so the engine no longer inserts its 200 ms segment pause between words
+  (#370).
 - **Numbers in English prose are read in English** — a standalone number in
   English prose now reads as an English cardinal instead of a Russian one: a
   narrating engine gets it transliterated («In 2024 we…» → «ин ту саузенд
