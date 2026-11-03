@@ -1134,6 +1134,24 @@ space- or NBSP-separated group of exactly three digits SHALL be part of the
 same number, not a second number ("10 000" → "десять тысяч", "1 234,56" → "одна
 тысяча двести тридцать четыре целых пятьдесят шесть сотых").
 
+A standalone integer that the layer reads as a cardinal SHALL be read in English
+instead when its context is English: the nearest word on each side SHALL be
+English prose, or English prose on one side and a sentence edge on the other
+(start or end of the text, a paragraph break, terminal punctuation), and the
+sentence SHALL contain no Cyrillic word. Whitespace, punctuation and other
+digits SHALL be transparent while the neighbour is found, so a comma does not
+end the sentence. A Russian word on either side SHALL keep the Russian reading;
+a Latin identifier, a URL, an inline code fragment or a user-dictionary token
+SHALL NOT count as English prose. The English reading SHALL use the cardinal
+register with no "and" between hundreds and tens, and a value above 999 999 999
+SHALL read digit by digit.
+
+The English reading SHALL be rendered by the effective prose route (see the
+English reading setting requirement): the `Narrate` route SHALL transliterate it
+into Cyrillic with the curated numeral readings, and the `Native` route SHALL
+leave the digits in place and annotate them with a prose-Latin span (see Span
+annotation output), so the English block is not split.
+
 A decimal fraction with a comma and a physical unit SHALL read as a natural
 quantity ("1,5 кг" → "полтора килограмма", "2,5 км" → "два с половиной
 километра", "0,25 кг" → "ноль целых двадцать пять сотых килограмма").
@@ -1260,6 +1278,39 @@ or a longer number.
 - GIVEN the input "Встреча в 5."
 - WHEN the pipeline processes it with the reference profile
 - THEN the number reads as "пять" and the output is "Встреча в пять."
+
+#### Scenario: English-context number on the native route
+
+- GIVEN the TeraTTS profile and the input "In 2024 we shipped 3 releases."
+- WHEN the pipeline processes it
+- THEN the text stays `In 2024 we shipped 3 releases.`, each number carries a
+  prose-Latin span with language `en`, and no Russian numeral appears
+
+#### Scenario: English-context number on the narrated route
+
+- GIVEN the Silero profile and the input "In 2024 we shipped 3 releases."
+- WHEN the pipeline processes it
+- THEN the numbers read as the English cardinals "two thousand twenty-four" and
+  "three", transliterated into Cyrillic, and no span is emitted
+
+#### Scenario: English-context number at the sentence start
+
+- GIVEN the TeraTTS profile and the input "3 releases shipped."
+- WHEN the pipeline processes it
+- THEN the number reads in English even though the sentence starts with it
+
+#### Scenario: Russian sentence with an English name keeps the number Russian
+
+- GIVEN the reference profile and the input "Установи Python 3."
+- WHEN the pipeline processes it
+- THEN the number reads "три", because the sentence contains a Cyrillic word
+
+#### Scenario: Identifier next to a number is not English prose
+
+- GIVEN the TeraTTS profile and the input "getUserData 3"
+- WHEN the pipeline processes it
+- THEN the number keeps the Russian reading, because the identifier is not
+  English prose
 
 ### Requirement: Output post-processing
 
@@ -1779,6 +1830,10 @@ declares (for TeraTTS and Piper, `en`). A dictionary-override span SHALL carry
 no language and SHALL stay Russian regardless of the prose route. A native
 code-block span SHALL cover exactly the code text handed to the engine.
 
+An English-context number left to the engine on the `Native` route SHALL carry a
+prose-Latin span with the profile's native language over its digits; the
+`Narrate` route SHALL produce no span for it.
+
 Annotations SHALL express decisions, never markup: no span SHALL contain tag
 syntax, and the normalized text SHALL remain the exact synthesis input.
 
@@ -1832,6 +1887,14 @@ territory, and this change keeps the mapping stable.
 - WHEN the pipeline processes it
 - THEN the normalized text contains no tag inserted by the pipeline, and every
   span range falls inside the text
+
+#### Scenario: English-context number on the native route is annotated
+
+- GIVEN the TeraTTS profile and the input "In 2024 we shipped 3 releases."
+- WHEN the pipeline processes it
+- THEN each number carries a prose-Latin span with language `en`, the spans do
+  not overlap the surrounding prose spans, and the digit ranges map back to the
+  source text
 
 ### Requirement: Alphanumeric abbreviations are narrated whole
 
@@ -1955,6 +2018,10 @@ survive switching to another and SHALL apply to the next synthesis without an
 application restart. The setting SHALL NOT route identifiers or fenced code
 blocks; those keep their profile routes.
 
+The resolved route SHALL also render an English-context number: `Narrate`
+transliterates its English reading into Cyrillic, `Native` leaves the digits for
+the engine inside a prose-Latin span.
+
 #### Scenario: Auto follows the engine capability
 
 - GIVEN the TeraTTS profile and `english_reading: "auto"`
@@ -1988,6 +2055,14 @@ blocks; those keep their profile routes.
 - GIVEN a running app with `english_reading: "auto"` on a Latin-capable engine
 - WHEN the setting is changed to `"narrated"` and a new synthesis starts
 - THEN that synthesis transliterates English prose without an app restart
+
+#### Scenario: Number rendering follows the route
+
+- GIVEN the TeraTTS profile, `english_reading: "auto"` and the input "In 2024 we
+  shipped 3 releases."
+- WHEN the pipeline processes it
+- THEN the digits stay in the text and carry prose-Latin spans, and the same
+  text under the Silero profile reads the numbers in transliterated English
 
 ### Requirement: Years, ordinals, and decades
 

@@ -21,7 +21,7 @@ use crate::pipeline::normalizers::english::EnglishNormalizer;
 use crate::pipeline::normalizers::numbers::NumberNormalizer;
 use crate::pipeline::normalizers::symbols::SymbolNormalizer;
 use crate::pipeline::normalizers::urls::{URLPathNormalizer, is_known_tld};
-use crate::pipeline::numeric::NumericSpanNormalizer;
+use crate::pipeline::numeric::{NumberRoute, NumericRouting, NumericSpanNormalizer};
 use crate::pipeline::spans::{
     RecordedSpan, byte_to_char_offsets, debug_assert_spans, record_byte_ranges, record_native,
     resolve_spans,
@@ -606,7 +606,18 @@ impl TTSPipeline {
         // numbers); the span layer scans each candidate once and classifies it
         // by shape and context, so no phase can race another for the digits.
         if expand_digits {
-            self.numeric_normalizer.process(&mut tracked, expand_units);
+            let mut routing = NumericRouting {
+                route: if narrate_latin {
+                    NumberRoute::Narrate
+                } else {
+                    NumberRoute::Native
+                },
+                native_lang,
+                dictionary: &self.user_dictionary,
+                recorded: &mut recorded,
+            };
+            self.numeric_normalizer
+                .process(&mut tracked, expand_units, &mut routing);
         }
 
         // ── Phase 12.9: Dash normalization ──────────────────────────────────

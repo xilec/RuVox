@@ -23,12 +23,37 @@
 //! identifier) is skipped by the start guards instead of being partially
 //! consumed.
 
+mod context;
+mod english;
 mod lexicon;
 mod morphology;
 mod parse;
 mod read;
 
+use crate::dictionary::UserDictionary;
+use crate::pipeline::spans::{RecordedSpan, SpanKind, byte_to_char_offsets, record_byte_ranges};
 use crate::pipeline::tracked_text::TrackedText;
+
+/// How the pipeline renders a number the layer reads in English.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum NumberRoute {
+    /// Transliterate the English reading into Cyrillic.
+    Narrate,
+    /// Leave the digits to the engine and annotate them.
+    Native,
+}
+
+/// The pipeline decisions the numeric layer needs: the route decides how an
+/// English reading is rendered, the dictionary decides what counts as English
+/// prose, and the recorder collects native spans.
+pub(crate) struct NumericRouting<'a> {
+    pub route: NumberRoute,
+    /// Language a native fragment is annotated with.
+    pub native_lang: Option<&'static str>,
+    /// User-dictionary keys are not English prose.
+    pub dictionary: &'a UserDictionary,
+    pub recorded: &'a mut Vec<RecordedSpan>,
+}
 
 /// The phase entry point: rewrite every numeric span of `tracked`.
 ///
@@ -42,19 +67,255 @@ impl NumericSpanNormalizer {
         Self
     }
 
-    pub fn process(&self, tracked: &mut TrackedText, expand_units: bool) {
+    /// The Latin reading of a plain cardinal, if the span is one the English
+    /// rule may claim.
+    fn english_words(span: &parse::Span) -> Option<String> {
+        let parse::Body::Number(number) = &span.body else {
+            return None;
+        };
+        if span.trailing.is_some()
+            || !number.is_plain_integer()
+            || number.sign.is_some()
+            || number.approx.is_some()
+            || number.currency_prefix.is_some()
+        {
+            return None;
+        }
+        let digits = number.int.replace([' ', '\u{a0}'], "");
+        if !digits.chars().all(|ch| ch.is_ascii_digit()) {
+            return None;
+        }
+        // A zero-padded token of three or more digits is a code and keeps the
+        // digit-by-digit Russian reading; the English rule does not claim it.
+        if digits.len() >= 3 && digits.starts_with('0') {
+            return None;
+        }
+        Some(match digits.parse::<u64>() {
+            Ok(value) => english::cardinal(value).unwrap_or_else(|| english::digits(&digits)),
+            Err(_) => english::digits(&digits),
+        })
+    }
+
+    /// Whether the span sits in English context (see the Numbers requirement).
+    #[allow(clippy::too_many_arguments)]
+    fn english_context(
+        tracked: &mut TrackedText,
+        snapshot: &str,
+        offsets: &[usize],
+        span: (usize, usize),
+        original_start: usize,
+        sentences: &context::SentenceMap,
+        identifiers: &[(usize, usize)],
+        dictionary: &UserDictionary,
+    ) -> bool {
+        let left = Self::side(
+            &mut *tracked,
+            snapshot,
+            offsets,
+            span.0,
+            true,
+            identifiers,
+            dictionary,
+        );
+        // One foreign word is enough: the other side cannot make the number
+        // English, and scanning it would only add work.
+        if left == context::Side::Word {
+            return false;
+        }
+        let right = Self::side(
+            &mut *tracked,
+            snapshot,
+            offsets,
+            span.1,
+            false,
+            identifiers,
+            dictionary,
+        );
+        if right == context::Side::Word {
+            return false;
+        }
+        if left != context::Side::English && right != context::Side::English {
+            return false;
+        }
+        !sentences.has_cyrillic_at(original_start)
+    }
+
+    /// The side a word takes, or `None` for a word the pipeline itself
+    /// inserted: a markdown list marker becomes "первое:", and that marker must
+    /// not veto the English context of the item text.
+    fn side(
+        tracked: &mut TrackedText,
+        snapshot: &str,
+        offsets: &[usize],
+        pos: usize,
+        before: bool,
+        identifiers: &[(usize, usize)],
+        dictionary: &UserDictionary,
+    ) -> context::Side {
+        let origin = pos;
+        let mut cursor = pos;
+        loop {
+            let word = if before {
+                context::word_before(snapshot, cursor)
+            } else {
+                context::word_after(snapshot, cursor)
+            };
+            let Some(word) = word else {
+                return context::Side::Edge;
+            };
+            // Skipping inserted words must not walk the whole text either.
+            let distance = if before {
+                origin.saturating_sub(word.start)
+            } else {
+                word.start.saturating_sub(origin)
+            };
+            if distance > context::NEIGHBOUR_WINDOW {
+                return context::Side::Edge;
+            }
+            let token = &snapshot[word.start..word.end];
+            match Self::classify(
+                &mut *tracked,
+                offsets,
+                token,
+                (word.start, word.end),
+                identifiers,
+                dictionary,
+            ) {
+                Some(side) => return side,
+                None => cursor = if before { word.start } else { word.end },
+            }
+        }
+    }
+
+    /// The side of one word; `None` means the word is a pipeline insertion.
+    fn classify(
+        tracked: &mut TrackedText,
+        offsets: &[usize],
+        token: &str,
+        range: (usize, usize),
+        identifiers: &[(usize, usize)],
+        dictionary: &UserDictionary,
+    ) -> Option<context::Side> {
+        if token.chars().any(context::is_cyrillic) {
+            let (start, end) = tracked.original_range(offsets[range.0], offsets[range.1]);
+            let mut has_cyrillic = false;
+            let mut has_latin = false;
+            for ch in tracked
+                .original
+                .chars()
+                .skip(start)
+                .take(end.saturating_sub(start))
+            {
+                has_cyrillic |= context::is_cyrillic(ch);
+                has_latin |= ch.is_ascii_alphabetic();
+            }
+            // A label the pipeline produced from digits or punctuation (a
+            // markdown list marker) is not a neighbour; a Cyrillic reading of a
+            // URL, path or inline code is not prose and still vetoes the number.
+            return if has_cyrillic || has_latin {
+                Some(context::Side::Word)
+            } else {
+                None
+            };
+        }
+        let latin = token.chars().all(|ch| ch.is_ascii_alphabetic());
+        if latin
+            && !super::overlaps_ranges(identifiers, range.0, range.1)
+            && dictionary.resolve(&token.to_lowercase(), false).is_none()
+        {
+            Some(context::Side::English)
+        } else {
+            Some(context::Side::Word)
+        }
+    }
+
+    pub fn process(
+        &self,
+        tracked: &mut TrackedText,
+        expand_units: bool,
+        routing: &mut NumericRouting<'_>,
+    ) {
         let snapshot = tracked.text().to_string();
-        let replacements: Vec<(usize, usize, String)> = parse::scan(&snapshot, expand_units)
-            .iter()
-            .filter_map(|span| {
-                span.read(&snapshot, expand_units)
-                    .map(|reading| (span.start, span.end, reading))
-            })
-            .collect();
-        if replacements.is_empty() {
+        let spans = parse::scan(&snapshot, expand_units);
+        if spans.is_empty() {
             return;
         }
-        tracked.replace_byte_ranges(replacements);
+
+        let route = routing.route;
+        let native_lang = routing.native_lang;
+        let dictionary = routing.dictionary;
+        let recorded = &mut *routing.recorded;
+
+        let needs_context = spans.iter().any(|span| Self::english_words(span).is_some());
+        let offsets = if needs_context {
+            byte_to_char_offsets(&snapshot)
+        } else {
+            Vec::new()
+        };
+        let identifiers = if needs_context {
+            super::find_identifier_ranges(&snapshot)
+        } else {
+            Vec::new()
+        };
+        let sentences = if needs_context {
+            context::SentenceMap::build(&tracked.original)
+        } else {
+            context::SentenceMap::build("")
+        };
+
+        let mut replacements: Vec<(usize, usize, String)> = Vec::new();
+        let mut native_ranges: Vec<(usize, usize)> = Vec::new();
+        for span in &spans {
+            let english = match Self::english_words(span) {
+                Some(latin) => {
+                    let original_start = tracked
+                        .original_range(offsets[span.start], offsets[span.end])
+                        .0;
+                    if Self::english_context(
+                        &mut *tracked,
+                        &snapshot,
+                        &offsets,
+                        (span.start, span.end),
+                        original_start,
+                        &sentences,
+                        &identifiers,
+                        dictionary,
+                    ) {
+                        Some(latin)
+                    } else {
+                        None
+                    }
+                }
+                None => None,
+            };
+            match english {
+                Some(latin) => match route {
+                    NumberRoute::Narrate => {
+                        replacements.push((span.start, span.end, english::transliterate(&latin)))
+                    }
+                    NumberRoute::Native => native_ranges.push((span.start, span.end)),
+                },
+                None => {
+                    if let Some(reading) = span.read(&snapshot, expand_units) {
+                        replacements.push((span.start, span.end, reading));
+                    }
+                }
+            }
+        }
+
+        if !native_ranges.is_empty() {
+            record_byte_ranges(
+                tracked,
+                &offsets,
+                SpanKind::ProseLatin,
+                native_lang,
+                &native_ranges,
+                recorded,
+            );
+        }
+        if !replacements.is_empty() {
+            tracked.replace_byte_ranges(replacements);
+        }
     }
 }
 

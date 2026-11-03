@@ -1547,3 +1547,161 @@ fn pipeline_operator_phase_owns_multi_character_brackets() {
         .join(" ");
     assert_eq!(reading, "если эй больше или равно би");
 }
+
+// ── English-context numbers ──────────────────────────────────────────────
+
+#[test]
+fn english_context_numbers_read_in_english_when_narrated() {
+    let mut p = TTSPipeline::new();
+    let out = p.process_for_engine(
+        "In 2024 we shipped 3 releases.",
+        &crate::profiles::SILERO_PROFILE,
+    );
+    assert!(
+        out.text.contains("ту саузенд твенти-фо"),
+        "narrated reading: {}",
+        out.text
+    );
+    assert!(out.text.contains(" сри "), "narrated reading: {}", out.text);
+    assert!(out.spans.is_empty(), "spans: {:?}", out.spans);
+}
+
+#[test]
+fn english_context_numbers_stay_digits_in_native_spans() {
+    let mut p = TTSPipeline::new();
+    let out = p.process_for_engine(
+        "In 2024 we shipped 3 releases.",
+        &crate::profiles::TERATTS_PROFILE,
+    );
+    assert_eq!(out.text, "In 2024 we shipped 3 releases.");
+    let texts: Vec<String> = out
+        .spans
+        .iter()
+        .map(|span| span_text(&out.text, span))
+        .collect();
+    assert_eq!(texts.join("|"), "In|2024|we|shipped|3|releases");
+    assert!(
+        out.spans
+            .iter()
+            .all(|span| span.kind == SpanKind::ProseLatin && span.lang == Some("en")),
+        "spans: {:?}",
+        out.spans
+    );
+}
+
+#[test]
+fn english_context_number_at_the_sentence_start_is_english() {
+    let mut p = TTSPipeline::new();
+    let out = p.process_for_engine("2024 was the year.", &crate::profiles::TERATTS_PROFILE);
+    assert_eq!(out.text, "2024 was the year.");
+    assert!(
+        out.spans
+            .iter()
+            .any(|span| span_text(&out.text, span) == "2024"),
+        "spans: {:?}",
+        out.spans
+    );
+}
+
+#[test]
+fn digits_are_transparent_behind_a_comma() {
+    let mut p = TTSPipeline::new();
+    let out = p.process_for_engine("In 2024, 3 releases.", &crate::profiles::TERATTS_PROFILE);
+    assert_eq!(out.text, "In 2024, 3 releases.");
+    let texts: Vec<String> = out
+        .spans
+        .iter()
+        .map(|span| span_text(&out.text, span))
+        .collect();
+    assert!(texts.iter().any(|text| text == "2024"), "spans: {texts:?}");
+    assert!(texts.iter().any(|text| text == "3"), "spans: {texts:?}");
+}
+
+#[test]
+fn cyrillic_sentence_keeps_the_number_russian() {
+    let mut p = TTSPipeline::new();
+    let out = p.process_for_engine("Установи Python 3.", &crate::profiles::SILERO_PROFILE);
+    assert!(
+        out.text.ends_with(" три."),
+        "narrated reading: {}",
+        out.text
+    );
+    assert!(out.spans.is_empty(), "spans: {:?}", out.spans);
+}
+
+#[test]
+fn identifier_beside_a_number_is_not_english_prose() {
+    let mut p = TTSPipeline::new();
+    let out = p.process_for_engine("getUserData 3", &crate::profiles::TERATTS_PROFILE);
+    assert_eq!(out.text, "getUserData три");
+    assert_eq!(out.spans.len(), 1, "spans: {:?}", out.spans);
+    assert_eq!(span_text(&out.text, &out.spans[0]), "getUserData");
+}
+
+#[test]
+fn constructs_keep_their_russian_reading_in_english_prose() {
+    let mut p = TTSPipeline::new();
+    let percent = p.process_for_engine("In 5% we trust", &crate::profiles::SILERO_PROFILE);
+    assert!(percent.text.contains("пять процентов"), "{}", percent.text);
+
+    let money = p.process_for_engine("In $5 we trust", &crate::profiles::SILERO_PROFILE);
+    assert!(money.text.contains("пять долларов"), "{}", money.text);
+
+    let approx = p.process_for_engine("In ~5 we trust", &crate::profiles::SILERO_PROFILE);
+    assert!(approx.text.contains("около"), "{}", approx.text);
+    assert!(!approx.text.contains("файв"), "{}", approx.text);
+}
+
+#[test]
+fn zero_padded_pair_is_still_a_cardinal() {
+    let mut p = TTSPipeline::new();
+    let out = p.process_for_engine("In 07 we trust", &crate::profiles::SILERO_PROFILE);
+    assert!(out.text.contains("сэвен"), "{}", out.text);
+
+    let native = p.process_for_engine("In 07 we trust", &crate::profiles::TERATTS_PROFILE);
+    assert_eq!(native.text, "In 07 we trust");
+    assert!(
+        native
+            .spans
+            .iter()
+            .any(|span| span_text(&native.text, span) == "07"),
+        "spans: {:?}",
+        native.spans
+    );
+}
+
+#[test]
+fn grouped_cardinal_reads_in_english() {
+    let mut p = TTSPipeline::new();
+    let out = p.process_for_engine("In 10 000 words", &crate::profiles::SILERO_PROFILE);
+    assert!(out.text.contains("тен саузенд"), "{}", out.text);
+}
+
+#[test]
+fn a_list_marker_does_not_veto_the_item_number() {
+    let mut p = TTSPipeline::new();
+    let out = p.process_for_engine("1. 2024 was the year.", &crate::profiles::TERATTS_PROFILE);
+    assert!(out.text.contains("первое"), "marker: {}", out.text);
+    assert_eq!(out.text, "первое:2024 was the year.");
+    assert!(
+        out.spans
+            .iter()
+            .any(|span| span_text(&out.text, span) == "2024"),
+        "spans: {:?}",
+        out.spans
+    );
+}
+
+#[test]
+fn a_url_reading_is_not_english_prose() {
+    let mut p = TTSPipeline::new();
+    let out = p.process_for_engine(
+        "Check https://example.com 2024 now",
+        &crate::profiles::SILERO_PROFILE,
+    );
+    assert!(
+        out.text.contains("две тысячи двадцать четыре"),
+        "{}",
+        out.text
+    );
+}

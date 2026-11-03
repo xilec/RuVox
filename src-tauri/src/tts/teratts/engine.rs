@@ -507,6 +507,48 @@ mod tests {
     }
 
     #[test]
+    fn numbers_in_english_prose_keep_one_english_block() {
+        let mut pipeline = crate::pipeline::TTSPipeline::new();
+        let processed = pipeline.process_for_engine(
+            "In 2024 we shipped 3 releases.",
+            &crate::tts::profiles::TERATTS_PROFILE,
+        );
+        assert!(processed.text.contains("2024"), "{}", processed.text);
+
+        let segments = segments_for(&processed.text, &processed.spans);
+        let summary: Vec<_> = segments
+            .iter()
+            .map(|segment| (segment.text, segment.language))
+            .collect();
+        assert!(
+            segments
+                .iter()
+                .all(|segment| segment.language == teratts::Language::En),
+            "segments: {summary:?}"
+        );
+    }
+
+    #[test]
+    fn a_russian_context_number_stays_in_a_russian_segment() {
+        let mut pipeline = crate::pipeline::TTSPipeline::new();
+        let processed = pipeline
+            .process_for_engine("Установи Python 3.", &crate::tts::profiles::TERATTS_PROFILE);
+        assert!(processed.text.ends_with(" три."), "{}", processed.text);
+
+        let segments = segments_for(&processed.text, &processed.spans);
+        let summary: Vec<_> = segments
+            .iter()
+            .map(|segment| (segment.text, segment.language))
+            .collect();
+        assert!(
+            segments.iter().any(|segment| {
+                segment.language == teratts::Language::Ru && segment.text.contains("три")
+            }),
+            "segments: {summary:?}"
+        );
+    }
+
+    #[test]
     fn dictionary_override_spans_stay_russian() {
         let text = "молоко";
         let spans = [Span {

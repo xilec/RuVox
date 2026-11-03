@@ -62,6 +62,29 @@ fn dense_markup_1mb_normalizes_within_budget() {
     );
 }
 
+/// A 128 KB run of bare integers: every one is a candidate for the English
+/// context, so an unbounded neighbour scan would make the layer quadratic.
+#[test]
+fn integer_run_128kb_normalizes_within_budget() {
+    let _guard = PERF_LOCK
+        .lock()
+        .expect("perf test serialization lock poisoned");
+    let mut pipeline = TTSPipeline::new();
+    let mut input = String::with_capacity(128_064);
+    while input.len() < 128_000 {
+        input.push_str("7 42 913 ");
+    }
+
+    let start = Instant::now();
+    let _ = pipeline.process_with_char_mapping(&input);
+    let elapsed = start.elapsed();
+
+    assert!(
+        elapsed < Duration::from_secs(30),
+        "128 KB integer run normalized in {elapsed:?}, budget is 30 s"
+    );
+}
+
 /// A Cyrillic dictionary entry adds one candidate scan over Cyrillic words.
 /// The input is a quarter of the main case so the suite does not pay a second
 /// full-size debug pass, but a quadratic scan still blows the budget.
