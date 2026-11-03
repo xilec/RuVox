@@ -3938,6 +3938,7 @@ dependencies = [
  "arboard",
  "ashpd",
  "async-trait",
+ "base64 0.22.1",
  "byteorder",
  "chardetng",
  "chrono",

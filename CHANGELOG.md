@@ -7,6 +7,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 ## [Unreleased]
 
 ### Added
+- **Preview a word's pronunciation in the dictionary editor** — the «Слово»
+  and «Как произносить» fields each get a play control: «Слово» speaks how the
+  pipeline reads the token today (saved dictionary applied), «Как
+  произносить» speaks the typed form with the `+` stress mark kept only for
+  engines that render it. The preview always uses the active engine and is
+  ephemeral — no history entry, no queue state, no player involvement beyond
+  pausing narration — and a repeated preview of the same text is served from
+  a small in-memory cache (#349).
 - **Add a word to the pronunciation dictionary from the viewer** —
   right-click a selected word while reading (plain, Markdown or HTML) and
   choose «В словарь»: the editor opens prefilled, and after a save the app

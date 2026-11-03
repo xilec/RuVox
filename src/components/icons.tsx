@@ -37,6 +37,15 @@ export function IconPause({ size = 16, className }: IconProps) {
   );
 }
 
+/** Filled square used by the dictionary preview while the audio plays. */
+export function IconStop({ size = 16, className }: IconProps) {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="M6 6h12v12H6z" />
+    </svg>
+  );
+}
+
 export function IconAppLogo({ size = 26, className }: IconProps) {
   // Same geometry as src-tauri/icons/source.svg — kept inline so the brand
   // mark stays crisp at any DPR and inherits currentColor for theming.

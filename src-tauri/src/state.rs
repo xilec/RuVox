@@ -75,4 +75,16 @@ pub struct AppState {
     /// `cancel_synthesis` decide whether the ttsd subprocess must be killed
     /// (only entries that reached the TTS stage keep ttsd busy).
     pub synthesize_entered: Arc<Mutex<HashSet<EntryId>>>,
+    /// Directory for the ephemeral WAV files of pronunciation previews.
+    /// Resolved once from the app cache dir at startup (a `TempDir` in
+    /// tests), so the preview command never guesses a platform path and the
+    /// files never land next to user data.
+    pub preview_dir: PathBuf,
+    /// Serializes the engine between a pronunciation preview and the queue's
+    /// synthesis stage, and previews among themselves. Both sides hold it
+    /// around their engine call; a preview that finds it taken answers
+    /// `preview.engine_busy` instead of waiting, so it never queues behind a
+    /// narration that can run for minutes. Shared with `SynthesisDeps` so the
+    /// tray path uses the same lock.
+    pub preview_lock: Arc<tokio::sync::Mutex<()>>,
 }

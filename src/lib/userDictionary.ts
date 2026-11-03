@@ -68,6 +68,17 @@ export function spokenForm(to: string): string | null {
   return spoken;
 }
 
+/** True when the typed spoken form can be synthesized: a non-empty value,
+ *  at most one well-formed stress mark, and a reading within the length
+ *  limit. The single rule behind both the editor's play control and the
+ *  form validation (issue #349), so a value the button plays is never one
+ *  the form refuses and vice versa. */
+export function isSpokenFormSynthesizable(to: string): boolean {
+  if (to.length === 0) return false;
+  const spoken = spokenForm(to);
+  return spoken !== null && [...spoken].length <= MAX_TO_LEN;
+}
+
 /** Validate a from/to pair. Returns the first hard failure, or null when
  *  the pair passes; `to.latin_warning` is a soft warning the caller treats
  *  as non-blocking (the replacement is inserted verbatim). */
@@ -83,8 +94,13 @@ export function validateEntryInput(
 
   if (to.length === 0) return { reason: 'to.required', blocking: true };
   const spoken = spokenForm(to);
-  if (spoken === null) return { reason: 'to.stress_malformed', blocking: true };
-  if ([...spoken].length > MAX_TO_LEN) return { reason: 'to.too_long', blocking: true };
+  // Same gate the play control uses; only the reason differs, so the form can
+  // name what is wrong instead of a generic "cannot synthesize".
+  if (!isSpokenFormSynthesizable(to)) {
+    return { reason: spoken === null ? 'to.stress_malformed' : 'to.too_long', blocking: true };
+  }
+  // The gate above proves the mark is well-formed.
+  const reading = spoken as string;
 
   const forms = entry.forms ?? [];
   if (forms.length > 0) {
@@ -102,7 +118,7 @@ export function validateEntryInput(
 
   // Soft warning: Latin letters or digits inside `to` reach the TTS engine
   // verbatim — later phases do not re-normalize a dictionary replacement.
-  if (/[A-Za-z0-9]/.test(spoken)) return { reason: 'to.latin_warning', blocking: false };
+  if (/[A-Za-z0-9]/.test(reading)) return { reason: 'to.latin_warning', blocking: false };
 
   return null;
 }

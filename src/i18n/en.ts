@@ -464,6 +464,7 @@ export const en: Record<MessageKey, string> = {
   'errors.playback.seek_failed': 'Seek failed',
   'errors.playback.set_speed_failed': 'Failed to change playback speed',
   'errors.playback.set_volume_failed': 'Failed to change volume',
+  'errors.voice_not_installed': 'The voice is not installed. Download it in Settings.',
   'errors.speed.out_of_range': 'Speed {0} is outside the allowed range [0.5–3.0]',
   'errors.volume.out_of_range': 'Volume {0} is outside the allowed range [0.0–1.0]',
   'errors.config.engine_switch_failed': 'Failed to switch the synthesis engine',
@@ -473,6 +474,13 @@ export const en: Record<MessageKey, string> = {
   'errors.pipeline.panicked': 'Internal text normalization error',
   'errors.engines.probe_panicked': 'Internal error while probing available engines',
   'errors.cache.task_panicked': 'Internal error during cache cleanup',
+  // Pronunciation preview (issue #349): engine and input rejections the
+  // dictionary editor shows inline.
+  'errors.preview.engine_busy': 'The engine is busy narrating — try again.',
+  'errors.preview.invalid_stress': 'Invalid stress mark in the pronunciation.',
+  'errors.preview.invalid_mode': 'Unknown preview mode.',
+  'errors.preview.empty_text': 'There is nothing to pronounce.',
+  'errors.preview.text_too_long': 'The text is too long: {0} characters, at most {1}.',
   'errors.logs.dir_resolve_failed': 'Could not resolve the log directory',
   'errors.logs.dir_create_failed': 'Could not create the log directory',
   'errors.image.url_invalid': 'Invalid image URL: {0}',
@@ -605,6 +613,20 @@ export const en: Record<MessageKey, string> = {
   'dictionary.form.from.help': 'Word matching help',
   'dictionary.form.warning.latin':
     'The spoken form contains Latin letters or digits — they will be read as-is.',
+  // ── Pronunciation preview (issue #349) ──────────────────────────
+  'dictionary.preview.from.aria': 'Listen to how the word is read',
+  'dictionary.preview.from.hint':
+    'How the word reads today: built-in tables and the saved dictionary. The entry being added does not apply yet.',
+  'dictionary.preview.to.aria': 'Listen to the pronunciation',
+  'dictionary.preview.to.hint':
+    'How the typed pronunciation will sound. The "+" mark applies only to engines that support stress.',
+  'dictionary.preview.stop': 'Stop the preview',
+  'dictionary.preview.busy': 'Synthesizing…',
+  'dictionary.preview.engine_hint':
+    'Preview plays with the {0} engine; the {1} recording may sound different.',
+  'dictionary.preview.error': 'Preview failed: {0}',
+  'dictionary.preview.error.play_failed': 'Could not play the audio.',
+  'dictionary.preview.pause_failed.title': 'Could not pause the narration',
   'dictionary.status.saved': 'All changes saved',
   'dictionary.status.saving': 'Saving…',
   'dictionary.status.error': 'Not saved — retry',

@@ -211,6 +211,20 @@ export interface PreviewNormalizeResult {
   normalized: string;
 }
 
+/** One-word audio preview for the dictionary editor (issue #349):
+ *  `spoken_text` is what was actually synthesized (the normalized reading or
+ *  the stress-adjusted spoken form), `wav_base64` a mono WAV and
+ *  `duration_sec` its length. */
+export interface PreviewPronunciationResult {
+  spoken_text: string;
+  wav_base64: string;
+  duration_sec: number;
+}
+
+/** How a dictionary preview derives the text to speak: the pipeline reading
+ *  of the token (`normalize`) or the typed spoken form (`spoken`). */
+export type PreviewPronunciationMode = 'normalize' | 'spoken';
+
 /** Result of the backend import file reader: UTF-8 text plus the canonical
  *  name of the encoding actually used (text-import spec, #224). */
 export interface ReadTextFileResult {
@@ -468,6 +482,16 @@ export const commands = {
 
   previewNormalize: (text: string): Promise<PreviewNormalizeResult> =>
     tauriInvoke('preview_normalize', { text }),
+
+  /** Speak one dictionary word with the active engine (issue #349). The
+   *  preview is ephemeral: no entry, timestamps, queue state or events are
+   *  created. The audio arrives as base64 and is deleted from disk before the
+   *  response. */
+  previewPronunciation: (
+    text: string,
+    mode: PreviewPronunciationMode,
+  ): Promise<PreviewPronunciationResult> =>
+    tauriInvoke('preview_pronunciation', { text, mode }),
 
   /** Native save dialog for an entry's audio export (#225): the default name
    * and filter follow the entry's stored audio format (rfd backend, like the

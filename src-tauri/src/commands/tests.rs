@@ -758,6 +758,7 @@ async fn synthesize_audio_on_piper_fallback_uses_piper_voice() {
     let (emitter, _log) = recording_emitter();
     let voices_dir = TempDir::new().unwrap();
     let entered = Mutex::new(HashSet::new());
+    let preview_lock = tokio::sync::Mutex::new(());
 
     let outcome = synthesize_audio(
         &engine,
@@ -765,6 +766,7 @@ async fn synthesize_audio_on_piper_fallback_uses_piper_voice() {
         voices_dir.path(),
         &emitter,
         &entered,
+        &preview_lock,
         &uuid::Uuid::new_v4(),
         "текст".to_string(),
         Vec::new(),
@@ -789,6 +791,7 @@ async fn synthesize_audio_on_silero_native_uses_speaker_even_with_piper_config()
     let (emitter, _log) = recording_emitter();
     let voices_dir = TempDir::new().unwrap();
     let entered = Mutex::new(HashSet::new());
+    let preview_lock = tokio::sync::Mutex::new(());
 
     let outcome = synthesize_audio(
         &engine,
@@ -796,6 +799,7 @@ async fn synthesize_audio_on_silero_native_uses_speaker_even_with_piper_config()
         voices_dir.path(),
         &emitter,
         &entered,
+        &preview_lock,
         &uuid::Uuid::new_v4(),
         "текст".to_string(),
         Vec::new(),
@@ -827,6 +831,7 @@ async fn synthesize_audio_on_teratts_uses_teratts_voice() {
     let (emitter, _log) = recording_emitter();
     let voices_dir = TempDir::new().unwrap();
     let entered = Mutex::new(HashSet::new());
+    let preview_lock = tokio::sync::Mutex::new(());
 
     let outcome = synthesize_audio(
         &engine,
@@ -834,6 +839,7 @@ async fn synthesize_audio_on_teratts_uses_teratts_voice() {
         voices_dir.path(),
         &emitter,
         &entered,
+        &preview_lock,
         &uuid::Uuid::new_v4(),
         "текст".to_string(),
         Vec::new(),
@@ -864,6 +870,7 @@ async fn synthesize_audio_on_piper_fallback_auto_downloads_missing_voice() {
     std::fs::write(voice_dir.join("ru_RU-ruslan-medium.onnx.json"), b"{}").unwrap();
     std::fs::write(voice_dir.join("ru_RU-ruslan-medium.onnx"), b"onnx").unwrap();
     let entered = Mutex::new(HashSet::new());
+    let preview_lock = tokio::sync::Mutex::new(());
 
     synthesize_audio(
         &engine,
@@ -871,6 +878,7 @@ async fn synthesize_audio_on_piper_fallback_auto_downloads_missing_voice() {
         voices_dir.path(),
         &emitter,
         &entered,
+        &preview_lock,
         &uuid::Uuid::new_v4(),
         "текст".to_string(),
         Vec::new(),
@@ -905,6 +913,7 @@ async fn synthesize_audio_on_piper_fallback_surfaces_failed_voice_download() {
     let (emitter, _log) = recording_emitter();
     let voices_dir = TempDir::new().unwrap();
     let entered = Mutex::new(HashSet::new());
+    let preview_lock = tokio::sync::Mutex::new(());
 
     let err = synthesize_audio(
         &engine,
@@ -912,6 +921,7 @@ async fn synthesize_audio_on_piper_fallback_surfaces_failed_voice_download() {
         voices_dir.path(),
         &emitter,
         &entered,
+        &preview_lock,
         &uuid::Uuid::new_v4(),
         "текст".to_string(),
         Vec::new(),
@@ -1147,4 +1157,385 @@ fn seed_opus_entry_from_sine(storage: &StorageService) -> (EntryId, TempDir) {
     entry.status = EntryStatus::Ready;
     storage.update_entry(entry).unwrap();
     (id, dir)
+}
+
+// ── preview_pronunciation ────────────────────────────────────────────────────
+
+/// The dictionary editor's preview speaks the pipeline reading of one word
+/// and returns it with a playable WAV — and leaves no trace in the history,
+/// the queue or the synthesis-event stream (issue #349).
+#[tokio::test]
+async fn preview_pronunciation_normalize_speaks_the_current_reading() {
+    use crate::test_support::{build_test_app, record_events};
+
+    let t = build_test_app();
+    let events = record_events(
+        &t.app,
+        &[
+            "entry_updated",
+            "tts_error",
+            "tts_fatal",
+            "model_loading",
+            "model_loaded",
+        ],
+    );
+
+    let result = preview_pronunciation(t.state(), "IPv6".to_string(), "normalize".to_string())
+        .await
+        .unwrap();
+
+    // The pipeline reading, not the raw token.
+    assert_eq!(result.spoken_text, "ай пи ви шесть");
+    assert!(result.duration_sec > 0.0);
+    let wav = base64::engine::general_purpose::STANDARD
+        .decode(&result.wav_base64)
+        .expect("wav_base64 is valid base64");
+    assert_eq!(&wav[..4], b"RIFF", "preview must return a WAV file");
+
+    // No entry, no queue marker, no synthesis event.
+    assert!(t.state().storage.get_all_entries().is_empty());
+    assert!(t.state().synthesize_entered.lock().is_empty());
+    assert!(events.lock().unwrap().is_empty());
+
+    // The ephemeral WAV is gone; only the (empty) preview directory remains.
+    let preview_dir = t.state().preview_dir.join("preview");
+    assert_eq!(std::fs::read_dir(&preview_dir).unwrap().count(), 0);
+}
+
+/// The spoken-form preview keeps the `+` mark exactly when the active
+/// engine's profile renders stress (Silero Native: `Stress::Auto`).
+#[tokio::test]
+async fn preview_pronunciation_spoken_keeps_the_mark_for_a_stress_engine() {
+    use crate::test_support::build_test_app_with_kind;
+
+    let t = build_test_app_with_kind(EngineKind::SileroNative);
+    assert_ne!(t.state().tts.text_profile().stress, Stress::None);
+
+    let result = preview_pronunciation(
+        t.state(),
+        "айпи ви ш+есть".to_string(),
+        "spoken".to_string(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result.spoken_text, "айпи ви ш+есть");
+}
+
+/// ... and strips it for an engine whose profile has `Stress::None` (Piper's
+/// eSpeak-ng frontend has no stress control of its own).
+#[tokio::test]
+async fn preview_pronunciation_spoken_strips_the_mark_for_a_stressless_engine() {
+    use crate::test_support::build_test_app_with_kind;
+
+    let t = build_test_app_with_kind(EngineKind::Piper);
+    assert_eq!(t.state().tts.text_profile().stress, Stress::None);
+
+    let result = preview_pronunciation(
+        t.state(),
+        "айпи ви ш+есть".to_string(),
+        "spoken".to_string(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result.spoken_text, "айпи ви шесть");
+}
+
+/// A malformed mark is a typed rejection, not a silent strip.
+#[tokio::test]
+async fn preview_pronunciation_rejects_a_malformed_mark() {
+    use crate::test_support::build_test_app;
+
+    let t = build_test_app();
+    let err = preview_pronunciation(t.state(), "Моск+ва".to_string(), "spoken".to_string())
+        .await
+        .unwrap_err();
+
+    match err {
+        CommandError::Internal { code, .. } => assert_eq!(code, "preview.invalid_stress"),
+        other => panic!("expected preview.invalid_stress, got {other:?}"),
+    }
+}
+
+/// Nothing to speak is a typed rejection (the frontend disables the control,
+/// the backend still refuses instead of asking the engine for silence).
+#[tokio::test]
+async fn preview_pronunciation_rejects_empty_text() {
+    use crate::test_support::build_test_app;
+
+    let t = build_test_app();
+    let err = preview_pronunciation(t.state(), "   ".to_string(), "spoken".to_string())
+        .await
+        .unwrap_err();
+
+    match err {
+        CommandError::Internal { code, .. } => assert_eq!(code, "preview.empty_text"),
+        other => panic!("expected preview.empty_text, got {other:?}"),
+    }
+}
+
+/// An unknown mode is a typed rejection.
+#[tokio::test]
+async fn preview_pronunciation_rejects_an_unknown_mode() {
+    use crate::test_support::build_test_app;
+
+    let t = build_test_app();
+    let err = preview_pronunciation(t.state(), "IPv6".to_string(), "shout".to_string())
+        .await
+        .unwrap_err();
+
+    match err {
+        CommandError::Internal { code, params, .. } => {
+            assert_eq!(code, "preview.invalid_mode");
+            assert_eq!(params, vec!["shout".to_string()]);
+        }
+        other => panic!("expected preview.invalid_mode, got {other:?}"),
+    }
+}
+
+/// A queue entry inside `tts.synthesize` owns the engine: the preview refuses
+/// instead of queueing behind a narration or sharing its cancel flag. The
+/// marker is held together with `preview_lock` because that is the state
+/// [`synthesize_audio`] establishes (see
+/// `synthesize_audio_marks_and_locks_the_engine_around_the_tts_call`).
+#[tokio::test]
+async fn preview_pronunciation_refuses_while_the_queue_synthesizes() {
+    use crate::test_support::build_test_app;
+
+    let t = build_test_app();
+    let state = t.state();
+    let _queue_owns_the_engine = state.preview_lock.lock().await;
+    state.synthesize_entered.lock().insert(uuid::Uuid::new_v4());
+
+    let err = preview_pronunciation(t.state(), "IPv6".to_string(), "normalize".to_string())
+        .await
+        .unwrap_err();
+
+    match err {
+        CommandError::Internal { code, .. } => assert_eq!(code, "preview.engine_busy"),
+        other => panic!("expected preview.engine_busy, got {other:?}"),
+    }
+    // The engine was never reached, so no preview file was staged.
+    let preview_dir = t.state().preview_dir.join("preview");
+    assert!(!preview_dir.exists() || std::fs::read_dir(&preview_dir).unwrap().count() == 0);
+}
+
+/// The queue's half of the serialization: `synthesize_audio` takes
+/// `preview_lock` for the whole engine call and sets the "inside TTS" marker
+/// inside it, so a preview can never slip between the check and the call.
+#[tokio::test]
+async fn synthesize_audio_marks_and_locks_the_engine_around_the_tts_call() {
+    use crate::test_support::StubEngine;
+
+    let (storage, _dir) = make_service();
+    let engine = Arc::new(StubEngine::new());
+    engine.block_synthesis();
+    let engine_for_task = Arc::clone(&engine);
+    let (emitter, _log) = recording_emitter();
+    let voices_dir = TempDir::new().unwrap();
+    let entered = Arc::new(Mutex::new(HashSet::new()));
+    let entered_for_task = Arc::clone(&entered);
+    let preview_lock = Arc::new(tokio::sync::Mutex::new(()));
+    let lock_for_task = Arc::clone(&preview_lock);
+    let entry_id = uuid::Uuid::new_v4();
+
+    let task = tokio::spawn(async move {
+        synthesize_audio(
+            engine_for_task.as_ref(),
+            &storage,
+            voices_dir.path(),
+            &emitter,
+            &entered_for_task,
+            &lock_for_task,
+            &entry_id,
+            "текст".to_string(),
+            Vec::new(),
+            &empty_mapping(),
+        )
+        .await
+    });
+
+    // The stub parks inside `synthesize`; wait until the marker is visible,
+    // which (by construction) can only happen while the lock is held.
+    let mut waited = 0;
+    while entered.lock().is_empty() {
+        assert!(
+            waited < 200,
+            "synthesize_audio never entered the engine stage"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        waited += 1;
+    }
+    assert!(
+        preview_lock.try_lock().is_err(),
+        "the engine call must hold preview_lock"
+    );
+
+    engine.release_synthesis();
+    let outcome = task.await.unwrap().unwrap();
+    assert!(outcome.out_wav_path.exists());
+    assert!(preview_lock.try_lock().is_ok(), "the lock must be released");
+    assert!(entered.lock().is_empty(), "the marker must be cleared");
+}
+
+/// The other direction: while a preview synthesizes, the queue waits for the
+/// engine instead of failing, and completes as soon as the preview releases
+/// it. The marker stays empty while waiting — nothing for `cancel_synthesis`
+/// to kill.
+#[tokio::test]
+async fn synthesize_audio_waits_for_a_preview_and_then_completes() {
+    use crate::test_support::StubEngine;
+
+    let (storage, _dir) = make_service();
+    let engine = Arc::new(StubEngine::new());
+    let (emitter, _log) = recording_emitter();
+    let voices_dir = TempDir::new().unwrap();
+    let entered = Arc::new(Mutex::new(HashSet::new()));
+    let entered_for_task = Arc::clone(&entered);
+    let preview_lock = Arc::new(tokio::sync::Mutex::new(()));
+
+    // "A preview is synthesizing": it owns the engine for a short while.
+    let preview = preview_lock.lock().await;
+
+    let lock_for_task = Arc::clone(&preview_lock);
+    let mut task = tokio::spawn(async move {
+        synthesize_audio(
+            engine.as_ref(),
+            &storage,
+            voices_dir.path(),
+            &emitter,
+            &entered_for_task,
+            &lock_for_task,
+            &uuid::Uuid::new_v4(),
+            "текст".to_string(),
+            Vec::new(),
+            &empty_mapping(),
+        )
+        .await
+    });
+    // Let the task reach the lock before probing it.
+    tokio::task::yield_now().await;
+    tokio::task::yield_now().await;
+
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(50), &mut task)
+            .await
+            .is_err(),
+        "the queue must wait for the preview to release the engine"
+    );
+    assert!(
+        entered.lock().is_empty(),
+        "the entry must not be marked while the queue waits"
+    );
+
+    drop(preview);
+    let outcome = task.await.unwrap().unwrap();
+    assert!(outcome.out_wav_path.exists());
+    assert!(entered.lock().is_empty());
+}
+
+/// An engine failure keeps the engine's site id on the wire (the form says
+/// "model not installed" instead of a generic sentence) and leaves no trace:
+/// no history entry, no leaked preview WAV.
+#[tokio::test]
+async fn preview_pronunciation_surfaces_the_engine_site_code() {
+    use crate::test_support::build_test_app;
+
+    let t = build_test_app();
+    t.engine.fail_with("model is not downloaded");
+
+    let err = preview_pronunciation(t.state(), "IPv6".to_string(), "normalize".to_string())
+        .await
+        .unwrap_err();
+
+    match err {
+        CommandError::SynthesisError { code, message, .. } => {
+            assert_eq!(code, "stub_failure");
+            assert_eq!(message.as_deref(), Some("model is not downloaded"));
+        }
+        other => panic!("expected the engine site code, got {other:?}"),
+    }
+    assert!(t.state().storage.get_all_entries().is_empty());
+    let preview_dir = t.state().preview_dir.join("preview");
+    assert!(!preview_dir.exists() || std::fs::read_dir(&preview_dir).unwrap().count() == 0);
+}
+
+/// TeraTTS declares `Stress::Manual`: the `+` is the only stress it renders,
+/// so the spoken preview keeps it (the `Stress::Auto` case above is a
+/// different path in the engine adapters).
+#[tokio::test]
+async fn preview_pronunciation_spoken_keeps_the_mark_for_a_manual_stress_engine() {
+    use crate::test_support::build_test_app_with_kind;
+
+    let t = build_test_app_with_kind(EngineKind::TeraTts);
+    assert_eq!(t.state().tts.text_profile().stress, Stress::Manual);
+
+    let result = preview_pronunciation(
+        t.state(),
+        "айпи ви ш+есть".to_string(),
+        "spoken".to_string(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result.spoken_text, "айпи ви ш+есть");
+}
+
+/// The preview accepts one word or one spoken form; a pasted paragraph is a
+/// typed rejection carrying both lengths, not a multi-second engine run.
+#[tokio::test]
+async fn preview_pronunciation_rejects_text_over_the_limit() {
+    use crate::test_support::build_test_app;
+
+    let t = build_test_app();
+    let text = "а".repeat(super::PREVIEW_MAX_CHARS + 1);
+    let err = preview_pronunciation(t.state(), text, "normalize".to_string())
+        .await
+        .unwrap_err();
+
+    match err {
+        CommandError::Internal { code, params, .. } => {
+            assert_eq!(code, "preview.text_too_long");
+            assert_eq!(
+                params,
+                vec![
+                    (super::PREVIEW_MAX_CHARS + 1).to_string(),
+                    super::PREVIEW_MAX_CHARS.to_string(),
+                ]
+            );
+        }
+        other => panic!("expected preview.text_too_long, got {other:?}"),
+    }
+}
+
+/// The startup sweep removes only leftovers older than the window: a WAV of a
+/// run in flight (or one another window just wrote) must survive. A missing
+/// directory means no preview has ever run and is not an error.
+#[test]
+fn sweep_stale_previews_removes_only_old_files() {
+    let dir = TempDir::new().unwrap();
+    let old = dir.path().join("old.wav");
+    let fresh = dir.path().join("fresh.wav");
+    std::fs::write(&old, b"RIFF").unwrap();
+    std::fs::write(&fresh, b"RIFF").unwrap();
+
+    let hour_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(60 * 60);
+    std::fs::File::options()
+        .write(true)
+        .open(&old)
+        .unwrap()
+        .set_modified(hour_ago)
+        .unwrap();
+
+    let cutoff = std::time::SystemTime::now() - super::PREVIEW_STALE_AFTER;
+    let removed = super::sweep_stale_previews(dir.path(), cutoff).unwrap();
+
+    assert_eq!(removed, 1);
+    assert!(!old.exists());
+    assert!(fresh.exists());
+    assert_eq!(
+        super::sweep_stale_previews(&dir.path().join("absent"), cutoff).unwrap(),
+        0
+    );
 }

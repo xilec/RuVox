@@ -4,12 +4,17 @@ import {
   applyEngineChange,
   buildSettingsPatch,
   computeEngineFormState,
+  voiceForEngine,
   type AvailabilityMap,
 } from './engineSelection';
 
 /// Config slice used by the form-state tests; `teratts_voice` is required by
 /// the reducer, so one helper keeps the cases about the engine, not the field.
-function cfg(engine: 'piper' | 'silero' | 'silero_native' | 'teratts', piper_voice: string, speaker: string) {
+function cfg(
+  engine: 'piper' | 'silero' | 'silero_native' | 'teratts',
+  piper_voice: string,
+  speaker: string,
+) {
   return {
     engine,
     piper_voice,
@@ -52,6 +57,33 @@ const NEITHER: AvailabilityMap = {
   silero_native: { available: false, reason: { code: 'test.oops' }, reads_latin_natively: false },
   teratts: { available: false, reason: { code: 'test.oops' }, reads_latin_natively: true },
 };
+describe('voiceForEngine', () => {
+  // Mirrors `voice_for_engine` in src-tauri/src/commands/synthesis.rs: the
+  // dictionary preview keys its cache on this value, so a wrong engine → voice
+  // mapping would serve stale audio after an engine switch.
+  const config = { piper_voice: 'ruslan', speaker: 'xenia', teratts_voice: 'ru_f1' };
+
+  it('uses the Piper voice for piper', () => {
+    expect(voiceForEngine('piper', config)).toBe('ruslan');
+  });
+
+  it('uses the TeraTTS voice for teratts', () => {
+    expect(voiceForEngine('teratts', config)).toBe('ru_f1');
+  });
+
+  it('uses the speaker for both Silero engines', () => {
+    expect(voiceForEngine('silero', config)).toBe('xenia');
+    expect(voiceForEngine('silero_native', config)).toBe('xenia');
+  });
+
+  it('falls back to the per-engine defaults when a voice is unset', () => {
+    const empty = { piper_voice: '', speaker: '', teratts_voice: '' };
+    expect(voiceForEngine('piper', empty)).toBe('ruslan');
+    expect(voiceForEngine('teratts', empty)).toBe('ru_m5');
+    expect(voiceForEngine('silero', empty)).toBe('aidar');
+    expect(voiceForEngine('silero_native', empty)).toBe('aidar');
+  });
+});
 
 describe('computeEngineFormState', () => {
   it('preserves saved engine when both are available', () => {

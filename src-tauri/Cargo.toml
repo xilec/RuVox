@@ -92,6 +92,11 @@ libc = "0.2"
 opus1 = "0.3"
 ogg = "0.9"
 hound = "3.5"
+# The dictionary editor's pronunciation preview returns one-word WAV bytes
+# over IPC (issue #349); base64 keeps the payload a plain JSON string, so the
+# webview needs only `media-src blob:` and no asset-protocol scope. Already
+# in the lockfile via other dependencies.
+base64 = "0.22"
 byteorder = "1.5"
 
 # ── Piper TTS (native engine) ────────────────────────────────────────────────

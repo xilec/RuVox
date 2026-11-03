@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActionIcon,
   Badge,
+  Box,
   Button,
   Divider,
   Group,
@@ -19,18 +20,24 @@ import { notifications } from '@mantine/notifications';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 
+import { IconPlay, IconStop } from '../components/icons';
 import { commands } from '../lib/tauri';
 import type {
   DictionaryCollectionDto,
   DictionaryEntryDto,
   DictionaryImportMode,
   DictionaryScope,
+  EngineKind,
+  PreviewPronunciationResult,
 } from '../lib/tauri';
+import { computeEngineFormState, voiceForEngine } from '../lib/engineSelection';
 import { formatError } from '../lib/errors';
 import { useT } from '../lib/i18n';
 import {
   entryKey,
   findFormCollision,
+  isSingleSourceToken,
+  isSpokenFormSynthesizable,
   parseFormList,
   sortAndFilterEntries,
   validateEntryInput,
@@ -93,6 +100,58 @@ function isDictionaryFile(path: string): boolean {
   return path.toLowerCase().endsWith('.toml');
 }
 
+/** Which field's preview is in flight or playing. */
+type PreviewField = 'from' | 'to';
+
+/** Scope → catalog key of its display name (scope selector and engine hint). */
+const SCOPE_LABEL_KEY: Record<DictionaryScope, Parameters<ReturnType<typeof useT>>[0]> = {
+  global: 'dictionary.scope.global',
+  silero_native: 'dictionary.scope.silero_native',
+  silero: 'dictionary.scope.silero',
+  piper: 'dictionary.scope.piper',
+  teratts: 'dictionary.scope.teratts',
+};
+
+/** Preview cache size limit: every entry holds a whole WAV, and the editor
+ *  only replays a handful of words before a save retires the cache. */
+const PREVIEW_CACHE_MAX = 12;
+
+/** Read a cached preview and mark it most recently used. `Map` iterates in
+ *  insertion order, so re-inserting moves the entry to the end. */
+function takeCachedPreview(
+  cache: Map<string, PreviewPronunciationResult>,
+  key: string,
+): PreviewPronunciationResult | undefined {
+  const cached = cache.get(key);
+  if (cached === undefined) return undefined;
+  cache.delete(key);
+  cache.set(key, cached);
+  return cached;
+}
+
+/** Insert a fresh preview past the LRU limit: the least recently used
+ *  readings are dropped first (issue #349 review). */
+function cachePreview(
+  cache: Map<string, PreviewPronunciationResult>,
+  key: string,
+  result: PreviewPronunciationResult,
+) {
+  cache.delete(key);
+  cache.set(key, result);
+  while (cache.size > PREVIEW_CACHE_MAX) {
+    const oldest = cache.keys().next().value;
+    if (oldest === undefined) break;
+    cache.delete(oldest);
+  }
+}
+
+/** Decode the base64 WAV of a preview response into a playable blob. */
+function wavBlob(base64: string): Blob {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: 'audio/wav' });
+}
 export function DictionaryModal({
   opened,
   onClose,
@@ -110,10 +169,206 @@ export function DictionaryModal({
   const [pendingImport, setPendingImport] = useState<string | null>(null);
   const statusRef = useRef<SaveStatus>('saved');
 
+  // ── Pronunciation preview (issue #349) ─────────────────────────────────
+  const [previewBusy, setPreviewBusy] = useState<PreviewField | null>(null);
+  const [previewPlaying, setPreviewPlaying] = useState<PreviewField | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewEngine, setPreviewEngine] = useState<EngineKind | null>(null);
+  const [previewVoice, setPreviewVoice] = useState('');
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioUrlRef = useRef<string | null>(null);
+  const previewCacheRef = useRef(new Map<string, PreviewPronunciationResult>());
+  const previewSeqRef = useRef(0);
+  /** Bumped on every dictionary write: a cached «Слово» reading must not
+   *  outlive the save that changed it. */
+  const previewRevisionRef = useRef(0);
+
   const setStatusSafe = useCallback((next: SaveStatus) => {
     statusRef.current = next;
     setStatus(next);
   }, []);
+
+  /** Stop the preview audio and release its object URL. */
+  const releaseAudio = useCallback(() => {
+    const audio = audioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.removeAttribute('src');
+    }
+    if (audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current);
+      audioUrlRef.current = null;
+    }
+  }, []);
+
+  /** Abort the current preview (playing or in flight) and clear its state. */
+  const stopPreview = useCallback(() => {
+    // Invalidate an in-flight response: it must not start playing after the
+    // editor moved on.
+    previewSeqRef.current += 1;
+    releaseAudio();
+    setPreviewBusy(null);
+    setPreviewPlaying(null);
+  }, [releaseAudio]);
+
+  /** Pause narration, never stop it: the preview speaks over the pause and
+   *  the user resumes where they left off. A failed pause is reported without
+   *  failing the preview itself — the audio still plays. */
+  const pauseNarration = useCallback(async () => {
+    try {
+      await commands.pausePlayback();
+    } catch (e) {
+      notifications.show({
+        title: tt('dictionary.preview.pause_failed.title'),
+        message: formatError(e),
+        color: 'yellow',
+      });
+    }
+  }, [tt]);
+
+  /** Retire every cached reading: after a dictionary write (save or import)
+   *  the saved dictionary no longer matches what the cache holds. */
+  const bumpPreviewRevision = useCallback(() => {
+    previewRevisionRef.current += 1;
+    previewCacheRef.current.clear();
+  }, []);
+
+  /** Play (or stop) one field's pronunciation preview. */
+  const startPreview = useCallback(
+    (field: PreviewField) => {
+      if (!editor) return;
+      if (previewPlaying === field) {
+        stopPreview();
+        return;
+      }
+      const value = (field === 'from' ? editor.from : editor.to).trim();
+      const playable =
+        field === 'from' ? isSingleSourceToken(value) : isSpokenFormSynthesizable(value);
+      if (!playable) return;
+
+      const mode = field === 'from' ? 'normalize' : 'spoken';
+      // Cache identity: the request inputs plus the dictionary revision. The
+      // response's `spoken_text` is only known after the round trip, so it
+      // cannot be the lookup key; a save bumps the revision and retires the
+      // cached reading.
+      const key = `${previewEngine ?? 'unknown'}|${previewVoice}|${mode}|${value}|${
+        previewRevisionRef.current
+      }`;
+
+      void (async () => {
+        stopPreview();
+        setPreviewError(null);
+        const seq = previewSeqRef.current;
+        // Pause narration as the preview starts, not when synthesis returns:
+        // the click is the user asking to listen now, and a cache miss can
+        // take seconds. Narration is never resumed afterwards.
+        await pauseNarration();
+        if (seq !== previewSeqRef.current) return;
+
+        let result = takeCachedPreview(previewCacheRef.current, key);
+        if (!result) {
+          setPreviewBusy(field);
+          try {
+            result = await commands.previewPronunciation(value, mode);
+          } catch (e) {
+            if (seq !== previewSeqRef.current) return;
+            setPreviewBusy(null);
+            // No resume on failure: the paused narration is the user's own
+            // state, not a placeholder for the preview.
+            setPreviewError(tt('dictionary.preview.error', [formatError(e)]));
+            return;
+          }
+          if (seq !== previewSeqRef.current) return;
+          cachePreview(previewCacheRef.current, key, result);
+        }
+
+        const audio = audioRef.current;
+        if (!audio) {
+          setPreviewBusy(null);
+          return;
+        }
+        // Second pause, right before the audio starts: a cache hit skips the
+        // synthesis wait above, and a narration started in between must still
+        // yield to the preview.
+        await pauseNarration();
+        if (seq !== previewSeqRef.current) return;
+
+        releaseAudio();
+        const url = URL.createObjectURL(wavBlob(result.wav_base64));
+        audioUrlRef.current = url;
+        audio.src = url;
+        setPreviewBusy(null);
+        setPreviewPlaying(field);
+        try {
+          await audio.play();
+        } catch (e) {
+          // A fast play→stop (or a newer preview superseding this one)
+          // rejects the pending play: neither is a playback error, and a
+          // stale response must not clear the new preview's state.
+          if (seq !== previewSeqRef.current) return;
+          if (e instanceof DOMException && e.name === 'AbortError') return;
+          stopPreview();
+          setPreviewError(tt('dictionary.preview.error.play_failed'));
+        }
+      })();
+    },
+    [
+      editor,
+      previewPlaying,
+      stopPreview,
+      pauseNarration,
+      previewEngine,
+      previewVoice,
+      releaseAudio,
+      tt,
+    ],
+  );
+
+  /** One play/stop control, rendered in a field's `rightSection`. */
+  const renderPreviewControl = (field: PreviewField) => {
+    const value = (field === 'from' ? editor?.from : editor?.to)?.trim() ?? '';
+    const playable =
+      field === 'from' ? isSingleSourceToken(value) : isSpokenFormSynthesizable(value);
+    const busy = previewBusy === field;
+    const playing = previewPlaying === field;
+    // Both controls are blocked while either preview synthesizes.
+    const disabled = !playable || previewBusy !== null;
+    const label = playing
+      ? tt('dictionary.preview.stop')
+      : busy
+        ? tt('dictionary.preview.busy')
+        : tt(field === 'from' ? 'dictionary.preview.from.aria' : 'dictionary.preview.to.aria');
+    const hint = tt(
+      field === 'from' ? 'dictionary.preview.from.hint' : 'dictionary.preview.to.hint',
+    );
+    return (
+      <Tooltip
+        label={playing ? tt('dictionary.preview.stop') : hint}
+        multiline
+        w={260}
+        withArrow
+        zIndex={TOOLTIP_Z}
+      >
+        {/* The tooltip has to open while the field is empty, when the
+            control is disabled: a disabled Mantine button swallows pointer
+            events, so the span wrapper carries them. */}
+        <Box component="span" display="flex">
+          <ActionIcon
+            variant="subtle"
+            size="sm"
+            radius="xl"
+            aria-label={label}
+            disabled={disabled}
+            loading={busy}
+            data-preview={field}
+            onClick={() => startPreview(field)}
+          >
+            {playing ? <IconStop /> : <IconPlay />}
+          </ActionIcon>
+        </Box>
+      </Tooltip>
+    );
+  };
 
   const applyCollections = useCallback(
     (fresh: DictionaryCollectionDto[], target: DictionaryScope) => {
@@ -140,6 +395,11 @@ export function DictionaryModal({
     setEditor(null);
     setPendingImport(null);
     setStatusSafe('saved');
+    stopPreview();
+    setPreviewError(null);
+    setPreviewEngine(null);
+    setPreviewVoice('');
+    previewCacheRef.current.clear();
     setScope('global');
     commands
       .getDictionaries()
@@ -160,6 +420,35 @@ export function DictionaryModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opened]);
 
+  // The preview speaks with the engine actually serving this session — the
+  // same fallback reducer Settings uses, so a startup fallback (e.g. a missing
+  // Silero bundle serving Piper) names the engine that will really speak.
+  useEffect(() => {
+    if (!opened) return;
+    let cancelled = false;
+    Promise.all([commands.getConfig(), commands.getAvailableEngines()])
+      .then(([config, availability]) => {
+        if (cancelled) return;
+        const engine = computeEngineFormState(config, availability).engine;
+        setPreviewEngine(engine);
+        setPreviewVoice(voiceForEngine(engine, config));
+      })
+      .catch((e) => console.warn('dictionary preview: engine probe failed', e));
+    return () => {
+      cancelled = true;
+    };
+  }, [opened]);
+
+  // Closing the editor (or the dialog) stops the preview and releases the
+  // audio resource; a preview never outlives the form it belongs to.
+  const editorOpen = editor !== null;
+  useEffect(() => {
+    if (!opened || !editorOpen) stopPreview();
+  }, [opened, editorOpen, stopPreview]);
+
+  // Unmount: never leave an object URL behind.
+  useEffect(() => () => releaseAudio(), [releaseAudio]);
+
   /** Persist the full list (immediate save, no save button). The optimistic
    *  update lands before the request so consecutive actions always read the
    *  fresh list — a save-in-flight must never overwrite a newer edit. On
@@ -179,6 +468,7 @@ export function DictionaryModal({
           scope,
           next.map(({ from, to, forms }) => ({ from, to, forms })),
         );
+        bumpPreviewRevision();
         setStatusSafe('saved');
         onSaved?.();
         refreshCollections(scope).catch(() => {});
@@ -191,7 +481,7 @@ export function DictionaryModal({
         });
       }
     },
-    [onSaved, refreshCollections, scope, setStatusSafe, tt],
+    [bumpPreviewRevision, onSaved, refreshCollections, scope, setStatusSafe, tt],
   );
 
   const retrySave = useCallback(() => {
@@ -292,6 +582,7 @@ export function DictionaryModal({
       try {
         const report = await commands.importDictionary(path, mode, scope);
         await refreshCollections(scope);
+        bumpPreviewRevision();
         setStatusSafe('saved');
         onSaved?.();
         notifications.show({
@@ -311,7 +602,7 @@ export function DictionaryModal({
         });
       }
     },
-    [onSaved, pendingImport, refreshCollections, scope, setStatusSafe, tt],
+    [bumpPreviewRevision, onSaved, pendingImport, refreshCollections, scope, setStatusSafe, tt],
   );
 
   const handleExport = useCallback(async () => {
@@ -368,6 +659,13 @@ export function DictionaryModal({
       ? 'forms.collision'
       : null;
   const softWarning = validation && !validation.blocking ? validation.reason : null;
+  const previewHint =
+    previewEngine !== null && scope !== 'global' && scope !== previewEngine
+      ? tt('dictionary.preview.engine_hint', [
+          tt(SCOPE_LABEL_KEY[previewEngine]),
+          tt(SCOPE_LABEL_KEY[scope]),
+        ])
+      : null;
   const visible = sortAndFilterEntries(entries, search);
 
   return (
@@ -379,19 +677,30 @@ export function DictionaryModal({
       withinPortal
       zIndex={DIALOG_Z}
     >
+      {/* One audio element per dialog: starting a preview reuses it and
+          revokes the previous object URL (issue #349). */}
+      <audio
+        ref={audioRef}
+        hidden
+        onEnded={() => {
+          setPreviewPlaying(null);
+          releaseAudio();
+        }}
+        onError={() => {
+          stopPreview();
+          setPreviewError(tt('dictionary.preview.error.play_failed'));
+        }}
+      />
       <Stack gap="sm">
         <Select
           label={tt('dictionary.scope.label')}
           description={tt('dictionary.scope.description')}
           value={scope}
           onChange={(value) => changeScope(value as DictionaryScope | null)}
-          data={[
-            { value: 'global', label: tt('dictionary.scope.global') },
-            { value: 'silero_native', label: tt('dictionary.scope.silero_native') },
-            { value: 'silero', label: tt('dictionary.scope.silero') },
-            { value: 'piper', label: tt('dictionary.scope.piper') },
-            { value: 'teratts', label: tt('dictionary.scope.teratts') },
-          ]}
+          data={(Object.keys(SCOPE_LABEL_KEY) as DictionaryScope[]).map((value) => ({
+            value,
+            label: tt(SCOPE_LABEL_KEY[value]),
+          }))}
           allowDeselect={false}
           // The modal sits at DIALOG_Z; Mantine's default popover z-index
           // (300) would put the dropdown behind the overlay, making the
@@ -417,8 +726,12 @@ export function DictionaryModal({
           <Stack gap="xs" p="sm" bd="1px solid var(--mantine-color-default-border)">
             <TextInput
               label={tt('dictionary.form.from')}
+              rightSectionWidth={76}
+              rightSectionPointerEvents="all"
               rightSection={
-                <Tooltip
+                <Group gap={2} wrap="nowrap">
+                  {renderPreviewControl('from')}
+                  <Tooltip
                   label={tt('dictionary.form.from.hint')}
                   multiline
                   w={260}
@@ -433,7 +746,8 @@ export function DictionaryModal({
                   >
                     ?
                   </ActionIcon>
-                </Tooltip>
+                  </Tooltip>
+                </Group>
               }
               placeholder={tt('dictionary.form.from.placeholder')}
               value={editor.from}
@@ -447,8 +761,12 @@ export function DictionaryModal({
             />
             <TextInput
               label={tt('dictionary.form.to')}
+              rightSectionWidth={76}
+              rightSectionPointerEvents="all"
               rightSection={
-                <Tooltip
+                <Group gap={2} wrap="nowrap">
+                  {renderPreviewControl('to')}
+                  <Tooltip
                   label={tt('dictionary.form.stress.hint')}
                   multiline
                   w={260}
@@ -463,7 +781,8 @@ export function DictionaryModal({
                   >
                     ?
                   </ActionIcon>
-                </Tooltip>
+                  </Tooltip>
+                </Group>
               }
               placeholder={tt('dictionary.form.to.placeholder')}
               value={editor.to}
@@ -477,6 +796,18 @@ export function DictionaryModal({
                 softWarning !== null ? tt(VALIDATION_KEY[softWarning]) : undefined
               }
             />
+            {/* Directly under the field they belong to: the hint explains what
+                the preview will say, the error replaces it on failure. */}
+            {previewHint !== null && (
+              <Text size="xs" c="dimmed" data-preview-hint>
+                {previewHint}
+              </Text>
+            )}
+            {previewError !== null && (
+              <Text size="xs" c="red" data-preview-error>
+                {previewError}
+              </Text>
+            )}
             <TextInput
               label={tt('dictionary.form.forms')}
               rightSection={
