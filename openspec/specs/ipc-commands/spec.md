@@ -575,10 +575,9 @@ restart. A synthesis already in flight when the settings change MAY finish on
 the previous values.
 
 When the patch carries `reading_width` or `reading_scale`, `update_config`
-SHALL canonicalize them before persisting: an unknown `reading_width` resolves
-to `"narrow"` and a `reading_scale` outside 80–200 clamps to the nearest bound.
-The persisted config returned by `get_config()` SHALL reflect the canonical
-values.
+SHALL persist them canonically and `get_config()` SHALL return the persisted
+values; the canonicalization rules are defined once in the storage capability
+(`Config File Schema`).
 
 #### Scenario: partial patch updates only named fields
 - GIVEN a stored config with `theme: "auto"`
@@ -603,12 +602,10 @@ values.
 - WHEN `update_config` is invoked with `{ code_block_mode: "read" }`
 - THEN a subsequent `preview_normalize` call reads fenced code blocks in full mode, without restarting the app
 
-#### Scenario: reading typography patch is canonicalized
-
+#### Scenario: reading typography persists through a patch
 - GIVEN a stored config with the default reading typography
-- WHEN `update_config` is invoked with `{ reading_width: "huge", reading_scale: 500 }`
-- THEN the stored config has `reading_width: "narrow"` and `reading_scale: 200`
-- AND a following `get_config` returns those canonical values
+- WHEN `update_config` is invoked with `{ reading_width: "wide", reading_scale: 125 }`
+- THEN a following `get_config` returns `reading_width: "wide"` and `reading_scale: 125`
 
 ### Requirement: Engine Availability Command
 
