@@ -36,6 +36,68 @@
   color: var(--mantine-color-dimmed);
 }
 
+/* Per-card synthesis stage line: the indeterminate bar, the stage text and
+   the always-visible cancel action. The cancel button deliberately sits
+   outside `.actions`, which only fades in on hover/selection. */
+.synthesisLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  min-width: 0;
+  margin-top: 2px;
+}
+
+.synthesisTrack {
+  flex: 1 1 0;
+  min-width: 16px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: var(--mantine-radius-xl);
+  background-color: var(--mantine-color-default-border);
+}
+
+.synthesisBar {
+  width: 35%;
+  height: 100%;
+  border-radius: inherit;
+  background-color: var(--mantine-color-blue-5);
+  animation: synthesis-indeterminate 1.4s ease-in-out infinite;
+}
+
+@keyframes synthesis-indeterminate {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+
+/* No sliding segment when motion is reduced: a dim full bar still reads as
+   "in progress" without animation. */
+@media (prefers-reduced-motion: reduce) {
+  .synthesisBar {
+    width: 100%;
+    opacity: 0.5;
+    animation: none;
+  }
+}
+
+.synthesisStage {
+  flex: 0 0 auto;
+  font-size: var(--mantine-font-size-xs);
+  line-height: var(--mantine-line-height-xs);
+  color: var(--mantine-color-dimmed);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.synthesisCancel {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
 /* Mantine's 14px line box on the 9px uppercase label leaves the Cyrillic
    capitals about 1px below the optical centre of the 16px pill. Shift the
    label, not the pill, so the dot/loader and the capsule stay aligned. */

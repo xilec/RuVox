@@ -7,6 +7,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 ## [Unreleased]
 
 ### Added
+- **Synthesis progress and inline cancel in the queue** — a running entry
+  shows «Синтез… 0:42», a queued one «В очереди», and both offer «Отменить» (#352).
 - **Synthesis failures stay on the queue card** — the stored engine reason and
   a «Повторить» action, plus an amber note when a regeneration failed (#351).
 - **Hyphenated dictionary words** — a source word may now contain an internal
