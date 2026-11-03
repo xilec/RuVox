@@ -6,10 +6,10 @@
 //! a single classification step rather than competing regex phases.
 
 use super::lexicon::{self, Currency, MONTHS_GENITIVE, MONTHS_NOMINATIVE, Reference, Scale, Unit};
-use super::morphology::{self, Case, Gender};
+use super::morphology::{self, Case, Gender, ends_in_one};
 use super::parse::{
-    Approx, Body, Date, MixedFraction, Number, Sign, Span, Time, Trailing, TrailingKind,
-    read_digits, read_word, skip_spaces,
+    Approx, Body, Date, MixedFraction, Number, OrdinalSuffix, Sign, Span, Time, Trailing,
+    TrailingKind, is_year, read_digits, read_word, skip_spaces,
 };
 
 /// Percent noun forms by count.
@@ -29,10 +29,12 @@ impl Span {
             Body::Date(date) => Some(read_date(*date, text, self.start)),
             Body::YearMonth { year, month } => Some(read_year_month(*year, *month)),
             Body::Range { left, right } => read_range(self, left, right, text, units),
-            Body::Reference { kind, number } => Some(read_reference(*kind, number)),
+            Body::Reference { kind, number } => read_reference(*kind, number),
             Body::Phone { groups, labeled } => Some(read_phone(groups, *labeled)),
             Body::City => Some("город".to_string()),
-            Body::Roman(value) => Some(read_roman(*value, text, self.end)),
+            Body::Roman { value, abbreviated } => {
+                Some(read_roman(*value, *abbreviated, text, self.start, self.end))
+            }
         }
     }
 }
@@ -40,7 +42,7 @@ impl Span {
 // ── Numbers ──────────────────────────────────────────────────────────────────
 
 fn read_number(span: &Span, number: &Number, text: &str, units: bool) -> Option<String> {
-    if !units && owns_measurement(span.trailing) {
+    if !units && (owns_measurement(span.trailing) || number.currency_prefix.is_some()) {
         return None;
     }
     let forced = match number.approx {
@@ -58,23 +60,31 @@ fn read_number(span: &Span, number: &Number, text: &str, units: bool) -> Option<
     } else if let Some(frac) = &number.comma_frac {
         read_fraction(number, frac, span.trailing, text, span, forced)
     } else if !number.slash_groups.is_empty() {
-        read_slash(number, span.trailing)
+        read_slash(number, span.trailing, text, span, forced)
     } else if let Some(half) = number.half {
-        read_mixed(number, half)
+        read_mixed(number, half, span.trailing, text, span, forced)
     } else {
         read_plain(number, span.trailing, text, span, forced)
     }?;
 
     if let Some(currency) = number.currency_prefix {
-        let value = value_of(number);
-        let (_, _, gen_pl, _) = currency.forms();
+        let value = readable_value(number)?;
+        let case = case_at(text, span.start, forced);
+        let (nom, gen_sg, gen_pl, _) = currency.forms();
+        // A fraction already names the quantity ("полтора доллара"); a whole
+        // count agrees with the currency noun ("два доллара", "двадцать один
+        // доллар", "около одного доллара").
+        let noun = if has_fraction(number) {
+            if case == Case::Genitive {
+                gen_pl
+            } else {
+                gen_sg
+            }
+        } else {
+            noun_after_count(value, (nom, gen_sg, gen_pl), case)
+        };
         reading.push(' ');
-        reading.push_str(gen_pl);
-        if value == 1 {
-            // The prefix form is a count: "один доллар", not "один долларов".
-            reading.truncate(reading.len() - gen_pl.len());
-            reading.push_str(currency.forms().0);
-        }
+        reading.push_str(noun);
     }
 
     if let Some(approx) = number.approx {
@@ -108,6 +118,12 @@ fn owns_measurement(trailing: Option<Trailing>) -> bool {
     })
 }
 
+/// Whether the reading of `number` is a fractional quantity rather than a
+/// whole count.
+fn has_fraction(number: &Number) -> bool {
+    number.comma_frac.is_some() || number.half.is_some() || !number.slash_groups.is_empty()
+}
+
 fn read_plain(
     number: &Number,
     trailing: Option<Trailing>,
@@ -115,39 +131,43 @@ fn read_plain(
     span: &Span,
     forced: Option<Case>,
 ) -> Option<String> {
-    let value = value_of(number);
     let case = case_at(text, span.start, forced);
     match trailing.map(|trailing| trailing.kind) {
-        Some(TrailingKind::Percent) => Some(read_percent(value, case)),
-        Some(TrailingKind::Unit(unit)) => Some(read_unit(value, unit, case)),
-        Some(TrailingKind::Currency(currency)) => Some(read_currency(value, currency, case)),
-        Some(TrailingKind::Scale(scale)) => Some(read_scale(
-            value,
-            scale,
-            trailing.expect("a scale trailing").currency,
-            case,
-        )),
-        Some(TrailingKind::Plus) => Some(format!(
-            "{} и больше",
-            morphology::count(
-                value,
-                lexicon::noun_gender(&next_word(text, span.end)),
-                case
-            )
-        )),
-        Some(TrailingKind::YearAbbreviation) => is_year(value).then(|| {
-            format!(
-                "{} года",
-                morphology::ordinal(value, Gender::Masculine, Case::Genitive)
-            )
-        }),
-        Some(TrailingKind::YearRange) => is_year(value).then(|| {
-            format!(
-                "{} год",
-                morphology::ordinal(value, Gender::Masculine, Case::Accusative)
-            )
-        }),
         None => read_bare_number(number, text, span, forced),
+        Some(kind) => {
+            let value = readable_value(number)?;
+            match kind {
+                TrailingKind::Percent => Some(read_percent(value, case)),
+                TrailingKind::Unit(unit) => Some(read_unit(value, unit, case)),
+                TrailingKind::Currency(currency) => Some(read_currency(value, currency, case)),
+                TrailingKind::Scale(scale) => Some(read_scale(
+                    value,
+                    scale,
+                    trailing.expect("a scale trailing").currency,
+                    case,
+                )),
+                TrailingKind::Plus => Some(format!(
+                    "{} и больше",
+                    morphology::count(
+                        value,
+                        lexicon::noun_gender(&next_word(text, span.end)),
+                        case
+                    )
+                )),
+                TrailingKind::YearAbbreviation => is_year(value).then(|| {
+                    format!(
+                        "{} года",
+                        morphology::ordinal(value, Gender::Masculine, Case::Genitive)
+                    )
+                }),
+                TrailingKind::YearRange => is_year(value).then(|| {
+                    format!(
+                        "{} год",
+                        morphology::ordinal(value, Gender::Masculine, Case::Accusative)
+                    )
+                }),
+            }
+        }
     }
 }
 
@@ -157,12 +177,17 @@ fn read_bare_number(
     span: &Span,
     forced: Option<Case>,
 ) -> Option<String> {
-    let value = value_of(number);
     let digits = number.int.as_str();
 
     if digits.len() >= 3 && digits.starts_with('0') {
         return Some(digit_words(digits));
     }
+
+    let Some(value) = readable_value(number) else {
+        // The cardinal builder names values up to 999_999_999_999; a longer
+        // magnitude is still read, ID-style, one digit at a time.
+        return Some(digit_words(digits));
+    };
 
     if is_day_range_left(value, text, span) {
         return Some(morphology::ordinal(value, Gender::Neuter, Case::Genitive));
@@ -186,7 +211,7 @@ fn read_bare_number(
 /// a year word next to it, a month or season before it, or the left bound of
 /// a year range.
 fn read_year(number: &Number, text: &str, span: &Span) -> Option<String> {
-    let value = value_of(number);
+    let value = readable_value(number)?;
     if number.int.len() != 4 || !is_year(value) {
         return None;
     }
@@ -233,18 +258,10 @@ fn year_word_case(token: &str, prev: &str) -> Option<Case> {
 }
 
 fn read_percent(value: u64, case: Case) -> String {
-    let noun = if case == Case::Genitive {
-        if ends_in_one(value) {
-            PERCENT.1
-        } else {
-            PERCENT.2
-        }
-    } else {
-        decline_numbered(value, PERCENT)
-    };
     format!(
-        "{} {noun}",
-        morphology::count(value, Gender::Masculine, case)
+        "{} {}",
+        morphology::count(value, Gender::Masculine, case),
+        noun_after_count(value, PERCENT, case)
     )
 }
 
@@ -257,11 +274,7 @@ fn read_unit(value: u64, unit: Unit, case: Case) -> String {
             forms.sg_nom
         );
     }
-    let noun = if case == Case::Genitive {
-        forms.pl_gen
-    } else {
-        decline_numbered(value, (forms.sg_nom, forms.sg_gen, forms.pl_gen))
-    };
+    let noun = noun_after_count(value, (forms.sg_nom, forms.sg_gen, forms.pl_gen), case);
     let mut out = format!("{} {noun}", morphology::count(value, forms.gender, case));
     if !forms.tail.is_empty() {
         out.push(' ');
@@ -272,25 +285,22 @@ fn read_unit(value: u64, unit: Unit, case: Case) -> String {
 
 fn read_currency(value: u64, currency: Currency, case: Case) -> String {
     let (nom, gen_sg, gen_pl, gender) = currency.forms();
-    let noun = if case == Case::Genitive {
-        gen_pl
-    } else {
-        decline_numbered(value, (nom, gen_sg, gen_pl))
-    };
+    let noun = noun_after_count(value, (nom, gen_sg, gen_pl), case);
     format!("{} {noun}", morphology::count(value, gender, case))
 }
 
 fn read_scale(value: u64, scale: Scale, currency: Option<Currency>, case: Case) -> String {
     let (nom, gen_sg, gen_pl, gender) = scale.forms();
     let mut out = if value == 1 {
-        nom.to_string()
+        // A lone scale word drops "один" but keeps the case: "около
+        // миллиона", not "около миллион".
+        noun_after_count(1, (nom, gen_sg, gen_pl), case).to_string()
     } else {
-        let noun = if case == Case::Genitive {
-            gen_pl
-        } else {
-            decline_numbered(value, (nom, gen_sg, gen_pl))
-        };
-        format!("{} {noun}", morphology::count(value, gender, case))
+        format!(
+            "{} {}",
+            morphology::count(value, gender, case),
+            noun_after_count(value, (nom, gen_sg, gen_pl), case)
+        )
     };
     if let Some(currency) = currency {
         let (_, _, currency_pl, _) = currency.forms();
@@ -308,105 +318,197 @@ fn read_fraction(
     span: &Span,
     forced: Option<Case>,
 ) -> Option<String> {
-    let int = value_of(number);
+    let int = readable_value(number)?;
+    if frac.len() > MAX_FRACTION_DIGITS {
+        return Some(read_technical_fraction(int, frac, trailing));
+    }
     let case = case_at(text, span.start, forced);
-    // A scale word can carry a currency after it ("1,5 млн $").
-    let extra_currency = match trailing {
-        Some(Trailing {
-            currency: Some(currency),
-            ..
-        }) => Some(currency),
-        _ => None,
-    };
-    let (gender, noun) = match trailing.map(|trailing| trailing.kind) {
+    let tail = trailing_reading(trailing, text, span, case);
+    let mut out = morphology::fraction(int, frac, tail.gender, case);
+    if let Some(suffix) = tail.suffix {
+        out.push(' ');
+        out.push_str(&suffix);
+    }
+    Some(out)
+}
+
+/// Fractional tails longer than this are not spoken as a natural fraction
+/// ("N целых M миллионных"); the technical "точка" register reads them digit
+/// by digit instead.
+const MAX_FRACTION_DIGITS: usize = 6;
+
+fn read_technical_fraction(int: u64, frac: &str, trailing: Option<Trailing>) -> String {
+    let mut out = format!(
+        "{} точка {}",
+        morphology::count(int, Gender::Masculine, Case::Nominative),
+        digit_words(frac)
+    );
+    match trailing.map(|trailing| trailing.kind) {
+        Some(TrailingKind::Percent) => out.push_str(" процентов"),
+        Some(TrailingKind::Unit(unit)) if unit.forms.fixed => {
+            out.push(' ');
+            out.push_str(unit.forms.sg_nom);
+        }
         Some(TrailingKind::Unit(unit)) => {
+            out.push(' ');
+            out.push_str(unit.forms.pl_gen);
+        }
+        Some(TrailingKind::Currency(currency)) => {
+            out.push(' ');
+            out.push_str(currency.forms().2);
+        }
+        _ => {}
+    }
+    out
+}
+
+fn read_slash(
+    number: &Number,
+    trailing: Option<Trailing>,
+    text: &str,
+    span: &Span,
+    forced: Option<Case>,
+) -> Option<String> {
+    let numerator = readable_value(number)?;
+    let denominator: u64 = number.slash_groups.first()?.parse().ok()?;
+    let case = case_at(text, span.start, forced);
+    let mut out = morphology::simple_fraction(numerator, denominator)?;
+    let tail = trailing_reading(trailing, text, span, case);
+    if let Some(suffix) = tail.suffix {
+        out.push(' ');
+        out.push_str(&suffix);
+    }
+    Some(out)
+}
+
+fn read_mixed(
+    number: &Number,
+    half: MixedFraction,
+    trailing: Option<Trailing>,
+    text: &str,
+    span: &Span,
+    forced: Option<Case>,
+) -> Option<String> {
+    let int = readable_value(number)?;
+    let case = case_at(text, span.start, forced);
+    let tail = trailing_reading(trailing, text, span, case);
+    // A bare mixed fraction reads "две с половиной"; with a unit the
+    // integer part agrees with the unit ("два с половиной километра").
+    let gender = if trailing.is_some() {
+        tail.gender
+    } else {
+        Gender::Feminine
+    };
+    let mut out = match half {
+        MixedFraction::Half => morphology::fraction(int, "5", gender, case),
+        MixedFraction::Quarter if int == 0 => "одна четвёртая".to_string(),
+        MixedFraction::Quarter => format!(
+            "{} с четвертью",
+            morphology::count(int, gender, Case::Nominative)
+        ),
+        MixedFraction::ThreeQuarters if int == 0 => "три четверти".to_string(),
+        MixedFraction::ThreeQuarters => format!(
+            "{} и три четверти",
+            morphology::count(int, gender, Case::Nominative)
+        ),
+    };
+    if let Some(suffix) = tail.suffix {
+        out.push(' ');
+        out.push_str(&suffix);
+    }
+    Some(out)
+}
+
+/// Spoken noun after a fractional reading, and the gender the fraction agrees
+/// with.
+struct QuantityTail {
+    gender: Gender,
+    suffix: Option<String>,
+}
+
+/// Noun a fractional quantity takes from its trailing construct.
+///
+/// A fraction ends in "-ая/-их", so the noun stays in the genitive singular
+/// ("одна вторая килограмма"), or in the genitive plural in oblique contexts
+/// ("около полутора долларов").
+fn trailing_reading(
+    trailing: Option<Trailing>,
+    text: &str,
+    span: &Span,
+    case: Case,
+) -> QuantityTail {
+    let Some(trailing) = trailing else {
+        let next = next_word(text, span.end);
+        return QuantityTail {
+            gender: lexicon::noun_gender(&next),
+            suffix: None,
+        };
+    };
+    match trailing.kind {
+        TrailingKind::Unit(unit) => {
             if unit.forms.fixed {
-                return Some(format!(
-                    "{} {}",
-                    morphology::fraction(int, frac, unit.forms.gender, case),
-                    unit.forms.sg_nom
-                ));
+                return QuantityTail {
+                    gender: unit.forms.gender,
+                    suffix: Some(unit.forms.sg_nom.to_string()),
+                };
             }
             let noun = if case == Case::Genitive {
                 unit.forms.pl_gen
             } else {
                 unit.forms.sg_gen
             };
-            (unit.forms.gender, Some(append_tail(noun, unit.forms.tail)))
+            QuantityTail {
+                gender: unit.forms.gender,
+                suffix: Some(append_tail(noun, unit.forms.tail)),
+            }
         }
-        Some(TrailingKind::Scale(scale)) => {
+        TrailingKind::Scale(scale) => {
             let forms = scale.forms();
             let noun = if case == Case::Genitive {
                 forms.2
             } else {
                 forms.1
             };
-            (forms.3, Some(noun.to_string()))
+            let suffix = match trailing.currency {
+                Some(currency) => format!("{noun} {}", currency.forms().2),
+                None => noun.to_string(),
+            };
+            QuantityTail {
+                gender: forms.3,
+                suffix: Some(suffix),
+            }
         }
-        Some(TrailingKind::Currency(currency)) => {
+        TrailingKind::Currency(currency) => {
             let forms = currency.forms();
             let noun = if case == Case::Genitive {
                 forms.2
             } else {
                 forms.1
             };
-            (forms.3, Some(noun.to_string()))
+            QuantityTail {
+                gender: forms.3,
+                suffix: Some(noun.to_string()),
+            }
         }
-        Some(TrailingKind::Percent) => {
+        TrailingKind::Percent => {
             let noun = if case == Case::Genitive {
                 PERCENT.2
             } else {
                 PERCENT.1
             };
-            (Gender::Masculine, Some(noun.to_string()))
+            QuantityTail {
+                gender: Gender::Masculine,
+                suffix: Some(noun.to_string()),
+            }
         }
-        _ => {
+        TrailingKind::YearAbbreviation | TrailingKind::YearRange | TrailingKind::Plus => {
             let next = next_word(text, span.end);
-            (lexicon::noun_gender(&next), None)
+            QuantityTail {
+                gender: lexicon::noun_gender(&next),
+                suffix: None,
+            }
         }
-    };
-    let mut out = morphology::fraction(int, frac, gender, case);
-    if let Some(noun) = noun {
-        out.push(' ');
-        out.push_str(&noun);
     }
-    if let Some(currency) = extra_currency {
-        out.push(' ');
-        out.push_str(currency.forms().2);
-    }
-    Some(out)
-}
-
-fn read_slash(number: &Number, trailing: Option<Trailing>) -> Option<String> {
-    let numerator = value_of(number);
-    let denominator: u64 = number.slash_groups.first()?.parse().ok()?;
-    let mut out = morphology::simple_fraction(numerator, denominator)?;
-    if let Some(Trailing {
-        kind: TrailingKind::Percent,
-        ..
-    }) = trailing
-    {
-        out.push_str(" процента");
-    }
-    Some(out)
-}
-
-fn read_mixed(number: &Number, half: MixedFraction) -> Option<String> {
-    let int = value_of(number);
-    let reading = match half {
-        MixedFraction::Half => morphology::fraction(int, "5", Gender::Feminine, Case::Nominative),
-        MixedFraction::Quarter if int == 0 => "одна четвёртая".to_string(),
-        MixedFraction::Quarter => format!(
-            "{} с четвертью",
-            morphology::count(int, Gender::Feminine, Case::Nominative)
-        ),
-        MixedFraction::ThreeQuarters if int == 0 => "три четверти".to_string(),
-        MixedFraction::ThreeQuarters => format!(
-            "{} и три четверти",
-            morphology::count(int, Gender::Feminine, Case::Nominative)
-        ),
-    };
-    Some(reading)
 }
 
 fn read_leading_dot(number: &Number, trailing: Option<Trailing>) -> Option<String> {
@@ -448,10 +550,14 @@ fn read_dotted(
         });
     }
 
-    let mut out = technical(number);
+    let mut out = technical(number)?;
     if let Some(suffix) = number.version_suffix {
         out.push(' ');
         out.push_str(suffix);
+        if let Some(digits) = &number.version_suffix_digits {
+            out.push(' ');
+            out.push_str(&version_digits(digits));
+        }
     }
     match trailing.map(|trailing| trailing.kind) {
         Some(TrailingKind::Percent) => out.push_str(" процентов"),
@@ -472,26 +578,49 @@ fn read_dotted(
     Some(out)
 }
 
-fn technical(number: &Number) -> String {
+fn technical(number: &Number) -> Option<String> {
     let mut parts = vec![morphology::count(
-        value_of(number),
+        readable_value(number)?,
         Gender::Masculine,
         Case::Nominative,
     )];
     for group in &number.dot_groups {
-        parts.push(morphology::count(
-            group.parse().unwrap_or(0),
+        parts.push(group_reading(group));
+    }
+    Some(parts.join(" точка "))
+}
+
+/// One dotted group: a leading zero carries information ("v1.02"), so the
+/// group is read digit by digit instead of as a number.
+fn group_reading(group: &str) -> String {
+    if group.len() > 1 && group.starts_with('0') {
+        return digit_words(group);
+    }
+    morphology::count(
+        group.parse().unwrap_or(0),
+        Gender::Masculine,
+        Case::Nominative,
+    )
+}
+
+/// Digits of a pre-release suffix ("1.2.0-rc1"): a count until a leading zero
+/// or a long tail makes digit-by-digit the safer reading.
+fn version_digits(digits: &str) -> String {
+    if (digits.len() > 1 && digits.starts_with('0')) || digits.len() > 9 {
+        digit_words(digits)
+    } else {
+        morphology::count(
+            digits.parse().unwrap_or(0),
             Gender::Masculine,
             Case::Nominative,
-        ));
+        )
     }
-    parts.join(" точка ")
 }
 
 // ── Suffixes ─────────────────────────────────────────────────────────────────
 
-fn read_suffix(number: &Number, suffix: &str, text: &str, span: &Span) -> Option<String> {
-    let value = value_of(number);
+fn read_suffix(number: &Number, suffix: OrdinalSuffix, text: &str, span: &Span) -> Option<String> {
+    let value = readable_value(number)?;
     if let Some(case) = decade_case(value, suffix, text, span.end) {
         if let Some(word) = morphology::decade(value, case) {
             return Some(word);
@@ -499,7 +628,7 @@ fn read_suffix(number: &Number, suffix: &str, text: &str, span: &Span) -> Option
     }
 
     let reading = match suffix {
-        "х" => {
+        OrdinalSuffix::AmbiguousX => {
             let next = next_word(text, span.end);
             if lexicon::plural_ordinal_head(&next) {
                 morphology::ordinal_plural(value, Case::Prepositional)
@@ -507,70 +636,82 @@ fn read_suffix(number: &Number, suffix: &str, text: &str, span: &Span) -> Option
                 morphology::count(value, lexicon::noun_gender(&next), Case::Genitive)
             }
         }
-        "ми" | "ыми" | "ими" => morphology::ordinal_plural(value, Case::Instrumental),
-        "ые" | "ие" => morphology::ordinal_plural(value, Case::Nominative),
-        "ых" | "их" => morphology::ordinal_plural(value, Case::Genitive),
-        "ым" | "им" => morphology::ordinal_plural(value, Case::Dative),
-        "м" => {
+        OrdinalSuffix::Instrumental => morphology::ordinal_plural(value, Case::Instrumental),
+        OrdinalSuffix::Nominative => morphology::ordinal_plural(value, Case::Nominative),
+        OrdinalSuffix::Genitive => morphology::ordinal_plural(value, Case::Genitive),
+        OrdinalSuffix::Dative => morphology::ordinal_plural(value, Case::Dative),
+        OrdinalSuffix::AmbiguousM => {
             let next = next_token(text, span.end);
             let prev = prev_word(text, span.start);
-            let case = year_word_case(&next, &prev).unwrap_or(
-                if matches!(prev.as_str(), "в" | "во" | "на" | "о" | "об" | "при" | "по")
-                {
+            let case = year_word_case(&next, &prev).unwrap_or_else(|| {
+                if matches!(prev.as_str(), "в" | "во" | "на" | "по") {
                     Case::Prepositional
                 } else {
-                    Case::Instrumental
-                },
-            );
+                    lexicon::preposition_case(&prev).unwrap_or(Case::Instrumental)
+                }
+            });
             morphology::ordinal(value, Gender::Masculine, case)
         }
-        "ом" | "ем" => morphology::ordinal(value, Gender::Masculine, Case::Prepositional),
-        "го" | "его" | "ого" => {
+        OrdinalSuffix::MascPrepositional => {
+            morphology::ordinal(value, Gender::Masculine, Case::Prepositional)
+        }
+        OrdinalSuffix::MascGenitive => {
             morphology::ordinal(value, Gender::Masculine, Case::Genitive)
         }
-        "му" | "ому" => morphology::ordinal(value, Gender::Masculine, Case::Dative),
+        OrdinalSuffix::MascDative => morphology::ordinal(value, Gender::Masculine, Case::Dative),
         // A bare "-й" is ambiguous: a masculine nominative ("5-й день")
         // or a feminine oblique form before a feminine head ("из 5-й главы").
-        "й" => {
+        OrdinalSuffix::AmbiguousFeminine => {
             let next = next_word(text, span.end);
             let feminine = lexicon::ordinal_head(&next) == Some(Gender::Feminine)
                 || lexicon::noun_gender(&next) == Gender::Feminine;
             if feminine {
                 let prev = prev_word(text, span.start);
-                let case = match prev.as_str() {
-                    "в" | "во" | "на" | "о" | "об" | "при" => Case::Prepositional,
-                    _ if lexicon::genitive_trigger(&prev) => Case::Genitive,
-                    _ => Case::Nominative,
+                let case = if matches!(prev.as_str(), "в" | "во" | "на") {
+                    Case::Prepositional
+                } else {
+                    lexicon::context_case(&prev).unwrap_or(Case::Nominative)
                 };
                 morphology::ordinal(value, Gender::Feminine, case)
             } else {
                 morphology::ordinal(value, Gender::Masculine, Case::Nominative)
             }
         }
-        "ый" | "ий" => morphology::ordinal(value, Gender::Masculine, Case::Nominative),
+        OrdinalSuffix::MascNominative => {
+            morphology::ordinal(value, Gender::Masculine, Case::Nominative)
+        }
         // "-ой" is never the masculine nominative of a numeral: it is the
         // feminine oblique form ("к 5-ой главе", "в 5-ой").
-        "ой" => morphology::ordinal(value, Gender::Feminine, Case::Prepositional),
-        "я" | "ая" => morphology::ordinal(value, Gender::Feminine, Case::Nominative),
-        "ю" | "ую" => morphology::ordinal(value, Gender::Feminine, Case::Accusative),
-        "е" | "ое" => morphology::ordinal(value, Gender::Neuter, Case::Nominative),
-        _ => morphology::ordinal(value, Gender::Masculine, Case::Nominative),
+        OrdinalSuffix::FeminineOblique => {
+            morphology::ordinal(value, Gender::Feminine, Case::Prepositional)
+        }
+        OrdinalSuffix::FeminineNominative => {
+            morphology::ordinal(value, Gender::Feminine, Case::Nominative)
+        }
+        OrdinalSuffix::FeminineAccusative => {
+            morphology::ordinal(value, Gender::Feminine, Case::Accusative)
+        }
+        OrdinalSuffix::NeuterNominative => {
+            morphology::ordinal(value, Gender::Neuter, Case::Nominative)
+        }
     };
     Some(reading)
 }
 
 /// A decade suffix (`1990-х`, `2000-е`) reads as a decade word unless the head
 /// noun makes it an ordinal ("20-е место").
-fn decade_case(value: u64, suffix: &str, text: &str, end: usize) -> Option<Case> {
+fn decade_case(value: u64, suffix: OrdinalSuffix, text: &str, end: usize) -> Option<Case> {
     let case = match suffix {
-        "х" | "ых" => Case::Prepositional,
-        "е" | "ые" => Case::Nominative,
+        OrdinalSuffix::AmbiguousX | OrdinalSuffix::Genitive => Case::Prepositional,
+        OrdinalSuffix::NeuterNominative | OrdinalSuffix::Nominative => Case::Nominative,
         _ => return None,
     };
-    if (1900..=2099).contains(&value) && value % 10 == 0 {
-        return Some(case);
+    if (1900..=2099).contains(&value) {
+        // The decade stem is the single source of truth: a value it cannot
+        // name must fall through to a cardinal reading, never to a decade one.
+        return morphology::is_decade(value).then_some(case);
     }
-    if (20..=90).contains(&value) && value % 10 == 0 {
+    if (20..=90).contains(&value) && morphology::is_decade(value) {
         let next = next_word(text, end);
         let year_head = next.is_empty()
             || matches!(
@@ -588,10 +729,10 @@ fn decade_case(value: u64, suffix: &str, text: &str, end: usize) -> Option<Case>
 
 fn read_date(date: Date, text: &str, start: usize) -> String {
     let prev = prev_word(text, start);
-    let case = match prev.as_str() {
-        "от" | "до" | "с" | "со" | "из" | "около" => Case::Genitive,
-        "по" => Case::Accusative,
-        _ => Case::Nominative,
+    let case = if prev == "по" {
+        Case::Accusative
+    } else {
+        lexicon::context_case(&prev).unwrap_or(Case::Nominative)
     };
     let day = morphology::ordinal(u64::from(date.day), Gender::Neuter, case);
     let month = MONTHS_GENITIVE[(date.month - 1) as usize];
@@ -612,15 +753,32 @@ fn read_year_month(year: u32, month: u32) -> String {
     )
 }
 
-fn read_roman(value: u32, text: &str, end: usize) -> String {
-    let word_pos = skip_spaces(text, end);
-    let (_, word) = read_word(text, word_pos);
-    let case = match word {
-        "веке" | "в." => Case::Prepositional,
-        "века" | "веков" => Case::Genitive,
-        _ => Case::Nominative,
+fn read_roman(value: u32, abbreviated: bool, text: &str, start: usize, end: usize) -> String {
+    let case = if abbreviated {
+        // "XX в." — the case comes from the preposition before the numeral
+        // ("в двадцатом веке"), not from the abbreviation itself.
+        lexicon::calendar_case(&prev_word(text, start)).unwrap_or(Case::Nominative)
+    } else {
+        let word_pos = skip_spaces(text, end);
+        let (_, word) = read_word(text, word_pos);
+        match word.to_lowercase().as_str() {
+            "веке" => Case::Prepositional,
+            "века" | "веков" => Case::Genitive,
+            _ => Case::Nominative,
+        }
     };
-    morphology::ordinal(u64::from(value), Gender::Masculine, case)
+    let mut reading = morphology::ordinal(u64::from(value), Gender::Masculine, case);
+    if abbreviated {
+        reading.push(' ');
+        reading.push_str(match case {
+            Case::Genitive => "века",
+            Case::Dative => "веку",
+            Case::Instrumental => "веком",
+            Case::Prepositional => "веке",
+            Case::Nominative | Case::Accusative => "век",
+        });
+    }
+    reading
 }
 
 /// A day that opens a "с … по …" span whose right bound is a day and a month
@@ -657,20 +815,22 @@ fn read_range(
     text: &str,
     units: bool,
 ) -> Option<String> {
-    let l = value_of(left);
-    let r = value_of(right);
+    let (Some(l), Some(r)) = (readable_value(left), readable_value(right)) else {
+        return None;
+    };
     let plain_bounds = left.is_plain_integer() && right.is_plain_integer();
+    let year_range = matches!(
+        span.trailing.map(|trailing| trailing.kind),
+        Some(TrailingKind::YearRange)
+    );
+    // "годы"/"гг." belongs to year bounds only; claiming a non-year range
+    // would drop the noun.
+    if year_range && !(plain_bounds && is_year(l) && is_year(r)) {
+        return None;
+    }
 
-    if plain_bounds
-        && is_year(l)
-        && is_year(r)
-        && (1900..=2100).contains(&l)
-        && (1900..=2100).contains(&r)
-    {
-        if matches!(
-            span.trailing.map(|trailing| trailing.kind),
-            Some(TrailingKind::YearRange)
-        ) {
+    if plain_bounds && is_year(l) && is_year(r) {
+        if year_range {
             return Some(format!(
                 "с {} по {} год",
                 morphology::ordinal(l, Gender::Masculine, Case::Genitive),
@@ -696,7 +856,7 @@ fn read_range(
     if !units && owns_measurement(span.trailing) {
         return None;
     }
-    let mut out = format!("от {} до {}", bound_genitive(left), bound_genitive(right));
+    let mut out = format!("от {} до {}", bound_genitive(left)?, bound_genitive(right)?);
     if let Some(trailing) = span.trailing {
         match trailing.kind {
             TrailingKind::Percent => out.push_str(" процентов"),
@@ -722,34 +882,38 @@ fn read_range(
     Some(out)
 }
 
-fn bound_genitive(number: &Number) -> String {
-    let value = value_of(number);
+fn bound_genitive(number: &Number) -> Option<String> {
+    let value = readable_value(number)?;
     if let Some(frac) = &number.comma_frac {
-        return morphology::fraction(value, frac, Gender::Masculine, Case::Genitive);
+        return Some(morphology::fraction(
+            value,
+            frac,
+            Gender::Masculine,
+            Case::Genitive,
+        ));
     }
     if number.dot_groups.len() == 1 {
-        return morphology::fraction(
+        return Some(morphology::fraction(
             value,
             &number.dot_groups[0],
             Gender::Masculine,
             Case::Genitive,
-        );
+        ));
     }
-    morphology::count(value, Gender::Masculine, Case::Genitive)
+    Some(morphology::count(value, Gender::Masculine, Case::Genitive))
 }
 
 // ── References and phones ────────────────────────────────────────────────────
 
-fn read_reference(kind: Reference, number: &Number) -> String {
-    let value = value_of(number);
+fn read_reference(kind: Reference, number: &Number) -> Option<String> {
     let reading = if kind.ordinal() {
-        morphology::ordinal(value, Gender::Feminine, Case::Nominative)
+        morphology::ordinal(readable_value(number)?, Gender::Feminine, Case::Nominative)
     } else if kind.digit_by_digit() {
         digit_words(&number.int)
     } else {
-        morphology::count(value, Gender::Masculine, Case::Nominative)
+        morphology::count(readable_value(number)?, Gender::Masculine, Case::Nominative)
     };
-    format!("{} {reading}", kind.word())
+    Some(format!("{} {reading}", kind.word()))
 }
 
 fn read_phone(groups: &[String], labeled: bool) -> String {
@@ -762,7 +926,7 @@ fn read_phone(groups: &[String], labeled: bool) -> String {
             parts.push("плюс".to_string());
             continue;
         }
-        if group.len() >= 3 && group.starts_with('0') {
+        if (group.len() >= 3 && group.starts_with('0')) || group.len() > 4 {
             parts.push(digit_words(group));
             continue;
         }
@@ -777,12 +941,17 @@ fn read_phone(groups: &[String], labeled: bool) -> String {
 
 // ── Context helpers ──────────────────────────────────────────────────────────
 
-fn value_of(number: &Number) -> u64 {
-    number.int.parse().unwrap_or(0)
+/// The numeric value of the integer part, `None` when it does not fit `u64`.
+fn value_of(number: &Number) -> Option<u64> {
+    number.int.parse().ok()
 }
 
-fn is_year(value: u64) -> bool {
-    (1000..=2199).contains(&value)
+/// The largest value the cardinal builder names; larger magnitudes fall back
+/// to a digit-by-digit reading or stay unclaimed.
+const MAX_CARDINAL: u64 = 999_999_999_999;
+
+fn readable_value(number: &Number) -> Option<u64> {
+    value_of(number).filter(|value| *value <= MAX_CARDINAL)
 }
 
 fn digit_words(digits: &str) -> String {
@@ -809,20 +978,29 @@ fn decline_numbered(value: u64, forms: (&'static str, &'static str, &'static str
     }
 }
 
-fn ends_in_one(value: u64) -> bool {
-    value % 10 == 1 && value % 100 != 11
+/// Noun form after a count in `case`.
+///
+/// The genitive is the exception the plain 1/2–4/other rule cannot express:
+/// a count ending in one takes the singular genitive ("около одного
+/// килограмма"), every other count the plural genitive ("около двух
+/// килограммов").
+fn noun_after_count(
+    value: u64,
+    forms: (&'static str, &'static str, &'static str),
+    case: Case,
+) -> &'static str {
+    if case == Case::Genitive {
+        if ends_in_one(value) { forms.1 } else { forms.2 }
+    } else {
+        decline_numbered(value, forms)
+    }
 }
 
-/// Case of the number's context: a genitive trigger before it or a forced
-/// case from an approximation sign.
+/// Case of the number's context: the shared preposition table, a genitive
+/// trigger before it, or a forced case from an approximation sign.
 fn case_at(text: &str, pos: usize, forced: Option<Case>) -> Case {
-    forced.unwrap_or_else(|| {
-        if lexicon::genitive_trigger(&prev_word(text, pos)) {
-            Case::Genitive
-        } else {
-            Case::Nominative
-        }
-    })
+    forced
+        .unwrap_or_else(|| lexicon::context_case(&prev_word(text, pos)).unwrap_or(Case::Nominative))
 }
 
 /// Case an ordinal takes from the head noun before it.

@@ -4,7 +4,7 @@
 //! needs are lexical facts, not numeral morphology; keeping them here lets the
 //! scanner and the reader stay about structure.
 
-use crate::pipeline::numeric::morphology::Gender;
+use crate::pipeline::numeric::morphology::{Case, Gender};
 
 // ── Units ─────────────────────────────────────────────────────────────────────
 
@@ -128,15 +128,15 @@ const M_PER_SECOND: UnitForms = UnitForms {
     tail: "в секунду",
 };
 
-/// Look up a unit token, longest first. Case-insensitive for ASCII units,
-/// exact for Cyrillic ones.
 /// Unit spellings the scanner tries, longest first so a one-letter unit
 /// cannot shadow a longer one ("м" vs "мл"); Cyrillic is exact-case.
-pub const UNIT_TOKENS: [&str; 27] = [
-    "км/ч", "м/с", "rem", "min", "sec", "кб", "мб", "гб", "тб", "kb", "mb", "gb", "tb", "ms", "hr",
-    "px", "em", "vh", "vw", "кг", "км", "см", "мм", "мл", "м", "л", "г",
+pub const UNIT_TOKENS: [&str; 30] = [
+    "км/ч", "м/с", "rem", "min", "sec", "мин", "сек", "кб", "мб", "гб", "тб", "kb", "mb", "gb",
+    "tb", "ms", "hr", "px", "em", "vh", "vw", "кг", "км", "см", "мм", "мл", "м", "л", "г", "ч",
 ];
 
+/// Look up a unit token, longest first. Case-insensitive for ASCII units,
+/// exact for Cyrillic ones.
 pub fn lookup_unit(token: &str) -> Option<Unit> {
     let lower = token.to_lowercase();
     let found = match lower.as_str() {
@@ -154,6 +154,9 @@ pub fn lookup_unit(token: &str) -> Option<Unit> {
         "кб" => size(KILOBYTE),
         "гб" => size(GIGABYTE),
         "тб" => size(TERABYTE),
+        "мин" => natural(MINUTE),
+        "сек" => natural(SECOND),
+        "ч" => natural(HOUR),
         "kb" => size(KILOBYTE),
         "mb" => size(MEGABYTE),
         "gb" => size(GIGABYTE),
@@ -174,6 +177,10 @@ pub fn lookup_unit(token: &str) -> Option<Unit> {
 
 /// Degree unit (`°C`, `5°C`, `20 °C`): the degree sign is part of the token.
 pub const DEGREE_CELSIUS: UnitForms = CELSIUS;
+
+/// A bare degree sign (`45°`): the angle or temperature degree without the
+/// "Цельсия" tail.
+pub const DEGREE: UnitForms = unit("градус", "градуса", "градусов", Gender::Masculine);
 
 // ── Currencies ────────────────────────────────────────────────────────────────
 
@@ -469,9 +476,8 @@ impl Reference {
     }
 }
 
-/// Longest-first reference prefix match at the start of `text`.
-/// Reference prefix match at the start of `text`. The prefix must end at a
-/// token boundary, so "строка" and "глубина" are ordinary words.
+/// Longest-first reference prefix match at the start of `text`. The prefix
+/// must end at a token boundary, so "строка" and "глубина" are ordinary words.
 pub fn match_reference(text: &str) -> Option<(Reference, usize)> {
     let first = text.chars().next()?;
     // "№" is a symbol prefix and its number may be glued ("№123").
@@ -548,6 +554,34 @@ pub fn genitive_trigger(word: &str) -> bool {
             | "младше"
             | "старше"
     )
+}
+
+/// Case an unambiguous preposition before a numeral puts it in: "к" → dative,
+/// "о"/"об"/"при" → prepositional.
+pub fn preposition_case(word: &str) -> Option<Case> {
+    match word {
+        "к" | "ко" => Some(Case::Dative),
+        "о" | "об" | "при" => Some(Case::Prepositional),
+        _ => None,
+    }
+}
+
+/// Locative prepositions ("в", "на") that put a calendar value into the
+/// prepositional case. Kept apart from [`preposition_case`] because a counted
+/// noun after them may be accusative ("в два раза").
+pub fn locative_case(word: &str) -> Option<Case> {
+    matches!(word, "в" | "во" | "на").then_some(Case::Prepositional)
+}
+
+/// Case the word before a numeral puts it in, if the word governs one.
+pub fn context_case(word: &str) -> Option<Case> {
+    preposition_case(word).or_else(|| genitive_trigger(word).then_some(Case::Genitive))
+}
+
+/// Case the word before a calendar value puts it in: an unambiguous
+/// preposition, a locative preposition or a genitive trigger.
+pub fn calendar_case(word: &str) -> Option<Case> {
+    context_case(word).or_else(|| locative_case(word))
 }
 
 /// Head nouns that read a following number as an ordinal

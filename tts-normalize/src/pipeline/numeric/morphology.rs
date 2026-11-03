@@ -657,6 +657,20 @@ fn combining_prefix(n: u64) -> String {
         2 => "двух".to_string(),
         3 => "трёх".to_string(),
         4 => "четырёх".to_string(),
+        // The hundreds of a compound ordinal keep the nominative "сто"
+        // ("стотысячный", "стопятидесятитысячный"); from two hundred on the
+        // genitive stem is the combining form ("двухсоттысячный").
+        100..=199 => {
+            let rest = n - 100;
+            if rest == 0 {
+                "сто".to_string()
+            } else {
+                format!(
+                    "сто{}",
+                    cardinal(rest, Gender::Masculine, Case::Genitive).replace(' ', "")
+                )
+            }
+        }
         _ => {
             // Everything from five on uses the genitive stem of the last word:
             // "пяти", "десяти", "двадцати", ...
@@ -745,13 +759,14 @@ fn ending(stem: &str, class: Class, gender: Gender, case: Case, number: Number) 
 
 // ── Decades ───────────────────────────────────────────────────────────────────
 
-/// Decade word: `1990` → "девяностые", `2000` → "двухтысячные".
+/// Decade word: `1990` → "девяностые", `2000` → "двухтысячные",
+/// `2010` → "две тысячи десятые".
 ///
 /// Returns `None` for a value that is not a decade start.
 pub fn decade(value: u64, case: Case) -> Option<String> {
     let stem = decade_stem(value)?;
     Some(ending(
-        stem,
+        &stem,
         Class::Hard,
         Gender::Masculine,
         case,
@@ -759,22 +774,45 @@ pub fn decade(value: u64, case: Case) -> Option<String> {
     ))
 }
 
-fn decade_stem(value: u64) -> Option<&'static str> {
+/// Whether [`decade`] can name `value`.
+pub(crate) fn is_decade(value: u64) -> bool {
+    decade_stem(value).is_some()
+}
+
+/// Stem a decade word is built from.
+///
+/// The last two digits name a decade of the 1900s ("десятые" … "девяностые").
+/// The 2000s keep the "две тысячи" prefix ("две тысячи десятые"), otherwise
+/// the 2010s would collide with the 1910s; 1900 and 2000 keep their irregular
+/// names.
+fn decade_stem(value: u64) -> Option<String> {
     if value == 1900 {
-        return Some("девятисот");
+        return Some("девятисот".to_string());
     }
     if value == 2000 {
-        return Some("двухтысячн");
+        return Some("двухтысячн".to_string());
     }
     if (1900..=1999).contains(&value) && value % 10 == 0 {
-        let tens = (value % 100) / 10;
-        return Some(tens_ordinal_stem(tens));
+        return tens_decade_stem((value % 100) / 10);
+    }
+    if (2000..=2099).contains(&value) && value % 10 == 0 {
+        let thousands = count(2_000, Gender::Masculine, Case::Nominative);
+        return tens_decade_stem((value % 100) / 10).map(|stem| format!("{thousands} {stem}"));
     }
     if (20..=90).contains(&value) && value % 10 == 0 {
-        let tens = value / 10;
-        return Some(tens_ordinal_stem(tens));
+        return tens_decade_stem(value / 10);
     }
     None
+}
+
+/// Two-digit decade stem: `10` → "десят", `90` → "девяност".
+fn tens_decade_stem(tens: u64) -> Option<String> {
+    if tens == 1 {
+        return Some("десят".to_string());
+    }
+    (2..=9)
+        .contains(&tens)
+        .then(|| tens_ordinal_stem(tens).to_string())
 }
 
 // ── Fractional numerals ───────────────────────────────────────────────────────
@@ -782,20 +820,29 @@ fn decade_stem(value: u64) -> Option<&'static str> {
 /// Fractional numeral read as a natural quantity: "1,5" → "полтора",
 /// "2,5" → "два с половиной", "0,25" → "ноль целых двадцать пять сотых".
 ///
-/// `gender` selects "полтора"/"полторы" and the integer part's gender;
-/// `case` is the case the quantity is used in (the genitive form of
-/// "1,5" is "полутора").
+/// `gender` selects "полтора"/"полторы"; `case` is the case the quantity is
+/// used in (the genitive form of "1,5" is "полутора").
 pub fn fraction(int: u64, frac: &str, gender: Gender, case: Case) -> String {
     let digits: Vec<char> = frac.chars().collect();
-    let denominator = match digits.len() {
-        1 => "десятых",
-        2 => "сотых",
-        3 => "тысячных",
-        4 => "десятитысячных",
-        5 => "стотысячных",
-        _ => "миллионных",
+    let (denominator_one, denominator_many) = match digits.len() {
+        1 => ("десятая", "десятых"),
+        2 => ("сотая", "сотых"),
+        3 => ("тысячная", "тысячных"),
+        4 => ("десятитысячная", "десятитысячных"),
+        5 => ("стотысячная", "стотысячных"),
+        // The reader keeps tails longer than six digits in the technical
+        // register; the defensive arm only has to stay grammatical.
+        _ => ("миллионная", "миллионных"),
     };
-    let numerator = cardinal(parse_digits(frac), Gender::Feminine, Case::Nominative);
+    let numerator_value = parse_digits(frac);
+    let numerator = cardinal(numerator_value, Gender::Feminine, Case::Nominative);
+    // The denominator is a feminine adjective agreeing with the numerator:
+    // "одна десятая", "две десятых", "двадцать одна сотая".
+    let denominator = if ends_in_one(numerator_value) {
+        denominator_one
+    } else {
+        denominator_many
+    };
 
     if int == 0 {
         return format!("ноль целых {numerator} {denominator}");
@@ -823,25 +870,25 @@ pub fn fraction(int: u64, frac: &str, gender: Gender, case: Case) -> String {
             ),
         };
     }
-    if int == 1 {
-        let whole = match case {
-            Case::Genitive => "одной целой",
-            Case::Dative => "одной целой",
-            Case::Instrumental => "одной целой",
-            Case::Prepositional => "одной целой",
-            _ => "одна целая",
-        };
-        return format!("{whole} {numerator} {denominator}");
-    }
+
+    // The integer part is feminine (it counts "целая"): "одна целая",
+    // "две целых", "двадцать одна целая".
     let whole_case = if case.nominal() {
         Case::Nominative
     } else {
         case
     };
-    format!(
-        "{} целых {numerator} {denominator}",
-        cardinal(int, gender, whole_case)
-    )
+    let whole = cardinal(int, Gender::Feminine, whole_case);
+    let whole_noun = if ends_in_one(int) {
+        if case.nominal() {
+            "целая"
+        } else {
+            "целой"
+        }
+    } else {
+        "целых"
+    };
+    format!("{whole} {whole_noun} {numerator} {denominator}")
 }
 
 /// Simple fraction "1/2" → "одна вторая", "2/3" → "две третьих".
@@ -870,6 +917,12 @@ pub fn simple_fraction(numerator: u64, denominator: u64) -> Option<String> {
         cardinal(numerator, Gender::Feminine, Case::Nominative),
         ending(stem, class, Gender::Feminine, case, number)
     ))
+}
+
+/// Whether a count takes the singular form (one, twenty-one, … but not
+/// eleven), shared by the noun agreement and the fraction denominator.
+pub(crate) fn ends_in_one(value: u64) -> bool {
+    value % 10 == 1 && value % 100 != 11
 }
 
 fn parse_digits(digits: &str) -> u64 {
@@ -941,6 +994,9 @@ mod tests {
         assert_eq!(o(100), "сотый");
         assert_eq!(o(1000), "тысячный");
         assert_eq!(o(2000), "двухтысячный");
+        assert_eq!(o(100_000), "стотысячный");
+        assert_eq!(o(200_000), "двухсоттысячный");
+        assert_eq!(o(150_000), "стопятидесятитысячный");
         assert_eq!(o(2024), "две тысячи двадцать четвёртый");
         assert_eq!(o(1999), "тысяча девятьсот девяносто девятый");
         assert_eq!(o(1900), "тысяча девятисотый");
@@ -984,6 +1040,22 @@ mod tests {
             decade(30, Case::Prepositional).as_deref(),
             Some("тридцатых")
         );
+        assert_eq!(
+            decade(1910, Case::Prepositional).as_deref(),
+            Some("десятых")
+        );
+        assert_eq!(
+            decade(2010, Case::Prepositional).as_deref(),
+            Some("две тысячи десятых")
+        );
+        assert_eq!(
+            decade(2010, Case::Nominative).as_deref(),
+            Some("две тысячи десятые")
+        );
+        assert_eq!(
+            decade(2020, Case::Prepositional).as_deref(),
+            Some("две тысячи двадцатых")
+        );
         assert_eq!(decade(2024, Case::Nominative), None);
     }
 
@@ -1016,6 +1088,22 @@ mod tests {
         assert_eq!(
             fraction(1, "5", Gender::Masculine, Case::Genitive),
             "полутора"
+        );
+        assert_eq!(
+            fraction(0, "1", Gender::Masculine, Case::Nominative),
+            "ноль целых одна десятая"
+        );
+        assert_eq!(
+            fraction(1, "21", Gender::Masculine, Case::Nominative),
+            "одна целая двадцать одна сотая"
+        );
+        assert_eq!(
+            fraction(2, "25", Gender::Masculine, Case::Nominative),
+            "две целых двадцать пять сотых"
+        );
+        assert_eq!(
+            fraction(21, "25", Gender::Masculine, Case::Nominative),
+            "двадцать одна целая двадцать пять сотых"
         );
         assert_eq!(simple_fraction(1, 2).as_deref(), Some("одна вторая"));
         assert_eq!(simple_fraction(2, 3).as_deref(), Some("две третьих"));

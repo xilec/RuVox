@@ -7,7 +7,107 @@
 //! parser does not classify: it records the shape and leaves the reading to
 //! [`super::read`], so a construct is either consumed whole or not at all.
 
-use super::lexicon::{self, Currency, DEGREE_CELSIUS, Reference, Scale, UNIT_TOKENS, Unit};
+use super::lexicon::{self, Currency, DEGREE, DEGREE_CELSIUS, Reference, Scale, UNIT_TOKENS, Unit};
+
+/// First year the layer reads as a calendar year.
+pub(crate) const YEAR_MIN: u64 = 1000;
+/// Last year the layer reads as a calendar year.
+pub(crate) const YEAR_MAX: u64 = 2199;
+
+/// Whether `value` is a calendar year the layer reads as an ordinal.
+pub(crate) fn is_year(value: u64) -> bool {
+    (YEAR_MIN..=YEAR_MAX).contains(&value)
+}
+
+/// Ordinal suffix inventory shared by the scanner and the reader.
+///
+/// The scanner only accepts what the reader can decline, and the reader's
+/// match is exhaustive, so a suffix cannot be half-supported. Variants that a
+/// letter alone cannot disambiguate keep the reading decision together
+/// ("-х" is a cardinal genitive or an ordinal plural prepositional).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum OrdinalSuffix {
+    /// `-ые` / `-ие` — plural nominative.
+    Nominative,
+    /// `-ых` / `-их` — plural genitive.
+    Genitive,
+    /// `-ым` / `-им` — plural dative.
+    Dative,
+    /// `-ми` / `-ыми` / `-ими` — plural instrumental.
+    Instrumental,
+    /// `-го` / `-его` / `-ого` — masculine singular genitive.
+    MascGenitive,
+    /// `-му` / `-ому` — masculine singular dative.
+    MascDative,
+    /// `-ом` / `-ем` — masculine singular prepositional.
+    MascPrepositional,
+    /// `-ый` / `-ий` — masculine singular nominative.
+    MascNominative,
+    /// `-я` / `-ая` — feminine singular nominative.
+    FeminineNominative,
+    /// `-ю` / `-ую` — feminine singular accusative.
+    FeminineAccusative,
+    /// `-ой` — feminine singular oblique (the forms coincide).
+    FeminineOblique,
+    /// `-е` / `-ое` — neuter singular nominative.
+    NeuterNominative,
+    /// `-х` — cardinal genitive or ordinal plural prepositional.
+    AmbiguousX,
+    /// `-м` — ordinal instrumental or prepositional.
+    AmbiguousM,
+    /// `-й` — masculine nominative or feminine oblique.
+    AmbiguousFeminine,
+}
+
+impl OrdinalSuffix {
+    /// Match a suffix at the start of `text` (after the dash).
+    ///
+    /// Longest spelling first, so "-ого" is not read as "-го" and "-ими" not
+    /// as "-ми"; a suffix glued to another letter is part of a word, not of a
+    /// number.
+    fn at(text: &str) -> Option<(Self, usize)> {
+        const SUFFIXES: [(&str, OrdinalSuffix); 28] = [
+            ("ыми", OrdinalSuffix::Instrumental),
+            ("ими", OrdinalSuffix::Instrumental),
+            ("его", OrdinalSuffix::MascGenitive),
+            ("ого", OrdinalSuffix::MascGenitive),
+            ("ому", OrdinalSuffix::MascDative),
+            ("ая", OrdinalSuffix::FeminineNominative),
+            ("ое", OrdinalSuffix::NeuterNominative),
+            ("ые", OrdinalSuffix::Nominative),
+            ("ие", OrdinalSuffix::Nominative),
+            ("ых", OrdinalSuffix::Genitive),
+            ("их", OrdinalSuffix::Genitive),
+            ("ым", OrdinalSuffix::Dative),
+            ("им", OrdinalSuffix::Dative),
+            ("ую", OrdinalSuffix::FeminineAccusative),
+            ("ом", OrdinalSuffix::MascPrepositional),
+            ("ем", OrdinalSuffix::MascPrepositional),
+            ("ой", OrdinalSuffix::FeminineOblique),
+            ("ый", OrdinalSuffix::MascNominative),
+            ("ий", OrdinalSuffix::MascNominative),
+            ("ми", OrdinalSuffix::Instrumental),
+            ("го", OrdinalSuffix::MascGenitive),
+            ("му", OrdinalSuffix::MascDative),
+            ("м", OrdinalSuffix::AmbiguousM),
+            ("х", OrdinalSuffix::AmbiguousX),
+            ("й", OrdinalSuffix::AmbiguousFeminine),
+            ("я", OrdinalSuffix::FeminineNominative),
+            ("е", OrdinalSuffix::NeuterNominative),
+            ("ю", OrdinalSuffix::FeminineAccusative),
+        ];
+        for (suffix, kind) in SUFFIXES {
+            let Some(after) = text.strip_prefix(suffix) else {
+                continue;
+            };
+            if after.starts_with(|c: char| c.is_alphabetic()) {
+                continue;
+            }
+            return Some((kind, suffix.len()));
+        }
+        None
+    }
+}
 
 // ── Span model ────────────────────────────────────────────────────────────────
 
@@ -58,8 +158,10 @@ pub(crate) struct Number {
     pub comma_frac: Option<String>,
     pub time: Option<Time>,
     pub slash_groups: Vec<String>,
-    pub ordinal_suffix: Option<&'static str>,
+    pub ordinal_suffix: Option<OrdinalSuffix>,
     pub version_suffix: Option<&'static str>,
+    /// Digits after a pre-release suffix word ("1.2.0-rc1" → "1").
+    pub version_suffix_digits: Option<String>,
     pub leading_dot: bool,
     pub half: Option<MixedFraction>,
 }
@@ -140,7 +242,11 @@ pub(crate) enum Body {
     /// "г. Москва" — the city abbreviation.
     City,
     /// A roman century ("XX век").
-    Roman(u32),
+    Roman {
+        value: u32,
+        /// The reading must spell out "век" ("XX в.").
+        abbreviated: bool,
+    },
 }
 
 /// One recognised candidate and the byte range it replaces.
@@ -235,7 +341,9 @@ fn parse_at_symbol(text: &str, pos: usize, expand_units: bool) -> Option<Span> {
         '№' => parse_reference(text, pos, expand_units),
         '+' | '-' | '−' => parse_signed_or_phone(text, pos, expand_units),
         '.' => parse_leading_dot(text, pos, expand_units),
-        'v' | 'V' => parse_version_prefix(text, pos, expand_units),
+        'v' | 'V' if is_word_start(text, pos) => {
+            parse_version_prefix(text, pos, expand_units).or_else(|| parse_roman(text, pos))
+        }
         'г' | 'Г' => {
             parse_city_prefix(text, pos).or_else(|| parse_reference(text, pos, expand_units))
         }
@@ -247,6 +355,9 @@ fn parse_at_symbol(text: &str, pos: usize, expand_units: bool) -> Option<Span> {
 }
 
 fn parse_approx(text: &str, pos: usize, approx: Approx, expand_units: bool) -> Option<Span> {
+    if !is_word_start(text, pos) {
+        return None;
+    }
     let symbol_len = text[pos..].chars().next()?.len_utf8();
     let cursor = skip_spaces(text, pos + symbol_len);
     if !text[cursor..].starts_with(|c: char| c.is_ascii_digit()) {
@@ -266,6 +377,9 @@ fn parse_approx(text: &str, pos: usize, approx: Approx, expand_units: bool) -> O
 }
 
 fn parse_currency_prefix(text: &str, pos: usize, expand_units: bool) -> Option<Span> {
+    if !is_word_start(text, pos) {
+        return None;
+    }
     let symbol = &text[pos..pos + text[pos..].chars().next()?.len_utf8()];
     let currency = Currency::from_symbol(symbol)?;
     let cursor = skip_spaces(text, pos + symbol.len());
@@ -401,19 +515,28 @@ fn parse_roman(text: &str, pos: usize) -> Option<Span> {
             break;
         }
     }
-    if end - pos < 2 {
+    if end == pos {
         return None;
     }
     let word_pos = skip_spaces(text, end);
-    let (_, word) = read_word(text, word_pos);
-    if !matches!(word, "век" | "веке" | "века" | "веков" | "в.") {
-        return None;
-    }
+    let (word_end, word) = read_word(text, word_pos);
+    let word = word.to_lowercase();
     let value = roman_value(&text[pos..end])?;
+    // A century may be written with the word ("XX веке") or with the
+    // one-letter abbreviation ("XX в."); the abbreviation is consumed so the
+    // reading can spell the word out.
+    let abbreviated = if matches!(word.as_str(), "век" | "веке" | "века" | "веков")
+    {
+        false
+    } else if word == "в" && text[word_end..].starts_with('.') {
+        true
+    } else {
+        return None;
+    };
     Some(Span {
         start: pos,
-        end,
-        body: Body::Roman(value),
+        end: if abbreviated { word_end + 1 } else { end },
+        body: Body::Roman { value, abbreviated },
         trailing: None,
     })
 }
@@ -433,6 +556,9 @@ fn roman_value(roman: &str) -> Option<u32> {
             _ => return None,
         };
         if value < previous {
+            if total < value {
+                return None;
+            }
             total -= value;
         } else {
             total += value;
@@ -486,6 +612,11 @@ fn parse_phone(text: &str, pos: usize, labeled: bool) -> Option<Span> {
         Some('8') if labeled => {}
         _ => return None,
     }
+    // An unlabeled digit run is only a phone at a word start; inside a sum
+    // or an identifier it is not.
+    if !labeled && !is_word_start(text, pos) {
+        return None;
+    }
     let mut groups: Vec<String> = Vec::new();
     loop {
         let before = cursor;
@@ -497,7 +628,7 @@ fn parse_phone(text: &str, pos: usize, labeled: bool) -> Option<Span> {
             }
         }
         let (end, digits) = read_digits(text, cursor);
-        if digits.is_empty() || digits.len() > 4 {
+        if digits.is_empty() || digits.len() > 7 {
             cursor = before;
             break;
         }
@@ -514,7 +645,20 @@ fn parse_phone(text: &str, pos: usize, labeled: bool) -> Option<Span> {
             break;
         }
     }
+    // A plausible phone has at least three groups and ten digits; a long
+    // run may only be the final local number ("+7 921 1234567").
     if groups.len() < 3 {
+        return None;
+    }
+    let total_digits: usize = groups.iter().map(String::len).sum();
+    if total_digits < 10 {
+        return None;
+    }
+    if groups
+        .iter()
+        .position(|group| group.len() > 4)
+        .is_some_and(|index| index + 1 != groups.len())
+    {
         return None;
     }
     if sign {
@@ -631,8 +775,9 @@ fn parse_number_tail(
 
     // A pre-release suffix belongs to a dotted version ("1.0.0-beta").
     if !number.dot_groups.is_empty() {
-        if let Some((word, length)) = version_suffix_at(&parser.text[parser.pos..]) {
+        if let Some((word, digits, length)) = version_suffix_at(&parser.text[parser.pos..]) {
             number.version_suffix = Some(word);
+            number.version_suffix_digits = digits;
             parser.pos += length;
             if let Some(group) = parser.dot_group() {
                 number.dot_groups.push(group);
@@ -643,9 +788,11 @@ fn parse_number_tail(
     // An ordinal suffix is a dash plus a case ending ("5-й", "21-го").
     if number.dot_groups.is_empty() && number.comma_frac.is_none() && number.slash_groups.is_empty()
     {
-        if let Some((suffix, length)) = ordinal_suffix_at(&parser.text[parser.pos..]) {
-            number.ordinal_suffix = Some(suffix);
-            parser.pos += length;
+        if let Some(rest) = parser.text[parser.pos..].strip_prefix('-') {
+            if let Some((suffix, length)) = OrdinalSuffix::at(rest) {
+                number.ordinal_suffix = Some(suffix);
+                parser.pos += 1 + length;
+            }
         }
     }
 
@@ -707,7 +854,7 @@ fn parse_date(text: &str, pos: usize) -> Option<Span> {
     if separator == '-' && first.len() == 4 && (1..=2).contains(&second.len()) {
         let year: u32 = first.parse().ok()?;
         let month: u32 = second.parse().ok()?;
-        if (1900..=2100).contains(&year) && (1..=12).contains(&month) {
+        if is_year(u64::from(year)) && (1..=12).contains(&month) {
             return Some(Span {
                 start: pos,
                 end: parser.pos,
@@ -738,7 +885,7 @@ fn classify_date(first: &str, second: &str, third: &str) -> Option<Date> {
             year,
         )
     };
-    if !(1..=31).contains(&day) || !(1..=12).contains(&month) || !(1000..=2199).contains(&year) {
+    if !(1..=31).contains(&day) || !(1..=12).contains(&month) || !is_year(u64::from(year)) {
         return None;
     }
     Some(Date {
@@ -777,7 +924,7 @@ fn parse_month_date(text: &str, pos: usize) -> Option<Span> {
     let (year_end, year_digits) = read_digits(text, year_start);
     if year_digits.len() == 4 {
         let value: u32 = year_digits.parse().ok()?;
-        if (1000..=2199).contains(&value) {
+        if is_year(u64::from(value)) {
             year = Some(value);
             end = consume_optional_year_word(text, year_end);
         }
@@ -860,7 +1007,8 @@ fn parse_trailing(
         ));
     }
 
-    if text[start..].starts_with('+')
+    if start == pos
+        && text[start..].starts_with('+')
         && !text[start + 1..].starts_with(|c: char| c.is_alphanumeric())
     {
         return Some((
@@ -908,7 +1056,7 @@ fn parse_trailing(
             end,
         ));
     }
-    if let Some(currency) = money_word(&token_lower) {
+    if let Some(currency) = Currency::from_symbol(&token_lower) {
         if !expand_units {
             return None;
         }
@@ -951,7 +1099,16 @@ fn parse_trailing(
                 unit_end,
             ));
         }
-        return None;
+        return Some((
+            Some(Trailing {
+                kind: TrailingKind::Unit(Unit {
+                    forms: DEGREE,
+                    size_unit: false,
+                }),
+                currency: None,
+            }),
+            start + '°'.len_utf8(),
+        ));
     }
 
     if let Some((unit, length)) = unit_at(&text[start..]) {
@@ -1043,16 +1200,6 @@ fn currency_symbol_len(text: &str) -> usize {
     text.chars().next().map_or(0, char::len_utf8)
 }
 
-fn money_word(token: &str) -> Option<Currency> {
-    match token {
-        "руб." | "руб" => Some(Currency::Ruble),
-        "коп." | "коп" => Some(Currency::Kopek),
-        "долл." | "долл" => Some(Currency::Dollar),
-        "евро" => Some(Currency::Euro),
-        _ => None,
-    }
-}
-
 fn unit_at(text: &str) -> Option<(Unit, usize)> {
     for token in UNIT_TOKENS {
         let Some(candidate) = text.get(..token.len()) else {
@@ -1071,32 +1218,12 @@ fn unit_at(text: &str) -> Option<(Unit, usize)> {
 }
 
 fn is_year_value(digits: &str) -> bool {
-    digits.len() == 4
-        && digits
-            .parse::<u32>()
-            .is_ok_and(|value| (1000..=2199).contains(&value))
+    digits.len() == 4 && digits.parse::<u64>().is_ok_and(is_year)
 }
 
 // ── Suffix tables ────────────────────────────────────────────────────────────
 
-fn ordinal_suffix_at(text: &str) -> Option<(&'static str, usize)> {
-    const SUFFIXES: [&str; 23] = [
-        "ыми", "его", "ому", "ая", "ое", "ые", "ых", "ым", "ую", "ом", "ем", "им", "ой", "ый",
-        "ми", "го", "му", "м", "х", "й", "я", "е", "ю",
-    ];
-    let rest = text.strip_prefix('-')?;
-    for suffix in SUFFIXES {
-        if let Some(after) = rest.strip_prefix(suffix) {
-            if after.starts_with(|c: char| c.is_alphabetic()) {
-                continue;
-            }
-            return Some((suffix, 1 + suffix.len()));
-        }
-    }
-    None
-}
-
-fn version_suffix_at(text: &str) -> Option<(&'static str, usize)> {
+fn version_suffix_at(text: &str) -> Option<(&'static str, Option<String>, usize)> {
     let rest = text.strip_prefix('-')?;
     let letters: String = rest
         .chars()
@@ -1110,7 +1237,9 @@ fn version_suffix_at(text: &str) -> Option<(&'static str, usize)> {
         .chars()
         .take_while(|c| c.is_ascii_digit())
         .collect();
-    Some((word, 1 + letters.len() + digits.len()))
+    let length = 1 + letters.len() + digits.len();
+    let digits = (!digits.is_empty()).then_some(digits);
+    Some((word, digits, length))
 }
 
 fn half_at(text: &str) -> Option<(MixedFraction, usize)> {
@@ -1262,4 +1391,45 @@ fn read_token(text: &str, pos: usize) -> (usize, &str) {
         cursor += ch.len_utf8();
     }
     (cursor, &text[pos..cursor])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn roman_value_rejects_underflowing_numerals() {
+        // Six I's before V (or six C's before D) would drive the reverse
+        // accumulator negative; that input is not a roman numeral, and the
+        // scanner must reject it instead of panicking.
+        assert_eq!(roman_value("IIIIIIV"), None);
+        assert_eq!(roman_value("CCCCCCD"), None);
+        assert_eq!(roman_value("XIV"), Some(14));
+        assert_eq!(roman_value("XXXIX"), Some(39));
+    }
+
+    #[test]
+    fn ordinal_suffix_inventory_covers_the_reader() {
+        assert_eq!(
+            OrdinalSuffix::at("ого"),
+            Some((OrdinalSuffix::MascGenitive, 6))
+        );
+        assert_eq!(
+            OrdinalSuffix::at("ими"),
+            Some((OrdinalSuffix::Instrumental, 6))
+        );
+        assert_eq!(
+            OrdinalSuffix::at("ие"),
+            Some((OrdinalSuffix::Nominative, 4))
+        );
+        assert_eq!(
+            OrdinalSuffix::at("й день"),
+            Some((OrdinalSuffix::AmbiguousFeminine, 2))
+        );
+        assert_eq!(
+            OrdinalSuffix::at("ую"),
+            Some((OrdinalSuffix::FeminineAccusative, 4))
+        );
+        assert_eq!(OrdinalSuffix::at("о"), None);
+    }
 }
