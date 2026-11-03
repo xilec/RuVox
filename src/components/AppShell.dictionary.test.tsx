@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MantineProvider } from '@mantine/core';
 import { ModalsProvider } from '@mantine/modals';
+import { Notifications, notifications } from '@mantine/notifications';
 import type { TextEntry } from '../lib/tauri';
 
 /** Command/event stubs shared with the `../lib/tauri` mock below. The proxy
@@ -39,6 +40,13 @@ vi.mock('@tauri-apps/api/webview', () => ({
   getCurrentWebview: () => ({
     onDragDropEvent: vi.fn().mockResolvedValue(() => {}),
   }),
+}));
+
+// The Add button reads the clipboard through the Tauri plugin; the preview
+// quick-add test drives that path (`preview_dialog_enabled` below), while the
+// viewer quick-add tests never touch it.
+vi.mock('@tauri-apps/plugin-clipboard-manager', () => ({
+  readText: vi.fn().mockResolvedValue('Вызови getUserData через API'),
 }));
 
 vi.mock('../lib/mermaid', () => ({
@@ -77,12 +85,21 @@ const ENTRY: TextEntry = {
   error_message: null,
 };
 
+/** Second entry for the stale-capture tests: its own text also contains
+ *  `getUserData`, so a stale selection would still look valid. */
+const ENTRY_B: TextEntry = {
+  ...ENTRY,
+  id: 'entry-2',
+  title: 'Вторая заметка',
+  original_text: 'Позови getUserData снова',
+};
+
 const CONFIG = {
   theme: 'auto',
   language: 'ru',
   reading_width: 'wide',
   reading_scale: 100,
-  preview_dialog_enabled: false,
+  preview_dialog_enabled: true,
   engine: 'piper',
   speaker: 'xenia',
   sample_rate: 24000,
@@ -135,11 +152,37 @@ function typeInto(label: string, value: string): void {
   });
 }
 
-function clickButton(label: string): void {
-  const button = [...document.querySelectorAll('button')].find(
-    (candidate) => candidate.textContent?.trim() === label,
+function findButton(label: string): HTMLElement | null {
+  return (
+    [...document.querySelectorAll('button')].find(
+      (candidate) => candidate.textContent?.trim() === label,
+    ) ?? null
   );
+}
+
+function clickButton(label: string): void {
+  const button = findButton(label);
   if (!button) throw new Error(`button ${label} not found`);
+  act(() => button.click());
+}
+
+/** The dictionary editor dialog, once mounted. */
+function dictionaryDialog(): HTMLElement | null {
+  return (
+    [...document.querySelectorAll<HTMLElement>('[role="dialog"]')].find(
+      (candidate) => candidate.textContent?.includes('Словарь произношений'),
+    ) ?? null
+  );
+}
+
+/** Click a button inside the dictionary dialog: while the editor opens from
+ *  Settings, the Settings modal (with its own «Сохранить») is still in the
+ *  DOM during its exit transition. */
+function clickDialogButton(label: string): void {
+  const button = [
+    ...(dictionaryDialog()?.querySelectorAll('button') ?? []),
+  ].find((candidate) => candidate.textContent?.trim() === label);
+  if (!button) throw new Error(`dialog button ${label} not found`);
   act(() => button.click());
 }
 
@@ -157,12 +200,6 @@ function menuItems(): string[] {
   );
 }
 
-async function flushAsync(ms = 50): Promise<void> {
-  await act(async () => {
-    await new Promise((r) => setTimeout(r, ms));
-  });
-}
-
 /** Press Escape on the document body — how a Mantine modal is dismissed in a
  *  test (its window-level handler needs an element target). */
 function pressEscape(): void {
@@ -173,11 +210,39 @@ function pressEscape(): void {
   });
 }
 
+/** Switch the selected entry as the queue would. */
+function selectEntry(entry: TextEntry): void {
+  act(() => {
+    useSelectedEntry.setState({ selectedId: entry.id, selectedEntry: entry });
+  });
+}
+
+/** Wait until the dictionary editor is fully unmounted (Mantine keeps the
+ *  content through its exit transition). */
+async function waitForEditorClosed(): Promise<void> {
+  await vi.waitFor(() => {
+    expect(
+      [...document.querySelectorAll('label')].some(
+        (label) => label.textContent?.trim() === 'Как произносить',
+      ),
+    ).toBe(false);
+  });
+}
+
+/** Text of the open regeneration offer, scoped to its own dialog so the
+ *  viewer text behind it cannot satisfy an assertion. */
+function promptText(): string {
+  const dialog = [...document.querySelectorAll('[role="dialog"]')].find(
+    (candidate) => candidate.textContent?.includes('Переозвучить сейчас?'),
+  );
+  return dialog?.textContent ?? '';
+}
+
 describe('viewer dictionary quick-add', () => {
   let host: HTMLDivElement;
   let root: Root;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     for (const key of Object.keys(commands)) delete commands[key];
     commands.getConfig = vi.fn().mockResolvedValue(CONFIG);
     commands.getAvailableEngines = vi.fn().mockResolvedValue(ENGINES);
@@ -192,6 +257,14 @@ describe('viewer dictionary quick-add', () => {
     commands.pausePlayback = vi.fn().mockResolvedValue(undefined);
     commands.stopPlayback = vi.fn().mockResolvedValue(undefined);
     commands.playEntry = vi.fn().mockResolvedValue(undefined);
+    // Destructive commands the failed-regeneration test must not reach.
+    commands.deleteAudio = vi.fn().mockResolvedValue(undefined);
+    commands.deleteEntry = vi.fn().mockResolvedValue(undefined);
+    // Settings renders alongside the viewer in the entry-point tests; its
+    // sections read these on open.
+    commands.getTerattsVoices = vi.fn().mockResolvedValue([]);
+    commands.getCacheDir = vi.fn().mockResolvedValue('');
+    commands.getLogDir = vi.fn().mockResolvedValue('');
 
     useSelectedEntry.setState({
       selectedId: ENTRY.id,
@@ -208,8 +281,13 @@ describe('viewer dictionary quick-add', () => {
           <ModalsProvider>
             <AppShell />
           </ModalsProvider>
+          <Notifications />
         </MantineProvider>,
       );
+    });
+    // Flush the mount-time config load so the Add flow sees the preview gate.
+    await act(async () => {
+      await Promise.resolve();
     });
   });
 
@@ -217,12 +295,13 @@ describe('viewer dictionary quick-add', () => {
     act(() => root.unmount());
     host.remove();
     document.body.innerHTML = '';
+    notifications.clean();
     useSelectedEntry.setState({ selectedId: null, selectedEntry: null });
     window.getSelection()?.removeAllRanges();
   });
 
-  /** Right-click `word` in the rendered viewer and choose «В словарь». */
-  async function openQuickAdd(word: string): Promise<void> {
+  /** Right-click `word` in the rendered viewer and wait for the menu. */
+  async function openMenu(word: string): Promise<void> {
     const container = host.querySelector('[data-reading-width]');
     expect(container, 'viewer content container').not.toBeNull();
     const selection = window.getSelection();
@@ -258,9 +337,17 @@ describe('viewer dictionary quick-add', () => {
         }),
       );
     });
-    await flushAsync();
+    // The dropdown mounts into the portal asynchronously; wait for its items
+    // instead of sleeping for a fixed time.
+    await vi.waitFor(() => {
+      expect(menuItem('В словарь')).not.toBeNull();
+    });
     expect(menuItems()).toEqual(['В словарь', 'Копировать']);
+  }
 
+  /** Right-click `word` in the rendered viewer and choose «В словарь». */
+  async function openQuickAdd(word: string): Promise<void> {
+    await openMenu(word);
     act(() => menuItem('В словарь')!.click());
     await vi.waitFor(() => {
       expect(fieldValue('Слово')).toBe(word);
@@ -275,13 +362,76 @@ describe('viewer dictionary quick-add', () => {
     });
   }
 
+  /** Open the dictionary editor through Settings, like the other entry point
+   *  the offer must ignore. */
+  async function openDictionaryFromSettings(): Promise<void> {
+    const settingsButton = document.querySelector<HTMLElement>(
+      '[aria-label="Открыть настройки"]',
+    );
+    expect(settingsButton, 'Settings button').not.toBeNull();
+    act(() => settingsButton!.click());
+    await vi.waitFor(() => {
+      expect(
+        document.querySelector('#settings-nav-dictionary'),
+      ).not.toBeNull();
+    });
+    act(() =>
+      document.querySelector<HTMLElement>('#settings-nav-dictionary')!.click(),
+    );
+    await vi.waitFor(() => {
+      expect(findButton('Открыть…')).not.toBeNull();
+    });
+    clickButton('Открыть…');
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain('Словарь произношений');
+      // Settings closes for the editing session; wait for its unmount so its
+      // own «Сохранить» cannot be picked up by the editor assertions.
+      expect(document.querySelector('#settings-nav-dictionary')).toBeNull();
+    });
+  }
+
+  /** Save one word through the blank add form (no viewer prefill). */
+  async function saveFromBlankForm(): Promise<void> {
+    clickDialogButton('Добавить слово');
+    await vi.waitFor(() => {
+      expect(
+        [...document.querySelectorAll('label')].some(
+          (label) => label.textContent?.trim() === 'Слово',
+        ),
+      ).toBe(true);
+    });
+    typeInto('Слово', 'замок');
+    typeInto('Как произносить', 'зам+ок');
+    clickDialogButton('Сохранить');
+    await vi.waitFor(() => {
+      expect(commands.saveDictionary).toHaveBeenCalledTimes(1);
+    });
+  }
+
   it('opens the editor prefilled from the selected word', async () => {
     await openQuickAdd('getUserData');
 
     expect(fieldValue('Слово')).toBe('getUserData');
+    // The spoken form starts empty and the scope stays on the global
+    // collection, exactly like the preview quick-add.
+    expect(fieldValue('Как произносить')).toBe('');
+    expect(fieldValue('Словарь')).toBe('Общий');
     // Opening the editor is a pure UI action: the player keeps going.
     expect(commands.pausePlayback).not.toHaveBeenCalled();
     expect(commands.stopPlayback).not.toHaveBeenCalled();
+  });
+
+  it('keeps the menu and editor in step with the selected entry', async () => {
+    await openMenu('getUserData');
+    selectEntry(ENTRY_B);
+
+    // The menu captured entry A's selection: it must close instead of
+    // offering a stale word that the AppShell would resolve against entry B.
+    await vi.waitFor(() => {
+      expect(menuItems()).toEqual([]);
+    });
+    expect(document.body.textContent).not.toContain('Словарь произношений');
+    expect(fieldValue('Слово')).toBe('');
   });
 
   it('persists the entry and offers a regeneration only after the save', async () => {
@@ -298,8 +448,23 @@ describe('viewer dictionary quick-add', () => {
     await vi.waitFor(() => {
       expect(document.body.textContent).toContain('Переозвучить сейчас?');
     });
+    // The offer names the entry whose recording went stale; a legacy entry
+    // with no stored title is named by the derived first line.
+    expect(promptText()).toContain('Вызови getUserData через API');
     // Closing the editor does not regenerate by itself.
     expect(commands.regenerateEntry).not.toHaveBeenCalled();
+  });
+
+  it('names an entry with a stored title in the offer', async () => {
+    selectEntry({ ...ENTRY, title: 'Моя статья' });
+    await openQuickAdd('getUserData');
+    await saveWord('гет юзер дата');
+    pressEscape();
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain('Переозвучить сейчас?');
+    });
+
+    expect(promptText()).toContain('Моя статья');
   });
 
   it('regenerates the entry only after the offer is confirmed', async () => {
@@ -317,10 +482,33 @@ describe('viewer dictionary quick-add', () => {
     expect(commands.regenerateEntry).toHaveBeenCalledTimes(1);
     // The regeneration itself (backend) stops playback; the prompt does not
     // issue a separate player command.
+    expect(commands.pausePlayback).not.toHaveBeenCalled();
     expect(commands.stopPlayback).not.toHaveBeenCalled();
   });
 
-  it('declining the offer changes nothing', async () => {
+  it('regenerates the entry captured when the editor opened', async () => {
+    await openQuickAdd('getUserData');
+    await saveWord('гет юзер дата');
+    // The user moves to another entry while the editor (and then the offer)
+    // is still up: the offer must target the entry that was open at capture
+    // time, not the current selection.
+    selectEntry(ENTRY_B);
+    pressEscape();
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain('Переозвучить сейчас?');
+    });
+
+    clickButton('Переозвучить');
+    await vi.waitFor(() => {
+      expect(commands.regenerateEntry).toHaveBeenCalledWith(ENTRY.id, false);
+    });
+    expect(commands.regenerateEntry).not.toHaveBeenCalledWith(
+      ENTRY_B.id,
+      false,
+    );
+  });
+
+  it('declining the offer changes nothing and does not touch playback', async () => {
     await openQuickAdd('getUserData');
     await saveWord('гет юзер дата');
     pressEscape();
@@ -334,16 +522,109 @@ describe('viewer dictionary quick-add', () => {
       expect(document.body.textContent).not.toContain('Переозвучить сейчас?');
     });
     expect(commands.regenerateEntry).not.toHaveBeenCalled();
+    expect(commands.pausePlayback).not.toHaveBeenCalled();
+    expect(commands.stopPlayback).not.toHaveBeenCalled();
+  });
+
+  it('keeps the old audio and reports the error when regeneration fails', async () => {
+    commands.regenerateEntry.mockRejectedValueOnce(new Error('boom'));
+    await openQuickAdd('getUserData');
+    await saveWord('гет юзер дата');
+    pressEscape();
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain('Переозвучить сейчас?');
+    });
+
+    clickButton('Переозвучить');
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain(
+        'Не удалось запустить перегенерацию',
+      );
+    });
+    // The failed command must not take the existing audio down with it, and
+    // no player command fires around it; the tree survives the rejection.
+    expect(commands.deleteAudio).not.toHaveBeenCalled();
+    expect(commands.deleteEntry).not.toHaveBeenCalled();
+    expect(commands.pausePlayback).not.toHaveBeenCalled();
+    expect(commands.stopPlayback).not.toHaveBeenCalled();
+    expect(commands.playEntry).not.toHaveBeenCalled();
+    expect(host.textContent).toContain('Вызови getUserData');
   });
 
   it('closing the editor without a save raises no offer', async () => {
     await openQuickAdd('getUserData');
 
     pressEscape();
-    await flushAsync(300);
+    await waitForEditorClosed();
 
     expect(document.body.textContent).not.toContain('Переозвучить сейчас?');
     expect(commands.regenerateEntry).not.toHaveBeenCalled();
     expect(commands.saveDictionary).not.toHaveBeenCalled();
+    expect(commands.pausePlayback).not.toHaveBeenCalled();
+    expect(commands.stopPlayback).not.toHaveBeenCalled();
+  });
+
+  it('offers no regeneration after a save from Settings', async () => {
+    await openDictionaryFromSettings();
+    await saveFromBlankForm();
+
+    pressEscape();
+    await vi.waitFor(() => {
+      expect(
+        document.querySelector('#settings-nav-dictionary'),
+      ).not.toBeNull();
+    });
+
+    expect(document.body.textContent).not.toContain('Переозвучить сейчас?');
+    expect(commands.regenerateEntry).not.toHaveBeenCalled();
+  });
+
+  it('offers no regeneration after a save from the preview quick-add', async () => {
+    clickButton('Добавить');
+    const pane = await vi.waitFor(() => {
+      const element = [...document.querySelectorAll('pre')].find((candidate) =>
+        candidate.textContent?.includes('getUserData'),
+      );
+      expect(element, 'preview source pane').not.toBeUndefined();
+      return element as HTMLPreElement;
+    });
+    const walker = document.createTreeWalker(pane, NodeFilter.SHOW_TEXT);
+    let node: Node | null = walker.nextNode();
+    while (node !== null && !(node.textContent ?? '').includes('getUserData')) {
+      node = walker.nextNode();
+    }
+    expect(node, 'word in the preview pane').not.toBeNull();
+    const text = node!.textContent ?? '';
+    const start = text.indexOf('getUserData');
+    const range = document.createRange();
+    range.setStart(node!, start);
+    range.setEnd(node!, start + 'getUserData'.length);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    act(() => {
+      pane.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    });
+    await vi.waitFor(() => {
+      const button = document.querySelector<HTMLButtonElement>(
+        '[data-quick-add-dictionary]',
+      );
+      expect(button?.disabled).toBe(false);
+    });
+    act(() =>
+      document
+        .querySelector<HTMLElement>('[data-quick-add-dictionary]')!
+        .click(),
+    );
+    await vi.waitFor(() => {
+      expect(fieldValue('Слово')).toBe('getUserData');
+    });
+
+    await saveWord('гет юзер дата');
+    pressEscape();
+    await waitForEditorClosed();
+
+    expect(document.body.textContent).not.toContain('Переозвучить сейчас?');
+    expect(commands.regenerateEntry).not.toHaveBeenCalled();
   });
 });

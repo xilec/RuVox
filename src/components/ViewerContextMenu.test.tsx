@@ -26,6 +26,7 @@ function Harness({
         <a href="/ru/post/1">ссылка</a>
         <img src="//habrastorage.org/x.png" alt="" />
         <p>вызови getUserData() сейчас</p>
+        <p>код 123 и get-user-data и кто-то и -mail и mail- и e--mail</p>
       </div>
       <ViewerContextMenu
         containerRef={ref}
@@ -175,6 +176,29 @@ describe('ViewerContextMenu', () => {
     await rightClick(host.querySelector('p') as Element);
     expect(menuItems()).toEqual(['Копировать']);
   });
+
+  it('hides the dictionary item for a digits-only token', async () => {
+    selectPhrase(host, '123');
+    await rightClick(host.querySelector('p') as Element);
+    expect(menuItems()).toEqual(['Копировать']);
+  });
+
+  it('offers the dictionary item for an internally hyphenated token', async () => {
+    for (const phrase of ['get-user-data', 'кто-то']) {
+      selectPhrase(host, phrase);
+      await rightClick(host.querySelector('p') as Element);
+      expect(menuItems()).toEqual(['В словарь', 'Копировать']);
+    }
+  });
+
+  it.each(['-mail', 'mail-', 'e--mail'])(
+    'hides the dictionary item for the malformed hyphenation %s',
+    async (phrase) => {
+      selectPhrase(host, phrase);
+      await rightClick(host.querySelector('p') as Element);
+      expect(menuItems()).toEqual(['Копировать']);
+    },
+  );
 
   it('hides the dictionary item when no callback is provided', async () => {
     act(() => {

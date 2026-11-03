@@ -153,9 +153,10 @@ describe.each(MODES)('viewer quick-add in $mode mode', ({ word, entry }) => {
         }),
       );
     });
-    // The Mantine dropdown mounts into the portal asynchronously.
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 50));
+    // The Mantine dropdown mounts into the portal asynchronously; wait for
+    // its items instead of sleeping for a fixed time.
+    await vi.waitFor(() => {
+      expect(menuItems()).toEqual(['В словарь', 'Копировать']);
     });
 
     expect(menuItems()).toEqual(['В словарь', 'Копировать']);
