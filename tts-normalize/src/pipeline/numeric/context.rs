@@ -98,6 +98,38 @@ impl SentenceMap {
     }
 }
 
+/// Prefix counts of prose letters in the original text, in char units.
+///
+/// A pipeline-inserted word (a markdown list marker becomes "первое:") is not
+/// a neighbour, and the only way to tell it from a real word is to look at the
+/// original fragment it came from: digits or punctuation mean insertion. That
+/// check used to scan the original from its first char for every number; the
+/// prefix makes it O(1) and keeps the context check linear in the text.
+pub(crate) struct LetterPrefix {
+    /// `counts[i]` is the number of prose letters before char `i`.
+    counts: Vec<u32>,
+}
+
+impl LetterPrefix {
+    pub(crate) fn build(original: &str) -> Self {
+        let mut counts = Vec::with_capacity(original.chars().count() + 1);
+        counts.push(0);
+        let mut count = 0u32;
+        for ch in original.chars() {
+            count += u32::from(is_cyrillic(ch) || ch.is_ascii_alphabetic());
+            counts.push(count);
+        }
+        Self { counts }
+    }
+
+    /// Whether the original fragment `[start, end)` holds a prose letter.
+    pub(crate) fn has_letters(&self, start: usize, end: usize) -> bool {
+        let end = end.min(self.counts.len().saturating_sub(1));
+        let start = start.min(end);
+        self.counts[end] > self.counts[start]
+    }
+}
+
 /// The nearest word before `pos`, or `None` when the text, a sentence or a
 /// paragraph ends first.
 ///
@@ -229,6 +261,17 @@ mod tests {
         let map = SentenceMap::build("In 2024 we shipped. Потом починили.");
         assert!(!map.has_cyrillic_at(3));
         assert!(map.has_cyrillic_at(20));
+    }
+
+    #[test]
+    fn letter_prefix_tells_digits_from_words() {
+        let prefix = LetterPrefix::build("1. Python 3.");
+        // "1." is a markdown list marker the pipeline turns into a label.
+        assert!(!prefix.has_letters(0, 2));
+        assert!(prefix.has_letters(3, 9));
+        assert!(!prefix.has_letters(10, 11));
+        assert!(prefix.has_letters(0, usize::MAX));
+        assert!(!prefix.has_letters(10, 10));
     }
 
     #[test]

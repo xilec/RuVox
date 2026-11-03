@@ -30,6 +30,7 @@ mod morphology;
 mod parse;
 mod read;
 
+use self::english::constructs;
 use crate::dictionary::UserDictionary;
 use crate::pipeline::spans::{RecordedSpan, SpanKind, byte_to_char_offsets, record_byte_ranges};
 use crate::pipeline::tracked_text::TrackedText;
@@ -72,6 +73,21 @@ enum EnglishNumber {
     Cardinal(u64),
     /// A value above the reader's range: every digit reads on its own.
     Digits(String),
+}
+
+/// What the layer decided to read in English for one span.
+enum EnglishClaim {
+    /// A standalone cardinal (#369): the route chooses the register.
+    Number(EnglishNumber),
+    /// A construct: only the narrated route reads it in English today.
+    Construct(String),
+}
+
+/// The inputs the neighbour scan consults for every token besides the text.
+struct Neighbours<'a> {
+    letters: &'a context::LetterPrefix,
+    identifiers: &'a [(usize, usize)],
+    dictionary: &'a UserDictionary,
 }
 
 impl EnglishNumber {
@@ -129,7 +145,6 @@ impl NumericSpanNormalizer {
     }
 
     /// Whether the span sits in English context (see the Numbers requirement).
-    #[allow(clippy::too_many_arguments)]
     fn english_context(
         tracked: &mut TrackedText,
         snapshot: &str,
@@ -137,32 +152,15 @@ impl NumericSpanNormalizer {
         span: (usize, usize),
         original_start: usize,
         sentences: &context::SentenceMap,
-        identifiers: &[(usize, usize)],
-        dictionary: &UserDictionary,
+        neighbours: &Neighbours<'_>,
     ) -> bool {
-        let left = Self::side(
-            &mut *tracked,
-            snapshot,
-            offsets,
-            span.0,
-            true,
-            identifiers,
-            dictionary,
-        );
+        let left = Self::side(&mut *tracked, snapshot, offsets, span.0, true, neighbours);
         // One foreign word is enough: the other side cannot make the number
         // English, and scanning it would only add work.
         if left == context::Side::Word {
             return false;
         }
-        let right = Self::side(
-            &mut *tracked,
-            snapshot,
-            offsets,
-            span.1,
-            false,
-            identifiers,
-            dictionary,
-        );
+        let right = Self::side(&mut *tracked, snapshot, offsets, span.1, false, neighbours);
         if right == context::Side::Word {
             return false;
         }
@@ -181,8 +179,7 @@ impl NumericSpanNormalizer {
         offsets: &[usize],
         pos: usize,
         before: bool,
-        identifiers: &[(usize, usize)],
-        dictionary: &UserDictionary,
+        neighbours: &Neighbours<'_>,
     ) -> context::Side {
         let origin = pos;
         let mut cursor = pos;
@@ -210,8 +207,7 @@ impl NumericSpanNormalizer {
                 offsets,
                 token,
                 (word.start, word.end),
-                identifiers,
-                dictionary,
+                neighbours,
             ) {
                 Some(side) => return side,
                 None => cursor = if before { word.start } else { word.end },
@@ -225,26 +221,14 @@ impl NumericSpanNormalizer {
         offsets: &[usize],
         token: &str,
         range: (usize, usize),
-        identifiers: &[(usize, usize)],
-        dictionary: &UserDictionary,
+        neighbours: &Neighbours<'_>,
     ) -> Option<context::Side> {
         if token.chars().any(context::is_cyrillic) {
             let (start, end) = tracked.original_range(offsets[range.0], offsets[range.1]);
-            let mut has_cyrillic = false;
-            let mut has_latin = false;
-            for ch in tracked
-                .original
-                .chars()
-                .skip(start)
-                .take(end.saturating_sub(start))
-            {
-                has_cyrillic |= context::is_cyrillic(ch);
-                has_latin |= ch.is_ascii_alphabetic();
-            }
             // A label the pipeline produced from digits or punctuation (a
             // markdown list marker) is not a neighbour; a Cyrillic reading of a
             // URL, path or inline code is not prose and still vetoes the number.
-            return if has_cyrillic || has_latin {
+            return if neighbours.letters.has_letters(start, end) {
                 Some(context::Side::Word)
             } else {
                 None
@@ -252,8 +236,11 @@ impl NumericSpanNormalizer {
         }
         let latin = token.chars().all(|ch| ch.is_ascii_alphabetic());
         if latin
-            && !super::overlaps_ranges(identifiers, range.0, range.1)
-            && dictionary.resolve(&token.to_lowercase(), false).is_none()
+            && !super::overlaps_ranges(neighbours.identifiers, range.0, range.1)
+            && neighbours
+                .dictionary
+                .resolve(&token.to_lowercase(), false)
+                .is_none()
         {
             Some(context::Side::English)
         } else {
@@ -279,7 +266,10 @@ impl NumericSpanNormalizer {
         let recorded = &mut *routing.recorded;
         let claimed = &mut *routing.claimed;
 
-        let needs_context = spans.iter().any(|span| Self::english_words(span).is_some());
+        let needs_context = spans.iter().any(|span| {
+            Self::english_words(span).is_some()
+                || (route == NumberRoute::Narrate && constructs::read(span, expand_units).is_some())
+        });
         let offsets = if needs_context {
             byte_to_char_offsets(&snapshot)
         } else {
@@ -295,34 +285,47 @@ impl NumericSpanNormalizer {
         } else {
             context::SentenceMap::build("")
         };
+        let letters = if needs_context {
+            context::LetterPrefix::build(&tracked.original)
+        } else {
+            context::LetterPrefix::build("")
+        };
+        let neighbours = Neighbours {
+            letters: &letters,
+            identifiers: &identifiers,
+            dictionary,
+        };
 
         let mut replacements: Vec<(usize, usize, String)> = Vec::new();
         let mut native_ranges: Vec<(usize, usize)> = Vec::new();
         for span in &spans {
-            let english = match Self::english_words(span) {
-                Some(latin) => {
+            let claim = match Self::english_words(span) {
+                Some(number) => Some(EnglishClaim::Number(number)),
+                None if route == NumberRoute::Narrate => {
+                    constructs::read(span, expand_units).map(EnglishClaim::Construct)
+                }
+                None => None,
+            };
+            let english = match claim {
+                Some(claim) => {
                     let original_start = tracked
                         .original_range(offsets[span.start], offsets[span.end])
                         .0;
-                    if Self::english_context(
+                    let matched = Self::english_context(
                         &mut *tracked,
                         &snapshot,
                         &offsets,
                         (span.start, span.end),
                         original_start,
                         &sentences,
-                        &identifiers,
-                        dictionary,
-                    ) {
-                        Some(latin)
-                    } else {
-                        None
-                    }
+                        &neighbours,
+                    );
+                    if matched { Some(claim) } else { None }
                 }
                 None => None,
             };
             match english {
-                Some(number) => match route {
+                Some(EnglishClaim::Number(number)) => match route {
                     NumberRoute::Narrate => replacements.push((
                         span.start,
                         span.end,
@@ -338,6 +341,9 @@ impl NumericSpanNormalizer {
                         native_ranges.push((span.start, span.end));
                     }
                 },
+                Some(EnglishClaim::Construct(latin)) => {
+                    replacements.push((span.start, span.end, english::transliterate(&latin)))
+                }
                 None => {
                     if let Some(reading) = span.read(&snapshot, expand_units) {
                         replacements.push((span.start, span.end, reading));

@@ -8,9 +8,41 @@ use crate::pipeline::numeric::morphology::{Case, Gender};
 
 // ── Units ─────────────────────────────────────────────────────────────────────
 
+/// Identity of a unit: the English wording keys by it instead of by the Russian
+/// word.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UnitKind {
+    Kilogram,
+    Kilometer,
+    Centimeter,
+    Millimeter,
+    Meter,
+    Liter,
+    Milliliter,
+    Gram,
+    Kilobyte,
+    Megabyte,
+    Gigabyte,
+    Terabyte,
+    Millisecond,
+    Second,
+    Minute,
+    Hour,
+    Pixel,
+    Em,
+    Rem,
+    Vh,
+    Vw,
+    Degree,
+    Celsius,
+    KilometersPerHour,
+    MetersPerSecond,
+}
+
 /// One entry of the unit table.
 #[derive(Clone, Copy, Debug)]
 pub struct UnitForms {
+    pub kind: UnitKind,
     pub sg_nom: &'static str,
     pub sg_gen: &'static str,
     pub pl_gen: &'static str,
@@ -22,12 +54,14 @@ pub struct UnitForms {
 }
 
 const fn unit(
+    kind: UnitKind,
     sg_nom: &'static str,
     sg_gen: &'static str,
     pl_gen: &'static str,
     gender: Gender,
 ) -> UnitForms {
     UnitForms {
+        kind,
         sg_nom,
         sg_gen,
         pl_gen,
@@ -37,8 +71,9 @@ const fn unit(
     }
 }
 
-const fn fixed_unit(word: &'static str, gender: Gender) -> UnitForms {
+const fn fixed_unit(kind: UnitKind, word: &'static str, gender: Gender) -> UnitForms {
     UnitForms {
+        kind,
         sg_nom: word,
         sg_gen: word,
         pl_gen: word,
@@ -74,36 +109,128 @@ const fn size(forms: UnitForms) -> Unit {
     }
 }
 
-const KILOGRAM: UnitForms = unit("килограмм", "килограмма", "килограммов", Gender::Masculine);
-const KILOMETER: UnitForms = unit("километр", "километра", "километров", Gender::Masculine);
-const CENTIMETER: UnitForms = unit("сантиметр", "сантиметра", "сантиметров", Gender::Masculine);
-const MILLIMETER: UnitForms = unit("миллиметр", "миллиметра", "миллиметров", Gender::Masculine);
-const METER: UnitForms = unit("метр", "метра", "метров", Gender::Masculine);
-const LITER: UnitForms = unit("литр", "литра", "литров", Gender::Masculine);
-const MILLILITER: UnitForms = unit("миллилитр", "миллилитра", "миллилитров", Gender::Masculine);
-const GRAM: UnitForms = unit("грамм", "грамма", "граммов", Gender::Masculine);
-const KILOBYTE: UnitForms = unit("килобайт", "килобайта", "килобайт", Gender::Masculine);
-const MEGABYTE: UnitForms = unit("мегабайт", "мегабайта", "мегабайт", Gender::Masculine);
-const GIGABYTE: UnitForms = unit("гигабайт", "гигабайта", "гигабайт", Gender::Masculine);
-const TERABYTE: UnitForms = unit("терабайт", "терабайта", "терабайт", Gender::Masculine);
+const KILOGRAM: UnitForms = unit(
+    UnitKind::Kilogram,
+    "килограмм",
+    "килограмма",
+    "килограммов",
+    Gender::Masculine,
+);
+const KILOMETER: UnitForms = unit(
+    UnitKind::Kilometer,
+    "километр",
+    "километра",
+    "километров",
+    Gender::Masculine,
+);
+const CENTIMETER: UnitForms = unit(
+    UnitKind::Centimeter,
+    "сантиметр",
+    "сантиметра",
+    "сантиметров",
+    Gender::Masculine,
+);
+const MILLIMETER: UnitForms = unit(
+    UnitKind::Millimeter,
+    "миллиметр",
+    "миллиметра",
+    "миллиметров",
+    Gender::Masculine,
+);
+const METER: UnitForms = unit(
+    UnitKind::Meter,
+    "метр",
+    "метра",
+    "метров",
+    Gender::Masculine,
+);
+const LITER: UnitForms = unit(
+    UnitKind::Liter,
+    "литр",
+    "литра",
+    "литров",
+    Gender::Masculine,
+);
+const MILLILITER: UnitForms = unit(
+    UnitKind::Milliliter,
+    "миллилитр",
+    "миллилитра",
+    "миллилитров",
+    Gender::Masculine,
+);
+const GRAM: UnitForms = unit(
+    UnitKind::Gram,
+    "грамм",
+    "грамма",
+    "граммов",
+    Gender::Masculine,
+);
+const KILOBYTE: UnitForms = unit(
+    UnitKind::Kilobyte,
+    "килобайт",
+    "килобайта",
+    "килобайт",
+    Gender::Masculine,
+);
+const MEGABYTE: UnitForms = unit(
+    UnitKind::Megabyte,
+    "мегабайт",
+    "мегабайта",
+    "мегабайт",
+    Gender::Masculine,
+);
+const GIGABYTE: UnitForms = unit(
+    UnitKind::Gigabyte,
+    "гигабайт",
+    "гигабайта",
+    "гигабайт",
+    Gender::Masculine,
+);
+const TERABYTE: UnitForms = unit(
+    UnitKind::Terabyte,
+    "терабайт",
+    "терабайта",
+    "терабайт",
+    Gender::Masculine,
+);
 const MILLISECOND: UnitForms = unit(
+    UnitKind::Millisecond,
     "миллисекунда",
     "миллисекунды",
     "миллисекунд",
     Gender::Feminine,
 );
-const SECOND: UnitForms = unit("секунда", "секунды", "секунд", Gender::Feminine);
-const MINUTE: UnitForms = unit("минута", "минуты", "минут", Gender::Feminine);
-const HOUR: UnitForms = unit("час", "часа", "часов", Gender::Masculine);
-const PIXEL: UnitForms = unit("пиксель", "пикселя", "пикселей", Gender::Masculine);
+const SECOND: UnitForms = unit(
+    UnitKind::Second,
+    "секунда",
+    "секунды",
+    "секунд",
+    Gender::Feminine,
+);
+const MINUTE: UnitForms = unit(
+    UnitKind::Minute,
+    "минута",
+    "минуты",
+    "минут",
+    Gender::Feminine,
+);
+const HOUR: UnitForms = unit(UnitKind::Hour, "час", "часа", "часов", Gender::Masculine);
+const PIXEL: UnitForms = unit(
+    UnitKind::Pixel,
+    "пиксель",
+    "пикселя",
+    "пикселей",
+    Gender::Masculine,
+);
 
 /// Units with a fixed reading.
-const EM: UnitForms = fixed_unit("эм", Gender::Masculine);
-const REM: UnitForms = fixed_unit("рем", Gender::Masculine);
-const VH: UnitForms = fixed_unit("ви эйч", Gender::Masculine);
-const VW: UnitForms = fixed_unit("ви дабл ю", Gender::Masculine);
+const EM: UnitForms = fixed_unit(UnitKind::Em, "эм", Gender::Masculine);
+const REM: UnitForms = fixed_unit(UnitKind::Rem, "рем", Gender::Masculine);
+const VH: UnitForms = fixed_unit(UnitKind::Vh, "ви эйч", Gender::Masculine);
+const VW: UnitForms = fixed_unit(UnitKind::Vw, "ви дабл ю", Gender::Masculine);
 
 const CELSIUS: UnitForms = UnitForms {
+    kind: UnitKind::Celsius,
     sg_nom: "градус",
     sg_gen: "градуса",
     pl_gen: "градусов",
@@ -112,6 +239,7 @@ const CELSIUS: UnitForms = UnitForms {
     tail: "Цельсия",
 };
 const KM_PER_HOUR: UnitForms = UnitForms {
+    kind: UnitKind::KilometersPerHour,
     sg_nom: "километр",
     sg_gen: "километра",
     pl_gen: "километров",
@@ -120,6 +248,7 @@ const KM_PER_HOUR: UnitForms = UnitForms {
     tail: "в час",
 };
 const M_PER_SECOND: UnitForms = UnitForms {
+    kind: UnitKind::MetersPerSecond,
     sg_nom: "метр",
     sg_gen: "метра",
     pl_gen: "метров",
@@ -180,7 +309,13 @@ pub const DEGREE_CELSIUS: UnitForms = CELSIUS;
 
 /// A bare degree sign (`45°`): the angle or temperature degree without the
 /// "Цельсия" tail.
-pub const DEGREE: UnitForms = unit("градус", "градуса", "градусов", Gender::Masculine);
+pub const DEGREE: UnitForms = unit(
+    UnitKind::Degree,
+    "градус",
+    "градуса",
+    "градусов",
+    Gender::Masculine,
+);
 
 // ── Currencies ────────────────────────────────────────────────────────────────
 

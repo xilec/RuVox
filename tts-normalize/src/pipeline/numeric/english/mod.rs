@@ -5,13 +5,19 @@
 //! their Cyrillic readings, so the native route (the Latin words replace the
 //! digits in the text) and the narrating route (Cyrillic synthesized by a
 //! Russian-only engine) cannot drift apart.
+//!
+//! [`constructs`] owns the wording of a construct that is not a bare cardinal
+//! (a unit, a date, an ordinal, a version); its word table joins [`reading`],
+//! so one lookup serves every word this layer emits.
+
+pub(crate) mod constructs;
 
 /// Above this value every digit is read separately, the same cutoff the
 /// Russian reader applies.
 pub(crate) const LIMIT: u64 = 999_999_999;
 
 const ZERO: (&str, &str) = ("zero", "зиро");
-const HUNDRED: (&str, &str) = ("hundred", "хандред");
+const HUNDRED: (&str, &str) = ("hundred", "хандрэд");
 const THOUSAND: (&str, &str) = ("thousand", "саузенд");
 const MILLION: (&str, &str) = ("million", "миллион");
 /// The filler of a year's one-digit tail ("nineteen oh five"); only the native
@@ -22,7 +28,7 @@ const UNITS: [(&str, &str); 20] = [
     ("zero", "зиро"),
     ("one", "уан"),
     ("two", "ту"),
-    ("three", "сри"),
+    ("three", "фри"),
     ("four", "фо"),
     ("five", "файв"),
     ("six", "сикс"),
@@ -43,7 +49,7 @@ const UNITS: [(&str, &str); 20] = [
 
 const TENS: [(&str, &str); 8] = [
     ("twenty", "твенти"),
-    ("thirty", "сёти"),
+    ("thirty", "фёти"),
     ("forty", "фоти"),
     ("fifty", "фифти"),
     ("sixty", "сиксти"),
@@ -105,6 +111,30 @@ pub(crate) fn digits(digits: &str) -> String {
     words.join(" ")
 }
 
+/// Whether a digit run is a zero-padded code: three or more digits starting
+/// with zero read digit by digit, the same cutoff the Russian reader applies.
+pub(crate) fn is_code_run(run: &str) -> bool {
+    run.len() >= 3 && run.starts_with('0')
+}
+
+/// The English words of a digit run: a cardinal while the reader names the
+/// value, the digit-by-digit reading otherwise.
+pub(crate) fn number_words(run: &str) -> String {
+    match run.parse::<u64>() {
+        Ok(value) if value <= LIMIT => cardinal(value).expect("a value inside the limit"),
+        _ => digits(run),
+    }
+}
+
+/// The English ordinal words of `value` ("twenty-first", "one hundredth").
+pub(crate) fn ordinal(value: u64) -> Option<String> {
+    let words = cardinal(value)?;
+    let split = words.rfind([' ', '-']).map(|index| index + 1).unwrap_or(0);
+    let (head, last) = words.split_at(split);
+    let last = constructs::ordinal_word(last)?;
+    Some(format!("{head}{last}"))
+}
+
 /// The Cyrillic reading of a Latin numeral phrase ("twenty-four" →
 /// "твенти-фо").
 pub(crate) fn transliterate(latin: &str) -> String {
@@ -142,9 +172,10 @@ fn reading(word: &str) -> Option<&'static str> {
     let table = UNITS
         .iter()
         .chain(TENS.iter())
-        .chain([ZERO, HUNDRED, THOUSAND, MILLION, OH].iter());
+        .chain([ZERO, HUNDRED, THOUSAND, MILLION, OH].iter())
+        .chain(constructs::WORDS.iter());
     table
-        .filter(|(latin, _)| *latin == word)
+        .filter(|(latin, _)| latin.eq_ignore_ascii_case(word))
         .map(|(_, cyrillic)| *cyrillic)
         .next()
 }
@@ -290,6 +321,6 @@ mod tests {
             transliterate("two thousand twenty-four"),
             "ту саузенд твенти-фо"
         );
-        assert_eq!(transliterate("one hundred one"), "уан хандред уан");
+        assert_eq!(transliterate("one hundred one"), "уан хандрэд уан");
     }
 }

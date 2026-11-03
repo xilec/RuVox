@@ -298,6 +298,14 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     m
 });
 
+/// Common function words whose reading the spelling rules get wrong.
+///
+/// Kept apart from [`IT_TERMS`]: those are technical terms, while these are the
+/// words every English sentence carries, and the rules read "the" as "те" and
+/// "and" as "анд".
+pub static FUNCTION_WORDS: Lazy<HashMap<&'static str, &'static str>> =
+    Lazy::new(|| [("the", "зэ"), ("and", "энд")].into_iter().collect());
+
 /// Recognized English inflection suffixes for bounded morphology on known IT
 /// stems. A suffix that merely ends in a shorter one is listed first (`ments`
 /// and `ers` before `s`, `ies` before `es`) so the full suffix wins and the

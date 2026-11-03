@@ -477,6 +477,17 @@ the suffix word too ("1.0.0-beta.2" → "один точка ноль точка
 ("v2") is not a version; the alphanumeric-token phase reads the whole token
 instead.
 
+A size, duration or version construct whose context is English (the Numbers rule)
+SHALL be read in English on the narrated route: the numeral uses the English
+cardinal register, a size or duration unit takes its English singular at exactly
+one and its English plural otherwise ("1 MB" → "one megabyte", "100 MB" → "one
+hundred megabytes"), a unit with a fixed reading keeps its English name ("1.5em"
+→ "one point five em"), and a version or dot decimal joins its groups with
+" point ", reading a leading-zero group digit by digit ("1.2.3" → "one point two
+point three"). The reading SHALL be transliterated into Cyrillic by the effective
+prose route, and a construct carrying a size or duration unit SHALL be claimed
+only when the profile expands units.
+
 #### Scenario: Size with declension
 
 - GIVEN the input "Файл весит 100MB"
@@ -515,6 +526,12 @@ instead.
 - WHEN the pipeline processes "512 KB"
 - THEN the whole construct stays as it is and no part of it is read
 
+#### Scenario: English-context size reads the English unit
+
+- GIVEN the Silero profile and the input "the cache holds 50 MB"
+- WHEN the pipeline processes it
+- THEN the size reads "фифти мегабайтс" and no Russian unit word appears
+
 ### Requirement: Dates and times
 
 The numeric span layer SHALL read calendar values as "<день-ordinal> <месяц в
@@ -551,6 +568,16 @@ number reading ("25:00" → "двадцать пять:ноль"). Date and time
 claimed by the numeric span phase in the same scan, so they cannot race the
 other numeric shapes, and the layer SHALL leave every word around the span
 untouched, including a capital letter.
+
+A date or time construct whose context is English (the Numbers rule) SHALL be
+read in English on the narrated route: a date reads "the <day ordinal> of
+<Month>, <year register>" ("12.05.2024" → "the twelfth of May, twenty
+twenty-four"), a year-month reads "<Month> <year register>" ("2024-12" →
+"December twenty twenty-four"), and a clock time reads "<hour> <minutes>" with
+"oh" before a one-digit minute and the hour alone at zero minutes ("09:30" →
+"nine thirty", "09:05" → "nine oh five"), with non-zero seconds appended as "and
+<n> seconds". The readings SHALL be transliterated into Cyrillic on the narrated
+route.
 
 #### Scenario: ISO date
 
@@ -623,6 +650,13 @@ untouched, including a capital letter.
 - THEN the time is not recognized and the digits are read by the number rules
   as "В двадцать пять:ноль встреча"
 
+#### Scenario: English-context date reads the English form
+
+- GIVEN the Silero profile and the input "the release landed on 12.05.2024"
+- WHEN the pipeline processes it
+- THEN the date reads "зэ твелфс ов мэй, твенти твенти-фо" and no Russian month
+  or ordinal appears
+
 ### Requirement: Ranges and percentages
 
 The numeric span layer SHALL read numeric ranges `N–M` with a hyphen, an en
@@ -655,6 +689,16 @@ The layer SHALL read approximation prefixes and suffixes together with the
 number: "~" → "около" plus the genitive ("около пяти"), "≈" → "примерно"
 ("примерно пять"), "±" → "плюс-минус" ("плюс-минус пять"), and a trailing "+"
 → "и больше" ("пять и больше").
+
+A range or percentage construct whose context is English (the Numbers rule) SHALL
+be read in English on the narrated route: a range reads "<left> to <right>"
+("10-20" → "ten to twenty"), a range whose bounds are calendar years reads both
+bounds in the year register ("2020–2024" → "twenty twenty to twenty
+twenty-four"), a percentage reads the cardinal plus the invariant "percent"
+("50%" → "fifty percent", "1%" → "one percent"), and a shared trailing unit,
+percentage or currency attaches to the right bound ("10–20%" → "ten to twenty
+percent"). The English reading carries no genitive agreement: a genitive trigger
+in an English sentence does not change the wording.
 
 #### Scenario: Simple range
 
@@ -728,6 +772,13 @@ number: "~" → "около" plus the genitive ("около пяти"), "≈" �
 - WHEN the pipeline processes them with the reference profile
 - THEN they read as "от пяти до десяти", "с пяти до десяти" and "более пяти
   процентов"
+
+#### Scenario: English-context range and percentage
+
+- GIVEN the Silero profile and the input "growth of 10-20%"
+- WHEN the pipeline processes it
+- THEN the range reads "тен ту твенти пёрсэнт" and neither bound is a Russian
+  numeral
 
 ### Requirement: Operators and special symbols
 
@@ -879,6 +930,11 @@ transliteration. Every other all-uppercase token SHALL be spelled via
 entries like "json" → "джейсон", otherwise letter-by-letter via the same
 shared letter-name table); `AS_WORD` dictionary for mixed-case entries; and
 finally spelling-rule transliteration in alphabetic runs.
+
+Common function words SHALL be curated in a `FUNCTION_WORDS` table consulted
+before `IT_TERMS` and before the spelling rules, and in any letter case: "the"
+reads "зэ" and "and" reads "энд", while the rules alone read them as "те" and
+"анд".
 
 Spelling-rule transliteration SHALL be context-aware, not a fixed digraph
 table. It SHALL apply, in order: whole-suffix rules (`-tion` → "шн", `-sion` →
@@ -1122,6 +1178,13 @@ runs before this phase (see "User dictionary application in normalization").
   letter-by-letter spelling the all-caps rule would produce, so these entries
   are not redundant
 
+#### Scenario: Function words use their curated readings
+
+- GIVEN the Silero profile and the input "The API and the cache"
+- WHEN the pipeline processes it
+- THEN the article reads "зэ" both times and the conjunction reads "энд", not
+  "те" and "анд"
+
 ### Requirement: Numbers
 
 The numeric span layer SHALL read standalone integers as Russian cardinal
@@ -1182,6 +1245,18 @@ fragments belong to the alphanumeric-token or address phases. A number
 immediately before a terminal dot SHALL be read normally. Readings SHALL be
 applied positionally over one snapshot so a span cannot corrupt another span
 or a longer number.
+
+The English-context rule SHALL apply to a numeric construct as a whole, not only
+to a standalone integer: a number that owns a unit, percentage, currency, date,
+time, version, range, reference or ordinal suffix SHALL be claimed as one span,
+and the neighbour and sentence tests SHALL run against that span's boundaries
+("the API grew 50%" reads the whole "50%" as English prose, while "Установи 5
+кг." stays Russian). The construct reading SHALL be the English wording of the
+whole construct (see Sizes, durations, and versions; Dates and times; Ranges and
+percentages), transliterated into Cyrillic on the narrated route. A construct
+outside those families — a phone number, a Roman numeral, a city abbreviation, a
+comma decimal, a slash fraction or a pre-release version suffix — SHALL keep its
+Russian reading.
 
 #### Scenario: Plain number
 
@@ -1317,6 +1392,13 @@ or a longer number.
 - WHEN the pipeline processes it
 - THEN the number keeps the Russian reading, because the identifier is not
   English prose
+
+#### Scenario: English-context construct on the narrated route
+
+- GIVEN the Silero profile and the input "The file is 100 MB."
+- WHEN the pipeline processes it
+- THEN the construct reads "уан хандрэд мегабайтс" and no Russian unit word
+  appears
 
 ### Requirement: Output post-processing
 

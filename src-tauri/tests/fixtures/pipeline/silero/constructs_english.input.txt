@@ -1,0 +1,2 @@
+The API grew 50% and the cache holds 100 MB.
+Version 1.2.3 shipped on 12.05.2024, in 10-20 builds.
