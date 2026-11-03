@@ -8,31 +8,33 @@
 //! are read from the WAV in frame-sized chunks and fed straight to the
 //! encoder, so memory use stays constant regardless of audio length.
 //!
-//! libopus only accepts the five Opus-native rates (RFC 6716 §2: 8/12/16/24/48
+//! The encoder only accepts the five Opus-native rates (RFC 6716 §2: 8/12/16/24/48
 //! kHz) as an encoder input rate, so a WAV at any other rate (e.g. Piper's
 //! 22050 Hz, or 44100 Hz) is linear-resampled to the nearest native rate
 //! before encoding. The native path (Silero ttsd's 48 kHz) is passed through
 //! untouched, keeping that common case streaming.
 //!
-//! See `tmp/opus_compare/` for the prototype this was ported from and the
-//! benchmarks that motivated the choice of `opus = "0.3"` (FFI to C libopus)
-//! over the pure-Rust `opus-rs` (issue #19).
+//! Encoding and decoding run on the pure-Rust `opus1` crate (a port of
+//! libopus 1.6 with SSE4.1/AVX2 SILK kernels): it replaced the C `libopus`
+//! FFI, encoding ~1.5x faster on the 48 kHz / 32 kbps VOIP profile with no
+//! native Opus dependency (issue #19).
 
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Write};
+use std::num::NonZeroU32;
 use std::path::Path;
 
 use byteorder::{LittleEndian, WriteBytesExt};
 use ogg::{PacketReader, PacketWriteEndInfo, PacketWriter};
-use opus::{Application, Bitrate, Channels, Decoder, Encoder};
+use opus1::{Application, Bitrate, Channels, OpusDecoder, OpusEncoder, SampleRate};
 use thiserror::Error;
 
 const FRAME_MS: u32 = 20;
-const BITRATE_BPS: i32 = 32_000;
+const BITRATE_BPS: u32 = 32_000;
 // Ogg logical-stream serial — arbitrary 32-bit value, "RuVO" in ASCII.
 const SERIAL: u32 = 0x5275_564f;
-// Encoded packet upper bound: 4000 bytes is the max permitted by libopus
-// (`opus_encode` returns at most this for a single 20 ms frame at any bitrate).
+// Encoded packet upper bound: 4000 bytes is the Opus limit for a single
+// 20 ms frame at any bitrate.
 const MAX_PACKET_BYTES: usize = 4000;
 // Sample rates Opus accepts natively (RFC 6716 §2). The encoder is wired up
 // for whichever of these the input WAV uses. Anything outside this set is
@@ -42,9 +44,6 @@ const SUPPORTED_SAMPLE_RATES: [u32; 5] = [8_000, 12_000, 16_000, 24_000, 48_000]
 // regardless of the input rate, so one 20 ms frame advances the granule by
 // exactly 960 ticks.
 const GRANULE_PER_FRAME: u64 = 48_000 * FRAME_MS as u64 / 1000;
-// Fallback when `Encoder::get_lookahead()` is unavailable — the libopus
-// default at 48 kHz / 20 ms / VOIP, expressed in 48 kHz output samples.
-const DEFAULT_PRE_SKIP_48K: u32 = 312;
 
 #[inline]
 fn frame_samples(sample_rate: u32) -> usize {
@@ -58,7 +57,7 @@ pub enum AudioError {
     #[error("wav error: {0}")]
     Wav(#[from] hound::Error),
     #[error("opus error: {0}")]
-    Opus(#[from] opus::Error),
+    Opus(#[from] opus1::Error),
     #[error("ogg error: {0}")]
     Ogg(String),
     #[error("unsupported wav format: {0}")]
@@ -123,19 +122,19 @@ pub fn encode_wav_to_opus(wav_path: &Path, opus_path: &Path) -> Result<()> {
         nearest_supported_rate(in_rate)
     };
 
-    let mut encoder = Encoder::new(encode_rate, Channels::Mono, Application::Voip)?;
-    encoder.set_bitrate(Bitrate::Bits(BITRATE_BPS))?;
+    let mut encoder = OpusEncoder::new(
+        SampleRate::try_from(encode_rate)?,
+        Channels::Mono,
+        Application::Voip,
+    )?;
+    encoder.set_bitrate(Bitrate::BitsPerSecond(
+        NonZeroU32::new(BITRATE_BPS).expect("BITRATE_BPS is non-zero"),
+    ));
 
     // Pre-skip is the leading-sample count decoders must discard, expressed in
-    // 48 kHz output ticks (RFC 7845 §4.2). Query libopus for its actual
-    // lookahead at the chosen rate and convert; if the bind is unavailable
-    // for any reason fall back to the libopus default at 48 kHz so files
-    // remain decodable, just with a tiny silence offset on lower rates.
-    let pre_skip_48k: u32 = encoder
-        .get_lookahead()
-        .ok()
-        .map(|n| (n as u32).saturating_mul(48_000) / encode_rate)
-        .unwrap_or(DEFAULT_PRE_SKIP_48K);
+    // 48 kHz output ticks (RFC 7845 §4.2). Query the encoder for its actual
+    // lookahead at the chosen rate and convert.
+    let pre_skip_48k: u32 = (encoder.lookahead() as u32).saturating_mul(48_000) / encode_rate;
     let pre_skip: u16 = pre_skip_48k.min(u16::MAX as u32) as u16;
 
     let file = BufWriter::new(File::create(opus_path)?);
@@ -231,7 +230,7 @@ fn resample_linear(input: &[f32], in_rate: u32, out_rate: u32) -> Vec<f32> {
 /// when the next frame arrives (or as the terminal `EndStream` page at the
 /// end of input). `samples` yields one float per output sample.
 fn write_frames(
-    encoder: &mut Encoder,
+    encoder: &mut OpusEncoder,
     writer: &mut PacketWriter<BufWriter<File>>,
     encode_rate: u32,
     samples: &mut dyn Iterator<Item = std::result::Result<f32, hound::Error>>,
@@ -253,7 +252,7 @@ fn write_frames(
         frame_buf[filled] = s;
         filled += 1;
         if filled == frame_samples {
-            let n = encoder.encode_float(&frame_buf, &mut encoded)?;
+            let n = encoder.encode(&frame_buf, frame_buf.len(), &mut encoded)?;
             absgp += GRANULE_PER_FRAME;
             let data = encoded[..n].to_vec();
             if let Some((prev, prev_gp)) = pending.take() {
@@ -269,7 +268,7 @@ fn write_frames(
         for slot in &mut frame_buf[filled..] {
             *slot = 0.0;
         }
-        let n = encoder.encode_float(&frame_buf, &mut encoded)?;
+        let n = encoder.encode(&frame_buf, frame_buf.len(), &mut encoded)?;
         absgp += GRANULE_PER_FRAME;
         let data = encoded[..n].to_vec();
         if let Some((prev, prev_gp)) = pending.take() {
@@ -364,13 +363,13 @@ pub fn decode_opus_to_wav(opus_path: &Path, wav_path: &Path) -> Result<()> {
 
 fn decode_opus_to_wav_stream(opus_path: &Path, wav_path: &Path) -> Result<()> {
     let mut reader = PacketReader::new(BufReader::new(File::open(opus_path)?));
-    let mut decoder = Decoder::new(OPUS_DECODE_RATE, Channels::Mono)?;
+    let mut decoder = OpusDecoder::new(SampleRate::Hz48000, Channels::Mono)?;
 
     let head = reader
         .read_packet()
         .map_err(map_ogg_read_error)?
         .ok_or_else(|| AudioError::Ogg("no OpusHead packet".to_string()))?;
-    let (channels, pre_skip) = parse_opus_head(&head.data)?;
+    let (channels, pre_skip, _input_rate) = parse_opus_head(&head.data)?;
     if channels != 1 {
         return Err(AudioError::UnsupportedFormat(format!(
             "expected mono stream, got {channels} channels"
@@ -402,7 +401,7 @@ fn decode_opus_to_wav_stream(opus_path: &Path, wav_path: &Path) -> Result<()> {
 
     while let Some(pkt) = reader.read_packet().map_err(map_ogg_read_error)? {
         let is_last = pkt.last_in_stream();
-        let n = decoder.decode_float(&pkt.data, &mut frame_buf, false)?;
+        let n = decoder.decode(&pkt.data, frame_buf.len(), &mut frame_buf)?;
         if is_last {
             audible_limit = Some(pkt.absgp_page().saturating_sub(u64::from(pre_skip)));
         }
@@ -424,10 +423,10 @@ fn decode_opus_to_wav_stream(opus_path: &Path, wav_path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Parse the `OpusHead` fields the decoder needs: channel count and
-/// pre-skip (RFC 7845 §5.1 — version at byte 8, channels at 9, pre-skip
-/// u16 LE at 10-11).
-fn parse_opus_head(data: &[u8]) -> Result<(u8, u16)> {
+/// Parse the `OpusHead` fields the decoder needs: channel count, pre-skip and
+/// input sample rate (RFC 7845 §5.1 — version at byte 8, channels at 9,
+/// pre-skip u16 LE at 10-11, input rate u32 LE at 12-15).
+fn parse_opus_head(data: &[u8]) -> Result<(u8, u16, u32)> {
     if data.len() < 19 || &data[..8] != b"OpusHead" {
         return Err(AudioError::UnsupportedFormat(
             "missing OpusHead packet".to_string(),
@@ -439,7 +438,11 @@ fn parse_opus_head(data: &[u8]) -> Result<(u8, u16)> {
             data[8]
         )));
     }
-    Ok((data[9], u16::from_le_bytes([data[10], data[11]])))
+    Ok((
+        data[9],
+        u16::from_le_bytes([data[10], data[11]]),
+        u32::from_le_bytes([data[12], data[13], data[14], data[15]]),
+    ))
 }
 
 /// Convert a decoded float sample to 16-bit PCM: clamp to [-1, 1] and
@@ -519,31 +522,27 @@ mod tests {
         writer.finalize().expect("finalize");
     }
 
-    /// Read the `input_sample_rate` field out of an encoded Ogg-Opus file's
-    /// OpusHead packet. The packet is: "OggS" page header (27+ bytes) then
-    /// segment table, then payload starting with "OpusHead"; the rate is a
-    /// little-endian u32 at offset +12 from that magic (bytes 12-15 of the
-    /// 19-byte OpusHead payload, RFC 7845 §5.1).
-    fn read_opus_head_rate(opus_path: &Path) -> u32 {
+    /// Read the `input_sample_rate` and pre-skip fields out of an encoded
+    /// Ogg-Opus file. The payload starts with "OpusHead" after the "OggS"
+    /// page header and segment table; `parse_opus_head` owns the field layout,
+    /// so the test reads it through the same parser as production.
+    fn read_opus_head_fields(opus_path: &Path) -> (u32, u16) {
         let bytes = std::fs::read(opus_path).expect("read opus");
         assert_eq!(&bytes[..4], b"OggS", "not an Ogg stream");
         let head_off = bytes
             .windows(8)
             .position(|w| w == b"OpusHead")
             .expect("OpusHead present");
-        u32::from_le_bytes([
-            bytes[head_off + 12],
-            bytes[head_off + 13],
-            bytes[head_off + 14],
-            bytes[head_off + 15],
-        ])
+        let (_, pre_skip, rate) = parse_opus_head(&bytes[head_off..]).expect("valid OpusHead");
+        (rate, pre_skip)
     }
 
     /// Every Opus-native sample rate (RFC 6716 §2, `SUPPORTED_SAMPLE_RATES`)
-    /// must round-trip through the encoder: a non-empty Ogg stream whose
-    /// OpusHead records the input rate. One `#[test_case]` per rate so a
-    /// failing rate is a named case, not a loop iteration swallowed by the
-    /// first `assert`.
+    /// must round-trip through the encoder and the decoder: a non-empty Ogg
+    /// stream whose OpusHead records the input rate and the 312-sample
+    /// pre-skip, which decodes back to ~1 s of non-silent 48 kHz PCM. One
+    /// `#[test_case]` per rate so a failing rate is a named case, not a loop
+    /// iteration swallowed by the first `assert`.
     #[test_case(8_000; "8kHz")]
     #[test_case(12_000; "12kHz")]
     #[test_case(16_000; "16kHz")]
@@ -568,13 +567,37 @@ mod tests {
             bytes.len()
         );
 
-        let head_rate = read_opus_head_rate(&opus_path);
+        let (head_rate, pre_skip) = read_opus_head_fields(&opus_path);
         assert_eq!(
             head_rate, rate,
             "OpusHead input_sample_rate mismatch at {rate} Hz"
         );
-    }
+        // 6.5 ms of lookahead is 312 samples at 48 kHz at every native rate.
+        assert_eq!(pre_skip, 312, "OpusHead pre-skip mismatch at {rate} Hz");
 
+        // Decode the file back at every rate: SILK at 8-16 kHz and CELT/hybrid
+        // at 48 kHz must all survive the decoder swap, not just the 24 kHz case
+        // of the dedicated round-trip test.
+        let out_path = dir.path().join("out.wav");
+        decode_opus_to_wav(&opus_path, &out_path)
+            .unwrap_or_else(|e| panic!("decode failed at {rate} Hz: {e}"));
+        let mut reader = hound::WavReader::open(&out_path).expect("open decoded wav");
+        let samples: Vec<i16> = reader
+            .samples::<i16>()
+            .collect::<std::result::Result<_, _>>()
+            .expect("read samples");
+        let one_frame = 48_000usize * FRAME_MS as usize / 1000;
+        assert!(
+            samples.len() >= 48_000 - one_frame && samples.len() <= 48_000 + one_frame,
+            "decoded length at {rate} Hz must stay within one frame of 1 s, got {}",
+            samples.len()
+        );
+        let peak = samples.iter().map(|s| s.abs()).max().expect("non-empty");
+        assert!(
+            peak > 3_000,
+            "decoded signal at {rate} Hz is silent, peak {peak}"
+        );
+    }
     /// Compile-/run-time guard: the literal rates enumerated as `#[test_case]`
     /// rows above must equal the production `SUPPORTED_SAMPLE_RATES` set, so a
     /// newly supported rate cannot land without its own per-rate case.
@@ -607,7 +630,7 @@ mod tests {
         let bytes = std::fs::read(&opus_path).expect("read opus");
         assert!(bytes.len() > 1000, "opus too small: {}", bytes.len());
         assert_eq!(
-            read_opus_head_rate(&opus_path),
+            read_opus_head_fields(&opus_path).0,
             24_000,
             "22050 Hz must be resampled to 24000 Hz in OpusHead"
         );
@@ -626,7 +649,7 @@ mod tests {
             .unwrap_or_else(|e| panic!("44100 Hz wav should resample+encode, got: {e}"));
 
         assert_eq!(
-            read_opus_head_rate(&opus_path),
+            read_opus_head_fields(&opus_path).0,
             48_000,
             "44100 Hz must be resampled to 48000 Hz in OpusHead"
         );
@@ -709,7 +732,7 @@ mod tests {
         let bytes = std::fs::read(&opus_path).expect("read opus");
         assert!(bytes.len() > 1000, "opus too small: {}", bytes.len());
         assert_eq!(
-            read_opus_head_rate(&opus_path),
+            read_opus_head_fields(&opus_path).0,
             24_000,
             "OpusHead must record the native 24000 Hz"
         );
@@ -756,7 +779,7 @@ mod tests {
             .unwrap_or_else(|e| panic!("22050 Hz int16 wav should resample+encode, got: {e}"));
 
         assert_eq!(
-            read_opus_head_rate(&opus_path),
+            read_opus_head_fields(&opus_path).0,
             24_000,
             "22050 Hz must be resampled to 24000 Hz in OpusHead"
         );

@@ -20,7 +20,7 @@ sudo apt update
 sudo apt install -y \
   build-essential pkg-config cmake clang libclang-dev \
   libwebkit2gtk-4.1-dev libsoup-3.0-dev libgtk-3-dev librsvg2-dev \
-  libayatana-appindicator3-dev libmpv-dev mpv libopus-dev libssl-dev \
+  libayatana-appindicator3-dev libmpv-dev mpv libssl-dev \
   libasound2-dev libpulse-dev libpipewire-0.3-dev \
   libfontconfig1-dev libfreetype6-dev libgl-dev libdrm-dev \
   libwayland-dev libxkbcommon-dev wayland-protocols \
@@ -37,7 +37,7 @@ sudo apt install -y \
 sudo dnf install -y \
   gcc gcc-c++ pkgconf-pkg-config cmake clang clang-devel git \
   webkit2gtk4.1-devel libsoup3-devel gtk3-devel librsvg2-devel \
-  libayatana-appindicator-gtk3-devel mpv-libs-devel mpv opus-devel openssl-devel \
+  libayatana-appindicator-gtk3-devel mpv-libs-devel mpv openssl-devel \
   alsa-lib-devel pulseaudio-libs-devel pipewire-devel \
   fontconfig-devel freetype-devel mesa-libGL-devel libdrm-devel \
   wayland-devel libxkbcommon-devel wayland-protocols-devel \
@@ -54,7 +54,7 @@ sudo dnf install -y \
 sudo pacman -S --needed \
   base-devel cmake clang git \
   webkit2gtk-4.1 libsoup3 gtk3 librsvg libayatana-appindicator \
-  mpv opus openssl \
+  mpv openssl \
   alsa-lib libpulse pipewire \
   fontconfig freetype2 libglvnd libdrm \
   wayland libxkbcommon wayland-protocols \
