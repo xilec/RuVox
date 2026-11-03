@@ -53,6 +53,7 @@ Values absent from the snapshot SHALL render as a placeholder dash rather than g
 - GIVEN a ready entry whose snapshot records engine `silero_native`, speaker `xenia`, and an Ogg Opus file
 - WHEN the user opens "Параметры записи…" for the entry
 - THEN the dialog shows the ingestion source first, then the localized engine name, the Silero speaker name (`Xenia`), the sample rate, the audio codec and size, and the generation number
+
 #### Scenario: Absent values render as a dash
 
 - GIVEN a ready entry whose snapshot has no model identity
@@ -71,13 +72,12 @@ Values absent from the snapshot SHALL render as a placeholder dash rather than g
 - WHEN the user opens the context menu for the entry
 - THEN "Параметры записи…" is disabled
 
-
 ### Requirement: Text viewer reading controls
 
 The text viewer SHALL show reading-typography controls in the viewer header's
-metadata row (the entry header added by #353), placed after the display-mode
-switch when one is rendered, in every display mode — including a plain source,
-which has no display-mode switch:
+metadata row (the entry header added by #353), in the same right-end group,
+after the display-mode switch when one is rendered, in every display mode —
+including a plain source, which has no display-mode switch:
 
 - a `Узко | Широко` `SegmentedControl` bound to `UIConfig.reading_width`
   (`"narrow"` | `"wide"`);

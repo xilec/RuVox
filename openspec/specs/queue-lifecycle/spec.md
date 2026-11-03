@@ -204,8 +204,8 @@ query. When no entry matches, the system SHALL show "Ничего не найд�
 
 - GIVEN a non-empty queue and a search query
 - WHEN the user types into the search field
-- THEN only entries whose `original_text` contains the query
-  (case-insensitive) are shown
+- THEN entries matching any of `title`, `note` or `original_text` are shown;
+  entries matching none are hidden
 
 #### Scenario: Filtering entries by title
 

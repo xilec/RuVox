@@ -10,7 +10,8 @@ header SHALL contain, from top to bottom:
 - the note line;
 - a metadata row with the date added, the status badge, the engine and the
   voice of the current recording, and — at its right end — the format display
-  switch when the entry's source format offers rendered views.
+  switch when the entry's source format offers rendered views, followed by the
+  reading width and scale controls.
 
 The title shown SHALL be the stored `title`, or — when it is `null` — the title
 derived from `original_text` by the same algorithm the backend uses for
@@ -46,11 +47,10 @@ unknown id by the stored id. An entry without a `generation` snapshot SHALL
 show the explicit placeholders «не озвучено» for the engine and «—» for the
 voice rather than an empty or guessed value.
 
-The format `SegmentedControl` SHALL move from the old toolbar into the right end
-of the metadata row; it SHALL NOT be rendered for a plain source that offers no
-rendered view. The reading-typography controls (#354/#357) SHALL remain next to
-it in the viewer header and SHALL stay available in every display mode,
-including a plain source.
+The format `SegmentedControl` SHALL sit at the right end of the metadata row;
+it SHALL NOT be rendered for a plain source that offers no rendered view. The
+reading-typography controls (#354/#357) SHALL follow it in the same right-end
+group and SHALL stay available in every display mode, including a plain source.
 
 #### Scenario: Legacy entry renders the derived title
 
@@ -65,6 +65,14 @@ including a plain source.
 - **THEN** `set_entry_title` persists the trimmed value, the header shows it
   immediately, and pressing `Esc` instead leaves the stored title untouched
 
+#### Scenario: Blur commits the title
+
+- **GIVEN** an entry displayed in the viewer
+- **WHEN** the user types a value in the title editor and moves focus away
+  without pressing `Enter`
+- **THEN** `set_entry_title` persists the trimmed value and the header shows it
+  immediately
+
 #### Scenario: Clearing the title returns to the derived fallback
 
 - **GIVEN** an entry with a stored title
@@ -78,6 +86,13 @@ including a plain source.
 - **THEN** `set_entry_note` persists the trimmed note and the header shows the
   clamped note; clearing the textarea and saving removes it and restores the
   «Добавить заметку» state
+
+#### Scenario: A long note clamps and expands
+
+- **GIVEN** an entry whose note is longer than two lines
+- **WHEN** the header renders
+- **THEN** the note is clamped to two lines with an expand toggle
+- **AND** activating the toggle shows the full note and collapses it back
 
 #### Scenario: Draft survives an entry update
 
@@ -106,7 +121,7 @@ including a plain source.
 - **WHEN** the header renders
 - **THEN** the metadata row shows `Готово`, `Silero (нативный)` and `Xenia`
 
-#### Scenario: Reading controls stay available after the switch moves
+#### Scenario: Reading controls stay available in a plain source
 
 - **GIVEN** a plain-text entry with no display switch
 - **WHEN** the viewer renders
