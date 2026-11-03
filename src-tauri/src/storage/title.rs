@@ -112,6 +112,9 @@ mod tests {
 
     /// Shared case table — mirrored verbatim in `src/lib/entryTitle.test.ts`.
     /// Change both at once; the parity is the point.
+    // Rust's `char::is_whitespace` / `str::trim` use Unicode `White_Space`;
+    // the TS mirror pins the same set (`\p{White_Space}` plus its own trim),
+    // so U+0085 (NEL) and U+FEFF (BOM) derive identically on both sides.
     const CASES: &[(&str, Option<&str>)] = &[
         ("Привет мир", Some("Привет мир")),
         ("## Установка\nТекст", Some("Установка")),
@@ -133,6 +136,16 @@ mod tests {
         ("#", None),
         ("- ", None),
         ("\u{2003}\n", None),
+        // CRLF input: the trailing `\r` is whitespace, not part of the title.
+        ("## Заголовок\r\nТекст", Some("Заголовок")),
+        // A lone `\r` is not a line break, but it still collapses to a space.
+        ("Заголовок\rХвост", Some("Заголовок Хвост")),
+        // NEL (U+0085) is Unicode White_Space — trimmed at the edge and
+        // collapsed inside, unlike JS `String.prototype.trim`.
+        ("\u{0085}# Заголовок", Some("Заголовок")),
+        ("# Заголовок\u{0085}Текст", Some("Заголовок Текст")),
+        // BOM (U+FEFF) is not White_Space, unlike JS `String.prototype.trim`.
+        ("\u{FEFF}# Заголовок", Some("\u{FEFF}# Заголовок")),
     ];
 
     #[test]

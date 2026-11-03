@@ -26,6 +26,7 @@ use crate::storage::schema::{
     TextFormat, UIConfig, UIConfigPatch, WordTimestamp,
 };
 use crate::storage::service::{StorageError, StorageService};
+use crate::storage::title::TITLE_MAX_CHARS;
 use crate::tts::engine::EngineKind;
 use crate::tts::model_lifecycle::{self, ModelAssetStatus, ModelState, ModelStatus};
 use crate::tts::piper::catalog;
@@ -441,14 +442,38 @@ pub async fn delete_audio<R: Runtime>(
     Ok(())
 }
 
+/// Apply a metadata-only mutation (display mode, title, note) to one entry
+/// and broadcast the result (issue #353).
+///
+/// The write is applied in place under the storage lock instead of persisting
+/// a read-decide-write clone of the whole entry: a synthesis completion that
+/// lands between a stale read and the write would otherwise be rolled back
+/// (status, audio path, timestamps). Unknown ids are rejected with the typed
+/// `not_found` error and emit nothing.
+fn patch_entry<R: Runtime>(
+    app: &AppHandle<R>,
+    storage: &StorageService,
+    id: &str,
+    mutate: impl FnOnce(&mut TextEntry),
+) -> CmdResult<()> {
+    let uuid = parse_entry_id(id)?;
+    if !storage.update_entry_if(&uuid, |_| true, mutate) {
+        return Err(CommandError::not_found(
+            "entry.not_found",
+            vec![id.to_string()],
+        ));
+    }
+    if let Some(entry) = storage.get_entry(&uuid) {
+        emit_entry_updated(app, &entry);
+    }
+    Ok(())
+}
+
 /// Persist the viewer display mode of an entry and notify the UI.
 ///
 /// Display-only: the immutable source `format`, `normalized_text`, audio, and
-/// timestamps are untouched, so no `Processing` guard is needed. The write is
-/// applied in place under the storage lock instead of persisting a
-/// read-decide-write clone of the whole entry: a synthesis completion that
-/// lands between a stale read and the write would otherwise be rolled back
-/// (status, audio path, timestamps).
+/// timestamps are untouched, so no `Processing` guard is needed. The write goes
+/// through [`patch_entry`], which applies it in place under the storage lock.
 #[tauri::command]
 pub async fn set_entry_display_mode<R: Runtime>(
     app: AppHandle<R>,
@@ -456,26 +481,11 @@ pub async fn set_entry_display_mode<R: Runtime>(
     id: String,
     display_mode: DisplayMode,
 ) -> CmdResult<()> {
-    let uuid = parse_entry_id(&id)?;
-    let applied =
-        state
-            .storage
-            .update_entry_if(&uuid, |_| true, |e| e.display_mode = Some(display_mode));
-    if !applied {
-        return Err(CommandError::not_found(
-            "entry.not_found",
-            vec![id.to_string()],
-        ));
-    }
-    if let Some(entry) = state.storage.get_entry(&uuid) {
-        emit_entry_updated(&app, &entry);
-    }
-    Ok(())
+    patch_entry(&app, &state.storage, &id, |entry| {
+        entry.display_mode = Some(display_mode);
+    })
 }
 
-/// Maximum stored title length in Unicode scalar values. Mirrors the seeding
-/// cap in [`crate::storage::title::TITLE_MAX_CHARS`].
-const TITLE_MAX_CHARS: usize = crate::storage::title::TITLE_MAX_CHARS;
 /// Maximum stored note length in Unicode scalar values.
 const NOTE_MAX_CHARS: usize = 2000;
 
@@ -496,10 +506,9 @@ fn normalize_metadata_value(value: Option<String>, max_chars: usize) -> Option<S
 /// Persist the editable title of an entry and notify the UI (issue #353).
 ///
 /// A `None` (or empty / whitespace-only) title clears the stored value, so the
-/// UI falls back to the title derived from `original_text`. The write goes
-/// through [`StorageService::update_entry_if`] so a synthesis completion that
-/// lands concurrently cannot be rolled back by a read-decide-write clone
-/// (issue #363).
+/// UI falls back to the title derived from `original_text`. The cap is
+/// [`TITLE_MAX_CHARS`] — the same constant that seeds new entries — and the
+/// write goes through [`patch_entry`].
 #[tauri::command]
 pub async fn set_entry_title<R: Runtime>(
     app: AppHandle<R>,
@@ -507,21 +516,8 @@ pub async fn set_entry_title<R: Runtime>(
     id: String,
     title: Option<String>,
 ) -> CmdResult<()> {
-    let uuid = parse_entry_id(&id)?;
     let title = normalize_metadata_value(title, TITLE_MAX_CHARS);
-    let applied = state
-        .storage
-        .update_entry_if(&uuid, |_| true, |e| e.title = title);
-    if !applied {
-        return Err(CommandError::not_found(
-            "entry.not_found",
-            vec![id.to_string()],
-        ));
-    }
-    if let Some(entry) = state.storage.get_entry(&uuid) {
-        emit_entry_updated(&app, &entry);
-    }
-    Ok(())
+    patch_entry(&app, &state.storage, &id, |entry| entry.title = title)
 }
 
 /// Persist the editable note of an entry and notify the UI (issue #353).
@@ -536,21 +532,8 @@ pub async fn set_entry_note<R: Runtime>(
     id: String,
     note: Option<String>,
 ) -> CmdResult<()> {
-    let uuid = parse_entry_id(&id)?;
     let note = normalize_metadata_value(note, NOTE_MAX_CHARS);
-    let applied = state
-        .storage
-        .update_entry_if(&uuid, |_| true, |e| e.note = note);
-    if !applied {
-        return Err(CommandError::not_found(
-            "entry.not_found",
-            vec![id.to_string()],
-        ));
-    }
-    if let Some(entry) = state.storage.get_entry(&uuid) {
-        emit_entry_updated(&app, &entry);
-    }
-    Ok(())
+    patch_entry(&app, &state.storage, &id, |entry| entry.note = note)
 }
 
 /// Regenerate audio for an existing entry: re-run the synthesis pipeline

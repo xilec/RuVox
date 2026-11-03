@@ -947,6 +947,23 @@ async fn set_entry_title_caps_at_200_chars() {
     assert_eq!(title.chars().count(), 200);
 }
 
+/// The cap runs before the final trim: a 200th character that is a space must
+/// not survive as a trailing space in the stored title.
+#[tokio::test(flavor = "multi_thread")]
+async fn set_entry_title_caps_then_trims_trailing_space() {
+    let t = build_test_app();
+    let id = add_ready_entry(&t).await;
+    let uuid = entry_uuid(&id);
+
+    let long = format!("{} хвост", "ж".repeat(199));
+    set_entry_title(t.app.handle().clone(), t.state(), id.clone(), Some(long))
+        .await
+        .unwrap();
+    let title = t.state().storage.get_entry(&uuid).unwrap().title.unwrap();
+    assert_eq!(title.chars().count(), 199);
+    assert!(!title.ends_with(' '));
+}
+
 /// Notes persist with their internal newlines, are trimmed at the edges,
 /// capped at 2000 characters, and clear to `None` when empty.
 #[tokio::test(flavor = "multi_thread")]
