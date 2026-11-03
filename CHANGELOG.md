@@ -7,6 +7,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 ## [Unreleased]
 
 ### Added
+- **Synthesis failures stay on the queue card** — the stored engine reason and
+  a «Повторить» action, plus an amber note when a regeneration failed (#351).
 - **Hyphenated dictionary words** — a source word may now contain an internal
   hyphen, and such an entry is matched as a whole word: `UTF-8` → «у тэф
   восемь» wins over entries for its parts and over the built-in reading, while

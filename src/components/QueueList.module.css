@@ -83,3 +83,80 @@
   z-index: 5;
   box-shadow: var(--mantine-shadow-md);
 }
+
+/* Failed synthesis row: red tint plus a 3 px left border. The 2 px the border
+   adds over the base 1 px transparent one are taken back from the padding, so
+   the text column does not shift relative to healthy rows. */
+.itemError {
+  background-color: var(--mantine-color-red-light);
+  border-left: 3px solid var(--mantine-color-red-6);
+  padding-left: calc(var(--mantine-spacing-sm) - 2px);
+}
+
+.itemError:hover {
+  background-color: var(--mantine-color-red-light-hover);
+}
+
+/* Selection keeps the red tint (the failure is the row's identity) and only
+   brightens it; the left edge stays red while the other borders follow the
+   selected style. */
+.itemError.itemSelected {
+  background-color: var(--mantine-color-red-light-hover);
+  border-color: var(--mantine-color-default-border);
+  border-left-color: var(--mantine-color-red-6);
+}
+
+/* The failure block itself: red for a dead entry, amber for a playable entry
+   whose last regeneration failed. */
+.failureError,
+.failureWarning {
+  margin-top: 2px;
+  padding: 4px 6px;
+  border-radius: var(--mantine-radius-sm);
+  border-left: 2px solid transparent;
+}
+
+.failureError {
+  background-color: var(--mantine-color-red-light);
+  border-left-color: var(--mantine-color-red-6);
+  color: var(--mantine-color-red-light-color);
+}
+
+.failureWarning {
+  background-color: var(--mantine-color-yellow-light);
+  border-left-color: var(--mantine-color-yellow-6);
+  color: var(--mantine-color-yellow-light-color);
+}
+
+.failureText {
+  font-size: var(--mantine-font-size-xs);
+  line-height: var(--mantine-line-height-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  /* The reason must be copyable: it is selectable text, not a label. */
+  user-select: text;
+  cursor: text;
+}
+
+/* Two-line clamp: the card keeps a stable height for long engine messages and
+   `FailureNote` measures `scrollHeight` against `clientHeight` to decide
+   whether «Показать полностью» is needed. */
+.failureTextClamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.failureTextExpanded {
+  display: block;
+  overflow: visible;
+}
+
+.failureHint {
+  margin-top: 2px;
+  font-size: var(--mantine-font-size-xs);
+  line-height: var(--mantine-line-height-xs);
+  color: var(--mantine-color-dimmed);
+}

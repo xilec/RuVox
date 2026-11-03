@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   Stack,
   Group,
@@ -51,6 +51,106 @@ const STATUS_KEY: Record<EntryStatus, MessageKey> = {
   cancelled: 'queue.status.cancelled',
 };
 
+/** Which failure treatment a card needs, if any: a hard `error`, or a
+ * playable entry whose last regeneration failed (old audio kept) — the
+ * backend stores both in `error_message`. */
+function failureTone(entry: TextEntry): 'error' | 'warning' | null {
+  if (entry.error_message === null) return null;
+  if (entry.status === 'error') return 'error';
+  if (entry.status === 'ready' || entry.status === 'playing') return 'warning';
+  return null;
+}
+
+interface FailureNoteProps {
+  tone: 'error' | 'warning';
+  /** Localized prefix followed by the engine's message, verbatim. */
+  message: string;
+  hint?: string;
+  retryBusy: boolean;
+  onRetry: () => void;
+}
+
+/** Persistent failure block on a queue card: the stored reason clamped to two
+ * lines, an expand toggle when the clamp hides text, and the shared retry
+ * action. Rendered from `TextEntry.error_message`, so it survives a restart
+ * and does not depend on the `tts_error` toast. */
+function FailureNote({ tone, message, hint, retryBusy, onRetry }: FailureNoteProps) {
+  const tt = useT();
+  const [expanded, setExpanded] = useState(false);
+  const [overflowing, setOverflowing] = useState(false);
+  const textRef = useRef<HTMLDivElement>(null);
+
+  // A different message means a different failure: start collapsed again.
+  useEffect(() => {
+    setExpanded(false);
+  }, [message]);
+
+  useLayoutEffect(() => {
+    const el = textRef.current;
+    // An expanded element is not clamped, so it cannot report overflow — keep
+    // the measured flag and let the collapse re-measure.
+    if (el === null || expanded) return;
+    const measure = () => {
+      setOverflowing(el.scrollHeight > el.clientHeight + 1);
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    // The navbar width is user-resizable, so the two-line clamp can start or
+    // stop overflowing without the message changing.
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [message, expanded]);
+
+  return (
+    <div
+      className={tone === 'error' ? classes.failureError : classes.failureWarning}
+      data-synthesis-failure={tone}
+    >
+      <div
+        ref={textRef}
+        className={`${classes.failureText} ${
+          expanded ? classes.failureTextExpanded : classes.failureTextClamped
+        }`}
+        title={message}
+        data-failure-text
+      >
+        {message}
+      </div>
+      {hint !== undefined && <div className={classes.failureHint}>{hint}</div>}
+      <Group gap="xs" mt={4} wrap="wrap" justify="space-between">
+        <Button
+          size="compact-xs"
+          variant="light"
+          color={tone === 'error' ? 'red' : 'yellow'}
+          loading={retryBusy}
+          disabled={retryBusy}
+          aria-label={tt('queue.error.retry')}
+          onClick={(e) => {
+            e.stopPropagation();
+            onRetry();
+          }}
+        >
+          {tt('queue.error.retry')}
+        </Button>
+        {overflowing && (
+          <Button
+            size="compact-xs"
+            variant="subtle"
+            color="gray"
+            onClick={(e) => {
+              e.stopPropagation();
+              setExpanded((value) => !value);
+            }}
+          >
+            {expanded ? tt('queue.error.collapse') : tt('queue.error.show_full')}
+          </Button>
+        )}
+      </Group>
+    </div>
+  );
+}
+
 interface QueueItemProps {
   entry: TextEntry;
   isSelected: boolean;
@@ -59,18 +159,33 @@ interface QueueItemProps {
   onPlay: (id: string) => void;
   onContextMenu: (entry: TextEntry, x: number, y: number) => void;
   onOpenParams: (entry: TextEntry) => void;
+  /** Starts a fresh synthesis for an entry with a stored failure; owned by
+   * the list so the busy state survives item re-renders. */
+  onRetry: (id: string) => void;
+  retryBusy: boolean;
 }
 
-function QueueItem({ entry, isSelected, isPlaying, onSelect, onPlay, onContextMenu, onOpenParams }: QueueItemProps) {
+function QueueItem({
+  entry,
+  isSelected,
+  isPlaying,
+  retryBusy,
+  onSelect,
+  onPlay,
+  onContextMenu,
+  onOpenParams,
+  onRetry,
+}: QueueItemProps) {
   const tt = useT();
   const preview = entry.original_text.slice(0, 60);
   const isProcessing = entry.status === 'processing';
   const canPlay = entry.status === 'ready' || entry.status === 'playing';
-
+  const tone = failureTone(entry);
   const itemClass = [
     classes.item,
     isSelected ? classes.itemSelected : '',
     isPlaying ? classes.itemPlaying : '',
+    tone === 'error' ? classes.itemError : '',
   ]
     .filter(Boolean)
     .join(' ');
@@ -101,6 +216,23 @@ function QueueItem({ entry, isSelected, isPlaying, onSelect, onPlay, onContextMe
             {preview}
             {entry.original_text.length > 60 ? '\u2026' : ''}
           </Text>
+          {entry.error_message !== null && tone !== null && (
+            <FailureNote
+              tone={tone}
+              message={
+                tone === 'error'
+                  ? tt('queue.error.synthesis_failed', [entry.error_message])
+                  : tt('queue.error.regeneration_failed', [entry.error_message])
+              }
+              hint={
+                tone === 'warning'
+                  ? tt('queue.error.regeneration_failed_hint')
+                  : undefined
+              }
+              retryBusy={retryBusy}
+              onRetry={() => onRetry(entry.id)}
+            />
+          )}
           <Group gap="xs" align="center">
             <Badge
               size="xs"
@@ -184,6 +316,34 @@ export function QueueList({ onRegenerate }: QueueListProps) {
     setEntries(result);
   }, []);
 
+  // Entries whose retry command is in flight. The busy state ends when the
+  // entry's own `entry_updated` reports the failure cleared (regenerate_entry
+  // emits `pending` + `error_message: null` before the fresh synthesis
+  // starts), not when the invoke resolves — the row stays busy through the
+  // actual state change.
+  const [retryingIds, setRetryingIds] = useState<ReadonlySet<EntryId>>(
+    () => new Set(),
+  );
+  const handleRetry = useCallback(
+    (id: string) => {
+      setRetryingIds((prev) => new Set(prev).add(id));
+      void commands.regenerateEntry(id, false).catch((err) => {
+        setRetryingIds((prev) => {
+          if (!prev.has(id)) return prev;
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+        notifications.show({
+          title: tt('errors.title'),
+          message: tt('queue.notify.regenerate_failed', [formatError(err)]),
+          color: 'red',
+        });
+      });
+    },
+    [tt],
+  );
+
   useEffect(() => {
     void loadEntries();
   }, [loadEntries]);
@@ -204,6 +364,17 @@ export function QueueList({ onRegenerate }: QueueListProps) {
           }
           return next;
         });
+
+        // A retry stops being busy once the entry leaves the retryable
+        // failure state; regenerate_entry clears `error_message` first.
+        if (payload.entry.error_message === null) {
+          setRetryingIds((prev) => {
+            if (!prev.has(payload.entry.id)) return prev;
+            const next = new Set(prev);
+            next.delete(payload.entry.id);
+            return next;
+          });
+        }
 
         // Keep the selected entry in sync so TextViewer reflects latest status
         // without a separate get_entry invoke.
@@ -381,6 +552,8 @@ export function QueueList({ onRegenerate }: QueueListProps) {
                 onPlay={handlePlay}
                 onContextMenu={(e, x, y) => setMenu({ id: e.id, x, y })}
                 onOpenParams={handleOpenParams}
+                onRetry={handleRetry}
+                retryBusy={retryingIds.has(entry.id)}
               />
             ))}
           </Stack>

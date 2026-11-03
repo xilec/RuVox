@@ -5,14 +5,25 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MantineProvider } from '@mantine/core';
 import type { TextEntry } from '../lib/tauri';
 
-const { cancelSynthesis, getEntries, showNotification, pickExportAudioPath, exportAudio } =
-  vi.hoisted(() => ({
-    cancelSynthesis: vi.fn().mockResolvedValue(undefined),
-    getEntries: vi.fn(),
-    showNotification: vi.fn(),
-    pickExportAudioPath: vi.fn().mockResolvedValue(null),
-    exportAudio: vi.fn().mockResolvedValue(undefined),
-  }));
+const {
+  cancelSynthesis,
+  getEntries,
+  showNotification,
+  pickExportAudioPath,
+  exportAudio,
+  regenerateEntry,
+  entryUpdatedListeners,
+} = vi.hoisted(() => ({
+  cancelSynthesis: vi.fn().mockResolvedValue(undefined),
+  getEntries: vi.fn(),
+  showNotification: vi.fn(),
+  pickExportAudioPath: vi.fn().mockResolvedValue(null),
+  exportAudio: vi.fn().mockResolvedValue(undefined),
+  regenerateEntry: vi.fn().mockResolvedValue(undefined),
+  // Listeners QueueList registers on mount; tests deliver `entry_updated`
+  // payloads through them to drive transitions (cleared busy retry).
+  entryUpdatedListeners: [] as ((payload: { entry: TextEntry }) => void)[],
+}));
 
 vi.mock('@mantine/notifications', () => ({
   notifications: { show: showNotification },
@@ -23,13 +34,18 @@ vi.mock('../lib/tauri', () => ({
     getEntries,
     cancelSynthesis,
     playEntry: vi.fn().mockResolvedValue(undefined),
-    regenerateEntry: vi.fn().mockResolvedValue(undefined),
+    regenerateEntry,
     deleteEntry: vi.fn().mockResolvedValue(undefined),
     pickExportAudioPath,
     exportAudio,
   },
   events: {
-    entryUpdated: vi.fn().mockResolvedValue(() => {}),
+    entryUpdated: vi.fn(
+      (cb: (payload: { entry: TextEntry }) => void) => {
+        entryUpdatedListeners.push(cb);
+        return Promise.resolve(() => {});
+      },
+    ),
     entryRemoved: vi.fn().mockResolvedValue(() => {}),
     playbackStarted: vi.fn().mockResolvedValue(() => {}),
     playbackStopped: vi.fn().mockResolvedValue(() => {}),
@@ -39,7 +55,10 @@ vi.mock('../lib/tauri', () => ({
 
 import { QueueList } from './QueueList';
 
-function makeEntry(status: TextEntry['status']): TextEntry {
+function makeEntry(
+  status: TextEntry['status'],
+  overrides: Partial<TextEntry> = {},
+): TextEntry {
   return {
     id: 'entry-1',
     original_text: 'тестовый текст',
@@ -57,6 +76,7 @@ function makeEntry(status: TextEntry['status']): TextEntry {
     generation_count: 0,
     generation: null,
     error_message: null,
+    ...overrides,
   };
 }
 
@@ -466,5 +486,240 @@ describe('QueueList context menu', () => {
 
       expect(document.body.textContent).not.toContain('Параметры записи');
     });
+  });
+});
+
+
+describe('QueueList synthesis failure', () => {
+  let host: HTMLDivElement;
+  let root: Root;
+  const onRegenerate = vi.fn();
+
+  beforeEach(() => {
+    host = document.createElement('div');
+    document.body.appendChild(host);
+    root = createRoot(host);
+    onRegenerate.mockClear();
+    regenerateEntry.mockClear();
+    regenerateEntry.mockResolvedValue(undefined);
+    showNotification.mockClear();
+    entryUpdatedListeners.length = 0;
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    host.remove();
+    // The overflow tests shadow jsdom's zero-height layout metrics; drop the
+    // shadow so other files inherit the real prototype again.
+    Reflect.deleteProperty(HTMLElement.prototype, 'scrollHeight');
+    Reflect.deleteProperty(HTMLElement.prototype, 'clientHeight');
+  });
+
+  async function renderWith(entry: TextEntry): Promise<void> {
+    getEntries.mockResolvedValue([entry]);
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <QueueList onRegenerate={onRegenerate} />
+        </MantineProvider>,
+      );
+      await Promise.resolve();
+    });
+  }
+
+  function failureBlock(): HTMLElement | null {
+    return host.querySelector<HTMLElement>('[data-synthesis-failure]');
+  }
+
+  function failureText(): HTMLElement {
+    const el = host.querySelector<HTMLElement>('[data-failure-text]');
+    expect(el).not.toBeNull();
+    return el!;
+  }
+
+  function retryButton(): HTMLButtonElement {
+    const el = host.querySelector<HTMLButtonElement>(
+      'button[aria-label="Повторить"]',
+    );
+    expect(el).not.toBeNull();
+    return el!;
+  }
+
+  function buttonWithText(text: string): HTMLButtonElement {
+    const el = Array.from(
+      host.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((button) => button.textContent === text);
+    expect(el).toBeDefined();
+    return el!;
+  }
+
+  /** jsdom reports zero layout heights, so the two-line clamp cannot be
+   * measured for real. Shadow the metrics on the prototype: a 100 px content
+   * box inside a 40 px client box means "overflows", 40 inside 40 means it
+   * fits. */
+  function stubLayout(overflows: boolean): void {
+    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
+      configurable: true,
+      get: () => (overflows ? 100 : 40),
+    });
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
+      configurable: true,
+      get: () => 40,
+    });
+  }
+
+  it('renders the stored failure reason from the entry', async () => {
+    const entry = makeEntry('error', {
+      error_message: 'модель не загружена (ttsd)',
+    });
+    // No entry_updated is delivered: the message comes from the entry
+    // snapshot loaded on mount, so it survives a restart.
+    await renderWith(entry);
+
+    const block = failureBlock();
+    expect(block).not.toBeNull();
+    expect(block!.dataset.synthesisFailure).toBe('error');
+    expect(failureText().textContent).toBe(
+      'Ошибка синтеза: модель не загружена (ttsd)',
+    );
+    expect(failureText().title).toBe(
+      'Ошибка синтеза: модель не загружена (ttsd)',
+    );
+    expect(
+      host.querySelector('[data-entry-id="entry-1"]')!.className,
+    ).toContain('itemError');
+  });
+
+  it('expands and collapses a message that overflows the clamp', async () => {
+    stubLayout(true);
+    await renderWith(
+      makeEntry('error', {
+        error_message: 'Очень длинное сообщение движка. '.repeat(10),
+      }),
+    );
+
+    expect(buttonWithText('Показать полностью')).toBeDefined();
+    act(() => {
+      buttonWithText('Показать полностью').dispatchEvent(
+        new MouseEvent('click', { bubbles: true }),
+      );
+    });
+
+    expect(buttonWithText('Свернуть')).toBeDefined();
+    expect(failureText().textContent).toContain('Очень длинное сообщение');
+
+    act(() => {
+      buttonWithText('Свернуть').dispatchEvent(
+        new MouseEvent('click', { bubbles: true }),
+      );
+    });
+    expect(buttonWithText('Показать полностью')).toBeDefined();
+  });
+
+  it('shows no expand control for a message that fits the clamp', async () => {
+    stubLayout(false);
+    await renderWith(makeEntry('error', { error_message: 'сбой' }));
+
+    expect(host.textContent).not.toContain('Показать полностью');
+  });
+
+  it('retries through regenerateEntry exactly once and blocks while busy', async () => {
+    await renderWith(makeEntry('error', { error_message: 'сбой движка' }));
+
+    act(() => {
+      retryButton().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(regenerateEntry).toHaveBeenCalledTimes(1);
+    expect(regenerateEntry).toHaveBeenCalledWith('entry-1', false);
+    // No regeneration preview: the queue calls the command directly.
+    expect(onRegenerate).not.toHaveBeenCalled();
+    expect(retryButton().disabled).toBe(true);
+
+    act(() => {
+      retryButton().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(regenerateEntry).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears the busy state when entry_updated clears the failure', async () => {
+    const entry = makeEntry('error', { error_message: 'сбой движка' });
+    await renderWith(entry);
+    act(() => {
+      retryButton().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(retryButton().disabled).toBe(true);
+
+    await act(async () => {
+      for (const listener of entryUpdatedListeners) {
+        listener({
+          entry: { ...entry, status: 'pending', error_message: null },
+        });
+      }
+      await Promise.resolve();
+    });
+
+    expect(failureBlock()).toBeNull();
+    expect(host.textContent).not.toContain('Повторить');
+  });
+
+  it('shows the amber failed-regeneration note on a playable entry', async () => {
+    await renderWith(
+      makeEntry('ready', {
+        error_message: 'таймаут ttsd',
+        audio_path: 'entry-1.opus',
+      }),
+    );
+
+    const block = failureBlock();
+    expect(block).not.toBeNull();
+    expect(block!.dataset.synthesisFailure).toBe('warning');
+    expect(failureText().textContent).toBe(
+      'Последняя перегенерация не удалась: таймаут ttsd',
+    );
+    expect(host.textContent).toContain('Играет прежняя версия.');
+
+    const play = host.querySelector<HTMLButtonElement>(
+      'button[aria-label="Воспроизвести"]',
+    );
+    expect(play).not.toBeNull();
+    expect(play!.disabled).toBe(false);
+    expect(
+      host.querySelector('[data-entry-id="entry-1"]')!.className,
+    ).not.toContain('itemError');
+    expect(retryButton().disabled).toBe(false);
+  });
+
+  it('clears the busy state and shows the red toast when the retry rejects', async () => {
+    regenerateEntry.mockRejectedValueOnce({
+      type: 'synthesis_error',
+      code: 'synthesis.failed',
+    });
+    await renderWith(makeEntry('error', { error_message: 'сбой движка' }));
+
+    await act(async () => {
+      retryButton().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(retryButton().disabled).toBe(false);
+    expect(showNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        color: 'red',
+        message: 'Не удалось запустить перегенерацию: Ошибка синтеза речи',
+      }),
+    );
+  });
+
+  it('leaves a healthy entry without a failure block', async () => {
+    await renderWith(makeEntry('ready'));
+
+    expect(failureBlock()).toBeNull();
+    expect(host.textContent).not.toContain('Повторить');
+    expect(host.textContent).not.toContain('Ошибка синтеза');
+    expect(
+      host.querySelector('[data-entry-id="entry-1"]')!.className,
+    ).not.toContain('itemError');
   });
 });

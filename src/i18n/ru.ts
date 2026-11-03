@@ -74,6 +74,12 @@ export const ru = {
   'queue.notify.cancelled.title': 'Синтез отменён',
   'queue.notify.cancelled.message': 'Синтез записи остановлен',
   'queue.notify.cancel_failed': 'Не удалось отменить синтез: {0}',
+  'queue.error.synthesis_failed': 'Ошибка синтеза: {0}',
+  'queue.error.retry': 'Повторить',
+  'queue.error.show_full': 'Показать полностью',
+  'queue.error.collapse': 'Свернуть',
+  'queue.error.regeneration_failed': 'Последняя перегенерация не удалась: {0}',
+  'queue.error.regeneration_failed_hint': 'Играет прежняя версия.',
 
   // ── Generation-params dialog (#243) ─────────────────────────────────────
   'generation.title': 'Параметры записи',

@@ -71,6 +71,12 @@ export const en: Record<MessageKey, string> = {
   'queue.notify.regenerating.message': 'Audio regeneration started',
   'queue.notify.regenerate_failed': 'Failed to start regeneration: {0}',
   'queue.notify.cancelled.title': 'Synthesis cancelled',
+  'queue.error.synthesis_failed': 'Synthesis failed: {0}',
+  'queue.error.retry': 'Retry',
+  'queue.error.show_full': 'Show full message',
+  'queue.error.collapse': 'Collapse',
+  'queue.error.regeneration_failed': 'Last regeneration failed: {0}',
+  'queue.error.regeneration_failed_hint': 'The previous recording still plays.',
   'queue.notify.cancelled.message': 'Entry synthesis stopped',
   'queue.notify.cancel_failed': 'Failed to cancel synthesis: {0}',
 
