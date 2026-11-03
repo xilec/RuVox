@@ -19,6 +19,7 @@ import type { EntryFormat, EntrySource, UIConfig, UnlistenFn } from '../lib/taur
 import type { ReadTextFileResult, TextEntry } from '../lib/tauri';
 import { formatError } from '../lib/errors';
 import { canonicalReadingWidth, READING_SCALE_DEFAULT } from '../lib/reading';
+import { entryDisplayTitle } from '../lib/entryTitle';
 import { useT } from '../lib/i18n';
 import { setLocale, toLocale } from '../stores/locale';
 import { resolveIngest } from '../lib/ingest';
@@ -660,14 +661,8 @@ export function AppShell() {
   // behind the backend command, so the old audio is only dropped now that the
   // user has seen the preview and confirmed (preview-dialog spec, "Regeneration
   // preview"). Cancel never reaches here.
-  function handleRegenConfirm(
-    playWhenReady: boolean,
-    // Explicit entry for callers that do not go through the preview dialog
-    // (the viewer quick-add offer); the preview path passes nothing.
-    entry: TextEntry | null = regenEntry,
-  ) {
+  function handleRegenConfirm(playWhenReady: boolean, entry: TextEntry) {
     setRegenEntry(null);
-    if (!entry) return;
     commands
       .regenerateEntry(entry.id, playWhenReady)
       .then(() => {
@@ -730,8 +725,10 @@ export function AppShell() {
 
       <RegeneratePrompt
         opened={regenPromptEntry !== null}
+        entryTitle={regenPromptEntry ? entryDisplayTitle(regenPromptEntry) : ''}
         onConfirm={() => {
           const entry = regenPromptEntry;
+          if (!entry) return;
           setRegenPromptEntry(null);
           // Reuse the existing regeneration path; no auto-play — the prompt
           // only replaces the stale audio.
@@ -915,9 +912,11 @@ export function AppShell() {
         suppressed={dictModalOpened}
         mode="regenerate"
         text={regenEntry?.original_text ?? ''}
-        onSynthesize={(_finalText, _skipShortTexts, playWhenReady) =>
-          handleRegenConfirm(playWhenReady)
-        }
+        onSynthesize={(_finalText, _skipShortTexts, playWhenReady) => {
+          // Pass the entry this instance was opened for explicitly instead
+          // of letting the helper fall back to the current selection.
+          if (regenEntry) handleRegenConfirm(playWhenReady, regenEntry);
+        }}
         onCancel={() => setRegenEntry(null)}
         dictionaryRevision={dictRevision}
         onAddToDictionary={(word) => {

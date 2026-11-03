@@ -634,7 +634,7 @@ export const ru = {
   'dictionary.quickadd.hint': 'Выделите одно слово латиницей или по-русски',
   'dictionary.quickadd.regen.title': 'Переозвучить сейчас?',
   'dictionary.quickadd.regen.message':
-    'Запись озвучена со старым словарём. Переозвучить её с новым произношением? Если синтез не удастся, прежнее аудио останется.',
+    'Запись «{0}» озвучена со старым словарём. Переозвучить её с новым произношением? Если синтез не удастся, прежнее аудио останется.',
   'dictionary.quickadd.regen.confirm': 'Переозвучить',
   'dictionary.quickadd.regen.cancel': 'Не сейчас',
 } as const;

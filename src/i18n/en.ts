@@ -629,7 +629,7 @@ export const en: Record<MessageKey, string> = {
   'dictionary.quickadd.hint': 'Select a single Latin or Russian word',
   'dictionary.quickadd.regen.title': 'Re-synthesize now?',
   'dictionary.quickadd.regen.message':
-    'This recording was synthesized with the old dictionary. Re-synthesize it with the new pronunciation? The previous audio stays playable if synthesis fails.',
+    'The recording "{0}" was synthesized with the old dictionary. Re-synthesize it with the new pronunciation? The previous audio stays playable if synthesis fails.',
   'dictionary.quickadd.regen.confirm': 'Re-synthesize',
   'dictionary.quickadd.regen.cancel': 'Not now',
 };

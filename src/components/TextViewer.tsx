@@ -575,7 +575,13 @@ export function TextViewer({
         />
       </ScrollArea>
 
+      {/* Keyed by entry (prefixed so it never collides with the sibling
+          EntryHeader, which uses the bare id): the menu captures the
+          selection (and the copy targets) when it opens, so switching the
+          entry must remount it instead of leaving a stale item that would
+          act on the new entry. */}
       <ViewerContextMenu
+        key={`menu-${entry.id}`}
         containerRef={containerRef}
         onAddToDictionary={onAddToDictionary}
       />
