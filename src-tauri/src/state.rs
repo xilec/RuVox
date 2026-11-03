@@ -80,9 +80,11 @@ pub struct AppState {
     /// tests), so the preview command never guesses a platform path and the
     /// files never land next to user data.
     pub preview_dir: PathBuf,
-    /// Serializes pronunciation previews among themselves. The queue
-    /// synthesis path does not take it: a preview refuses to start while an
-    /// entry is inside `tts.synthesize` (see `preview_pronunciation`), so a
-    /// preview can never queue behind a long narration.
-    pub preview_lock: tokio::sync::Mutex<()>,
+    /// Serializes the engine between a pronunciation preview and the queue's
+    /// synthesis stage, and previews among themselves. Both sides hold it
+    /// around their engine call; a preview that finds it taken answers
+    /// `preview.engine_busy` instead of waiting, so it never queues behind a
+    /// narration that can run for minutes. Shared with `SynthesisDeps` so the
+    /// tray path uses the same lock.
+    pub preview_lock: Arc<tokio::sync::Mutex<()>>,
 }

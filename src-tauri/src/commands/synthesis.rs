@@ -17,6 +17,9 @@ pub(crate) struct SynthesisDeps<R: Runtime> {
     pub pipeline: Arc<Mutex<TTSPipeline>>,
     pub synthesis_tasks: Arc<Mutex<HashMap<EntryId, AbortHandle>>>,
     pub synthesize_entered: Arc<Mutex<HashSet<EntryId>>>,
+    /// Engine lock shared with `preview_pronunciation`; held around the
+    /// engine call in [`synthesize_audio`].
+    pub preview_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 // Manual impl: `#[derive(Clone)]` would add an `R: Clone` bound, which
@@ -33,6 +36,7 @@ impl<R: Runtime> Clone for SynthesisDeps<R> {
             pipeline: Arc::clone(&self.pipeline),
             synthesis_tasks: Arc::clone(&self.synthesis_tasks),
             synthesize_entered: Arc::clone(&self.synthesize_entered),
+            preview_lock: Arc::clone(&self.preview_lock),
         }
     }
 }
@@ -50,6 +54,7 @@ impl<R: Runtime> SynthesisDeps<R> {
             pipeline: Arc::clone(&state.pipeline),
             synthesis_tasks: Arc::clone(&state.synthesis_tasks),
             synthesize_entered: Arc::clone(&state.synthesize_entered),
+            preview_lock: Arc::clone(&state.preview_lock),
         }
     }
 }
@@ -205,6 +210,7 @@ pub(super) async fn synthesize_audio(
     piper_voices_dir: &std::path::Path,
     emitter: &crate::tts::supervisor::Emitter,
     synthesize_entered: &Mutex<HashSet<EntryId>>,
+    preview_lock: &tokio::sync::Mutex<()>,
     entry_id: &EntryId,
     normalized: String,
     spans: Vec<Span>,
@@ -238,22 +244,37 @@ pub(super) async fn synthesize_audio(
     // Piper for the session), the active engine must get its own voice id.
     let voice = voice_for_engine(tts.kind(), &config);
 
-    // Track the entry as "inside the TTS stage" so `cancel_synthesis` knows
-    // the ttsd subprocess must be killed. If the task is aborted at this
-    // await, `cancel_synthesis` removes the marker itself.
-    synthesize_entered.lock().insert(*entry_id);
-    let attempt = tts
-        .synthesize_spans(
-            normalized.clone(),
-            spans.clone(),
-            voice.clone(),
-            config.sample_rate,
-            out_wav.clone(),
-            tts_char_mapping.clone(),
-        )
-        .await;
-    synthesize_entered.lock().remove(entry_id);
-
+    // The engine stage is the queue's half of the preview serialization (see
+    // `preview_pronunciation`). Lock order is `preview_lock` first, then
+    // `synthesize_entered`, and never the reverse: a preview holds
+    // `preview_lock` while it only *checks* the marker, never waiting on it,
+    // so the two locks cannot deadlock.
+    //
+    // The marker is set inside `preview_lock`, which keeps "marker non-empty"
+    // equivalent to "the engine is really taken": a preview cannot slip
+    // between its check and the engine call. A preview arriving while this
+    // run owns the lock is refused with `preview.engine_busy` instead of
+    // queueing behind a narration that can run for minutes; in the other
+    // direction the queue waits for at most one short preview.
+    let attempt = {
+        let _engine = preview_lock.lock().await;
+        // Track the entry as "inside the TTS stage" so `cancel_synthesis`
+        // knows the ttsd subprocess must be killed. If the task is aborted at
+        // this await, `cancel_synthesis` removes the marker itself.
+        synthesize_entered.lock().insert(*entry_id);
+        let attempt = tts
+            .synthesize_spans(
+                normalized.clone(),
+                spans.clone(),
+                voice.clone(),
+                config.sample_rate,
+                out_wav.clone(),
+                tts_char_mapping.clone(),
+            )
+            .await;
+        synthesize_entered.lock().remove(entry_id);
+        attempt
+    };
     let output = match attempt {
         Ok(o) => o,
         Err(TtsError::Ttsd { code, message })
@@ -263,18 +284,25 @@ pub(super) async fn synthesize_audio(
             crate::tts::piper::download::download_voice(piper_voices_dir, &voice, emitter)
                 .await
                 .map_err(|e| SynthesisError::TtsFailed(e.to_string()))?;
-            synthesize_entered.lock().insert(*entry_id);
-            let retry = tts
-                .synthesize_spans(
-                    normalized,
-                    spans,
-                    voice.clone(),
-                    config.sample_rate,
-                    out_wav,
-                    tts_char_mapping,
-                )
-                .await;
-            synthesize_entered.lock().remove(entry_id);
+            // Same lock discipline as the first attempt: the retry is a
+            // second engine run, so it takes `preview_lock` and the marker
+            // together.
+            let retry = {
+                let _engine = preview_lock.lock().await;
+                synthesize_entered.lock().insert(*entry_id);
+                let retry = tts
+                    .synthesize_spans(
+                        normalized,
+                        spans,
+                        voice.clone(),
+                        config.sample_rate,
+                        out_wav,
+                        tts_char_mapping,
+                    )
+                    .await;
+                synthesize_entered.lock().remove(entry_id);
+                retry
+            };
             retry.map_err(|e| SynthesisError::TtsFailed(e.to_string()))?
         }
         Err(e) => return Err(SynthesisError::TtsFailed(e.to_string())),
@@ -645,6 +673,7 @@ pub(crate) fn spawn_synthesis<R: Runtime + 'static>(
         pipeline,
         synthesis_tasks,
         synthesize_entered,
+        preview_lock,
     } = deps;
     let entered_for_task = Arc::clone(&synthesize_entered);
     let tasks_for_cleanup = Arc::clone(&synthesis_tasks);
@@ -671,6 +700,7 @@ pub(crate) fn spawn_synthesis<R: Runtime + 'static>(
                     &piper_voices_dir,
                     &emitter,
                     &entered_for_task,
+                    &preview_lock,
                     &entry_id,
                     normalized,
                     spans,

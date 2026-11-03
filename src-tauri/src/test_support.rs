@@ -412,7 +412,7 @@ pub fn build_test_app_with_kind(kind: EngineKind) -> TestApp {
         synthesis_tasks: Arc::new(ParkingMutex::new(std::collections::HashMap::new())),
         synthesize_entered: Arc::new(ParkingMutex::new(std::collections::HashSet::new())),
         preview_dir: storage_dir.path().join("preview"),
-        preview_lock: tokio::sync::Mutex::new(()),
+        preview_lock: Arc::new(tokio::sync::Mutex::new(())),
     });
 
     TestApp {

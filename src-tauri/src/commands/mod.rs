@@ -385,6 +385,90 @@ pub struct PreviewPronunciationResult {
     pub duration_sec: f64,
 }
 
+/// Longest preview input, in Unicode code points (`+` is ASCII, so the
+/// stress mark cannot inflate the count). The editor's controls only ever
+/// send one word or one spoken form; the command is reachable directly, and
+/// a pasted paragraph would keep the engine busy for seconds.
+const PREVIEW_MAX_CHARS: usize = 200;
+
+/// How old a file in the preview directory must be to count as a leftover
+/// of a crashed or killed run. The command deletes its WAV on every exit
+/// path (see [`PreviewWav`]), so nothing legitimate lives this long.
+pub(crate) const PREVIEW_STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+/// Owns one preview WAV and deletes it when it goes out of scope, i.e. on
+/// every exit path of [`preview_pronunciation`]: a successful read, an engine
+/// error, a read failure, an aborted task. `tokio::fs` is unusable from
+/// `Drop`, so the removal is a best-effort blocking call on a small
+/// cache-disk file.
+struct PreviewWav(PathBuf);
+
+impl Drop for PreviewWav {
+    fn drop(&mut self) {
+        match std::fs::remove_file(&self.0) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => warn!("failed to remove preview wav {}: {e}", self.0.display()),
+        }
+    }
+}
+
+/// Map an engine failure onto the wire error, keeping the engine's site id
+/// (`bundle_not_installed`, `voice_not_installed`, …) so the form can say
+/// "model not installed" instead of a generic sentence.
+fn preview_synthesis_error(e: TtsError) -> CommandError {
+    match e {
+        TtsError::Ttsd { code, message } => {
+            CommandError::synthesis(&code, vec![]).with_message(message)
+        }
+        other => CommandError::synthesis("preview.synthesis_failed", vec![])
+            .with_message(other.to_string()),
+    }
+}
+
+/// Delete every regular file in `dir` modified at or before `stale_before`,
+/// returning how many were removed. The startup backstop for [`PreviewWav`]:
+/// a crash or a killed process bypasses the guard, and the leftovers must not
+/// accumulate in the app cache. A missing directory is not an error (no
+/// preview has ever run).
+pub(crate) fn sweep_stale_previews(
+    dir: &Path,
+    stale_before: std::time::SystemTime,
+) -> std::io::Result<usize> {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(e) => return Err(e),
+    };
+    let mut removed = 0;
+    for entry in entries {
+        let entry = entry?;
+        let path = entry.path();
+        if !entry.file_type()?.is_file() {
+            continue;
+        }
+        let modified = match entry.metadata().and_then(|m| m.modified()) {
+            Ok(modified) => modified,
+            Err(e) => {
+                warn!(
+                    "preview sweep: cannot read mtime of {}: {e}",
+                    path.display()
+                );
+                continue;
+            }
+        };
+        if modified > stale_before {
+            continue;
+        }
+        match std::fs::remove_file(&path) {
+            Ok(()) => removed += 1,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => warn!("preview sweep: failed to remove {}: {e}", path.display()),
+        }
+    }
+    Ok(removed)
+}
+
 /// Speak one dictionary word without touching the entry lifecycle (issue
 /// #349): the editor's play controls call this to hear «Слово» as the
 /// pipeline reads it today (`mode = "normalize"`) or «Как произносить» as the
@@ -401,9 +485,27 @@ pub async fn preview_pronunciation(
     text: String,
     mode: String,
 ) -> CmdResult<PreviewPronunciationResult> {
+    let char_count = text.chars().count();
+    if char_count > PREVIEW_MAX_CHARS {
+        return Err(CommandError::internal(
+            "preview.text_too_long",
+            vec![char_count.to_string(), PREVIEW_MAX_CHARS.to_string()],
+        ));
+    }
+
     // One preview at a time: a double click racing the disabled state (or a
-    // second editor) must not synthesize over the first one.
-    let _preview = state.preview_lock.lock().await;
+    // second editor) must not synthesize over the first one. `try_lock`, not
+    // `lock`: the queue holds this lock around its engine call (see
+    // `synthesis::synthesize_audio`), and a preview must never wait behind a
+    // narration that can run for minutes — it is refused instead.
+    //
+    // Lock order (mirrored there): `preview_lock` first, `synthesize_entered`
+    // second. The preview only *checks* the marker while holding the lock and
+    // never waits on it, so the two cannot deadlock.
+    let _preview = state
+        .preview_lock
+        .try_lock()
+        .map_err(|_| CommandError::internal("preview.engine_busy", vec![]))?;
 
     // A queue entry inside `tts.synthesize` owns the engine. Every engine
     // tolerates a second caller structurally, but the preview would wait
@@ -459,6 +561,17 @@ pub async fn preview_pronunciation(
         CommandError::internal("preview.dir_create_failed", vec![]).with_message(e.to_string())
     })?;
     let out_path = preview_dir.join(format!("{}.wav", uuid::Uuid::new_v4()));
+    // Deletes the WAV on every exit path below: an engine error, a read
+    // failure, an early return.
+    let _wav = PreviewWav(out_path.clone());
+
+    // Final check right before the engine call. Holding `preview_lock`
+    // already makes the first check final (the queue sets the marker only
+    // once it owns the lock); this one pins the invariant at the call site,
+    // with the normalization pass being the long await in between.
+    if !state.synthesize_entered.lock().is_empty() {
+        return Err(CommandError::internal("preview.engine_busy", vec![]));
+    }
 
     let synthesis = state
         .tts
@@ -471,30 +584,12 @@ pub async fn preview_pronunciation(
         )
         .await;
 
-    // Read-then-delete in one pass: the file is ephemeral by contract, and a
-    // failed synthesis may still have left a partial WAV behind.
-    let bytes = match &synthesis {
-        Ok(_) => tokio::fs::read(&out_path).await.ok(),
-        Err(_) => None,
-    };
-    match tokio::fs::remove_file(&out_path).await {
-        Ok(()) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => warn!("failed to remove preview wav {}: {e}", out_path.display()),
-    }
-
-    let output = synthesis.map_err(|e| match e {
-        // Keep the engine's site id so the form can say "model not installed"
-        // instead of a generic sentence.
-        TtsError::Ttsd { code, message } => {
-            CommandError::synthesis(&code, vec![]).with_message(message)
-        }
-        other => CommandError::synthesis("preview.synthesis_failed", vec![])
-            .with_message(other.to_string()),
-    })?;
-    let bytes = bytes.ok_or_else(|| {
+    let output = synthesis.map_err(preview_synthesis_error)?;
+    // Keep the real cause: a permissions or IO failure must not read as
+    // "the file disappeared".
+    let bytes = tokio::fs::read(&out_path).await.map_err(|e| {
         CommandError::internal("preview.audio_read_failed", vec![]).with_message(format!(
-            "preview wav {} disappeared before it could be read",
+            "failed to read preview wav {}: {e}",
             out_path.display()
         ))
     })?;

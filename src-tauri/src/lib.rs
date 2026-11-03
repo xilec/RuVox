@@ -103,13 +103,22 @@ fn install_window_icon<R: Runtime>(app: &AppHandle<R>) -> Result<(), SetupError>
     Ok(())
 }
 
-/// One-shot WAV→Opus migration followed by a startup cache cleanup, both
-/// running on Tauri's async runtime so app startup is not delayed.
+/// One-shot WAV→Opus migration followed by a startup cache cleanup, then a
+/// sweep of stale pronunciation previews, all running on Tauri's async
+/// runtime so app startup is not delayed.
 ///
 /// Order matters: migration finishes before the orphan sweep walks the audio
 /// directory, so freshly-renamed `.opus` files are already linked to their
 /// entries by the time the sweep runs.
-fn spawn_audio_migration_and_cleanup(storage: Arc<StorageService>) {
+///
+/// The preview sweep is the backstop for the RAII guard in
+/// `preview_pronunciation`: a crash or a killed process skips the guard and
+/// leaves its WAV behind, so anything older than
+/// [`commands::PREVIEW_STALE_AFTER`] is removed here.
+fn spawn_audio_migration_and_cleanup(
+    storage: Arc<StorageService>,
+    preview_dir: std::path::PathBuf,
+) {
     tauri::async_runtime::spawn(async move {
         let storage_for_cleanup = Arc::clone(&storage);
         let stats = tokio::task::spawn_blocking(move || storage.migrate_wav_audio_to_opus()).await;
@@ -154,6 +163,21 @@ fn spawn_audio_migration_and_cleanup(storage: Arc<StorageService>) {
             Err(e) => {
                 tracing::error!("startup cleanup task panicked: {e}");
             }
+        }
+
+        let sweep_dir = preview_dir.join("preview");
+        let sweep_result = tokio::task::spawn_blocking(move || {
+            let stale_before = std::time::SystemTime::now()
+                .checked_sub(commands::PREVIEW_STALE_AFTER)
+                .unwrap_or(std::time::UNIX_EPOCH);
+            commands::sweep_stale_previews(&sweep_dir, stale_before)
+        })
+        .await;
+        match sweep_result {
+            Ok(Ok(0)) => {}
+            Ok(Ok(removed)) => tracing::info!("preview sweep: removed {removed} stale file(s)"),
+            Ok(Err(e)) => tracing::warn!("preview sweep failed: {e}"),
+            Err(e) => tracing::error!("preview sweep task panicked: {e}"),
         }
     });
 }
@@ -358,6 +382,7 @@ fn spawn_tray_handler<R: Runtime + 'static>(
     pipeline: Arc<Mutex<TTSPipeline>>,
     synthesis_tasks: Arc<Mutex<HashMap<storage::schema::EntryId, tokio::task::AbortHandle>>>,
     synthesize_entered: Arc<Mutex<HashSet<storage::schema::EntryId>>>,
+    preview_lock: Arc<tokio::sync::Mutex<()>>,
     app: AppHandle<R>,
 ) -> tokio::sync::mpsc::Sender<TrayCmd> {
     let (tray_tx, mut tray_rx) = tokio::sync::mpsc::channel::<TrayCmd>(16);
@@ -373,6 +398,7 @@ fn spawn_tray_handler<R: Runtime + 'static>(
             pipeline,
             synthesis_tasks,
             synthesize_entered,
+            preview_lock,
         };
         while let Some(cmd) = tray_rx.recv().await {
             // Read clipboard on a blocking thread (required on Linux).
@@ -955,7 +981,17 @@ pub fn run() {
             if let Err(e) = tray::set_enabled(app.handle(), config.hide_to_tray_on_close) {
                 tracing::warn!("tray: failed to create the icon at startup: {e}");
             }
-            spawn_audio_migration_and_cleanup(Arc::clone(&storage));
+            // Ephemeral pronunciation previews (dictionary editor, issue
+            // #349): the app cache dir keeps them out of user data, and the
+            // command deletes each file as soon as it is read. Resolved here
+            // so the startup sweep below and the managed state share one path.
+            let preview_dir = app.path().app_cache_dir().unwrap_or_else(|e| {
+                tracing::warn!(
+                    "preview: app cache dir unavailable ({e}); falling back to the data dir"
+                );
+                storage.data_dir().join("preview-cache")
+            });
+            spawn_audio_migration_and_cleanup(Arc::clone(&storage), preview_dir.clone());
 
             let (
                 engine_switcher,
@@ -992,6 +1028,9 @@ pub fn run() {
                 .set_user_dictionary(dictionary_book.merged_for(engine_switcher.kind()));
             let synthesis_tasks = Arc::new(Mutex::new(HashMap::new()));
             let synthesize_entered = Arc::new(Mutex::new(HashSet::new()));
+            // Serializes the engine between a preview and the queue's
+            // synthesis stage; shared with the tray handler and the state.
+            let preview_lock = Arc::new(tokio::sync::Mutex::new(()));
             let tray_tx = spawn_tray_handler(
                 Arc::clone(&storage),
                 Arc::clone(&tts),
@@ -1001,19 +1040,9 @@ pub fn run() {
                 Arc::clone(&pipeline),
                 Arc::clone(&synthesis_tasks),
                 Arc::clone(&synthesize_entered),
+                Arc::clone(&preview_lock),
                 app.handle().clone(),
             );
-
-            // Ephemeral pronunciation previews (dictionary editor, issue
-            // #349): the app cache dir keeps them out of user data, and the
-            // command deletes each file as soon as it is read.
-            let preview_dir = app.path().app_cache_dir().unwrap_or_else(|e| {
-                tracing::warn!(
-                    "preview: app cache dir unavailable ({e}); falling back to the data dir"
-                );
-                storage.data_dir().join("preview-cache")
-            });
-
             app.manage(AppState {
                 storage,
                 tts,
@@ -1032,7 +1061,7 @@ pub fn run() {
                 synthesis_tasks,
                 synthesize_entered,
                 preview_dir,
-                preview_lock: tokio::sync::Mutex::new(()),
+                preview_lock,
             });
 
             // Startup channel check is intentionally fire-and-forget and
