@@ -779,6 +779,11 @@ pub(crate) fn is_decade(value: u64) -> bool {
     decade_stem(value).is_some()
 }
 
+/// The decade window the 20th and 21st century names cover (see [`decade`]).
+pub(crate) fn is_century_decade(value: u64) -> bool {
+    (1900..=2099).contains(&value)
+}
+
 /// Stem a decade word is built from.
 ///
 /// The last two digits name a decade of the 1900s ("десятые" … "девяностые").
@@ -792,10 +797,10 @@ fn decade_stem(value: u64) -> Option<String> {
     if value == 2000 {
         return Some("двухтысячн".to_string());
     }
-    if (1900..=1999).contains(&value) && value % 10 == 0 {
+    if is_century_decade(value) && value < 2000 && value % 10 == 0 {
         return tens_decade_stem((value % 100) / 10);
     }
-    if (2000..=2099).contains(&value) && value % 10 == 0 {
+    if is_century_decade(value) && value >= 2000 && value % 10 == 0 {
         let thousands = count(2_000, Gender::Masculine, Case::Nominative);
         return tens_decade_stem((value % 100) / 10).map(|stem| format!("{thousands} {stem}"));
     }

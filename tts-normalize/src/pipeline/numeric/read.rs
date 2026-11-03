@@ -720,7 +720,7 @@ fn decade_case(value: u64, suffix: OrdinalSuffix, text: &str, end: usize) -> Opt
         OrdinalSuffix::NeuterNominative | OrdinalSuffix::Nominative => Case::Nominative,
         _ => return None,
     };
-    if (1900..=2099).contains(&value) {
+    if morphology::is_century_decade(value) {
         // The decade stem is the single source of truth: a value it cannot
         // name must fall through to a cardinal reading, never to a decade one.
         return morphology::is_decade(value).then_some(case);
