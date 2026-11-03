@@ -24,7 +24,7 @@ use crate::pipeline::normalizers::urls::{URLPathNormalizer, is_known_tld};
 use crate::pipeline::numeric::{NumberRoute, NumericRouting, NumericSpanNormalizer};
 use crate::pipeline::spans::{
     RecordedSpan, byte_to_char_offsets, debug_assert_spans, record_byte_ranges, record_native,
-    resolve_spans,
+    record_native_excluding, resolve_spans,
 };
 use crate::pipeline::tracked_text::{CharMapping, TrackedText};
 use crate::profiles;
@@ -161,7 +161,7 @@ fn find_identifier_ranges(text: &str) -> Vec<(usize, usize)> {
 }
 
 /// Whether `[start, end)` intersects a sorted, non-overlapping range list.
-fn overlaps_ranges(ranges: &[(usize, usize)], start: usize, end: usize) -> bool {
+pub(crate) fn overlaps_ranges(ranges: &[(usize, usize)], start: usize, end: usize) -> bool {
     let first_after = ranges.partition_point(|(range_start, _)| *range_start < end);
     first_after > 0 && ranges[first_after - 1].1 > start
 }
@@ -458,6 +458,9 @@ impl TTSPipeline {
         // `Native` span carries.
         let native_lang = profile.native_language();
         let mut recorded: Vec<RecordedSpan> = Vec::new();
+        // Original ranges the numeric layer spelled on the native route: the
+        // identifier phase must not relabel the words it produced.
+        let mut numeric_claimed: Vec<(usize, usize)> = Vec::new();
 
         self.english_normalizer.clear_unknown_words();
 
@@ -615,6 +618,7 @@ impl TTSPipeline {
                 native_lang,
                 dictionary: &self.user_dictionary,
                 recorded: &mut recorded,
+                claimed: &mut numeric_claimed,
             };
             self.numeric_normalizer
                 .process(&mut tracked, expand_units, &mut routing);
@@ -707,11 +711,12 @@ impl TTSPipeline {
             // The identifiers stay for the engine: annotate them. The prose scan
             // below would claim the same fragment, and `keep_specific_spans`
             // resolves that overlap in original coordinates.
-            record_native(
+            record_native_excluding(
                 &mut tracked,
                 SpanKind::CodeIdentifier,
                 native_lang,
                 find_identifier_ranges,
+                &numeric_claimed,
                 &mut recorded,
             );
         }

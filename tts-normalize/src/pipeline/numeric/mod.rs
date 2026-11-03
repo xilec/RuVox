@@ -45,7 +45,8 @@ pub(crate) enum NumberRoute {
 
 /// The pipeline decisions the numeric layer needs: the route decides how an
 /// English reading is rendered, the dictionary decides what counts as English
-/// prose, and the recorder collects native spans.
+/// prose, and the recorders collect native spans and the original ranges the
+/// layer spelled.
 pub(crate) struct NumericRouting<'a> {
     pub route: NumberRoute,
     /// Language a native fragment is annotated with.
@@ -53,6 +54,9 @@ pub(crate) struct NumericRouting<'a> {
     /// User-dictionary keys are not English prose.
     pub dictionary: &'a UserDictionary,
     pub recorded: &'a mut Vec<RecordedSpan>,
+    /// Original ranges the native route replaced with spelled words; a later
+    /// identifier scan must not relabel the spelled text.
+    pub claimed: &'a mut Vec<(usize, usize)>,
 }
 
 /// The phase entry point: rewrite every numeric span of `tracked`.
@@ -62,14 +66,42 @@ pub(crate) struct NumericRouting<'a> {
 /// word is left untouched and its digits stay with the symbol.
 pub struct NumericSpanNormalizer;
 
+/// What a claimed span reads as.
+enum EnglishNumber {
+    /// A value the cardinal reader covers; the route picks the register.
+    Cardinal(u64),
+    /// A value above the reader's range: every digit reads on its own.
+    Digits(String),
+}
+
+impl EnglishNumber {
+    /// The cardinal Latin words, which the narrated route transliterates.
+    fn latin(&self) -> String {
+        match self {
+            Self::Cardinal(value) => {
+                english::cardinal(*value).expect("a cardinal value below the limit")
+            }
+            Self::Digits(digits) => english::digits(digits),
+        }
+    }
+
+    /// The Latin words for the native route: four-digit years read as pairs.
+    fn native(&self) -> String {
+        match self {
+            Self::Cardinal(value) => english::native(*value),
+            Self::Digits(digits) => english::digits(digits),
+        }
+    }
+}
+
 impl NumericSpanNormalizer {
     pub fn new() -> Self {
         Self
     }
 
-    /// The Latin reading of a plain cardinal, if the span is one the English
+    /// The English reading of a plain cardinal, if the span is one the English
     /// rule may claim.
-    fn english_words(span: &parse::Span) -> Option<String> {
+    fn english_words(span: &parse::Span) -> Option<EnglishNumber> {
         let parse::Body::Number(number) = &span.body else {
             return None;
         };
@@ -91,8 +123,8 @@ impl NumericSpanNormalizer {
             return None;
         }
         Some(match digits.parse::<u64>() {
-            Ok(value) => english::cardinal(value).unwrap_or_else(|| english::digits(&digits)),
-            Err(_) => english::digits(&digits),
+            Ok(value) if value <= english::LIMIT => EnglishNumber::Cardinal(value),
+            _ => EnglishNumber::Digits(digits),
         })
     }
 
@@ -245,6 +277,7 @@ impl NumericSpanNormalizer {
         let native_lang = routing.native_lang;
         let dictionary = routing.dictionary;
         let recorded = &mut *routing.recorded;
+        let claimed = &mut *routing.claimed;
 
         let needs_context = spans.iter().any(|span| Self::english_words(span).is_some());
         let offsets = if needs_context {
@@ -289,11 +322,21 @@ impl NumericSpanNormalizer {
                 None => None,
             };
             match english {
-                Some(latin) => match route {
-                    NumberRoute::Narrate => {
-                        replacements.push((span.start, span.end, english::transliterate(&latin)))
+                Some(number) => match route {
+                    NumberRoute::Narrate => replacements.push((
+                        span.start,
+                        span.end,
+                        english::transliterate(&number.latin()),
+                    )),
+                    NumberRoute::Native => {
+                        let (orig_start, orig_end) =
+                            tracked.original_range(offsets[span.start], offsets[span.end]);
+                        if orig_end > orig_start {
+                            claimed.push((orig_start, orig_end));
+                        }
+                        replacements.push((span.start, span.end, number.native()));
+                        native_ranges.push((span.start, span.end));
                     }
-                    NumberRoute::Native => native_ranges.push((span.start, span.end)),
                 },
                 None => {
                     if let Some(reading) = span.read(&snapshot, expand_units) {
