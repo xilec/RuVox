@@ -17,7 +17,7 @@ pub(crate) mod constructs;
 pub(crate) const LIMIT: u64 = 999_999_999;
 
 const ZERO: (&str, &str) = ("zero", "зиро");
-const HUNDRED: (&str, &str) = ("hundred", "хандред");
+const HUNDRED: (&str, &str) = ("hundred", "хандрэд");
 const THOUSAND: (&str, &str) = ("thousand", "саузенд");
 const MILLION: (&str, &str) = ("million", "миллион");
 /// The filler of a year's one-digit tail ("nineteen oh five"); only the native
@@ -28,7 +28,7 @@ const UNITS: [(&str, &str); 20] = [
     ("zero", "зиро"),
     ("one", "уан"),
     ("two", "ту"),
-    ("three", "сри"),
+    ("three", "фри"),
     ("four", "фо"),
     ("five", "файв"),
     ("six", "сикс"),
@@ -49,7 +49,7 @@ const UNITS: [(&str, &str); 20] = [
 
 const TENS: [(&str, &str); 8] = [
     ("twenty", "твенти"),
-    ("thirty", "сёти"),
+    ("thirty", "фёти"),
     ("forty", "фоти"),
     ("fifty", "фифти"),
     ("sixty", "сиксти"),
@@ -321,6 +321,6 @@ mod tests {
             transliterate("two thousand twenty-four"),
             "ту саузенд твенти-фо"
         );
-        assert_eq!(transliterate("one hundred one"), "уан хандред уан");
+        assert_eq!(transliterate("one hundred one"), "уан хандрэд уан");
     }
 }

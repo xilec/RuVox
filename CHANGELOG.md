@@ -50,6 +50,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   part entries keep working when no whole-word entry exists (#279).
 
 ### Changed
+- **English readings are corrected** — «the» is read «зэ», «and» — «энд»,
+  «three» — «фри», «thirty» — «фёти», «hundred» — «хандрэд», «percent» —
+  «пёрсэнт»; the Latin words, the native route and its fixtures are unchanged
+  (#373).
 - **English constructs are read in English on the narrated route** — a number
   that owns a unit, percentage, currency, date, time, version, range, reference
   or ordinal suffix inside English prose now reads in English and is

@@ -385,11 +385,11 @@ const MONTHS: [&str; 12] = [
 /// looks a word up here as well as in the numeral tables.
 pub(super) const WORDS: &[(&str, &str)] = &[
     // Function words.
-    ("the", "зе"),
+    ("the", "зэ"),
     ("of", "ов"),
     ("to", "ту"),
     ("point", "поинт"),
-    ("percent", "персент"),
+    ("percent", "пёрсэнт"),
     ("or", "о"),
     ("more", "мор"),
     ("about", "эбаут"),
@@ -494,14 +494,14 @@ pub(super) const WORDS: &[(&str, &str)] = &[
     ("eighteenth", "эйтинс"),
     ("nineteenth", "найнтинс"),
     ("twentieth", "твентис"),
-    ("thirtieth", "сётис"),
+    ("thirtieth", "фётис"),
     ("fortieth", "фотис"),
     ("fiftieth", "фифтис"),
     ("sixtieth", "сикстис"),
     ("seventieth", "сэвентис"),
     ("eightieth", "эйтис"),
     ("ninetieth", "найнтис"),
-    ("hundredth", "хандредс"),
+    ("hundredth", "хандрэдс"),
     ("thousandth", "саузендс"),
     ("millionth", "миллионс"),
 ];
@@ -537,15 +537,15 @@ mod tests {
 
     #[test]
     fn percent_is_invariant() {
-        assert_eq!(english_all("50%"), "фифти персент");
-        assert_eq!(english_all("1%"), "уан персент");
+        assert_eq!(english_all("50%"), "фифти пёрсэнт");
+        assert_eq!(english_all("1%"), "уан пёрсэнт");
     }
 
     #[test]
     fn units_agree_with_the_count() {
         assert_eq!(english_all("1 MB"), "уан мегабайт");
         assert_eq!(english_all("50 MB"), "фифти мегабайтс");
-        assert_eq!(english_all("100 MB"), "уан хандред мегабайтс");
+        assert_eq!(english_all("100 MB"), "уан хандрэд мегабайтс");
         assert_eq!(english_all("1.5em"), "уан поинт файв эм");
         assert_eq!(english_all("5°C"), "файв дигриз целсиус");
     }
@@ -561,22 +561,22 @@ mod tests {
     fn dates_use_the_year_register() {
         assert_eq!(
             english_all("12.05.2024"),
-            "зе твелфс ов мэй, твенти твенти-фо"
+            "зэ твелфс ов мэй, твенти твенти-фо"
         );
-        assert_eq!(english_all("5 марта"), "зе фифс ов марч");
+        assert_eq!(english_all("5 марта"), "зэ фифс ов марч");
         assert_eq!(english_all("2024-12"), "дисембер твенти твенти-фо");
     }
 
     #[test]
     fn times_read_hours_and_minutes() {
-        assert_eq!(english_all("09:30"), "найн сёти");
+        assert_eq!(english_all("09:30"), "найн фёти");
         assert_eq!(english_all("09:05"), "найн оу файв");
         assert_eq!(english_all("12:00"), "твелв");
     }
 
     #[test]
     fn versions_read_with_point() {
-        assert_eq!(english_all("1.2.3"), "уан поинт ту поинт сри");
+        assert_eq!(english_all("1.2.3"), "уан поинт ту поинт фри");
         assert_eq!(english_all("1.02"), "уан поинт зиро ту");
     }
 
@@ -587,7 +587,7 @@ mod tests {
             english_all("2020–2024"),
             "твенти твенти ту твенти твенти-фо"
         );
-        assert_eq!(english_all("10–20%"), "тен ту твенти персент");
+        assert_eq!(english_all("10–20%"), "тен ту твенти пёрсэнт");
     }
 
     #[test]
@@ -603,8 +603,8 @@ mod tests {
 
     #[test]
     fn signs_and_approximations_prefix_the_reading() {
-        assert_eq!(english_all("-5%"), "майнус файв персент");
-        assert_eq!(english_all("~5%"), "эбаут файв персент");
+        assert_eq!(english_all("-5%"), "майнус файв пёрсэнт");
+        assert_eq!(english_all("~5%"), "эбаут файв пёрсэнт");
         assert_eq!(english_all("5 млн"), "файв миллион");
     }
 

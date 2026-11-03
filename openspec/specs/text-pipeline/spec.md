@@ -654,7 +654,7 @@ route.
 
 - GIVEN the Silero profile and the input "the release landed on 12.05.2024"
 - WHEN the pipeline processes it
-- THEN the date reads "зе твелфс ов мэй, твенти твенти-фо" and no Russian month
+- THEN the date reads "зэ твелфс ов мэй, твенти твенти-фо" and no Russian month
   or ordinal appears
 
 ### Requirement: Ranges and percentages
@@ -777,7 +777,7 @@ in an English sentence does not change the wording.
 
 - GIVEN the Silero profile and the input "growth of 10-20%"
 - WHEN the pipeline processes it
-- THEN the range reads "тен ту твенти персент" and neither bound is a Russian
+- THEN the range reads "тен ту твенти пёрсэнт" and neither bound is a Russian
   numeral
 
 ### Requirement: Operators and special symbols
@@ -930,6 +930,11 @@ transliteration. Every other all-uppercase token SHALL be spelled via
 entries like "json" → "джейсон", otherwise letter-by-letter via the same
 shared letter-name table); `AS_WORD` dictionary for mixed-case entries; and
 finally spelling-rule transliteration in alphabetic runs.
+
+Common function words SHALL be curated in a `FUNCTION_WORDS` table consulted
+before `IT_TERMS` and before the spelling rules, and in any letter case: "the"
+reads "зэ" and "and" reads "энд", while the rules alone read them as "те" and
+"анд".
 
 Spelling-rule transliteration SHALL be context-aware, not a fixed digraph
 table. It SHALL apply, in order: whole-suffix rules (`-tion` → "шн", `-sion` →
@@ -1173,6 +1178,13 @@ runs before this phase (see "User dictionary application in normalization").
   letter-by-letter spelling the all-caps rule would produce, so these entries
   are not redundant
 
+#### Scenario: Function words use their curated readings
+
+- GIVEN the Silero profile and the input "The API and the cache"
+- WHEN the pipeline processes it
+- THEN the article reads "зэ" both times and the conjunction reads "энд", not
+  "те" and "анд"
+
 ### Requirement: Numbers
 
 The numeric span layer SHALL read standalone integers as Russian cardinal
@@ -1385,7 +1397,7 @@ Russian reading.
 
 - GIVEN the Silero profile and the input "The file is 100 MB."
 - WHEN the pipeline processes it
-- THEN the construct reads "уан хандред мегабайтс" and no Russian unit word
+- THEN the construct reads "уан хандрэд мегабайтс" and no Russian unit word
   appears
 
 ### Requirement: Output post-processing

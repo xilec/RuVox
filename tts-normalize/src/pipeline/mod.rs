@@ -1066,14 +1066,16 @@ impl TTSPipeline {
     fn english_word_reading(&mut self, word: &str) -> String {
         let word_lower = word.to_lowercase();
 
-        // Priority: single letter by name → IT_TERMS →
+        // Priority: single letter by name → function words → IT_TERMS →
         // composed inflection → abbreviations → transliterate
-        use crate::pipeline::normalizers::english::IT_TERMS;
+        use crate::pipeline::normalizers::english::{FUNCTION_WORDS, IT_TERMS};
         if word.len() == 1 {
             // Lone letters are read by English letter name via the same
             // table as code identifiers ("x" → "икс"), not
             // transliterated, and are not tracked as unknown words.
             CodeIdentifierNormalizer::spell_abbreviation(word)
+        } else if let Some(v) = FUNCTION_WORDS.get(word_lower.as_str()) {
+            v.to_string()
         } else if let Some(v) = IT_TERMS.get(word_lower.as_str()) {
             v.to_string()
         } else if let Some(composed) = self.english_normalizer.compose_inflection(word) {
