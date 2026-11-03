@@ -611,13 +611,11 @@ must never stack with their window-level ESC handlers doubled up.
 ### Requirement: Quick-add to dictionary from preview
 
 The preview dialog SHALL offer a "В словарь" action, enabled only while the
-current text selection in either pane is a single valid source token: one word
-of Latin or Russian Cyrillic letters and digits with at least one letter, all
-letters from one script. Activating it SHALL open the dictionary editor with
-the add form prefilled: `from` set to the selected token, `to` empty.
-Selections that are not a single valid token (multi-word, containing
-punctuation, or mixing scripts) SHALL leave the action disabled with a hint
-explaining what a valid token is.
+current text selection in either pane is exactly one valid source token as
+defined by "Dictionary entry semantics" in the user-dictionary spec. Activating
+it SHALL open the dictionary editor with the add form prefilled: `from` set to
+the selected token, `to` empty. Selections that are not a single valid token
+SHALL leave the action disabled with a hint explaining what a valid token is.
 
 #### Scenario: Latin word selection enables the action
 

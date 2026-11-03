@@ -491,18 +491,18 @@ both until the newer build rewrites it.
 
 The viewer context menu SHALL offer «В словарь» when the selection inside the
 viewer is exactly one valid source token as defined by "Dictionary entry
-semantics" — one word of Latin or Russian Cyrillic letters and digits with at
-least one letter and optional internal hyphens — in every display mode
-(plain, Markdown, HTML). The item SHALL NOT appear for a multi-word
-selection, an invalid token, or no selection; those selections keep the
-menu's copy-only contract and the menu SHALL still open when a copy action
-applies. The item SHALL be rendered before the copy actions.
+semantics", in every display mode (plain, Markdown, HTML). The item SHALL NOT
+appear for a multi-word selection, an invalid token, or no selection; those
+selections keep the menu's copy-only contract and the menu SHALL still open
+when a copy action applies. The item's placement relative to the copy items
+SHALL follow "Viewer context menu" in the viewer-copy-actions spec.
 
 Choosing the item SHALL open the existing dictionary editor prefilled with the
-selected word as the add form's source word, with the scope selector and the
-immediate-save path unchanged; saving SHALL persist the entry to the selected
-collection exactly like the preview quick-add. Opening and closing the editor
-SHALL NOT pause, stop or otherwise interrupt playback.
+selected word as the add form's source word and the global scope selected,
+with the scope selector and the immediate-save path unchanged; saving SHALL
+persist the entry to the selected collection exactly like the preview
+quick-add. Opening and closing the editor SHALL NOT pause, stop or otherwise
+interrupt playback.
 
 When the editor was opened from the viewer quick-add and at least one
 dictionary write succeeded before it closed, closing the editor SHALL offer to
@@ -522,13 +522,19 @@ nor closing it, nor the offer itself SHALL issue a player command.
 - GIVEN the viewer shows a plain-text entry and the user selected the single
   word "getUserData"
 - WHEN the user right-clicks the selection
-- THEN the menu shows «В словарь» before «Копировать»
+- THEN the menu shows «В словарь»
 
 #### Scenario: Single word in Markdown and HTML modes
 
 - GIVEN the viewer renders a Markdown or an HTML entry
 - WHEN the user right-clicks a selected single word
-- THEN the menu shows «В словарь» before the copy items
+- THEN the menu shows «В словарь»
+
+#### Scenario: Hyphenated token
+
+- GIVEN the viewer shows a plain-text entry and the user selected "UTF-8"
+- WHEN the user right-clicks the selection
+- THEN the menu shows «В словарь»
 
 #### Scenario: Multi-word selection
 
@@ -536,10 +542,17 @@ nor closing it, nor the offer itself SHALL issue a player command.
 - WHEN the user right-clicks the selection
 - THEN the menu offers only «Копировать» and no «В словарь» item
 
+#### Scenario: Mixed-script token
+
+- GIVEN the viewer shows a plain-text entry and the user selected "IPзамок"
+- WHEN the user right-clicks the selection
+- THEN the menu offers only «Копировать» and no «В словарь» item
+
 #### Scenario: Invalid token selection
 
 - GIVEN the user selected a fragment that is not one valid source token
-  (punctuation inside it, a multi-word run, or a digit-only token)
+  (punctuation other than an internal hyphen, a multi-word run, or a
+  digit-only token)
 - WHEN the user right-clicks the selection
 - THEN the menu offers only «Копировать»
 
