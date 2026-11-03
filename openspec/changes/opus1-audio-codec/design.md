@@ -15,7 +15,11 @@ profile and evaluated a newer pure-Rust alternative before deciding.
 Sample: 22:49 (1369 s) Russian narration, 48 kHz mono f32 WAV (250 MiB),
 decoded from a RuVox-produced `.opus`. Profile: 20 ms frames, 32 kbps VOIP,
 VBR, complexity 9, pre-skip 312, the same Ogg muxer for every Rust variant.
-AMD Ryzen 9 7900, `opt-level=3` + `lto = "thin"`, three interleaved runs.
+AMD Ryzen 9 7900. Two build configurations were measured: an exploratory
+`opt-level=3` + `lto = "thin"` build (below, it shows where the headroom
+is) and the shipped `[profile.release]` (`opt-level="s"`, `lto=true`,
+`codegen-units=1`) plus the `[profile.release.package.opus1] opt-level=3`
+override this change adds (next section). Three interleaved runs each.
 
 | Variant | Wall (s) | Output (bytes) | SNR vs source |
 |---|---:|---:|---:|
@@ -24,9 +28,23 @@ AMD Ryzen 9 7900, `opt-level=3` + `lto = "thin"`, three interleaved runs.
 | `opus-rs` 0.1.40 | 13.15–13.27 | 6,930,485 | — |
 | `opus1` 0.3.0 | 4.93–4.95 | 5,593,012 | 9.06 dB |
 
-`opus1` is 1.74× faster than `libopus`, matches its bitrate (0.01 % larger
-file) and its measured distortion. `opus-rs` 0.1.40's larger file is a VBR
-budgeting difference, not a quality gain.
+In the exploratory build `opus1` is 1.74× faster than `libopus`, matches its
+bitrate (0.01 % larger file) and its measured distortion. `opus-rs` 0.1.40's
+larger file is a VBR budgeting difference, not a quality gain.
+
+### Shipped release profile
+
+| Variant (workspace release profile) | Wall (s) | Output (bytes) |
+|---|---:|---:|
+| `libopus` 1.6.1 FFI | 8.69–8.76 | 5,592,269 |
+| `opus1` 0.3.0, no override | 7.03–7.17 | 5,593,012 |
+| `opus1` 0.3.0, `opt-level=3` override | 5.67–5.69 | 5,593,012 |
+
+At `opt-level="s"` the pure-Rust codec loses ~40 % (size-optimized scalar
+glue and run-time dispatch), while the C `libopus` was already built at `-O2`
+by Nix; the per-package override recovers it and gives 1.53× over `libopus`
+in the configuration the app ships. The override is scoped to `opus1`, so the
+rest of the binary keeps the size-optimized profile.
 
 ### Where the time goes (`perf`, user-space callchains)
 
@@ -88,6 +106,14 @@ The app no longer links it. `mpv`/`ffmpeg` keep their own copies for
 playback, so nothing else in the closure changes. The non-Nix install
 instructions lose `libopus-dev`; `pkg-config` stays because other native
 dependencies need it.
+
+### Give `opus1` its own opt-level in the release profile
+
+The workspace ships `opt-level = "s"` for size. The pure-Rust codec's scalar
+glue and run-time dispatch lose ~40 % there (7.0 s vs 5.7 s on the reference
+sample), while the C library it replaces was compiled at `-O2` by Nix. A
+per-package `[profile.release.package.opus1] opt-level = 3` keeps the rest of
+the binary size-optimized and brings the shipped encode time to 5.7 s.
 
 ### Rejected alternatives
 

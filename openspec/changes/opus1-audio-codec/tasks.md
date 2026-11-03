@@ -8,6 +8,10 @@
       path and any comment that names it).
 - [x] 1.3 Drop `libopus-dev` from the non-Nix dependency list in
       `docs/install.md`.
+- [x] 1.4 Give `opus1` its own `opt-level = 3` in the workspace release
+      profile: the size-optimized build costs the pure-Rust codec ~40 % on
+      the reference sample, while the C `libopus` it replaces was built at
+      `-O2` by Nix.
 
 ## 2. Audio module
 

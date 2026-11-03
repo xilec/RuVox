@@ -13,5 +13,12 @@ lto = true
 opt-level = "s"
 panic = "abort"
 
+# The pure-Rust Opus codec is hot on every save, and its scalar glue and
+# run-time dispatch lose ~40 % at the size-optimized opt-level (the C libopus
+# it replaced was built at -O2 by Nix). Compile just this crate for speed
+# (issue #19).
+[profile.release.package.opus1]
+opt-level = 3
+
 [profile.dev]
 incremental = true

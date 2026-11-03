@@ -15,10 +15,13 @@ gap and points at a third option the issue did not consider:
   SILK SIMD.
 
 `opus1` 0.3.0 (a hard fork of `opus-rs` 0.1.37 with SSE4.1/AVX2 kernels for
-exactly those SILK functions) encodes the same sample in **4.94 s — 1.74×
-faster than `libopus`** — at the same bitrate (5,593,012 vs 5,592,269 bytes)
-and the same measured quality (SNR vs the source: 9.06 dB vs 9.04 dB).
-
+`opus1` 0.3.0 (a hard fork of `opus-rs` 0.1.37 with SSE4.1/AVX2 kernels for
+exactly those SILK functions) encodes the same sample in **5.7 s — 1.53×
+faster than `libopus`** in the shipped release profile, at the same bitrate
+(5,593,012 vs 5,592,269 bytes) and the same measured quality (SNR vs the
+source: 9.06 dB vs 9.04 dB). An exploratory `opt-level=3` build reaches
+4.94 s (1.74×), which is why the workspace gives this crate its own
+`opt-level = 3`.
 Switching to `opus1` therefore both closes #19's performance question and
 achieves what the issue actually wanted: dropping the `libopus` native
 dependency (one less native library in the AppImage / Nix closure, a simpler
@@ -38,7 +41,7 @@ cross-compile and a fully reproducible pure-Rust audio path).
 - Update the storage spec wording that names `libopus` (the five native rates
   and the pre-skip source) — behavior is unchanged, only the implementation
   reference moves to the new encoder.
-- Add a `[Unreleased]` CHANGELOG note: audio saving is ~1.7× faster and the
+- Add a `[Unreleased]` CHANGELOG note: audio saving is ~1.5× faster and the
   app no longer needs the system `libopus`.
 
 ## Capabilities
@@ -56,6 +59,9 @@ None.
 ## Impact
 
 - `src-tauri/Cargo.toml`, `Cargo.lock` — dependency swap (`opus` → `opus1`).
+- `Cargo.toml` (workspace) — `[profile.release.package.opus1] opt-level = 3`:
+  the pure-Rust codec is hot on save and loses ~40 % in the size-optimized
+  release profile.
 - `src-tauri/src/audio/mod.rs` — encoder/decoder construction, bitrate,
   lookahead, error type; no pipeline changes.
 - `nix/devshell.nix`, `flake.nix` — remove `libopus` from build inputs and the

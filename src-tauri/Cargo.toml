@@ -85,8 +85,10 @@ libc = "0.2"
 # Opus encoding pipeline (WAV → Ogg-Opus) and the decoder used by audio
 # export. `opus1` is a pure-Rust port of libopus 1.6 with runtime-dispatched
 # SSE4.1/AVX2 SILK kernels: on our 48 kHz / 20 ms / 32 kbps VOIP profile it
-# encodes ~1.7x faster than the C libopus FFI it replaced (issue #19), so the
-# app carries no native Opus dependency.
+# encodes ~1.5x faster than the C libopus FFI it replaced (issue #19), so the
+# app carries no native Opus dependency. The per-package opt-level override in
+# the workspace Cargo.toml keeps the pure-Rust codec out of the size-optimized
+# release profile's slow path.
 opus1 = "0.3"
 ogg = "0.9"
 hound = "3.5"
