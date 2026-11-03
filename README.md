@@ -34,7 +34,7 @@ RuVox идёт по второму пути: нормализация — ком
 | Debian / Ubuntu | `*.deb` | `sudo dpkg -i ./ruvox_*.deb`; системный `mpv` ставится автоматически как зависимость; обновляется вместе с системой |
 | Любой дистрибутив Linux | `*.AppImage` | запускается напрямую (нужен FUSE; там, где его нет, — `--appimage-extract-and-run`); mpv встроен; автообновление из приложения |
 
-Модель движка по умолчанию скачивается один раз по запросу: при первом запуске RuVox предлагает бандл TeraTTSv2 (~410 МБ), а отказ не сохраняется — сеанс проходит на Piper, и предложение возвращается при следующем запуске. Бандл Silero Native (~230 МБ) скачивается из «Настроек» → «Модели и голоса».
+Модель движка по умолчанию скачивается один раз по запросу: при первом запуске RuVox предлагает бандл TeraTTSv2 (~410 МБ), а отказ не сохраняется — сеанс проходит на Piper, и предложение возвращается при следующем запуске. Бандл Silero Native (~230 МБ) скачивается из «Настроек» → «Движок и голос» → «Модели и голоса» → «Открыть».
 
 ## Стек
 
@@ -87,7 +87,7 @@ RuVox идёт по второму пути: нормализация — ком
 
 - **ОС:** Windows 10 22H2+ / 11 (x86_64) или Linux (X11 или Wayland; Ubuntu 24.04+, Debian 13+, Fedora 40+, Arch).
 - **Nix** (для сборки из исходников на Linux): рекомендуется — всё окружение (Rust, Node, Python, Tauri-зависимости) собирается из `flake.nix` (dev-shell живёт в `nix/devshell.nix`).
-- **Без Nix** (сборка из исходников на Linux): дистрибутив с `webkit2gtk-4.1` (Ubuntu 24.04+, Debian 13+, Fedora 40+, Arch). Подробная пошаговая инструкция по сборке: [docs/install.md](docs/install.md) (на английском). Python 3.12 + `uv` нужны только для Python-движка Silero (сайдкар `ttsd`) — Piper и нативный движок Silero в них не нуждаются.
+- **Без Nix** (сборка из исходников на Linux): дистрибутив с `webkit2gtk-4.1` (Ubuntu 24.04+, Debian 13+, Fedora 40+, Arch). Подробная пошаговая инструкция по сборке: [docs/install.md](docs/install.md) (на английском). Python 3.12 + `uv` нужны только для Python-движка Silero (сайдкар `ttsd`) — TeraTTSv2 (Rust/ONNX), Piper и нативный движок Silero в них не нуждаются.
 
 ## Dev-окружение
 
@@ -107,7 +107,7 @@ nix develop -c pnpm tauri dev
 ## Сборка production-бинаря
 
 ```bash
-# По умолчанию (slim) — Piper + нативный Silero, без Python/torch в closure.
+# По умолчанию (slim) — TeraTTSv2 + Piper + нативный Silero, без Python/torch в closure.
 nix build .#ruvox
 ./result/bin/ruvox
 
@@ -117,7 +117,7 @@ nix build .#ruvox-with-silero
 ./result/bin/ruvox
 ```
 
-Оба варианта собирают release-бинарь Tauri и оборачивают его через `wrapProgram` (runtime `LD_LIBRARY_PATH` + `GIO_EXTRA_MODULES`); `mpv` в обоих случаях попадает в `PATH`. Вариант `.#ruvox-with-silero` дополнительно кладёт в `PATH` бинарь `ttsd` (Silero Python subprocess). Slim-вариант его не содержит — на runtime в Settings опция Python-движка Silero окрашена серым. Нативный движок Silero работает в обоих вариантах — его бандл ONNX-моделей (~230 МБ) скачивается по запросу из Settings.
+Оба варианта собирают release-бинарь Tauri и оборачивают его через `wrapProgram` (runtime `LD_LIBRARY_PATH` + `GIO_EXTRA_MODULES`); `mpv` в обоих случаях попадает в `PATH`. Вариант `.#ruvox-with-silero` дополнительно кладёт в `PATH` бинарь `ttsd` (Silero Python subprocess). Slim-вариант его не содержит — на runtime в «Настройках» опция Python-движка Silero окрашена серым. TeraTTSv2 и нативный движок Silero работают в обоих вариантах: их ONNX-бандлы — ~410 МБ для TeraTTSv2 (движок по умолчанию, предлагается при первом запуске) и ~230 МБ для Silero Native — скачиваются по запросу из «Настроек» → «Движок и голос» → «Модели и голоса».
 
 Windows-установщик и Linux-пакеты (`.deb`, `.AppImage`) собираются в CI при пуше тега `v*` (см. [.github/workflows/release.yml](.github/workflows/release.yml)).
 

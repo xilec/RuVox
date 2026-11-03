@@ -34,7 +34,7 @@ Ready-made builds are published on [Releases](https://github.com/xilec/RuVox/rel
 | Debian / Ubuntu | `*.deb` | `sudo dpkg -i ./ruvox_*.deb`; the system `mpv` is installed automatically as a dependency; updates with the system |
 | Any Linux distribution | `*.AppImage` | runs directly (requires FUSE; where it is unavailable, use `--appimage-extract-and-run`); mpv is bundled; in-app auto-updates |
 
-The default engine's model is downloaded once on demand: on first launch RuVox offers the TeraTTSv2 bundle (~410 MB), and declining is not persisted — the session runs on Piper and the offer returns on the next launch. The Silero Native bundle (~230 MB) is downloaded from Settings → Models and voices.
+The default engine's model is downloaded once on demand: on first launch RuVox offers the TeraTTSv2 bundle (~410 MB), and declining is not persisted — the session runs on Piper and the offer returns on the next launch. The Silero Native bundle (~230 MB) is downloaded from Settings → Engine and voice → Models and voices → Open.
 
 ## Stack
 
@@ -87,7 +87,7 @@ The preview dialog (opens when you add text) shows the result before synthesis: 
 
 - **OS:** Windows 10 22H2+ / 11 (x86_64) or Linux (X11 or Wayland; Ubuntu 24.04+, Debian 13+, Fedora 40+, Arch).
 - **Nix** (for building from source on Linux): recommended — the entire toolchain (Rust, Node, Python, Tauri deps) is built from `flake.nix` (dev shell lives in `nix/devshell.nix`).
-- **Without Nix** (building from source on Linux): a distribution that ships `webkit2gtk-4.1` (Ubuntu 24.04+, Debian 13+, Fedora 40+, Arch). Detailed step-by-step build guide: [docs/install.md](docs/install.md). Python 3.12 + `uv` are only required for the Python Silero engine (the `ttsd` sidecar) — Piper and the native Silero engine need neither.
+- **Without Nix** (building from source on Linux): a distribution that ships `webkit2gtk-4.1` (Ubuntu 24.04+, Debian 13+, Fedora 40+, Arch). Detailed step-by-step build guide: [docs/install.md](docs/install.md). Python 3.12 + `uv` are only required for the Python Silero engine (the `ttsd` sidecar) — TeraTTSv2 (Rust/ONNX), Piper and the native Silero engine need neither.
 
 ## Dev environment
 
@@ -107,7 +107,7 @@ All commands in the docs assume execution inside `nix develop` (or via `nix deve
 ## Production build
 
 ```bash
-# Default (slim) — Piper + native Silero, no Python/torch in the closure.
+# Default (slim) — TeraTTSv2 + Piper + native Silero, no Python/torch in the closure.
 nix build .#ruvox
 ./result/bin/ruvox
 
@@ -117,7 +117,7 @@ nix build .#ruvox-with-silero
 ./result/bin/ruvox
 ```
 
-Both variants build the Tauri release binary and wrap it via `wrapProgram` (runtime `LD_LIBRARY_PATH` + `GIO_EXTRA_MODULES`) with `mpv` in `PATH`. `.#ruvox-with-silero` additionally puts the `ttsd` (Silero Python subprocess) binary in `PATH`; `.#ruvox` does not, and the Settings dialog greys the Python Silero engine out at runtime. The native Silero engine works in both variants — its ~230 MB ONNX model bundle is downloaded on demand from Settings.
+Both variants build the Tauri release binary and wrap it via `wrapProgram` (runtime `LD_LIBRARY_PATH` + `GIO_EXTRA_MODULES`) with `mpv` in `PATH`. `.#ruvox-with-silero` additionally puts the `ttsd` (Silero Python subprocess) binary in `PATH`; `.#ruvox` does not, and the Settings dialog greys the Python Silero engine out at runtime. Both TeraTTSv2 and the native Silero engine work in both variants: their ONNX bundles — ~410 MB for TeraTTSv2 (the default engine, offered on first launch) and ~230 MB for Silero Native — are downloaded on demand from Settings → Engine and voice → Models and voices.
 
 The Windows installer and the Linux packages (`.deb`, `.AppImage`) are built in CI on a `v*` tag push (see [.github/workflows/release.yml](.github/workflows/release.yml)).
 

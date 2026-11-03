@@ -92,6 +92,12 @@ retry the call.
 │   ├── export/       #   maintainer exporter: upstream .pt → ONNX bundle (uv)
 │   ├── tests/        #   unit tier + bundle-gated parity suite
 │   └── docs/         #   architecture.md (pipeline, debugging), benchmarks.md
+├── teratts/          # TeraTTSv2 engine (ONNX Runtime, 44.1 kHz) — default TTS engine
+│   ├── src/          #   engine crate (ONNX sessions, text frontend, chunking, timestamps)
+│   ├── export/       #   maintainer exporter + bundle versioning/update procedure (uv)
+│   ├── examples/     #   runnable synthesis example
+│   ├── tests/        #   unit tier + bundle-gated parity suite
+│   └── NOTICE        #   model licence and attribution (OpenRAIL-M)
 ├── tts-contract/     # Shared text contract crate: profile types and the chunker
 ├── tts-normalize/    # Normalization pipeline, user dictionary, per-engine text profiles
 ├── Cargo.toml        # Cargo workspace root: app + engine/text crates, one lockfile
@@ -103,7 +109,7 @@ retry the call.
 │   └── devshell.nix  # Nix dev environment (Rust + Node + Python), wired into flake.nix
 ├── justfile          # Task runner (single entry point for routine commands)
 ├── lefthook.yml      # Git hooks (fmt/ruff pre-commit, clippy/typecheck pre-push)
-└── flake.nix         # Production build: `.#ruvox` (slim, Piper + native Silero) and `.#ruvox-with-silero` (full, adds the ttsd Python sidecar)
+└── flake.nix         # Production build: `.#ruvox` (slim, TeraTTSv2 + Piper + native Silero, on-demand ONNX bundles) and `.#ruvox-with-silero` (full, adds the ttsd Python sidecar)
 ```
 
 ## Spec-driven workflow (OpenSpec)
@@ -207,6 +213,7 @@ The authoritative hard rule lives in
 nix develop -c just test                                                   # everything
 nix develop -c cargo test --manifest-path src-tauri/Cargo.toml             # Rust (incl. golden pipeline fixtures)
 nix develop -c cargo test --manifest-path silero-native/Cargo.toml         # native Silero engine (bundle-gated tests skip without SILERO_NATIVE_BUNDLE)
+nix develop -c cargo test --manifest-path teratts/Cargo.toml               # TeraTTSv2 engine (bundle-gated tests skip without TERATTS_BUNDLE)
 nix develop -c cargo test --manifest-path tts-contract/Cargo.toml          # shared profile types and chunker
 nix develop -c cargo test --manifest-path tts-normalize/Cargo.toml         # normalization: pipeline, dictionary, profiles
 nix develop -c pnpm typecheck                                              # TS typecheck
