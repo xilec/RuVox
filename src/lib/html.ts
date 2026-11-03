@@ -1,6 +1,10 @@
 import DOMPurify, { type Config as DOMPurifyConfig } from 'dompurify';
 import hljs from 'highlight.js';
-import { annotateHtmlWords, extractTextForTts } from './htmlText';
+import {
+  annotateHtmlWords,
+  extractTextForTts,
+  isBlockSeparator,
+} from './htmlText';
 import type { EntryFormat } from './tauri';
 
 /**
@@ -85,9 +89,19 @@ function wrapTablesForScrolling(container: HTMLElement): void {
 /**
  * Walk all `<pre><code class="language-*">` elements in the container and
  * apply highlight.js syntax highlighting in place.
+ *
+ * Markup that already carries element children (Habr/Shiki spans) is
+ * highlighted line by line: such sources separate code lines with `<br>`,
+ * which highlight.js cannot see in `textContent`. Rebuilding the block from
+ * `textContent` would collapse it into one line and shift every later word
+ * span off its extracted-text offset, so the `<br>` separators are kept.
  */
 function highlightCodeBlocks(container: HTMLElement): void {
   container.querySelectorAll('pre code').forEach((codeEl) => {
+    if (codeEl.firstElementChild) {
+      highlightPreformattedLines(codeEl);
+      return;
+    }
     const lang = extractLanguage(codeEl.className);
     if (lang && hljs.getLanguage(lang)) {
       try {
@@ -113,6 +127,56 @@ function highlightCodeBlocks(container: HTMLElement): void {
       }
     }
   });
+}
+
+/**
+ * Highlight markup that is already wrapped in elements (Habr/Shiki spans).
+ *
+ * Such sources separate code lines with `<br>` elements. Rebuilding the block
+ * from `textContent` would drop them and shift every later word span, so each
+ * line is highlighted on its own and the `<br>` separators are kept — the DOM
+ * shape `annotateHtmlWords` walks stays identical to the extracted text.
+ * Markup with block-level children is left as authored for the same reason.
+ */
+function highlightPreformattedLines(codeEl: Element): void {
+  const lang = extractLanguage(codeEl.className);
+  if (!lang || !hljs.getLanguage(lang)) return;
+  // Only <br>-separated markup can be rebuilt line by line without changing
+  // what the extractor sees; anything with block-level children is left as
+  // authored so the word offsets keep matching original_text.
+  const hasBlockChild = Array.from(codeEl.querySelectorAll('*')).some(
+    (el) => el.tagName !== 'BR' && isBlockSeparator(el.tagName),
+  );
+  if (hasBlockChild) return;
+  const lines = collectLines(codeEl);
+  try {
+    codeEl.innerHTML = lines
+      .map((line) =>
+        hljs.highlight(line, { language: lang, ignoreIllegals: true }).value,
+      )
+      .join('<br>');
+    codeEl.classList.add('hljs');
+  } catch {
+    // Highlighting failure is non-fatal — display unhighlighted code.
+  }
+}
+
+/** Collect the code text line by line, treating `<br>` as the separator. */
+function collectLines(codeEl: Element): string[] {
+  const lines = [''];
+  const append = (node: Node): void => {
+    for (const child of Array.from(node.childNodes)) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        lines[lines.length - 1] += (child as Text).data;
+      } else if (child.nodeType === Node.ELEMENT_NODE) {
+        const el = child as Element;
+        if (el.tagName === 'BR') lines.push('');
+        else append(el);
+      }
+    }
+  };
+  append(codeEl);
+  return lines;
 }
 
 /**

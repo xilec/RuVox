@@ -109,6 +109,88 @@ describe('renderHtml word spans', () => {
       expect(cps.slice(Number(m[1]), Number(m[2])).join('')).toBe(m[3]);
     }
   });
+
+  it('keeps span offsets aligned when code lines are separated by <br>', () => {
+    // Habr/Shiki markup separates code lines with <br>, not newlines.
+    // Re-highlighting reads textContent, where <br> contributes nothing,
+    // so the block used to collapse into one line and shift every later span.
+    const html =
+      '<p>Пример</p><pre><code class="language-python">' +
+      '<span>fixed</span> = creds.get(src_ip)<br>' +
+      'if fixed is not None:<br>' +
+      '    return True</code></pre><p>После кода</p>';
+    const out = renderHtml(html);
+    const cps = Array.from(extractTextForTts(html));
+    const spanRe =
+      /<span data-orig-start="(\d+)" data-orig-end="(\d+)">([^<]+)<\/span>/g;
+    const spans = [...out.matchAll(spanRe)];
+    expect(spans.length).toBeGreaterThan(0);
+    for (const m of spans) {
+      expect(cps.slice(Number(m[1]), Number(m[2])).join('')).toBe(m[3]);
+    }
+
+    const div = document.createElement('div');
+    div.innerHTML = out;
+    const code = div.querySelector('pre code');
+    expect(code).not.toBeNull();
+    // The block keeps its <br> line separators instead of collapsing.
+    expect(code?.querySelectorAll('br')).toHaveLength(2);
+    // Pre-highlighted blocks are re-highlighted line by line, not skipped.
+    expect(code?.classList.contains('hljs')).toBe(true);
+    // The rendered document still extracts to the same text, so every span
+    // offset stays inside the coordinate space of the stored original_text.
+    expect(extractTextForTts(out)).toBe(cps.join(''));
+  });
+
+  it('leaves a language-less pre-highlighted block as authored', () => {
+    const html =
+      '<p>Пример</p><pre><code class="hljs">' +
+      '<span>a</span> = 1<br><span>b</span> = 2</code></pre><p>После</p>';
+    const out = renderHtml(html);
+    const cps = Array.from(extractTextForTts(html));
+    const spanRe =
+      /<span data-orig-start="(\d+)" data-orig-end="(\d+)">([^<]+)<\/span>/g;
+    for (const m of [...out.matchAll(spanRe)]) {
+      expect(cps.slice(Number(m[1]), Number(m[2])).join('')).toBe(m[3]);
+    }
+    const div = document.createElement('div');
+    div.innerHTML = out;
+    const code = div.querySelector('pre code');
+    expect(code?.querySelectorAll('br')).toHaveLength(1);
+    expect(extractTextForTts(out)).toBe(cps.join(''));
+  });
+
+  it('keeps offsets when pre-highlighted lines use newlines', () => {
+    const html =
+      '<p>Пример</p><pre><code class="language-python">' +
+      '<span>a</span> = 1\n<span>b</span> = 2</code></pre><p>После</p>';
+    const out = renderHtml(html);
+    const cps = Array.from(extractTextForTts(html));
+    const spanRe =
+      /<span data-orig-start="(\d+)" data-orig-end="(\d+)">([^<]+)<\/span>/g;
+    for (const m of [...out.matchAll(spanRe)]) {
+      expect(cps.slice(Number(m[1]), Number(m[2])).join('')).toBe(m[3]);
+    }
+    expect(extractTextForTts(out)).toBe(cps.join(''));
+  });
+
+  it('leaves a block with block-level children as authored', () => {
+    const html =
+      '<p>Пример</p><pre><code class="language-python">' +
+      '<span>a</span> = 1<div><span>b</span> = 2</div></code></pre><p>После</p>';
+    const out = renderHtml(html);
+    const cps = Array.from(extractTextForTts(html));
+    const spanRe =
+      /<span data-orig-start="(\d+)" data-orig-end="(\d+)">([^<]+)<\/span>/g;
+    for (const m of [...out.matchAll(spanRe)]) {
+      expect(cps.slice(Number(m[1]), Number(m[2])).join('')).toBe(m[3]);
+    }
+    const div = document.createElement('div');
+    div.innerHTML = out;
+    const code = div.querySelector('pre code');
+    expect(code?.classList.contains('hljs')).toBe(false);
+    expect(extractTextForTts(out)).toBe(cps.join(''));
+  });
 });
 
 
