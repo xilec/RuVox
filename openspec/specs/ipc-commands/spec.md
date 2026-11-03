@@ -88,13 +88,13 @@ interface UIConfig {
   reading_width: string;           // "narrow" (default) | "wide"
   reading_scale: number;           // percent, default 100, clamped 80–200
   theme: string;                   // "light" | "dark" | "auto"
-  player_hotkeys: Record<string, string>;
   window_geometry: [number, number, number, number] | null;
   preview_dialog_enabled: boolean;
   hide_to_tray_on_close: boolean;  // default false: closing the window quits
   engine: string;                  // "piper" | "silero" | "silero_native" | "teratts" (default)
   piper_voice: string;             // default "ruslan"
   teratts_voice: string;           // default "ru_m5"
+  language: string;                // "ru" (default) | "en"
 }
 ```
 
@@ -135,6 +135,14 @@ interface UIConfig {
 - WHEN the frontend calls `invoke("get_config")`
 - THEN the response contains `reading_width: "narrow"` and `reading_scale: 100`,
   with out-of-range persisted values already canonicalized
+
+#### Scenario: Legacy player_hotkeys key is ignored
+
+- GIVEN a `config.json` written before `player_hotkeys` was removed
+- WHEN the frontend calls `invoke("get_config")`
+- THEN the response has no `player_hotkeys` key and the rest of the config is
+  returned normally
+- AND the next config save drops the key from the file
 
 ### Requirement: Frontend Parameter Casing
 

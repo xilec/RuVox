@@ -33,6 +33,7 @@
 | [docs/development.md](docs/development.md) | Dev environment, commands, debugging |
 | [docs/contributing.md](docs/contributing.md) | Contribution rules (dictionaries, style) |
 | [docs/index.md](docs/index.md) | Documentation index |
+| [docs/user-guide.md](docs/user-guide.md) | User guide (Russian): first launch, queue, playback, settings, dictionary, tray, hotkeys; UI changes must update it — see [the user-guide rule](ai/rules/conventions.md#user-guide) |
 
 ## Quick start
 

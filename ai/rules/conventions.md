@@ -25,6 +25,18 @@ Craft rules (layout, test quality, duplication, idiom, correctness) live in
 - Comments only when WHY is non-obvious (hidden invariant, workaround for a
   known bug). Do not comment WHAT.
 
+## User guide
+
+- A PR that changes UI structure or observable feature behavior MUST update
+  `docs/user-guide.md` in the same PR — the ASCII mockup of the affected
+  control and the hotkey list included.
+- A guide that no longer matches the shipped UI or the implemented hotkeys is
+  a review finding: update it in the same branch or the PR is not
+  review-clean.
+- Keep the guide user-facing and schematic: fenced `text` mockups with box
+  drawing and Russian labels, chrome elided, ~80 columns, one short section
+  per topic. Add a section only for a shipped, user-visible feature.
+
 ## Toolchain
 
 - All commands run via `nix develop -c "..."` (or `just <recipe>` inside the

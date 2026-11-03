@@ -22,6 +22,8 @@ All synthesis runs locally on your machine — no cloud TTS, nothing is sent any
 
 ![RuVox screenshot](docs/images/screenshot.png)
 
+Step-by-step guide to the interface, settings and hotkeys: [docs/user-guide.md](docs/user-guide.md) (in Russian).
+
 Voice samples of all three engines reading the same text are on the [project page](https://xilec.github.io/RuVox/).
 
 ## Installation
@@ -143,6 +145,7 @@ cd ttsd && uv run python -m pytest                              # Python subproc
 
 | File | Description |
 |------|-------------|
+| [docs/user-guide.md](docs/user-guide.md) | User guide (Russian): first launch, queue, playback, settings, dictionary, tray, hotkeys |
 | [docs/index.md](docs/index.md) | Documentation index: architecture, behavior specs, development process |
 | [AGENTS.md](AGENTS.md) | Development rules, project structure, conventions |
 | [docs/install.md](docs/install.md) | Building from source on Linux without Nix (Ubuntu 24.04+) |

@@ -97,7 +97,6 @@ function makeConfig(overrides: Partial<UIConfig> = {}): UIConfig {
     reading_scale: 100,
     theme: 'auto',
     language: 'ru',
-    player_hotkeys: {},
     window_geometry: null,
     preview_dialog_enabled: true,
     hide_to_tray_on_close: false,

@@ -1,7 +1,6 @@
 use super::synthesis::*;
 use super::*;
 use crate::storage::test_util::make_service;
-use std::collections::HashMap;
 use std::path::Path;
 use test_case::test_case;
 
@@ -79,7 +78,6 @@ fn apply_config_patch_applies_each_field_in_isolation() {
         reading_width: _,
         reading_scale: _,
         theme: _,
-        player_hotkeys: _,
         window_geometry: _,
         preview_dialog_enabled: _,
         hide_to_tray_on_close: _,
@@ -88,9 +86,6 @@ fn apply_config_patch_applies_each_field_in_isolation() {
         teratts_voice: _,
         language: _,
     } = UIConfigPatch::default();
-
-    let mut custom_hotkeys = HashMap::new();
-    custom_hotkeys.insert("play_pause".to_string(), "Enter".to_string());
 
     struct Case {
         field: &'static str,
@@ -179,13 +174,6 @@ fn apply_config_patch_applies_each_field_in_isolation() {
             field: "theme",
             patch: UIConfigPatch {
                 theme: Some("dark".to_string()),
-                ..Default::default()
-            },
-        },
-        Case {
-            field: "player_hotkeys",
-            patch: UIConfigPatch {
-                player_hotkeys: Some(custom_hotkeys.clone()),
                 ..Default::default()
             },
         },
@@ -328,9 +316,6 @@ fn apply_config_patch_window_geometry_set_and_clear() {
 /// from `UIConfig::default()`.
 #[test]
 fn apply_config_patch_all_none_leaves_config_untouched() {
-    let mut custom_hotkeys = HashMap::new();
-    custom_hotkeys.insert("play_pause".to_string(), "Enter".to_string());
-
     let mut config = UIConfig {
         speaker: "helga".to_string(),
         sample_rate: 16000,
@@ -344,7 +329,6 @@ fn apply_config_patch_all_none_leaves_config_untouched() {
         reading_width: "wide".to_string(),
         reading_scale: 150,
         theme: "dark".to_string(),
-        player_hotkeys: custom_hotkeys,
         window_geometry: Some([1, 2, 3, 4]),
         preview_dialog_enabled: false,
         hide_to_tray_on_close: true,
