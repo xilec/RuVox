@@ -426,9 +426,10 @@ The bundle SHALL ship `LICENSE`, `LICENSE-OPENRAIL` and
 the upstream model, the fine-tuning provenance, the modifications made for the
 bundle, and the use-based restrictions. `README.md` and `README.en.md` SHALL
 carry the commercial attribution "Text-to-speech powered by TeraTTSv2 by
-TeraSpace" with a link, and an accurate license section: the default engine
-stays non-commercial, TeraTTSv2 is the commercially usable option under
-OpenRAIL-M, and RUAccent stays MIT with its notice.
+TeraSpace" with a link, and an accurate license section: Silero Native stays
+non-commercial, TeraTTSv2 — the default engine — is the commercially usable
+option under OpenRAIL-M with its attribution condition, and RUAccent stays MIT
+with its notice.
 
 #### Scenario: License files are present in the bundle
 

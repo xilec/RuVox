@@ -342,6 +342,11 @@ The `UIConfig` field table SHALL gain:
 Every existing defaulting/unknown-key/partial-update rule SHALL apply to the
 new fields unchanged.
 
+The `engine` field SHALL default to `"teratts"` for a fresh config and for a
+config that has no `engine` key. A config that already carries an `engine`
+value SHALL keep it on load and on save: storage never migrates a persisted
+engine to the new default, so existing users stay on the engine they chose.
+
 The `code_block_mode` field SHALL accept the values `"brief"` and `"read"`,
 with `"brief"` as the default for fresh and partial configs. The legacy value
 `"skip"` SHALL be accepted on load as an alias for `"brief"`; any other value
@@ -378,12 +383,17 @@ be stored unchanged — storage does not snap them to the UI ladder
 #### Scenario: Missing config returns defaults
 - **GIVEN** no `config.json` in the cache directory
 - **WHEN** the configuration is loaded
-- **THEN** the default configuration is returned (`speaker` `"aidar"`, `sample_rate` `24000`, `engine` `"silero_native"`, `piper_voice` `"ruslan"`, `code_block_mode` `"brief"`, `english_reading` `"auto"`, `reading_width` `"narrow"`, `reading_scale` `100`)
+- **THEN** the default configuration is returned (`speaker` `"aidar"`, `sample_rate` `24000`, `engine` `"teratts"`, `piper_voice` `"ruslan"`, `code_block_mode` `"brief"`, `english_reading` `"auto"`, `reading_width` `"narrow"`, `reading_scale` `100`)
 
 #### Scenario: Older config without engine keys
 - **GIVEN** a `config.json` that contains only `speaker`, `sample_rate`, and `speech_rate`
 - **WHEN** the configuration is loaded
-- **THEN** it parses successfully with `engine` defaulted to `"silero_native"` and `piper_voice` defaulted to `"ruslan"`
+- **THEN** it parses successfully with `engine` defaulted to `"teratts"` and `piper_voice` defaulted to `"ruslan"`
+
+#### Scenario: Persisted engine is not migrated
+- **GIVEN** a `config.json` with `engine` set to `"silero_native"`
+- **WHEN** the configuration is loaded and saved again
+- **THEN** both the loaded and the saved value stay `"silero_native"` (no migration to the new `"teratts"` default)
 
 #### Scenario: Config round-trips
 - **GIVEN** a configuration with `speaker` `"xenia"` and `sample_rate` `48000`
