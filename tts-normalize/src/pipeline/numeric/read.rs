@@ -599,17 +599,26 @@ fn technical(number: &Number) -> Option<String> {
     Some(parts.join(" точка "))
 }
 
+/// A numeric group in the technical register: a count while the cardinal
+/// builder can name it, digit by digit once it cannot (a group can exceed
+/// [`MAX_CARDINAL`] even though its digits fit `u64`).
+fn magnitude_reading(digits: &str) -> String {
+    match digits.parse::<u64>() {
+        Ok(value) if value <= MAX_CARDINAL => {
+            morphology::count(value, Gender::Masculine, Case::Nominative)
+        }
+        _ if digits.is_empty() => "ноль".to_string(),
+        _ => digit_words(digits),
+    }
+}
+
 /// One dotted group: a leading zero carries information ("v1.02"), so the
 /// group is read digit by digit instead of as a number.
 fn group_reading(group: &str) -> String {
     if group.len() > 1 && group.starts_with('0') {
         return digit_words(group);
     }
-    morphology::count(
-        group.parse().unwrap_or(0),
-        Gender::Masculine,
-        Case::Nominative,
-    )
+    magnitude_reading(group)
 }
 
 /// Digits of a pre-release suffix ("1.2.0-rc1"): a count until a leading zero
@@ -618,11 +627,7 @@ fn version_digits(digits: &str) -> String {
     if (digits.len() > 1 && digits.starts_with('0')) || digits.len() > 9 {
         digit_words(digits)
     } else {
-        morphology::count(
-            digits.parse().unwrap_or(0),
-            Gender::Masculine,
-            Case::Nominative,
-        )
+        magnitude_reading(digits)
     }
 }
 
