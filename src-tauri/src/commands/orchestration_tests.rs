@@ -760,29 +760,34 @@ async fn delete_audio_resets_entry_and_emits_entry_updated() {
     assert!(payload["entry"]["audio_path"].is_null());
 }
 
-// ── set_entry_format ─────────────────────────────────────────────────
+// ── set_entry_display_mode ───────────────────────────────────────────
 
-/// Switching the format persists it and emits `entry_updated`, leaving the
-/// synthesized artifacts (normalized text, audio, timestamps) untouched.
+/// Switching the display mode persists it and emits `entry_updated`, leaving
+/// the immutable source format and the synthesized artifacts (normalized
+/// text, audio, timestamps) untouched.
 #[tokio::test(flavor = "multi_thread")]
-async fn set_entry_format_persists_and_preserves_audio_artifacts() {
+async fn set_entry_display_mode_persists_and_preserves_audio_artifacts() {
     let t = build_test_app();
     let id = add_ready_entry(&t).await;
     let uuid = entry_uuid(&id);
     let before = t.state().storage.get_entry(&uuid).unwrap();
 
     let events = record_events(&t.app, &["entry_updated"]);
-    set_entry_format(
+    set_entry_display_mode(
         t.app.handle().clone(),
         t.state(),
         id.clone(),
-        TextFormat::Html,
+        DisplayMode::Plain,
     )
     .await
     .unwrap();
 
     let entry = t.state().storage.get_entry(&uuid).unwrap();
-    assert_eq!(entry.format, Some(TextFormat::Html));
+    assert_eq!(entry.display_mode, Some(DisplayMode::Plain));
+    assert_eq!(
+        entry.format, before.format,
+        "the source format is immutable"
+    );
     assert_eq!(entry.normalized_text, before.normalized_text);
     assert_eq!(entry.audio_path, before.audio_path);
     assert_eq!(entry.timestamps_path, before.timestamps_path);
@@ -791,21 +796,54 @@ async fn set_entry_format_persists_and_preserves_audio_artifacts() {
     let log = events.lock().unwrap();
     let payload = last_entry_updated(&log);
     assert_eq!(payload["entry"]["id"], id);
-    assert_eq!(payload["entry"]["format"], "html");
+    assert_eq!(payload["entry"]["display_mode"], "plain");
+}
+
+/// The source format is written once at ingestion: switching the viewer's
+/// display mode never rewrites it.
+#[tokio::test(flavor = "multi_thread")]
+async fn set_entry_display_mode_leaves_source_format_unchanged() {
+    let t = build_test_app();
+    let id = add_text_entry(
+        t.app.handle().clone(),
+        t.state(),
+        "# Заголовок".to_string(),
+        false,
+        Some(TextFormat::Markdown),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let uuid = entry_uuid(&id);
+    wait_entry_status(&t, &uuid, EntryStatus::Ready).await;
+
+    set_entry_display_mode(
+        t.app.handle().clone(),
+        t.state(),
+        id.clone(),
+        DisplayMode::Plain,
+    )
+    .await
+    .unwrap();
+
+    let entry = t.state().storage.get_entry(&uuid).unwrap();
+    assert_eq!(entry.display_mode, Some(DisplayMode::Plain));
+    assert_eq!(entry.format, Some(TextFormat::Markdown));
 }
 
 /// A well-formed but unknown id is a typed `not_found` error and emits
 /// nothing.
 #[tokio::test(flavor = "multi_thread")]
-async fn set_entry_format_unknown_entry_is_rejected() {
+async fn set_entry_display_mode_unknown_entry_is_rejected() {
     let t = build_test_app();
     let events = record_events(&t.app, &["entry_updated"]);
 
-    let err = set_entry_format(
+    let err = set_entry_display_mode(
         t.app.handle().clone(),
         t.state(),
         uuid::Uuid::new_v4().to_string(),
-        TextFormat::Plain,
+        DisplayMode::Rendered,
     )
     .await
     .unwrap_err();

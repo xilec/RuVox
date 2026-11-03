@@ -17,6 +17,10 @@ export type EntryStatus =
 
 export type EntryFormat = 'plain' | 'markdown' | 'html';
 
+/** Viewer display mode: the rendered view of the entry's source format, or
+ * the verbatim original text. */
+export type DisplayMode = 'rendered' | 'plain';
+
 /** Where an entry's text came from (recorded at ingestion; null for
  * entries created before the field existed). */
 export type EntrySource = 'clipboard' | 'file' | 'url';
@@ -26,9 +30,13 @@ export interface TextEntry {
   original_text: string;
   normalized_text: string | null;
   status: EntryStatus;
-  /** Display format persisted for this entry; null = never chosen, the
-   * viewer falls back to its default mode. */
+  /** Source format recorded at ingestion; null = never recorded (older
+   * entries, or a path that cannot classify its text). Immutable: the
+   * viewer never writes it. */
   format: EntryFormat | null;
+  /** Viewer display mode persisted for this entry; null = never chosen, the
+   * viewer renders the source format. Display-only. */
+  display_mode: DisplayMode | null;
   /** Sanitized HTML kept for rendering in HTML mode; set only for
    * HTML-ingested entries (their original_text is the extracted TTS text). */
   html_source: string | null;
@@ -317,8 +325,8 @@ export const commands = {
   regenerateEntry: (id: EntryId, play_when_ready: boolean): Promise<void> =>
     tauriInvoke('regenerate_entry', { id, playWhenReady: play_when_ready }),
 
-  setEntryFormat: (id: EntryId, format: EntryFormat): Promise<void> =>
-    tauriInvoke('set_entry_format', { id, format }),
+  setEntryDisplayMode: (id: EntryId, displayMode: DisplayMode): Promise<void> =>
+    tauriInvoke('set_entry_display_mode', { id, displayMode }),
 
   cancelSynthesis: (id: EntryId): Promise<void> =>
     tauriInvoke('cancel_synthesis', { id }),

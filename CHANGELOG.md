@@ -17,6 +17,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   part entries keep working when no whole-word entry exists (#279).
 
 ### Changed
+- **The viewer switches only between the rendered view and the source** — a
+  markdown entry offers «Markdown | Исходный», an HTML entry «HTML |
+  Исходный», and a plain entry has no switch at all; the choice survives
+  restarts and entry switches, while the entry's source format is recorded
+  once at ingestion and no longer doubles as the display mode (#356).
 - **Numbers, ordinals and dates are read naturally** — one numeric span layer
   replaces the interleaved number, date, time, version, range, percentage and
   size phases and reads every candidate in context: «в 2024 году» → «в две

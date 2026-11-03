@@ -22,8 +22,8 @@ use crate::pipeline::tracked_text::CharMapping;
 use crate::pipeline::{Span, TTSPipeline};
 use crate::state::AppState;
 use crate::storage::schema::{
-    EntryId, EntrySource, EntryStatus, GenerationParams, ModelParams, TextEntry, TextFormat,
-    UIConfig, UIConfigPatch, WordTimestamp,
+    DisplayMode, EntryId, EntrySource, EntryStatus, GenerationParams, ModelParams, TextEntry,
+    TextFormat, UIConfig, UIConfigPatch, WordTimestamp,
 };
 use crate::storage::service::{StorageError, StorageService};
 use crate::tts::engine::EngineKind;
@@ -441,20 +441,20 @@ pub async fn delete_audio<R: Runtime>(
     Ok(())
 }
 
-/// Persist the display format of an entry and notify the UI.
+/// Persist the viewer display mode of an entry and notify the UI.
 ///
-/// Display-only: `normalized_text`, audio, and timestamps are untouched, so
-/// no `Processing` guard is needed — the change cannot race the synthesis
-/// pipeline.
+/// Display-only: the immutable source `format`, `normalized_text`, audio, and
+/// timestamps are untouched, so no `Processing` guard is needed — the change
+/// cannot race the synthesis pipeline.
 #[tauri::command]
-pub async fn set_entry_format<R: Runtime>(
+pub async fn set_entry_display_mode<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
     id: String,
-    format: TextFormat,
+    display_mode: DisplayMode,
 ) -> CmdResult<()> {
     let mut entry = require_entry(&state.storage, &id)?;
-    entry.format = Some(format);
+    entry.display_mode = Some(display_mode);
     state
         .storage
         .update_entry(entry.clone())

@@ -20,13 +20,26 @@ pub enum EntryStatus {
     Cancelled,
 }
 
-/// Display format of a text entry in the viewer.
+/// Source format of a text entry: the format the text was ingested as.
+/// Written once at ingestion and immutable afterwards — the viewer's display
+/// choice lives in [`DisplayMode`] / [`TextEntry::display_mode`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TextFormat {
     Plain,
     Markdown,
     Html,
+}
+
+/// Viewer display mode of a text entry: the rendered view of its source
+/// format, or the verbatim original text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DisplayMode {
+    /// Render the source format (markdown or HTML) in the viewer.
+    Rendered,
+    /// Show the original text as-is, markup included.
+    Plain,
 }
 
 /// Where an entry's text came from. Set at ingestion; `None` for entries
@@ -51,10 +64,15 @@ pub struct TextEntry {
     #[serde(default)]
     pub normalized_text: Option<String>,
     pub status: EntryStatus,
-    /// Display format chosen for this entry. `None` = never chosen; the
-    /// viewer falls back to the `text_format` config default.
+    /// Source format recorded at ingestion. Written once and never changed
+    /// afterwards; `None` for entries from older builds and for ingestion
+    /// paths that cannot classify their text (the tray clipboard read).
     #[serde(default)]
     pub format: Option<TextFormat>,
+    /// Viewer display mode chosen by the user for this entry. `None` = never
+    /// chosen; the viewer renders the source format (the default).
+    #[serde(default)]
+    pub display_mode: Option<DisplayMode>,
     /// Sanitized HTML kept for rendering in the viewer's HTML mode. Set only
     /// for HTML-ingested entries; their `original_text` holds the extracted
     /// plain text that the TTS pipeline consumed.
@@ -482,6 +500,7 @@ mod tests {
         assert!(e.audio_path.is_none());
         assert!(e.normalized_text.is_none());
         assert!(e.format.is_none());
+        assert!(e.display_mode.is_none());
         assert!(e.html_source.is_none());
         assert!(e.source.is_none());
         assert!(!e.was_regenerated);
@@ -607,6 +626,58 @@ mod tests {
             let deserialized: TextFormat = serde_json::from_str(&serialized).unwrap();
             assert_eq!(deserialized, format);
         }
+    }
+
+    #[test]
+    fn entry_display_mode_roundtrip() {
+        // The viewer's display choice persists separately from the immutable
+        // source format, as lowercase `rendered` / `plain` strings.
+        let json = r##"{
+            "id": "550e8400-e29b-41d4-a716-446655440000",
+            "original_text": "# Установка",
+            "status": "pending",
+            "format": "markdown",
+            "display_mode": "plain",
+            "created_at": "2025-01-01T12:00:00.000000"
+        }"##;
+        let e: TextEntry = serde_json::from_str(json).unwrap();
+        assert_eq!(e.format, Some(TextFormat::Markdown));
+        assert_eq!(e.display_mode, Some(DisplayMode::Plain));
+
+        let round: TextEntry = serde_json::from_str(&serde_json::to_string(&e).unwrap()).unwrap();
+        assert_eq!(round.format, Some(TextFormat::Markdown));
+        assert_eq!(round.display_mode, Some(DisplayMode::Plain));
+
+        for (mode, expected) in [
+            (DisplayMode::Rendered, "\"rendered\""),
+            (DisplayMode::Plain, "\"plain\""),
+        ] {
+            let serialized = serde_json::to_string(&mode).unwrap();
+            assert_eq!(serialized, expected);
+            let deserialized: DisplayMode = serde_json::from_str(&serialized).unwrap();
+            assert_eq!(deserialized, mode);
+        }
+    }
+
+    #[test]
+    fn legacy_history_entry_without_display_mode_parses() {
+        // history.json written before the field existed: the source format
+        // stays as persisted and the display choice defaults to None (the
+        // rendered view). Re-saving writes the field explicitly as null.
+        let json = r##"{
+            "id": "550e8400-e29b-41d4-a716-446655440000",
+            "original_text": "# Установка",
+            "status": "ready",
+            "format": "markdown",
+            "created_at": "2025-01-01T12:00:00.000000"
+        }"##;
+        let e: TextEntry = serde_json::from_str(json).unwrap();
+        assert_eq!(e.format, Some(TextFormat::Markdown));
+        assert_eq!(e.display_mode, None);
+
+        let value: serde_json::Value =
+            serde_json::from_str(&serde_json::to_string(&e).unwrap()).unwrap();
+        assert!(value["display_mode"].is_null());
     }
 
     #[test]

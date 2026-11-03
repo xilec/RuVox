@@ -128,6 +128,9 @@ export const en: Record<MessageKey, string> = {
 
   // ── Viewer ──────────────────────────────────────────────────────────────
   'viewer.no_entry': 'No entry selected',
+  'viewer.display_mode.markdown': 'Markdown',
+  'viewer.display_mode.html': 'HTML',
+  'viewer.display_mode.plain': 'Raw',
   'viewer.mermaid_zoom_title': 'Mermaid diagram',
   'viewer.mermaid_render_error':
     'Failed to render the mermaid diagram. The closing ``` after the block may be missing.',

@@ -129,6 +129,9 @@ export const ru = {
 
   // ── Viewer ──────────────────────────────────────────────────────────────
   'viewer.no_entry': 'Нет выбранной записи',
+  'viewer.display_mode.markdown': 'Markdown',
+  'viewer.display_mode.html': 'HTML',
+  'viewer.display_mode.plain': 'Исходный',
   'viewer.mermaid_zoom_title': 'Mermaid-диаграмма',
   'viewer.mermaid_render_error':
     'Не удалось отрендерить mermaid-диаграмму. Возможно, забыт закрывающий ``` после блока.',

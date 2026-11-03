@@ -7,8 +7,9 @@ import type { EntryFormat } from './tauri';
  *
  * `direct-plain.format` is set only by the import flow (importFlow.ts),
  * where the entry format comes from the source's extension rather than the
- * clipboard defaults; the clipboard paths leave it undefined so the entry
- * keeps its historical unset-format behavior. The same split applies to
+ * clipboard defaults; the clipboard paths leave it undefined and the ingest
+ * seam detects the source format, so the entry records what it was ingested
+ * as instead of staying unclassified. The same split applies to
  * `preview.format`: imports preselect their routed format in the dialog
  * (text-import spec, "Import format routing"), while clipboard previews
  * omit it and the dialog opens in the auto-detect mode (preview-dialog

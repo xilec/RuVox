@@ -252,6 +252,7 @@ impl StorageService {
             normalized_text: None,
             status: EntryStatus::Pending,
             format,
+            display_mode: None,
             html_source,
             source,
             created_at: Utc::now().naive_utc(),
@@ -819,6 +820,9 @@ mod tests {
             all[0].normalized_text.as_deref(),
             Some("Вызови гет юзер дата через эй пи ай")
         );
+        // A history.json written before the field existed loads with the
+        // display choice unset (the viewer renders the source format).
+        assert!(all[0].display_mode.is_none());
         // status was "ready" but audio_path is null → validate_statuses resets to pending.
         assert_eq!(all[0].status, EntryStatus::Pending);
     }

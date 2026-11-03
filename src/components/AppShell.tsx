@@ -18,6 +18,7 @@ import { commands } from '../lib/tauri';
 import type { EntryFormat, EntrySource, UIConfig, UnlistenFn } from '../lib/tauri';
 import type { ReadTextFileResult, TextEntry } from '../lib/tauri';
 import { formatError } from '../lib/errors';
+import { detectFormat } from '../lib/detectFormat';
 import { useT } from '../lib/i18n';
 import { setLocale, toLocale } from '../stores/locale';
 import { resolveIngest } from '../lib/ingest';
@@ -532,11 +533,16 @@ export function AppShell() {
     htmlSource?: string,
     source: EntrySource = 'clipboard',
   ) {
+    // Paths that never asked the user (direct Add, plain fallback) still
+    // record the detected source format, so the viewer can derive its views
+    // without re-sniffing the text later (text-display spec). Imports pass
+    // their extension-routed format explicitly.
+    const sourceFormat = format ?? (htmlSource ? 'html' : detectFormat(text));
     try {
       const entryId = await commands.addTextEntry(
         text,
         playWhenReady,
-        format,
+        sourceFormat,
         htmlSource,
         source,
       );
