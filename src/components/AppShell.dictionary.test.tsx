@@ -110,7 +110,6 @@ const CONFIG = {
   max_cache_size_mb: 512,
   code_block_mode: 'brief',
   english_reading: 'auto',
-  player_hotkeys: {},
   window_geometry: null,
   hide_to_tray_on_close: false,
   piper_voice: 'ruslan',

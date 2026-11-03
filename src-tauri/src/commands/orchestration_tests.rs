@@ -57,6 +57,23 @@ fn last_entry_updated(log: &[(String, serde_json::Value)]) -> serde_json::Value 
         .clone()
 }
 
+/// Wait for the most recent `entry_updated` event to be observed.
+///
+/// `App::emit` normally reaches mock-runtime listeners synchronously, but
+/// dispatch can land a moment after the command resolves on a loaded CI
+/// runner; polling keeps the assertion free of that scheduling race.
+async fn wait_last_entry_updated(log: &crate::test_support::EventLog) -> serde_json::Value {
+    wait_until("entry_updated event", TIMEOUT, || {
+        log.lock()
+            .unwrap()
+            .iter()
+            .any(|(name, _)| name == "entry_updated")
+    })
+    .await;
+    let log = log.lock().unwrap();
+    last_entry_updated(&log)
+}
+
 /// Add an entry through the real ingestion command and wait until the
 /// background synthesis (StubEngine) has marked it `ready`.
 async fn add_ready_entry(t: &TestApp) -> String {
@@ -566,8 +583,7 @@ async fn cancel_synthesis_aborts_in_flight_task_and_marks_entry_cancelled() {
 
     // The last entry_updated is the flip to cancelled.
     {
-        let log = events.lock().unwrap();
-        let payload = last_entry_updated(&log);
+        let payload = wait_last_entry_updated(&events).await;
         assert_eq!(payload["entry"]["id"], id);
         assert_eq!(payload["entry"]["status"], "cancelled");
     }
@@ -753,8 +769,7 @@ async fn delete_audio_resets_entry_and_emits_entry_updated() {
     assert!(!audio_file.exists());
     assert!(!ts_file.exists());
 
-    let log = events.lock().unwrap();
-    let payload = last_entry_updated(&log);
+    let payload = wait_last_entry_updated(&events).await;
     assert_eq!(payload["entry"]["id"], id);
     assert_eq!(payload["entry"]["status"], "pending");
     assert!(payload["entry"]["audio_path"].is_null());
@@ -793,8 +808,7 @@ async fn set_entry_display_mode_persists_and_preserves_audio_artifacts() {
     assert_eq!(entry.timestamps_path, before.timestamps_path);
     assert_eq!(entry.status, EntryStatus::Ready);
 
-    let log = events.lock().unwrap();
-    let payload = last_entry_updated(&log);
+    let payload = wait_last_entry_updated(&events).await;
     assert_eq!(payload["entry"]["id"], id);
     assert_eq!(payload["entry"]["display_mode"], "plain");
 }
@@ -894,8 +908,7 @@ async fn set_entry_title_trims_persists_and_emits() {
     assert_eq!(entry.status, EntryStatus::Ready);
     assert!(entry.audio_path.is_some());
 
-    let log = events.lock().unwrap();
-    let payload = last_entry_updated(&log);
+    let payload = wait_last_entry_updated(&events).await;
     assert_eq!(payload["entry"]["id"], id);
     assert_eq!(payload["entry"]["title"], "Новое имя");
 }

@@ -179,7 +179,6 @@ export interface UIConfig {
   /** UI language: "ru" (default) | "en". Mirrors UIConfig.language on the
    *  backend; narrowed to a Locale via toLocale() before use. */
   language: string;
-  player_hotkeys: Record<string, string>;
   window_geometry: [number, number, number, number] | null;
   preview_dialog_enabled: boolean;
   /** Hide the window into the system tray on close instead of quitting.

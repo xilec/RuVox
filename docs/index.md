@@ -1,6 +1,6 @@
 # RuVox
 
-**RuVox** is a desktop application for fast narration of Russian-language texts and articles with local TTS engines: native Silero v5 on ONNX Runtime (the `silero-native` crate, default), Piper (fallback), TeraTTSv2 on ONNX Runtime (the `teratts` crate, 44.1 kHz, experimental), or Silero via the Python `ttsd` sidecar (fallback). The goal is quick comprehension: the listener takes the load off eyes strained by a day of reading and consumes medium-to-large texts by ear, where understanding the content matters more than the beauty of the generated speech (technical articles are a typical example). To get there with fast lightweight engines — which cannot read English terms, code, numbers, or URLs — the normalization pipeline rewrites those fragments into sounding Russian before synthesis, imitating a competent reading instead of skipping them.
+**RuVox** is a desktop application for fast narration of Russian-language texts and articles with local TTS engines: TeraTTSv2 on ONNX Runtime (the `teratts` crate, 44.1 kHz, default), native Silero v5 on ONNX Runtime (the `silero-native` crate, faster and lighter alternative), Piper (zero-download fallback), or Silero via the Python `ttsd` sidecar (fallback). The goal is quick comprehension: the listener takes the load off eyes strained by a day of reading and consumes medium-to-large texts by ear, where understanding the content matters more than the beauty of the generated speech (technical articles are a typical example). To get there with fast lightweight engines — which cannot read English terms, code, numbers, or URLs — the normalization pipeline rewrites those fragments into sounding Russian before synthesis, imitating a competent reading instead of skipping them.
 
 ## Problem → Solution
 
@@ -21,15 +21,18 @@ Skipping such fragments drops information, so the pipeline imitates a competent 
 
 - **Adding text** — paste, drag a `.txt`/`.md`/`.html` file or a link onto the window, or use the split Add button («Файл…», «Файл с кодировкой…», «По ссылке…»); encoding is auto-detected (BOM, UTF-8, CP1251/KOI8-R/CP866, …) with a manual override.
 - **Preview dialog** — a separate floating window shows the original and normalized version side-by-side before synthesis; the source format selector (auto / plain / Markdown / HTML) lives there, and the original can be edited before synthesis.
-- **Edit mode** — edit `original_text` directly in the viewer; changes are saved on the entry.
 - **Queue** — all entries with status badges (`pending` / `processing` / `ready` / `playing` / `error`); the context menu regenerates audio, exports it («Сохранить аудио как…»: WAV / Ogg Opus) and shows the parameters each recording was made with (also on double-click).
-- **Word highlight** — synchronized highlighting of the word being read in markdown mode, via binary search over `WordTimestamp`.
+- **Word highlight** — synchronized highlighting of the word being read in every display mode (plain, Markdown, HTML), via binary search over `WordTimestamp`.
 - **Code block modes** — «Кратко» (default) replaces fenced code blocks with a marker sentence; «Читать полностью» hands them to the engine (TeraTTSv2 and Piper read the code themselves, Silero narrates it in full); switched in Settings, applies live.
 - **Mermaid** — diagrams render in the UI; for TTS they are replaced with the marker "тут мермэйд диаграмма".
 - **Playback** — mpv-based player with speed up to 3.0×, persisted across restarts.
 - **Localization** — Russian and English UI, selected in Settings.
 - **System tray** — close-to-tray, warm mpv re-init when the window is shown.
 - **Auto-updates** — the Windows installer and the Linux AppImage check GitHub Releases and self-update with signature verification.
+
+### User documentation
+
+- [User guide](user-guide.md) — first launch, adding text, preview, queue, playback, settings, dictionary, tray, hotkeys, troubleshooting (in Russian).
 
 ## Stack
 

@@ -1897,9 +1897,6 @@ fn apply_config_patch(config: &mut UIConfig, patch: UIConfigPatch) {
     if let Some(v) = patch.theme {
         config.theme = v;
     }
-    if let Some(v) = patch.player_hotkeys {
-        config.player_hotkeys = v;
-    }
     if let Some(v) = patch.window_geometry {
         config.window_geometry = v;
     }

@@ -7,6 +7,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 ## [Unreleased]
 
 ### Added
+- **User guide** — a Russian end-to-end guide to the interface, linked from
+  the README: first launch and model bundles, adding text, the preview, the
+  queue, playback, settings, the dictionary, the tray, a hotkey reference and
+  troubleshooting. UI references are schematic ASCII mockups rather than
+  screenshots, so they can be diffed and updated with the UI (#350).
 - **Preview a word's pronunciation in the dictionary editor** — the «Слово»
   and «Как произносить» fields each get a play control: «Слово» speaks how the
   pipeline reads the token today (saved dictionary applied), «Как
@@ -102,6 +107,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   `package` → «пэкэдж», `feature` → «фиче»); redundant `IT_TERMS` entries were
   removed and the irregular/guard ones kept; listening-verified readings such
   as `method` → «мэтод» and `function` → «фанкшин» are curated (#306).
+
+### Removed
+- **Unused player hotkey setting** — `player_hotkeys` carried defaults for ten
+  shortcuts that nothing consumed (the player hardcodes its three keys and
+  Settings exposes no hotkey controls). The field is gone from `UIConfig`, the
+  patch command and the TypeScript type; existing `config.json` files keep
+  working because unknown fields are ignored on load, and the key disappears
+  on the next save (#350).
 
 ### Fixed
 - **Word highlighting survives code blocks in HTML articles** — syntax

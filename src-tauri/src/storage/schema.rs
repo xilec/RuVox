@@ -233,8 +233,6 @@ pub struct UIConfig {
     pub reading_scale: u32,
     #[serde(default = "UIConfig::default_theme")]
     pub theme: String,
-    #[serde(default = "UIConfig::default_player_hotkeys")]
-    pub player_hotkeys: std::collections::HashMap<String, String>,
     #[serde(default)]
     pub window_geometry: Option<[i32; 4]>,
     /// Show preview dialog before synthesis.
@@ -353,21 +351,6 @@ impl UIConfig {
     pub fn clamp_reading_scale(percent: u32) -> u32 {
         percent.clamp(Self::READING_SCALE_MIN, Self::READING_SCALE_MAX)
     }
-
-    fn default_player_hotkeys() -> std::collections::HashMap<String, String> {
-        let mut m = std::collections::HashMap::new();
-        m.insert("play_pause".to_string(), "Space".to_string());
-        m.insert("forward_5".to_string(), "Right".to_string());
-        m.insert("backward_5".to_string(), "Left".to_string());
-        m.insert("forward_30".to_string(), "Shift+Right".to_string());
-        m.insert("backward_30".to_string(), "Shift+Left".to_string());
-        m.insert("speed_up".to_string(), "]".to_string());
-        m.insert("speed_down".to_string(), "[".to_string());
-        m.insert("next_entry".to_string(), "n".to_string());
-        m.insert("prev_entry".to_string(), "p".to_string());
-        m.insert("repeat_sentence".to_string(), "r".to_string());
-        m
-    }
 }
 
 impl Default for UIConfig {
@@ -385,7 +368,6 @@ impl Default for UIConfig {
             reading_width: Self::default_reading_width(),
             reading_scale: Self::default_reading_scale(),
             theme: Self::default_theme(),
-            player_hotkeys: Self::default_player_hotkeys(),
             window_geometry: None,
             preview_dialog_enabled: true,
             hide_to_tray_on_close: false,
@@ -413,7 +395,6 @@ pub struct UIConfigPatch {
     pub reading_width: Option<String>,
     pub reading_scale: Option<u32>,
     pub theme: Option<String>,
-    pub player_hotkeys: Option<std::collections::HashMap<String, String>>,
     pub window_geometry: Option<Option<[i32; 4]>>,
     pub preview_dialog_enabled: Option<bool>,
     pub hide_to_tray_on_close: Option<bool>,
@@ -834,5 +815,22 @@ mod tests {
         let h2: HistoryFile = serde_json::from_str(&j).unwrap();
         assert_eq!(h2.entries[0].original_text, "Тест");
         assert_eq!(h2.entries[0].status, EntryStatus::Pending);
+    }
+    #[test]
+    fn config_ignores_the_removed_player_hotkeys_field() {
+        // config.json written by an older build still carries the dropped
+        // `player_hotkeys` map. Unknown fields are ignored on load, and the key
+        // disappears on the next save because UIConfig serializes only its own
+        // fields.
+        let json = r#"{
+            "player_hotkeys": { "play_pause": "Enter" },
+            "engine": "piper"
+        }"#;
+        let config: UIConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.engine, "piper");
+        assert_eq!(config.speaker, "aidar");
+
+        let saved = serde_json::to_value(&config).unwrap();
+        assert!(saved.get("player_hotkeys").is_none());
     }
 }
