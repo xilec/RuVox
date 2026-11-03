@@ -1567,19 +1567,22 @@ fn english_context_numbers_read_in_english_when_narrated() {
 }
 
 #[test]
-fn english_context_numbers_stay_digits_in_native_spans() {
+fn english_context_numbers_are_spelled_on_the_native_route() {
     let mut p = TTSPipeline::new();
     let out = p.process_for_engine(
         "In 2024 we shipped 3 releases.",
         &crate::profiles::TERATTS_PROFILE,
     );
-    assert_eq!(out.text, "In 2024 we shipped 3 releases.");
+    assert_eq!(out.text, "In twenty twenty-four we shipped three releases.");
     let texts: Vec<String> = out
         .spans
         .iter()
         .map(|span| span_text(&out.text, span))
         .collect();
-    assert_eq!(texts.join("|"), "In|2024|we|shipped|3|releases");
+    assert_eq!(
+        texts.join("|"),
+        "In|twenty twenty-four|we|shipped|three|releases"
+    );
     assert!(
         out.spans
             .iter()
@@ -1593,11 +1596,11 @@ fn english_context_numbers_stay_digits_in_native_spans() {
 fn english_context_number_at_the_sentence_start_is_english() {
     let mut p = TTSPipeline::new();
     let out = p.process_for_engine("2024 was the year.", &crate::profiles::TERATTS_PROFILE);
-    assert_eq!(out.text, "2024 was the year.");
+    assert_eq!(out.text, "twenty twenty-four was the year.");
     assert!(
         out.spans
             .iter()
-            .any(|span| span_text(&out.text, span) == "2024"),
+            .any(|span| span_text(&out.text, span) == "twenty twenty-four"),
         "spans: {:?}",
         out.spans
     );
@@ -1607,14 +1610,17 @@ fn english_context_number_at_the_sentence_start_is_english() {
 fn digits_are_transparent_behind_a_comma() {
     let mut p = TTSPipeline::new();
     let out = p.process_for_engine("In 2024, 3 releases.", &crate::profiles::TERATTS_PROFILE);
-    assert_eq!(out.text, "In 2024, 3 releases.");
+    assert_eq!(out.text, "In twenty twenty-four, three releases.");
     let texts: Vec<String> = out
         .spans
         .iter()
         .map(|span| span_text(&out.text, span))
         .collect();
-    assert!(texts.iter().any(|text| text == "2024"), "spans: {texts:?}");
-    assert!(texts.iter().any(|text| text == "3"), "spans: {texts:?}");
+    assert!(
+        texts.iter().any(|text| text == "twenty twenty-four"),
+        "spans: {texts:?}"
+    );
+    assert!(texts.iter().any(|text| text == "three"), "spans: {texts:?}");
 }
 
 #[test]
@@ -1659,12 +1665,12 @@ fn zero_padded_pair_is_still_a_cardinal() {
     assert!(out.text.contains("сэвен"), "{}", out.text);
 
     let native = p.process_for_engine("In 07 we trust", &crate::profiles::TERATTS_PROFILE);
-    assert_eq!(native.text, "In 07 we trust");
+    assert_eq!(native.text, "In seven we trust");
     assert!(
         native
             .spans
             .iter()
-            .any(|span| span_text(&native.text, span) == "07"),
+            .any(|span| span_text(&native.text, span) == "seven"),
         "spans: {:?}",
         native.spans
     );
@@ -1682,11 +1688,11 @@ fn a_list_marker_does_not_veto_the_item_number() {
     let mut p = TTSPipeline::new();
     let out = p.process_for_engine("1. 2024 was the year.", &crate::profiles::TERATTS_PROFILE);
     assert!(out.text.contains("первое"), "marker: {}", out.text);
-    assert_eq!(out.text, "первое:2024 was the year.");
+    assert_eq!(out.text, "первое:twenty twenty-four was the year.");
     assert!(
         out.spans
             .iter()
-            .any(|span| span_text(&out.text, span) == "2024"),
+            .any(|span| span_text(&out.text, span) == "twenty twenty-four"),
         "spans: {:?}",
         out.spans
     );
@@ -1703,5 +1709,29 @@ fn a_url_reading_is_not_english_prose() {
         out.text.contains("две тысячи двадцать четыре"),
         "{}",
         out.text
+    );
+}
+
+#[test]
+fn a_spelled_reading_maps_back_to_the_digits() {
+    let mut p = TTSPipeline::new();
+    let out = p.process_for_engine("In 2024 we shipped.", &crate::profiles::TERATTS_PROFILE);
+    let reading = "twenty twenty-four";
+    let start = out.text.find(reading).expect("the number is spelled");
+    let reading_chars = out.text[..start].chars().count();
+    let reading_len = reading.chars().count();
+    for entry in &out.mapping.char_map[reading_chars..reading_chars + reading_len] {
+        assert_eq!(
+            *entry,
+            (3, 7),
+            "every spelled character maps to the source digits"
+        );
+    }
+    assert!(
+        out.spans
+            .iter()
+            .any(|span| span_text(&out.text, span) == reading),
+        "one prose span covers the whole reading: {:?}",
+        out.spans
     );
 }

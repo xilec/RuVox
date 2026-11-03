@@ -1149,8 +1149,12 @@ SHALL read digit by digit.
 The English reading SHALL be rendered by the effective prose route (see the
 English reading setting requirement): the `Narrate` route SHALL transliterate it
 into Cyrillic with the curated numeral readings, and the `Native` route SHALL
-leave the digits in place and annotate them with a prose-Latin span (see Span
-annotation output), so the English block is not split.
+spell the reading in Latin words, replace the digits with the spelling and
+annotate the replacement with a prose-Latin span (see Span annotation output), so
+the English block is not split and the text matches what is spoken. A four-digit
+value from 1000 to 2099 SHALL use the year register — two two-digit pairs ("2024"
+→ "twenty twenty-four", "1905" → "nineteen oh five", "1900" → "nineteen
+hundred") — while a round thousand keeps the cardinal ("2000" → "two thousand").
 
 A decimal fraction with a comma and a physical unit SHALL read as a natural
 quantity ("1,5 кг" → "полтора килограмма", "2,5 км" → "два с половиной
@@ -1283,8 +1287,9 @@ or a longer number.
 
 - GIVEN the TeraTTS profile and the input "In 2024 we shipped 3 releases."
 - WHEN the pipeline processes it
-- THEN the text stays `In 2024 we shipped 3 releases.`, each number carries a
-  prose-Latin span with language `en`, and no Russian numeral appears
+- THEN the text is `In twenty twenty-four we shipped three releases.`, each
+  reading carries a prose-Latin span with language `en`, and no digits, Russian
+  numeral or language flip remain at the numbers
 
 #### Scenario: English-context number on the narrated route
 
@@ -1830,9 +1835,10 @@ declares (for TeraTTS and Piper, `en`). A dictionary-override span SHALL carry
 no language and SHALL stay Russian regardless of the prose route. A native
 code-block span SHALL cover exactly the code text handed to the engine.
 
-An English-context number left to the engine on the `Native` route SHALL carry a
-prose-Latin span with the profile's native language over its digits; the
-`Narrate` route SHALL produce no span for it.
+An English-context number on the `Native` route SHALL be replaced with the Latin
+spelling of its reading and SHALL carry a prose-Latin span with the profile's
+native language over the replacement; the mapping SHALL map every spelled word
+back to the source digits; the `Narrate` route SHALL produce no span for it.
 
 Annotations SHALL express decisions, never markup: no span SHALL contain tag
 syntax, and the normalized text SHALL remain the exact synthesis input.
@@ -1892,9 +1898,9 @@ territory, and this change keeps the mapping stable.
 
 - GIVEN the TeraTTS profile and the input "In 2024 we shipped 3 releases."
 - WHEN the pipeline processes it
-- THEN each number carries a prose-Latin span with language `en`, the spans do
-  not overlap the surrounding prose spans, and the digit ranges map back to the
-  source text
+- THEN each reading carries a prose-Latin span with language `en`, the spans do
+  not overlap the surrounding prose spans, and every spelled word maps back to
+  the source digit range
 
 ### Requirement: Alphanumeric abbreviations are narrated whole
 
@@ -2019,8 +2025,8 @@ application restart. The setting SHALL NOT route identifiers or fenced code
 blocks; those keep their profile routes.
 
 The resolved route SHALL also render an English-context number: `Narrate`
-transliterates its English reading into Cyrillic, `Native` leaves the digits for
-the engine inside a prose-Latin span.
+transliterates its English reading into Cyrillic, `Native` spells it in Latin
+words inside a prose-Latin span.
 
 #### Scenario: Auto follows the engine capability
 

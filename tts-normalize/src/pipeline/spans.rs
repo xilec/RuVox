@@ -101,6 +101,35 @@ pub(crate) fn record_native(
     record_byte_ranges(tracked, &offsets, kind, lang, &ranges, recorded);
 }
 
+/// Records what `find` selects, skipping fragments whose original range lies
+/// inside `excluded`.
+///
+/// A number the native route spelled into the text already carries its prose
+/// span; the identifier scan runs later over the spelled words (a spelled year is
+/// a hyphenated token) and must not relabel them.
+pub(crate) fn record_native_excluding(
+    tracked: &mut TrackedText,
+    kind: SpanKind,
+    lang: Option<&'static str>,
+    find: impl FnOnce(&str) -> Vec<(usize, usize)>,
+    excluded: &[(usize, usize)],
+    recorded: &mut Vec<RecordedSpan>,
+) {
+    let snapshot = tracked.text().to_string();
+    let ranges = find(&snapshot);
+    let offsets = byte_to_char_offsets(&snapshot);
+    let kept: Vec<(usize, usize)> = ranges
+        .into_iter()
+        .filter(|&(start, end)| {
+            let (orig_start, orig_end) = tracked.original_range(offsets[start], offsets[end]);
+            !excluded
+                .iter()
+                .any(|&(ex_start, ex_end)| orig_start >= ex_start && orig_end <= ex_end)
+        })
+        .collect();
+    record_byte_ranges(tracked, &offsets, kind, lang, &kept, recorded);
+}
+
 /// Resolves recorded spans from original into output coordinates in one pass.
 ///
 /// `char_map` is monotone in original position, so a single advancing cursor

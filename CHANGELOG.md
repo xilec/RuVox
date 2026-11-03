@@ -72,6 +72,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 - **The viewer's format switch moved into the entry header** — it now sits at
   the right of the metadata row next to the reading width/scale controls, so
   the reading area starts directly with the text (#353).
+- **A number read in English is spelled out on a Latin-native engine** — the
+  native route now replaces the digits with the English words («In 2024 we
+  shipped 3 releases.» → «In twenty twenty-four we shipped three releases.»), so
+  the preview shows what is spoken and the number stays inside the English
+  block; a year reads as two pairs there, and the narrated route keeps its
+  transliterated cardinal (#370).
 - **Numbers in English prose are read in English** — a standalone number in
   English prose now reads as an English cardinal instead of a Russian one: a
   narrating engine gets it transliterated («In 2024 we…» → «ин ту саузенд

@@ -2,18 +2,21 @@
 //!
 //! [`super::context`] decides *whether* a standalone cardinal is read in
 //! English; this module owns *how*. One table carries both the Latin words and
-//! their Cyrillic readings, so the native route (digits left to the engine,
-//! #370 spells these words into the text) and the narrating route (Cyrillic
-//! synthesized by a Russian-only engine) cannot drift apart.
+//! their Cyrillic readings, so the native route (the Latin words replace the
+//! digits in the text) and the narrating route (Cyrillic synthesized by a
+//! Russian-only engine) cannot drift apart.
 
 /// Above this value every digit is read separately, the same cutoff the
 /// Russian reader applies.
-const LIMIT: u64 = 999_999_999;
+pub(crate) const LIMIT: u64 = 999_999_999;
 
 const ZERO: (&str, &str) = ("zero", "зиро");
 const HUNDRED: (&str, &str) = ("hundred", "хандред");
 const THOUSAND: (&str, &str) = ("thousand", "саузенд");
 const MILLION: (&str, &str) = ("million", "миллион");
+/// The filler of a year's one-digit tail ("nineteen oh five"); only the native
+/// register emits it, but it carries a reading so any reader can say it.
+const OH: (&str, &str) = ("oh", "оу");
 
 const UNITS: [(&str, &str); 20] = [
     ("zero", "зиро"),
@@ -55,6 +58,38 @@ pub(crate) fn cardinal(value: u64) -> Option<String> {
         return None;
     }
     Some(below_billion(value))
+}
+
+/// The Latin words of `value` for the native prose route, where the engine reads
+/// Latin natively and the pipeline writes the spoken form into the text.
+///
+/// A four-digit value in 1000–2099 reads as a year — two two-digit pairs
+/// ("twenty twenty-four", "nineteen oh five", "nineteen hundred") — because the
+/// engine's natural reading of a year is the pair form and a bare four-digit
+/// number in prose is far more often a year than a count. A round thousand keeps
+/// the cardinal ("two thousand"), and every other value reads as a cardinal.
+pub(crate) fn native(value: u64) -> String {
+    year(value).unwrap_or_else(|| cardinal(value).expect("a cardinal below the limit"))
+}
+
+fn year(value: u64) -> Option<String> {
+    if !(1000..=2099).contains(&value) || value % 1000 == 0 {
+        return None;
+    }
+    let mut words = cardinal(value / 100)?;
+    let last = value % 100;
+    match last {
+        0 => words.push_str(" hundred"),
+        1..=9 => {
+            words.push_str(" oh ");
+            words.push_str(&cardinal(last)?);
+        }
+        _ => {
+            words.push(' ');
+            words.push_str(&cardinal(last)?);
+        }
+    }
+    Some(words)
 }
 
 /// The digit-by-digit reading of a run of decimal digits ("007" → "zero zero
@@ -104,7 +139,7 @@ fn reading(word: &str) -> Option<&'static str> {
     let table = UNITS
         .iter()
         .chain(TENS.iter())
-        .chain([ZERO, HUNDRED, THOUSAND, MILLION].iter());
+        .chain([ZERO, HUNDRED, THOUSAND, MILLION, OH].iter());
     table
         .filter(|(latin, _)| *latin == word)
         .map(|(_, cyrillic)| *cyrillic)
@@ -194,6 +229,28 @@ mod tests {
             digits("1000000000"),
             "one zero zero zero zero zero zero zero zero zero"
         );
+    }
+
+    #[test]
+    fn native_spells_years_as_pairs() {
+        assert_eq!(native(3), "three");
+        assert_eq!(native(1900), "nineteen hundred");
+        assert_eq!(native(1905), "nineteen oh five");
+        assert_eq!(native(1999), "nineteen ninety-nine");
+        assert_eq!(native(2000), "two thousand");
+        assert_eq!(native(2024), "twenty twenty-four");
+        assert_eq!(native(2099), "twenty ninety-nine");
+        assert_eq!(native(2100), "two thousand one hundred");
+        assert_eq!(native(1234), "twelve thirty-four");
+        assert_eq!(native(1_000_000), "one million");
+    }
+
+    #[test]
+    fn every_native_word_has_a_reading() {
+        // `push_reading` asserts in debug builds when a word has no table entry.
+        for value in [3, 1900, 1905, 1999, 2000, 2024, 1234, 1_000_000] {
+            let _ = transliterate(&native(value));
+        }
     }
 
     #[test]

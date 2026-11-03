@@ -513,7 +513,11 @@ mod tests {
             "In 2024 we shipped 3 releases.",
             &crate::tts::profiles::TERATTS_PROFILE,
         );
-        assert!(processed.text.contains("2024"), "{}", processed.text);
+        assert!(
+            processed.text.contains("twenty twenty-four"),
+            "{}",
+            processed.text
+        );
 
         let segments = segments_for(&processed.text, &processed.spans);
         let summary: Vec<_> = segments
