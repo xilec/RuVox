@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { shouldOfferBundleDownload } from './bundlePrompt';
+import { bundlePromptEngine } from './bundlePrompt';
 import type { AvailableEngines } from './tauri';
 
 const BUNDLE_PRESENT: AvailableEngines = {
@@ -17,28 +17,55 @@ const BUNDLE_MISSING: AvailableEngines = {
   teratts: { available: false, reason: { code: 'teratts.bundle_missing' }, reads_latin_natively: true },
 };
 
-describe('shouldOfferBundleDownload', () => {
-  it('offers the download on a fresh install (silero_native, bundle missing)', () => {
-    expect(shouldOfferBundleDownload({ engine: 'silero_native' }, BUNDLE_MISSING)).toBe(true);
+describe('bundlePromptEngine', () => {
+  it('offers the TeraTTS bundle on a fresh config (new default, bundle missing)', () => {
+    expect(bundlePromptEngine({ engine: 'teratts' }, BUNDLE_MISSING)).toBe('teratts');
   });
 
-  it('stays silent once the bundle is on disk', () => {
-    expect(shouldOfferBundleDownload({ engine: 'silero_native' }, BUNDLE_PRESENT)).toBe(false);
+  it('stays silent once the TeraTTS bundle is on disk', () => {
+    expect(bundlePromptEngine({ engine: 'teratts' }, BUNDLE_PRESENT)).toBeNull();
   });
 
-  it('stays silent for an explicit Piper choice, even with the bundle missing', () => {
-    expect(shouldOfferBundleDownload({ engine: 'piper' }, BUNDLE_MISSING)).toBe(false);
+  it('offers its own bundle to an existing Silero Native user', () => {
+    expect(bundlePromptEngine({ engine: 'silero_native' }, BUNDLE_MISSING)).toBe('silero_native');
   });
 
-  it('stays silent for an explicit Piper choice with the bundle present', () => {
-    expect(shouldOfferBundleDownload({ engine: 'piper' }, BUNDLE_PRESENT)).toBe(false);
+  it('decides on the persisted engine, not on the new default', () => {
+    // A Silero Native user whose bundle is installed is not prompted just
+    // because the (unused) TeraTTS bundle is missing.
+    expect(
+      bundlePromptEngine(
+        { engine: 'silero_native' },
+        { ...BUNDLE_MISSING, silero_native: BUNDLE_PRESENT.silero_native },
+      ),
+    ).toBeNull();
   });
 
-  it('stays silent for the TeraTTS engine (Settings owns that download)', () => {
-    expect(shouldOfferBundleDownload({ engine: 'teratts' }, BUNDLE_MISSING)).toBe(false);
+  it('mirrors the decision: offers Silero when only the TeraTTS bundle is present', () => {
+    // Persisted engine wins in this direction too: the new default's bundle
+    // being installed must not steal the prompt from an existing Silero user.
+    expect(
+      bundlePromptEngine(
+        { engine: 'silero_native' },
+        { ...BUNDLE_PRESENT, silero_native: BUNDLE_MISSING.silero_native },
+      ),
+    ).toBe('silero_native');
+  });
+
+  it('stays silent once the Silero Native bundle is on disk', () => {
+    expect(bundlePromptEngine({ engine: 'silero_native' }, BUNDLE_PRESENT)).toBeNull();
+  });
+
+  it('stays silent for an explicit Piper choice, even with both bundles missing', () => {
+    expect(bundlePromptEngine({ engine: 'piper' }, BUNDLE_MISSING)).toBeNull();
+    expect(bundlePromptEngine({ engine: 'piper' }, BUNDLE_PRESENT)).toBeNull();
   });
 
   it('stays silent for the ttsd Silero engine', () => {
-    expect(shouldOfferBundleDownload({ engine: 'silero' }, BUNDLE_MISSING)).toBe(false);
+    expect(bundlePromptEngine({ engine: 'silero' }, BUNDLE_MISSING)).toBeNull();
+  });
+
+  it('stays silent for an unknown persisted engine value', () => {
+    expect(bundlePromptEngine({ engine: 'future_engine' }, BUNDLE_MISSING)).toBeNull();
   });
 });

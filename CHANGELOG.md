@@ -45,6 +45,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   part entries keep working when no whole-word entry exists (#279).
 
 ### Changed
+- **TeraTTSv2 is the default engine** — a fresh config starts on it and the
+  first launch offers its ~410 MB bundle; declining runs the session on Piper
+  without persisting anything. Existing configs keep their engine, Silero
+  Native stays the ~230 MB alternative in Settings, Piper the zero-download
+  fallback, and the "experimental" label is gone (#359).
 - **Settings split into sections with search** — the dialog is now a two-pane
   window with a section nav (engine and voice, text reading, notifications,
   storage, interface, dictionary, about), a search field that matches labels
@@ -143,7 +148,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   Engine entries win on the same source word, the editor has a scope selector,
   and import/export work on the selected collection; existing files migrate
   losslessly into the global collection (#310).
-- **TeraTTSv2 engine (experimental)** — a fourth TTS engine runs the 99M
+- **TeraTTSv2 engine** — a fourth TTS engine runs the 99M
   TeraTTSv2 flow-matching model fully in-process on ONNX Runtime at 44.1 kHz,
   with four Russian voices (`ru_m5` default, `ru_f1`, `ru_f2`, `ru_m1`) and
   dictionary-based accentuation; its ~410 MB model bundle is downloaded on

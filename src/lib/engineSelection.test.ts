@@ -193,6 +193,14 @@ describe('computeEngineFormState', () => {
     expect(s.terattsVoice).toBe('ru_f1');
   });
 
+  it('coerces the new TeraTTSv2 default to Piper while its bundle is missing', () => {
+    // Fresh configs now default to teratts; without the bundle the form shows
+    // the Piper fallback and flags the coercion so the save keeps the default.
+    const s = computeEngineFormState(cfg('teratts', 'ruslan', 'xenia'), BOTH_AVAILABLE);
+    expect(s.engine).toBe('piper');
+    expect(s.coercedAwayFromUnavailable).toBe(true);
+  });
+
   it('keeps a saved random speaker for the ttsd engine', () => {
     const s = computeEngineFormState(
       cfg('silero', 'ruslan', 'random'),
@@ -268,10 +276,17 @@ describe('buildSettingsPatch', () => {
 
   it('omits the engine while the form is coerced away from an unavailable one', () => {
     // A coerced form shows the fallback engine; persisting it would overwrite
-    // the saved engine (or the silero_native default on a bundle-less fresh
+    // the saved engine (or the teratts default on a bundle-less fresh
     // install), so the patch must leave `engine` out.
     const patch = buildSettingsPatch(values, true);
     expect('engine' in patch).toBe(false);
     expect(patch.theme).toBe('dark');
+  });
+
+  it('keeps the TeraTTSv2 default out of a coerced save', () => {
+    // The fresh-install default is teratts; a coerced form must not persist
+    // the Piper fallback over it before the bundle exists.
+    const patch = buildSettingsPatch({ ...values, engine: 'teratts' }, true);
+    expect('engine' in patch).toBe(false);
   });
 });

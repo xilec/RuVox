@@ -508,4 +508,51 @@ describe('SettingsModal code block narration', () => {
     expect(patch.reading_width).toBe('wide');
     expect(patch.reading_scale).toBe(150);
   });
+
+  it('reset re-coerces an unavailable factory default engine', async () => {
+    // Fresh install where the first-run prompt was declined: the persisted
+    // engine is the TeraTTS default, but its bundle is missing, so Settings
+    // shows the coerced Piper selection and keeps the engine out of the patch.
+    getConfig.mockResolvedValue(makeConfig({ engine: 'teratts' }));
+    getAvailableEngines.mockResolvedValue({
+      piper: { available: true, reason: null, reads_latin_natively: false },
+      silero: { available: false, reason: null, reads_latin_natively: false },
+      silero_native: {
+        available: false,
+        reason: { code: 'native.bundle_missing' },
+        reads_latin_natively: false,
+      },
+      teratts: {
+        available: false,
+        reason: { code: 'teratts.bundle_missing' },
+        reads_latin_natively: true,
+      },
+    });
+    await renderDialog();
+
+    await clickSave();
+    expect(updateConfig.mock.calls[0][0]).not.toHaveProperty('engine');
+
+    const reset = [...document.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === 'Сбросить',
+    );
+    expect(reset, 'reset button rendered').toBeTruthy();
+    await act(async () => {
+      reset!.click();
+      await Promise.resolve();
+    });
+
+    // Reset must run the factory default through the same availability
+    // coercion: the form still shows Piper and the next save neither fails nor
+    // overwrites the persisted TeraTTS choice.
+    expect(document.body.textContent ?? '').toContain('Голос Piper');
+    expect(document.body.textContent ?? '').not.toContain('Голос TeraTTSv2');
+    expect(document.body.textContent ?? '').toContain(
+      'Сохранённый движок недоступен — выбран Piper.',
+    );
+
+    await clickSave();
+    expect(updateConfig).toHaveBeenCalledTimes(2);
+    expect(updateConfig.mock.calls[1][0]).not.toHaveProperty('engine');
+  });
 });

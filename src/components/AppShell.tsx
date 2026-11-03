@@ -27,7 +27,7 @@ import { resolveAddAction, sourceFormatFor } from '../lib/addFlow';
 import { resolveImport } from '../lib/importFlow';
 import { IMPORTABLE_FILE_EXTENSIONS } from '../lib/importFlow';
 import type { ImportSource } from '../lib/importFlow';
-import { shouldOfferBundleDownload } from '../lib/bundlePrompt';
+import { bundlePromptEngine, type BundlePromptEngine } from '../lib/bundlePrompt';
 import { TextViewer } from './TextViewer';
 import { Player } from './Player';
 import { QueueList } from './QueueList';
@@ -37,7 +37,7 @@ import { PreviewDialog } from '../dialogs/PreviewDialog';
 import { SettingsModal } from '../dialogs/Settings';
 import { DictionaryModal } from '../dialogs/DictionaryModal';
 import { RegeneratePrompt } from '../dialogs/RegeneratePrompt';
-import { SileroBundlePrompt } from '../dialogs/SileroBundlePrompt';
+import { BundlePrompt } from '../dialogs/BundlePrompt';
 import { EncodingDialog } from '../dialogs/EncodingDialog';
 import { UrlImportDialog } from '../dialogs/UrlImportDialog';
 import { IconSearch, IconChevronDown } from './icons';
@@ -99,7 +99,7 @@ export function AppShell() {
   const [regenPromptEntry, setRegenPromptEntry] = useState<TextEntry | null>(null);
   const [config, setConfig] = useState<UIConfig | null>(null);
   const configLoaded = useRef(false);
-  const [bundlePromptOpen, setBundlePromptOpen] = useState(false);
+  const [promptEngine, setPromptEngine] = useState<BundlePromptEngine | null>(null);
   const [navWidth, setNavWidth] = useState(280);
   const navResizeRef = useRef<{
     pointerId: number;
@@ -163,15 +163,14 @@ export function AppShell() {
       // the persisted config so every catalog-driven string starts in the
       // saved locale.
       setLocale(toLocale(cfg.language));
-      // First-run bundle prompt (ui spec): when the persisted engine is
-      // silero_native but the bundle probe reports it missing, offer the
-      // one-time download. A failed probe is non-fatal — no prompt.
+      // First-run bundle prompt (ui spec): when the persisted engine needs a
+      // model bundle that is not downloaded yet (TeraTTSv2 by default, the
+      // Silero Native bundle for existing users), offer the one-time
+      // download. A failed probe is non-fatal — no prompt.
       commands
         .getAvailableEngines()
         .then((availability) => {
-          if (shouldOfferBundleDownload(cfg, availability)) {
-            setBundlePromptOpen(true);
-          }
+          setPromptEngine(bundlePromptEngine(cfg, availability));
         })
         .catch(() => {});
     }).catch(() => {
@@ -737,9 +736,10 @@ export function AppShell() {
         onCancel={() => setRegenPromptEntry(null)}
       />
 
-      <SileroBundlePrompt
-        opened={bundlePromptOpen}
-        onClose={() => setBundlePromptOpen(false)}
+      <BundlePrompt
+        opened={promptEngine !== null}
+        engine={promptEngine}
+        onClose={() => setPromptEngine(null)}
       />
 
       <MantineAppShell.Navbar p="md">

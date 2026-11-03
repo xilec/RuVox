@@ -134,9 +134,11 @@ const SAMPLE_RATES = [8000, 24000, 48000];
 
 // Factory defaults for Reset. A module-level constant (not read back from the
 // form): form state updates are async, so form.getValues() inside the click
-// handler still returns the pre-reset values.
+// handler still returns the pre-reset values. `engine` mirrors
+// `UIConfig::default_engine` in `src-tauri/src/storage/schema.rs` — moving the
+// factory default must touch both places.
 const SETTINGS_DEFAULTS: SettingsFormValues = {
-  engine: 'silero_native',
+  engine: 'teratts',
   piper_voice: 'ruslan',
   teratts_voice: 'ru_m5',
   speaker: 'aidar',
@@ -593,6 +595,22 @@ export function SettingsModal({
     form.reset();
     form.setValues(SETTINGS_DEFAULTS);
     setLocale(toLocale(SETTINGS_DEFAULTS.language));
+    // Reset is a factory default, not a user pick. On an install where the
+    // default engine is unavailable (e.g. the TeraTTS bundle was never
+    // downloaded) the same coercion as the initial load must apply: otherwise
+    // the form would show an engine the patch has to omit, or the whole save
+    // would be rejected for an unavailable engine.
+    const reset = computeEngineFormState(
+      {
+        engine: SETTINGS_DEFAULTS.engine,
+        piper_voice: SETTINGS_DEFAULTS.piper_voice,
+        speaker: SETTINGS_DEFAULTS.speaker,
+        teratts_voice: SETTINGS_DEFAULTS.teratts_voice,
+      },
+      availability,
+    );
+    form.setFieldValue('engine', reset.engine);
+    setCoercedAlert(reset.coercedAwayFromUnavailable);
   };
 
   const activeQuery = query.trim();
