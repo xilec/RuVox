@@ -1735,3 +1735,24 @@ fn a_spelled_reading_maps_back_to_the_digits() {
         out.spans
     );
 }
+
+#[test]
+fn a_number_glued_to_a_hyphenated_word_is_not_an_identifier() {
+    let mut p = TTSPipeline::new();
+    let out = p.process_for_engine("In 2024-only builds.", &crate::profiles::TERATTS_PROFILE);
+    assert_eq!(out.text, "In twenty twenty-four-only builds.");
+    assert!(
+        out.spans.iter().any(|span| {
+            span.kind == SpanKind::ProseLatin && span_text(&out.text, span) == "twenty twenty-four"
+        }),
+        "spans: {:?}",
+        out.spans
+    );
+    assert!(
+        out.spans
+            .iter()
+            .all(|span| span.kind != SpanKind::CodeIdentifier),
+        "a spelled number must not be relabelled: {:?}",
+        out.spans
+    );
+}

@@ -102,11 +102,12 @@ pub(crate) fn record_native(
 }
 
 /// Records what `find` selects, skipping fragments whose original range lies
-/// inside `excluded`.
+/// that touches `excluded`.
 ///
 /// A number the native route spelled into the text already carries its prose
 /// span; the identifier scan runs later over the spelled words (a spelled year is
-/// a hyphenated token) and must not relabel them.
+/// a hyphenated token, and a number glued to a hyphenated word spans both), and
+/// must not relabel them.
 pub(crate) fn record_native_excluding(
     tracked: &mut TrackedText,
     kind: SpanKind,
@@ -122,9 +123,7 @@ pub(crate) fn record_native_excluding(
         .into_iter()
         .filter(|&(start, end)| {
             let (orig_start, orig_end) = tracked.original_range(offsets[start], offsets[end]);
-            !excluded
-                .iter()
-                .any(|&(ex_start, ex_end)| orig_start >= ex_start && orig_end <= ex_end)
+            !super::overlaps_ranges(excluded, orig_start, orig_end)
         })
         .collect();
     record_byte_ranges(tracked, &offsets, kind, lang, &kept, recorded);

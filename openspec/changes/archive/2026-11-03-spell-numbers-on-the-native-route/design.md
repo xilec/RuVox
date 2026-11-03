@@ -32,7 +32,7 @@ out of the pipeline.
   spelled words; all of them resolve to the same original range as the numeric
   span, and `keep_specific_spans` keeps the earlier one, so exactly one span per
   number covers the whole reading.
-- **Year register for four-digit values 1000–2099.** Two two-digit pairs
+- **Year register for four-digit values the Russian reader treats as a year (1000–2199, the `parse::is_year` range).** Two two-digit pairs
   ("twenty twenty-four", "nineteen ninety-nine"), "oh" for 01–09 ("nineteen oh
   five"), "hundred" for 00 ("nineteen hundred"), cardinal for a round thousand
   ("two thousand"). Rejected: the cardinal everywhere — the engine's natural

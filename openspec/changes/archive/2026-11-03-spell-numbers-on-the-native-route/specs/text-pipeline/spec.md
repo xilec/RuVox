@@ -29,10 +29,11 @@ English reading setting requirement): the `Narrate` route SHALL transliterate it
 into Cyrillic with the curated numeral readings, and the `Native` route SHALL
 spell the reading in Latin words, replace the digits with the spelling and
 annotate the replacement with a prose-Latin span (see Span annotation output), so
-the English block is not split and the text matches what is spoken. A four-digit
-value from 1000 to 2099 SHALL use the year register — two two-digit pairs ("2024"
-→ "twenty twenty-four", "1905" → "nineteen oh five", "1900" → "nineteen
-hundred") — while a round thousand keeps the cardinal ("2000" → "two thousand").
+the English block is not split and the text matches what is spoken. On the
+`Native` route, a four-digit value the Russian reader treats as a year
+(1000–2199) SHALL use the year register — two two-digit pairs ("2024" → "twenty
+twenty-four", "1905" → "nineteen oh five", "1900" → "nineteen hundred") —
+while a round thousand keeps the cardinal ("2000" → "two thousand").
 
 A decimal fraction with a comma and a physical unit SHALL read as a natural
 quantity ("1,5 кг" → "полтора килограмма", "2,5 км" → "два с половиной
@@ -267,8 +268,9 @@ words inside a prose-Latin span.
 - GIVEN the TeraTTS profile, `english_reading: "auto"` and the input "In 2024 we
   shipped 3 releases."
 - WHEN the pipeline processes it
-- THEN the digits stay in the text and carry prose-Latin spans, and the same
-  text under the Silero profile reads the numbers in transliterated English
+- THEN the text is "In twenty twenty-four we shipped three releases.", each
+  reading carries a prose-Latin span with language `en`, and the same text under
+  the Silero profile reads the numbers in transliterated English
 
 
 ### Requirement: Span annotation output

@@ -16,7 +16,7 @@ reading; it should write it down.
   annotated with a prose-Latin span over the replacement, so the text continues
   the English block, matches what is spoken and no language flip appears at the
   number.
-- A four-digit value from 1000 to 2099 uses the year register: two two-digit
+- A four-digit value the Russian reader treats as a year (1000–2199) uses the year register: two two-digit
   pairs ("twenty twenty-four", "nineteen ninety-nine"), "oh" for 01–09
   ("nineteen oh five") and "hundred" for 00 ("nineteen hundred"), while a round
   thousand keeps the cardinal ("two thousand").

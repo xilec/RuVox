@@ -161,7 +161,7 @@ fn find_identifier_ranges(text: &str) -> Vec<(usize, usize)> {
 }
 
 /// Whether `[start, end)` intersects a sorted, non-overlapping range list.
-fn overlaps_ranges(ranges: &[(usize, usize)], start: usize, end: usize) -> bool {
+pub(crate) fn overlaps_ranges(ranges: &[(usize, usize)], start: usize, end: usize) -> bool {
     let first_after = ranges.partition_point(|(range_start, _)| *range_start < end);
     first_after > 0 && ranges[first_after - 1].1 > start
 }

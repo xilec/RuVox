@@ -63,17 +63,20 @@ pub(crate) fn cardinal(value: u64) -> Option<String> {
 /// The Latin words of `value` for the native prose route, where the engine reads
 /// Latin natively and the pipeline writes the spoken form into the text.
 ///
-/// A four-digit value in 1000–2099 reads as a year — two two-digit pairs
-/// ("twenty twenty-four", "nineteen oh five", "nineteen hundred") — because the
-/// engine's natural reading of a year is the pair form and a bare four-digit
-/// number in prose is far more often a year than a count. A round thousand keeps
-/// the cardinal ("two thousand"), and every other value reads as a cardinal.
+/// A four-digit value the Russian reader treats as a year (1000–2199) reads as
+/// two two-digit pairs ("twenty twenty-four", "nineteen oh five", "nineteen
+/// hundred") — because the engine's natural reading of a year is the pair form
+/// and a bare four-digit number in prose is far more often a year than a count.
+/// A round thousand keeps the cardinal ("two thousand"), and every other value
+/// reads as a cardinal.
 pub(crate) fn native(value: u64) -> String {
     year(value).unwrap_or_else(|| cardinal(value).expect("a cardinal below the limit"))
 }
 
 fn year(value: u64) -> Option<String> {
-    if !(1000..=2099).contains(&value) || value % 1000 == 0 {
+    // The same year range the Russian reader uses (`parse::is_year`), so the
+    // layer has one definition of a calendar year.
+    if !super::parse::is_year(value) || value % 1000 == 0 {
         return None;
     }
     let mut words = cardinal(value / 100)?;
@@ -240,17 +243,30 @@ mod tests {
         assert_eq!(native(2000), "two thousand");
         assert_eq!(native(2024), "twenty twenty-four");
         assert_eq!(native(2099), "twenty ninety-nine");
-        assert_eq!(native(2100), "two thousand one hundred");
+        assert_eq!(native(1000), "one thousand");
+        assert_eq!(native(1009), "ten oh nine");
+        assert_eq!(native(2009), "twenty oh nine");
+        assert_eq!(native(2100), "twenty-one hundred");
+        assert_eq!(native(10000), "ten thousand");
         assert_eq!(native(1234), "twelve thirty-four");
         assert_eq!(native(1_000_000), "one million");
     }
 
     #[test]
     fn every_native_word_has_a_reading() {
-        // `push_reading` asserts in debug builds when a word has no table entry.
-        for value in [3, 1900, 1905, 1999, 2000, 2024, 1234, 1_000_000] {
-            let _ = transliterate(&native(value));
+        // `push_reading` asserts in debug builds when a word has no table entry;
+        // the assertion below also covers release runs and pins the readings.
+        for value in [
+            3, 1000, 1900, 1905, 1999, 2000, 2009, 2024, 2100, 1234, 1_000_000,
+        ] {
+            let reading = transliterate(&native(value));
+            assert!(
+                reading.chars().all(|ch| !ch.is_ascii_alphabetic()),
+                "{value} left a Latin word in {reading:?}"
+            );
         }
+        assert_eq!(transliterate(&native(1905)), "найнтин оу файв");
+        assert_eq!(transliterate(&native(2024)), "твенти твенти-фо");
     }
 
     #[test]
