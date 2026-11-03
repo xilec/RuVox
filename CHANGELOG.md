@@ -54,6 +54,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 - **The viewer's format switch moved into the entry header** — it now sits at
   the right of the metadata row next to the reading width/scale controls, so
   the reading area starts directly with the text (#353).
+- **Numbers in English prose are read in English** — a number that sits between
+  English words in an English sentence now reads as an English cardinal instead
+  of a Russian one: a narrating engine gets it transliterated («In 2024 we…» →
+  «ин ту саузенд твенти-фо ви…»), and a Latin-native engine keeps the digits
+  inside the English block instead of splitting it with a Russian numeral,
+  while numbers in Russian context keep their readings (#369).
 - **The viewer switches only between the rendered view and the source** — a
   markdown entry offers «Markdown | Исходный», an HTML entry «HTML |
   Исходный», and a plain entry has no switch at all; the choice survives
