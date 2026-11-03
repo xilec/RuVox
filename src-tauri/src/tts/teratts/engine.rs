@@ -576,6 +576,45 @@ mod tests {
     }
 
     #[test]
+    fn constructs_in_english_prose_spell_into_one_english_block() {
+        let mut pipeline = crate::pipeline::TTSPipeline::new();
+        let processed = pipeline.process_for_engine(
+            "The API grew 50% and the cache holds 100 MB.",
+            &crate::tts::profiles::TERATTS_PROFILE,
+        );
+        assert!(
+            processed.text.contains("fifty percent"),
+            "{}",
+            processed.text
+        );
+        assert!(
+            processed.text.contains("one hundred megabytes"),
+            "{}",
+            processed.text
+        );
+        assert!(
+            !processed
+                .text
+                .chars()
+                .any(|ch| ch.is_alphabetic() && !ch.is_ascii()),
+            "no Russian words: {}",
+            processed.text
+        );
+
+        let segments = segments_for(&processed.text, &processed.spans);
+        let summary: Vec<_> = segments
+            .iter()
+            .map(|segment| (segment.text, segment.language))
+            .collect();
+        assert!(
+            segments
+                .iter()
+                .all(|segment| segment.language == teratts::Language::En),
+            "segments: {summary:?}"
+        );
+    }
+
+    #[test]
     fn a_russian_context_number_stays_in_a_russian_segment() {
         let mut pipeline = crate::pipeline::TTSPipeline::new();
         let processed = pipeline

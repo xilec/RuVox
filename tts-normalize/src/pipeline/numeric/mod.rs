@@ -79,7 +79,7 @@ enum EnglishNumber {
 enum EnglishClaim {
     /// A standalone cardinal (#369): the route chooses the register.
     Number(EnglishNumber),
-    /// A construct: only the narrated route reads it in English today.
+    /// A construct: the route chooses the rendering, the wording is shared.
     Construct(String),
 }
 
@@ -267,8 +267,7 @@ impl NumericSpanNormalizer {
         let claimed = &mut *routing.claimed;
 
         let needs_context = spans.iter().any(|span| {
-            Self::english_words(span).is_some()
-                || (route == NumberRoute::Narrate && constructs::read(span, expand_units).is_some())
+            Self::english_words(span).is_some() || constructs::read(span, expand_units).is_some()
         });
         let offsets = if needs_context {
             byte_to_char_offsets(&snapshot)
@@ -301,10 +300,7 @@ impl NumericSpanNormalizer {
         for span in &spans {
             let claim = match Self::english_words(span) {
                 Some(number) => Some(EnglishClaim::Number(number)),
-                None if route == NumberRoute::Narrate => {
-                    constructs::read(span, expand_units).map(EnglishClaim::Construct)
-                }
-                None => None,
+                None => constructs::read(span, expand_units).map(EnglishClaim::Construct),
             };
             let english = match claim {
                 Some(claim) => {
@@ -341,9 +337,20 @@ impl NumericSpanNormalizer {
                         native_ranges.push((span.start, span.end));
                     }
                 },
-                Some(EnglishClaim::Construct(latin)) => {
-                    replacements.push((span.start, span.end, english::transliterate(&latin)))
-                }
+                Some(EnglishClaim::Construct(latin)) => match route {
+                    NumberRoute::Narrate => {
+                        replacements.push((span.start, span.end, english::transliterate(&latin)))
+                    }
+                    NumberRoute::Native => {
+                        let (orig_start, orig_end) =
+                            tracked.original_range(offsets[span.start], offsets[span.end]);
+                        if orig_end > orig_start {
+                            claimed.push((orig_start, orig_end));
+                        }
+                        replacements.push((span.start, span.end, latin));
+                        native_ranges.push((span.start, span.end));
+                    }
+                },
                 None => {
                     if let Some(reading) = span.read(&snapshot, expand_units) {
                         replacements.push((span.start, span.end, reading));
