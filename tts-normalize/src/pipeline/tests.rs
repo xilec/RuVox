@@ -18,9 +18,8 @@ fn pipeline_plain_russian() {
 
 #[test]
 fn pipeline_invalid_time_falls_through_to_numbers() {
-    // Invariant: normalize_time returns an out-of-range clock value unchanged,
-    // so the time phase is a no-op and does not consume the region. TrackedText
-    // skips no-op replacements, leaving the digits for the number phase to read.
+    // Invariant: the time parser rejects an out-of-range clock value, leaving
+    // the digits for the number reader, so "25:00" is not narrated as a clock.
     let mut p = TTSPipeline::new();
     assert_eq!(
         p.process_text("В 25:00 встреча"),
