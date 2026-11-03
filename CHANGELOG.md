@@ -79,6 +79,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   as `method` → «мэтод» and `function` → «фанкшин» are curated (#306).
 
 ### Fixed
+- **Word highlighting survives code blocks in HTML articles** — syntax
+  highlighting rebuilt every code block from its text content, where the
+  `<br>` line separators of Habr/Shiki markup contribute nothing: the block
+  collapsed into one line and every later word span shifted off its offset,
+  so highlighting after the first code block landed on the wrong words or
+  flickered. Pre-highlighted code is now highlighted line by line with the
+  `<br>` separators kept in place.
 - **ESC in the quick-add dictionary keeps the preview open** — the preview's
   window-level ESC handler stayed attached while the dictionary editor was
   open over it, so dismissing the editor also cancelled the preview.

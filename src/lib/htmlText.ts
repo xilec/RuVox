@@ -30,6 +30,17 @@ const BLOCK_TAGS = new Set([
   'details', 'summary', 'br', 'hr',
 ]);
 
+/**
+ * Whether a tag separates blocks in the extracted text (see BLOCK_TAGS).
+ *
+ * `highlightCodeBlocks` uses this to leave markup untouched when it cannot
+ * rebuild the block line by line without changing what `annotateHtmlWords`
+ * extracts.
+ */
+export function isBlockSeparator(tagName: string): boolean {
+  return BLOCK_TAGS.has(tagName.toLowerCase());
+}
+
 const cpLen = (s: string): number => Array.from(s).length;
 
 // JS `\s` is Unicode-aware: it covers NBSP (U+00A0) and other space
