@@ -79,6 +79,8 @@ interface TextEntry {
   display_mode: DisplayMode | null;     // Viewer display choice; null = never chosen (default view of the source format, verbatim for a plain source)
   html_source: string | null;           // Sanitized HTML for rendering; set only for HTML-ingested entries
   source: EntrySource | null;           // Where the text came from; null for legacy entries
+  title: string | null;                 // Display title seeded at ingestion; null = derive from original_text (legacy / cleared)
+  note: string | null;                  // Free-form user note; never part of the TTS input
   created_at: string;                   // Naive UTC timestamp, e.g. "2026-02-15T11:46:51.504055" (no TZ suffix)
   audio_generated_at: string | null;    // Naive UTC timestamp when audio file was written
   audio_path: string | null;            // Filename relative to audio/, e.g. "{uuid}.opus"
@@ -108,7 +110,7 @@ interface ModelParams {
 }
 ```
 
-Status, format and display-mode values SHALL serialize as lowercase strings. `format` SHALL be written once at ingestion and SHALL NOT be rewritten afterwards; the viewer's display choice lives in `display_mode`. `created_at` and `audio_generated_at` SHALL be stored as naive timestamps without a timezone suffix; both SHALL be generated from the UTC clock (`Utc::now().naive_utc()`), and readers treat the values as UTC. `audio_path` and `timestamps_path` SHALL store the filename only; the full path resolves as `<cache_root>/audio/{filename}`. All optional `TextEntry` fields SHALL default when absent from the JSON, so entries written by older builds keep parsing; a missing `format` SHALL default to `null`, meaning the viewer derives the source format from the content, and a missing `display_mode` SHALL default to `null`, meaning the viewer shows the default view of the source format (verbatim for a plain source); a missing `html_source` SHALL default to `null`, a missing `generation` SHALL default to `null`, a missing `generation_count` SHALL default to `0`, and a missing `source` SHALL default to `null`. Snapshots written by earlier builds may carry a `read_operators` field; readers MUST ignore it, and re-saving the entry drops it. For HTML-ingested entries, `original_text` SHALL hold the extracted plain text (the TTS pipeline input) and `html_source` SHALL hold the sanitized markup.
+Status, format and display-mode values SHALL serialize as lowercase strings. `format` SHALL be written once at ingestion and SHALL NOT be rewritten afterwards; the viewer's display choice lives in `display_mode`. `created_at` and `audio_generated_at` SHALL be stored as naive timestamps without a timezone suffix; both SHALL be generated from the UTC clock (`Utc::now().naive_utc()`), and readers treat the values as UTC. `audio_path` and `timestamps_path` SHALL store the filename only; the full path resolves as `<cache_root>/audio/{filename}`. All optional `TextEntry` fields SHALL default when absent from the JSON, so entries written by older builds keep parsing; a missing `format` SHALL default to `null`, meaning the viewer derives the source format from the content, and a missing `display_mode` SHALL default to `null`, meaning the viewer shows the default view of the source format (verbatim for a plain source); a missing `html_source` SHALL default to `null`, a missing `generation` SHALL default to `null`, a missing `generation_count` SHALL default to `0`, a missing `source` SHALL default to `null`, and missing `title` / `note` SHALL default to `null` (the viewer then derives the title from `original_text`, so legacy entries need no migration). `title` is seeded on add (see "Entry CRUD") and is never required; `note` is user metadata only and SHALL NOT be concatenated into `original_text` or fed to the synthesis pipeline. Snapshots written by earlier builds may carry a `read_operators` field; readers MUST ignore it, and re-saving the entry drops it. For HTML-ingested entries, `original_text` SHALL hold the extracted plain text (the TTS pipeline input) and `html_source` SHALL hold the sanitized markup.
 
 #### Scenario: New entry is persisted
 - GIVEN an empty history
@@ -131,9 +133,9 @@ Status, format and display-mode values SHALL serialize as lowercase strings. `fo
 - THEN the loaded entry keeps `format: "markdown"` and `display_mode: "plain"`
 
 #### Scenario: Older entries without optional fields parse
-- GIVEN a `history.json` entry that lacks `format`, `display_mode`, `html_source`, `normalized_text`, `audio_path`, `was_regenerated`, `generation`, `generation_count`, `source`, and other optional fields
+- GIVEN a `history.json` entry that lacks `format`, `display_mode`, `html_source`, `normalized_text`, `audio_path`, `was_regenerated`, `generation`, `generation_count`, `source`, `title`, `note`, and other optional fields
 - WHEN the history is loaded
-- THEN the entry parses successfully with the missing fields defaulted (null / false / 0), including `display_mode: null`
+- THEN the entry parses successfully with the missing fields defaulted (null / false / 0), including `display_mode`, `title` and `note` as `null`
 
 #### Scenario: Generation snapshot round-trips
 - GIVEN a persisted entry whose `generation` snapshot is set
@@ -149,6 +151,16 @@ Status, format and display-mode values SHALL serialize as lowercase strings. `fo
 - GIVEN an entry ingested from a file, persisted with `source: "file"`
 - WHEN the storage service is re-initialized against the same cache directory
 - THEN the loaded entry still has `source: "file"`
+
+#### Scenario: Title and note round-trip
+- GIVEN an entry with `title: "Установка"` and `note: "вернуться к бенчмаркам"`
+- WHEN the entry is saved and the storage service is re-initialized
+- THEN the loaded entry keeps both values and `note` is not folded into `original_text` or `normalized_text`
+
+#### Scenario: Legacy entry without title and note
+- GIVEN a `history.json` entry written before #353 that has neither `title` nor `note`
+- WHEN the history is loaded
+- THEN both fields default to `null` and the entry remains usable; the viewer derives its title from `original_text`
 
 ### Requirement: Playing Status Is Never Persisted
 
@@ -462,15 +474,37 @@ be stored unchanged — storage does not snap them to the UI ladder
 
 The storage service SHALL provide create, read, update, and delete operations over entries:
 
-- Adding an entry SHALL strip a leading UTF-8 BOM from the text, assign a fresh UUID v4, set status `"pending"`, and persist the history.
+- Adding an entry SHALL strip a leading UTF-8 BOM from the text, assign a fresh UUID v4, set status `"pending"`, seed `title` from the text (see the title-seeding rule below), set `note` to `null`, and persist the history.
 - Updating an entry SHALL replace the stored record and persist the history.
 - Listing entries SHALL return them sorted by `created_at`, newest first.
 - Deleting an entry SHALL remove its record, its audio file, and its timestamps file, then persist the history.
+
+The title seeded on add SHALL be derived from `original_text` in the shared storage path used by every ingestion path (the UI commands and the tray alike): take the first line that yields something usable after stripping Markdown heading markers (`#`…`######`) and list bullets (`-`, `*`, `+`, `1.`, `1)`), collapse runs of whitespace to single spaces, trim, and cap at 200 Unicode scalar values; when nothing usable remains (empty or markup-only text), store `null`. The stored title SHALL NOT be rewritten later by the derivation — once set, it is the user's title until edited or cleared.
 
 #### Scenario: BOM is stripped on add
 - GIVEN text that starts with the UTF-8 BOM character `﻿`
 - WHEN the entry is added
 - THEN `original_text` is stored without the BOM
+
+#### Scenario: Title is seeded from the first usable line
+- GIVEN text that starts with `## Установка` followed by the body
+- WHEN the entry is added through the storage service
+- THEN `title` is `"Установка"` and `note` is `null`, and the title persists across a reload
+
+#### Scenario: Nothing usable stores no title
+- GIVEN text that is whitespace-only or consists only of Markdown marks (`#`, `-`, `1.`)
+- WHEN the entry is added
+- THEN `title` is `null`
+
+#### Scenario: The title is capped at 200 characters
+- GIVEN a first line longer than 200 characters
+- WHEN the entry is added
+- THEN the stored title has at most 200 characters and no trailing whitespace
+
+#### Scenario: Every ingestion path seeds the title
+- GIVEN the tray clipboard path (`add_entry`) and the UI path (`add_text_entry`)
+- WHEN either adds an entry
+- THEN both go through the shared storage add path and store the derived title
 
 #### Scenario: Entries are listed newest first
 - GIVEN two entries created one second apart
@@ -580,6 +614,13 @@ the basis of the entry's current status (entry cancellation, and the
 stale-completion guards for synthesis ready/error), so a concurrent
 read-decide-write cannot persist a stale entry clone over a transition that
 already applied.
+
+This operation SHALL also be the mechanism used for single-field metadata edits (title and note), so saving a title while a synthesis completion lands cannot persist a stale clone that reverts the completion.
+
+#### Scenario: metadata edit does not revert a concurrent completion
+- GIVEN an entry being synthesized
+- WHEN a title edit applies through the conditional update while the completion transitions the entry to `ready`
+- THEN the persisted entry carries both the new title and the completed status/audio fields
 
 #### Scenario: predicate accepts applies the mutation
 - GIVEN an entry whose status the predicate accepts

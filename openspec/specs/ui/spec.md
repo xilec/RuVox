@@ -413,7 +413,10 @@ call time.
 
 All user-visible strings of the shell, queue, player, viewer, dialogs, and
 notification helpers SHALL come from the catalogs; no hardcoded UI prose in
-components. Backend error codes (`CommandError.code`) SHALL have catalog
+components. The viewer header (#353) SHALL localize its edit affordances,
+keyboard hints, the empty-note state and the «не озвучено» placeholder, and the
+queue card's title tooltip and search over title/note SHALL work in both
+languages. Backend error codes (`CommandError.code`) SHALL have catalog
 entries under an `errors.` prefix; unknown codes fall back to `message`, then
 to a generic per-`type` string (see the ipc-commands spec).
 
@@ -454,14 +457,13 @@ generation timestamp, and the generation number (`generation_count`). The item
 SHALL be disabled for entries that have neither a snapshot nor a generation
 timestamp (never synthesized).
 
-Values absent from the snapshot SHALL render as a placeholder dash rather than guessed values. For entries with audio but no snapshot (synthesized by older builds), the dialog SHALL show an explanatory line that parameters were not recorded. Engine and Piper voice names SHALL be shown with their localized display names; the dialog and menu item SHALL be localized in Russian and English.
+Values absent from the snapshot SHALL render as a placeholder dash rather than guessed values. For entries with audio but no snapshot (synthesized by older builds), the dialog SHALL show an explanatory line that parameters were not recorded. Engine and voice names SHALL be shown with their localized or engine-specific display names: Piper voices by their localized names, Silero speakers by their speaker name, TeraTTS voices by their stored id, and an id the catalogue does not know by the stored id. The viewer header SHALL use the same shared display helpers, so the two surfaces never disagree. The dialog and menu item SHALL be localized in Russian and English.
 
 #### Scenario: Dialog shows the snapshot
 
 - GIVEN a ready entry whose snapshot records engine `silero_native`, speaker `xenia`, and an Ogg Opus file
 - WHEN the user opens "Параметры записи…" for the entry
-- THEN the dialog shows the ingestion source first, then the localized engine name, the voice, the sample rate, the audio codec and size, and the generation number
-
+- THEN the dialog shows the ingestion source first, then the localized engine name, the Silero speaker name (`Xenia`), the sample rate, the audio codec and size, and the generation number
 #### Scenario: Absent values render as a dash
 
 - GIVEN a ready entry whose snapshot has no model identity
@@ -693,9 +695,10 @@ including the persisted failure note and retry action from #351.
 
 ### Requirement: Text viewer reading controls
 
-The text viewer SHALL show reading-typography controls in a toolbar above the
-content, to the right of the display-mode switch, in every display mode —
-including a plain source, which has no display-mode switch:
+The text viewer SHALL show reading-typography controls in the viewer header's
+metadata row (the entry header added by #353), placed after the display-mode
+switch when one is rendered, in every display mode — including a plain source,
+which has no display-mode switch:
 
 - a `Узко | Широко` `SegmentedControl` bound to `UIConfig.reading_width`
   (`"narrow"` | `"wide"`);
@@ -731,7 +734,7 @@ changes, and the wide layout still fills the pane.
 - **GIVEN** an entry is selected, with any source format and display mode
 - **WHEN** the viewer renders
 - **THEN** the reading-width segments and the reading-scale stepper are in the
-  toolbar, and either control changes the content immediately
+  header metadata row, and either control changes the content immediately
 
 #### Scenario: Scale ladder and bounds
 
