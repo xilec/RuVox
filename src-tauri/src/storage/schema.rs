@@ -271,6 +271,9 @@ impl UIConfig {
         24000
     }
     fn default_engine() -> String {
+        // Factory default, mirrored by `SETTINGS_DEFAULTS.engine` in
+        // `src/dialogs/Settings.tsx` (the Reset path). Moving it must update
+        // both copies.
         "teratts".to_string()
     }
     fn default_piper_voice() -> String {
