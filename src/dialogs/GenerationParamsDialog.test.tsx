@@ -10,7 +10,7 @@ import { GenerationParamsDialog } from './GenerationParamsDialog';
 
 const SNAPSHOT: GenerationParams = {
   engine: 'silero_native',
-  voice: 'ruslan',
+  voice: 'xenia',
   sample_rate: 24000,
   model: { name: 'silero_v5_ru', sha256: 'ab12'.repeat(8) },
   app_version: '0.5.0',
@@ -30,6 +30,8 @@ function makeEntry(overrides: Partial<TextEntry> = {}): TextEntry {
     display_mode: null,
     html_source: null,
     source: null,
+    title: null,
+    note: null,
     created_at: '2026-08-01T10:00:00',
     audio_generated_at: '2026-08-01T10:00:05',
     audio_path: 'entry-1.opus',
@@ -76,7 +78,7 @@ describe('GenerationParamsDialog', () => {
     expect(body).toContain('Параметры записи');
     expect(body).toContain('Ссылка');
     expect(body).toContain('Silero (нативный)');
-    expect(body).toContain('Руслан (мужской)');
+    expect(body).toContain('Xenia');
     expect(body).toContain('24000 Гц');
     expect(body).toContain('silero_v5_ru');
     expect(body).toContain('0.5.0');

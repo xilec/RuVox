@@ -13,43 +13,18 @@ import {
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import { commands, events } from '../lib/tauri';
-import type { TextEntry, EntryStatus, EntryId } from '../lib/tauri';
+import type { TextEntry, EntryId } from '../lib/tauri';
 import { formatError } from '../lib/errors';
 import { useT } from '../lib/i18n';
-import type { MessageKey } from '../i18n/ru';
 import { useTauriEvents } from '../lib/useTauriEvents';
 import { useSelectedEntry } from '../stores/selectedEntry';
 import { useSearchQuery } from '../stores/searchQuery';
 import { formatDuration } from '../lib/format';
 import { GenerationParamsDialog } from '../dialogs/GenerationParamsDialog';
+import { entryDisplayTitle } from '../lib/entryTitle';
+import { STATUS_KEY, statusBadgeColor } from '../lib/entryStatus';
 import { IconPlay, IconLocate } from './icons';
 import classes from './QueueList.module.css';
-
-function statusBadgeColor(status: EntryStatus): string {
-  switch (status) {
-    case 'pending':
-      return 'gray';
-    case 'processing':
-      return 'blue';
-    case 'ready':
-      return 'green';
-    case 'playing':
-      return 'teal';
-    case 'error':
-      return 'red';
-    case 'cancelled':
-      return 'gray';
-  }
-}
-
-const STATUS_KEY: Record<EntryStatus, MessageKey> = {
-  pending: 'queue.status.pending',
-  processing: 'queue.status.processing',
-  ready: 'queue.status.ready',
-  playing: 'queue.status.playing',
-  error: 'queue.status.error',
-  cancelled: 'queue.status.cancelled',
-};
 
 /** Which failure treatment a card needs, if any: a hard `error`, or a
  * playable entry whose last regeneration failed (old audio kept) — the
@@ -300,9 +275,10 @@ function QueueItem({
   onRetry,
 }: QueueItemProps) {
   const tt = useT();
-  const preview = entry.original_text.slice(0, 60);
-  const previewLabel =
-    entry.original_text.length > 60 ? `${preview}\u2026` : preview;
+  // The title is the entry identity in the queue (#353): the stored title or
+  // the shared derived fallback, one line with an ellipsis, full text in the
+  // native tooltip. The old 60-character preview of `original_text` is gone.
+  const titleLabel = entryDisplayTitle(entry);
   const isProcessing = entry.status === 'processing';
   const canPlay = entry.status === 'ready' || entry.status === 'playing';
   const tone = failureTone(entry);
@@ -341,12 +317,12 @@ function QueueItem({
     >
       <Group justify="space-between" gap="xs" wrap="nowrap">
         <Stack gap={2} style={{ minWidth: 0, flex: 1 }}>
-          <Text className={classes.preview} title={entry.original_text}>
-            {previewLabel}
+          <Text className={classes.title} title={titleLabel}>
+            {titleLabel}
           </Text>
           <SynthesisProgressLine
             entry={entry}
-            entryLabel={previewLabel}
+            entryLabel={titleLabel}
             cancelBusy={cancelBusy}
             onCancelSynthesis={onCancelSynthesis}
           />
@@ -422,7 +398,17 @@ export function QueueList({ onRegenerate }: QueueListProps) {
   const filteredEntries = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return entries;
-    return entries.filter((e) => e.original_text.toLowerCase().includes(q));
+    // Case-insensitive substring over the entry identity (#353): the title
+    // shown on the card, the note and the source text. The card shows
+    // `entryDisplayTitle`, so a legacy entry (`title = null`) is searchable by
+    // the derived title it visibly carries — the derived text is not always a
+    // substring of `original_text` (Markdown markers and collapsed whitespace
+    // are stripped).
+    return entries.filter((e) =>
+      [entryDisplayTitle(e), e.title, e.note, e.original_text].some((value) =>
+        value?.toLowerCase().includes(q),
+      ),
+    );
   }, [entries, query]);
   // Single Menu instance shared by all queue items — cheaper than one per item
   // and avoids stacking many hidden Menu portals that can interfere with other

@@ -147,6 +147,19 @@ export const en: Record<MessageKey, string> = {
   'viewer.menu.copy_image': 'Copy image',
   'viewer.menu.copy_image_address': 'Copy image address',
 
+  // ── Viewer header (entry metadata, #353) ───────────────────────────
+  'header.title.edit': 'Edit title',
+  'header.title.edit_aria': 'Entry title',
+  'header.title.placeholder': 'Title',
+  'header.title.kbd_hint': 'Enter to save, Esc to cancel',
+  'header.note.add': 'Add a note',
+  'header.note.edit': 'Edit note',
+  'header.note.edit_aria': 'Entry note',
+  'header.note.placeholder': 'Note',
+  'header.note.kbd_hint': 'Ctrl+Enter to save, Esc to cancel',
+  'header.note.expand': 'Show all',
+  'header.note.collapse': 'Collapse',
+  'header.not_narrated': 'not narrated',
   // ── Preview dialog ──────────────────────────────────────────────────────
   'preview.title': 'Normalization preview',
   'preview.close': 'Close',

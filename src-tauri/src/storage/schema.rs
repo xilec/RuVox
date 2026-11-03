@@ -82,6 +82,16 @@ pub struct TextEntry {
     /// entries created before the field existed.
     #[serde(default)]
     pub source: Option<EntrySource>,
+    /// Display title, seeded at ingestion from the first usable line of
+    /// `original_text` and editable in the viewer header. `None` means no
+    /// explicit title: the UI falls back to the same derivation, so legacy
+    /// entries and freshly added ones render identically (issue #353).
+    #[serde(default)]
+    pub title: Option<String>,
+    /// Free-form user note shown under the title. Plain text with newlines
+    /// only; never part of the TTS input.
+    #[serde(default)]
+    pub note: Option<String>,
     // Naive UTC timestamps (no TZ suffix), e.g. "2026-02-15T11:46:51.504055".
     // Callers treat these values as UTC.
     pub created_at: NaiveDateTime,
@@ -653,6 +663,41 @@ mod tests {
         let e2: TextEntry = serde_json::from_str(&serialized).unwrap();
         assert_eq!(e2.format, Some(TextFormat::Html));
         assert_eq!(e2.html_source, e.html_source);
+    }
+
+    #[test]
+    fn entry_title_and_note_roundtrip() {
+        // Editable metadata persists as plain optional strings; both are
+        // `#[serde(default)]` so pre-#353 histories keep parsing.
+        let json = r##"{
+            "id": "550e8400-e29b-41d4-a716-446655440000",
+            "original_text": "# Установка\nТекст",
+            "status": "pending",
+            "title": "Установка",
+            "note": "вернуться к бенчмаркам Wasm",
+            "created_at": "2025-01-01T12:00:00.000000"
+        }"##;
+        let e: TextEntry = serde_json::from_str(json).unwrap();
+        assert_eq!(e.title.as_deref(), Some("Установка"));
+        assert_eq!(e.note.as_deref(), Some("вернуться к бенчмаркам Wasm"));
+
+        let serialized = serde_json::to_string(&e).unwrap();
+        let e2: TextEntry = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(e2.title, e.title);
+        assert_eq!(e2.note, e.note);
+    }
+
+    #[test]
+    fn legacy_entry_without_title_or_note_parses() {
+        let json = r#"{
+            "id": "550e8400-e29b-41d4-a716-446655440000",
+            "original_text": "Текст",
+            "status": "pending",
+            "created_at": "2025-01-01T12:00:00.000000"
+        }"#;
+        let e: TextEntry = serde_json::from_str(json).unwrap();
+        assert_eq!(e.title, None);
+        assert_eq!(e.note, None);
     }
 
     #[test]

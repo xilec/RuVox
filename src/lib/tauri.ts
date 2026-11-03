@@ -42,7 +42,13 @@ export interface TextEntry {
   html_source: string | null;
   /** Where the text came from; null for legacy entries. */
   source: EntrySource | null;
-  created_at: string;               // ISO 8601
+  /** Display title seeded from the first usable line of `original_text` and
+   * editable in the viewer header; null = fall back to the same derivation
+   * (legacy entries and cleared titles). */
+  title: string | null;
+  /** Free-form user note shown under the title; never part of the TTS input. */
+  note: string | null;
+  created_at: string;               // ISO 8601, naive UTC
   audio_generated_at: string | null;
   audio_path: string | null;
   timestamps_path: string | null;
@@ -334,6 +340,15 @@ export const commands = {
 
   setEntryDisplayMode: (id: EntryId, displayMode: DisplayMode): Promise<void> =>
     tauriInvoke('set_entry_display_mode', { id, displayMode }),
+  /** Persist the editable title; `null` clears it so the UI falls back to the
+   * derived title. Trims and enforces the 200-character limit server-side. */
+  setEntryTitle: (id: EntryId, title: string | null): Promise<void> =>
+    tauriInvoke('set_entry_title', { id, title }),
+
+  /** Persist the editable note; `null` clears it. Trims and enforces the
+   * 2000-character limit server-side; never part of the TTS input. */
+  setEntryNote: (id: EntryId, note: string | null): Promise<void> =>
+    tauriInvoke('set_entry_note', { id, note }),
 
   cancelSynthesis: (id: EntryId): Promise<void> =>
     tauriInvoke('cancel_synthesis', { id }),

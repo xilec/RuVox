@@ -168,7 +168,7 @@ The system SHALL provide a modal Settings dialog (`src/dialogs/Settings.tsx`) bu
 
 The form SHALL expose: TTS engine (Piper / Silero / «Silero (нативный)» / «TeraTTSv2», with unavailable engines disabled and an alert when the saved engine was coerced to Piper), Piper voice or Silero speaker depending on the engine, the TeraTTS voice when that engine is selected (every id returned by `commands.getTerattsVoices()`, with `ru_m5` as the default), sample rate, `notify_on_ready`, `notify_on_error`, `preview_dialog_enabled`, `hide_to_tray_on_close` (the «Сворачивать в трей при закрытии окна» switch, off by default), `max_cache_size_mb` (minimum 100 MB), theme (Светлая/Тёмная/Авто), a language selector (Русский / English) bound to `UIConfig.language`, a code block narration selector («Кратко» / «Читать полностью») bound to `UIConfig.code_block_mode` (`"brief"` / `"read"`), and an English text selector («Английский текст»: «Авто» / «Нативно» / «По-русски») bound to `UIConfig.english_reading` (`"auto"` / `"native"` / `"narrated"`), initialized from the loaded config and included in the submitted `UIConfigPatch` when changed. Applying a new theme SHALL push it into Mantine's color-scheme manager immediately. Choosing a language SHALL update the localization store immediately (the whole UI re-labels without reload) and include `language` in the submitted `UIConfigPatch`.
 
-The form SHALL also expose a «Чтение» section: a `Узко | Широко` `SegmentedControl` bound to `UIConfig.reading_width` (`"narrow"` / `"wide"`) and a `[ − ] N% [ + ]` stepper bound to `UIConfig.reading_scale` with the same 80/100/125/150/175/200 ladder and reset action as the viewer toolbar, initialized from the loaded config and included in the submitted `UIConfigPatch`.
+The form SHALL also expose a «Чтение» section: a `Узко | Широко` `SegmentedControl` bound to `UIConfig.reading_width` (`"narrow"` / `"wide"`) and a `[ − ] N% [ + ]` stepper bound to `UIConfig.reading_scale` with the same ladder and reset action as the viewer header's reading controls, initialized from the loaded config and included in the submitted `UIConfigPatch`.
 
 The English text selector SHALL read the active engine's capability from `commands.getAvailableEngines()` (`reads_latin_natively`), never from a hardcoded engine name. All three choices SHALL stay selectable on every engine — the preference is engine-independent — and when the selected engine cannot read Latin natively while the choice is «Нативно», the dialog SHALL show a hint stating that the engine will read English in Russian while the stored choice stays «Нативно».
 
@@ -413,7 +413,10 @@ call time.
 
 All user-visible strings of the shell, queue, player, viewer, dialogs, and
 notification helpers SHALL come from the catalogs; no hardcoded UI prose in
-components. Backend error codes (`CommandError.code`) SHALL have catalog
+components. The viewer header (#353) SHALL localize its edit affordances,
+keyboard hints, the empty-note state and the «не озвучено» placeholder, and the
+queue card's title tooltip and search over title/note SHALL work in both
+languages. Backend error codes (`CommandError.code`) SHALL have catalog
 entries under an `errors.` prefix; unknown codes fall back to `message`, then
 to a generic per-`type` string (see the ipc-commands spec).
 
@@ -454,13 +457,13 @@ generation timestamp, and the generation number (`generation_count`). The item
 SHALL be disabled for entries that have neither a snapshot nor a generation
 timestamp (never synthesized).
 
-Values absent from the snapshot SHALL render as a placeholder dash rather than guessed values. For entries with audio but no snapshot (synthesized by older builds), the dialog SHALL show an explanatory line that parameters were not recorded. Engine and Piper voice names SHALL be shown with their localized display names; the dialog and menu item SHALL be localized in Russian and English.
+Values absent from the snapshot SHALL render as a placeholder dash rather than guessed values. For entries with audio but no snapshot (synthesized by older builds), the dialog SHALL show an explanatory line that parameters were not recorded. Engine and voice names SHALL be shown with their localized or engine-specific display names: Piper voices by their localized names, Silero speakers by their speaker name, TeraTTS voices by their stored id, and an id the catalogue does not know by the stored id. The viewer header SHALL use the same shared display helpers, so the two surfaces never disagree. The dialog and menu item SHALL be localized in Russian and English.
 
 #### Scenario: Dialog shows the snapshot
 
 - GIVEN a ready entry whose snapshot records engine `silero_native`, speaker `xenia`, and an Ogg Opus file
 - WHEN the user opens "Параметры записи…" for the entry
-- THEN the dialog shows the ingestion source first, then the localized engine name, the voice, the sample rate, the audio codec and size, and the generation number
+- THEN the dialog shows the ingestion source first, then the localized engine name, the Silero speaker name (`Xenia`), the sample rate, the audio codec and size, and the generation number
 
 #### Scenario: Absent values render as a dash
 
@@ -693,8 +696,9 @@ including the persisted failure note and retry action from #351.
 
 ### Requirement: Text viewer reading controls
 
-The text viewer SHALL show reading-typography controls in a toolbar above the
-content, to the right of the display-mode switch, in every display mode —
+The text viewer SHALL show reading-typography controls in the viewer header's
+metadata row (the entry header added by #353), in the same right-end group,
+after the display-mode switch when one is rendered, in every display mode —
 including a plain source, which has no display-mode switch:
 
 - a `Узко | Широко` `SegmentedControl` bound to `UIConfig.reading_width`
@@ -731,7 +735,7 @@ changes, and the wide layout still fills the pane.
 - **GIVEN** an entry is selected, with any source format and display mode
 - **WHEN** the viewer renders
 - **THEN** the reading-width segments and the reading-scale stepper are in the
-  toolbar, and either control changes the content immediately
+  header metadata row, and either control changes the content immediately
 
 #### Scenario: Scale ladder and bounds
 

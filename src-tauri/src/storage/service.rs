@@ -14,6 +14,7 @@ use crate::storage::schema::{
     EntryId, EntrySource, EntryStatus, HistoryFile, TextEntry, TextFormat, Timestamps, UIConfig,
     WordTimestamp,
 };
+use crate::storage::title::derive_title;
 
 const HISTORY_VERSION: u32 = 1;
 
@@ -245,6 +246,7 @@ impl StorageService {
             .strip_prefix('\u{feff}')
             .unwrap_or(&original_text)
             .to_string();
+        let title = derive_title(&clean_text);
 
         let entry = TextEntry {
             id: Uuid::new_v4(),
@@ -255,6 +257,8 @@ impl StorageService {
             display_mode: None,
             html_source,
             source,
+            title,
+            note: None,
             created_at: Utc::now().naive_utc(),
             audio_path: None,
             timestamps_path: None,
@@ -689,6 +693,39 @@ mod tests {
         let text_with_bom = "\u{feff}hello".to_string();
         let entry = svc.add_entry(text_with_bom).unwrap();
         assert_eq!(entry.original_text, "hello");
+    }
+
+    #[test]
+    fn add_entry_seeds_title_from_the_first_usable_line() {
+        let (svc, _dir) = make_service();
+        let cases = [
+            ("## Установка\n\nТекст", Some("Установка")),
+            ("- Первый пункт\n- Второй", Some("Первый пункт")),
+            ("1. Первый шаг", Some("Первый шаг")),
+            ("обычный текст", Some("обычный текст")),
+            ("   \n\t\n", None),
+            ("#\n- ", None),
+        ];
+        for (text, expected) in cases {
+            let entry = svc.add_entry(text.to_string()).unwrap();
+            assert_eq!(
+                entry.title.as_deref(),
+                expected,
+                "seeded title for {text:?}"
+            );
+            assert_eq!(entry.note, None);
+        }
+    }
+
+    #[test]
+    fn seeded_title_survives_reload() {
+        let (svc, dir) = make_service();
+        let entry = svc.add_entry("## Заголовок\nТекст".to_string()).unwrap();
+        assert_eq!(entry.title.as_deref(), Some("Заголовок"));
+
+        let svc2 = StorageService::with_cache_dir(dir.path().to_path_buf()).unwrap();
+        let loaded = svc2.get_entry(&entry.id).unwrap();
+        assert_eq!(loaded.title.as_deref(), Some("Заголовок"));
     }
 
     #[test]

@@ -70,6 +70,8 @@ function makeEntry(
     display_mode: null,
     html_source: null,
     source: null,
+    title: null,
+    note: null,
     created_at: '2026-07-27T00:00:00Z',
     audio_generated_at: null,
     audio_path: null,

@@ -116,9 +116,12 @@ status (see the Synthesis Cancellation Command requirement in
 ### Requirement: Queue list rendering
 
 The system SHALL display all entries in the left navbar, sorted by
-`created_at` descending (newest first). For each entry the list SHALL show:
-a preview of the first 60 characters of `original_text` (with an ellipsis
-when truncated), a color-coded status badge with a Russian label
+`created_at` descending (newest first). For each entry the list SHALL show the
+entry title — the stored `title`, or the title derived from `original_text`
+when the stored value is `null` — as a single line with an ellipsis when it
+does not fit, and the full title in the native tooltip; the 60-character
+preview of `original_text` SHALL NOT be used as the card identity anymore. The
+card SHALL also show a color-coded status badge with a Russian label
 (`Ожидание` / `Обработка` / `Готово` / `Играет` / `Ошибка` / `Отменено`),
 and the duration formatted as `M:SS` once `duration_sec` is available. The
 `processing` badge SHALL include a spinner. The list SHALL update live from
@@ -140,6 +143,20 @@ restart.
 - GIVEN entries with different `created_at` timestamps
 - WHEN the queue is rendered
 - THEN entries appear sorted by `created_at` descending
+
+#### Scenario: Card shows the title, not the text slice
+
+- GIVEN an entry with `original_text` longer than 60 characters and a stored `title`
+- WHEN its card is rendered
+- THEN the card shows the title on one line with an ellipsis when truncated,
+  the full title is exposed as the tooltip, and the 60-character preview of
+  `original_text` is not shown
+
+#### Scenario: Legacy card shows the derived title
+
+- GIVEN an entry with `title: null` whose first line is `## Установка`
+- WHEN its card is rendered
+- THEN the card shows `Установка`
 
 #### Scenario: Live status update
 
@@ -177,7 +194,9 @@ restart.
 ### Requirement: Queue search
 
 The system SHALL provide a search field above the queue that filters entries
-by case-insensitive substring match on `original_text`. The `Ctrl+F` / `Cmd+F`
+by a case-insensitive substring match on any of the entry's `title`, `note` or
+`original_text`. A match in any of the three fields SHALL keep the entry
+visible; an entry that matches none SHALL be hidden. The `Ctrl+F` / `Cmd+F`
 hotkey SHALL focus the search field, and `Escape` in the field SHALL clear the
 query. When no entry matches, the system SHALL show "Ничего не найдено".
 
@@ -185,8 +204,26 @@ query. When no entry matches, the system SHALL show "Ничего не найд�
 
 - GIVEN a non-empty queue and a search query
 - WHEN the user types into the search field
-- THEN only entries whose `original_text` contains the query
-  (case-insensitive) are shown
+- THEN entries matching any of `title`, `note` or `original_text` are shown;
+  entries matching none are hidden
+
+#### Scenario: Filtering entries by title
+
+- GIVEN an entry whose title is `Введение в Rust` and whose `original_text` does not contain the query
+- WHEN the user types `rust`
+- THEN the entry is shown
+
+#### Scenario: Filtering entries by note
+
+- GIVEN an entry whose note is `про бенчмарки Wasm` and whose text does not contain the query
+- WHEN the user types `бенчмарки`
+- THEN the entry is shown
+
+#### Scenario: Case-insensitive match across fields
+
+- GIVEN entries whose title or note differs from the query only in letter case
+- WHEN the user types the lower-case query
+- THEN those entries are shown
 
 ### Requirement: Per-entry actions
 

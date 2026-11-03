@@ -1,6 +1,5 @@
 import {
   Box,
-  Group,
   Modal,
   ScrollArea,
   SegmentedControl,
@@ -44,6 +43,7 @@ import {
   viewerModesFor,
 } from '../lib/viewerDisplay';
 import { ReadingScaleControl, ReadingWidthControl } from './ReadingControls';
+import { EntryHeader } from './EntryHeader';
 import { ViewerContextMenu } from './ViewerContextMenu';
 import classes from './TextViewer.module.css';
 
@@ -517,40 +517,47 @@ export function TextViewer({
   }
 
   return (
-    <Stack gap="sm" style={{ height: '100%', minHeight: 0 }}>
-      <Group justify="space-between" align="center" wrap="nowrap" gap="sm">
-        <Box>
-          {viewerModesFor(sourceFormat).includes('rendered') && (
-            <SegmentedControl
-              name="viewer_display_mode"
-              value={displayMode}
-              onChange={handleDisplayModeChange}
-              size="xs"
-              data={[
-                {
-                  label:
-                    sourceFormat === 'html'
-                      ? tt('viewer.display_mode.html')
-                      : tt('viewer.display_mode.markdown'),
-                  value: 'rendered',
-                },
-                { label: tt('viewer.display_mode.plain'), value: 'plain' },
-              ]}
+    <Stack gap={0} style={{ height: '100%', minHeight: 0 }}>
+      {/* Entry identity and metadata above the scroll area (#353), so the
+          title, note and status stay visible while reading. The format
+          switch moved here from the old toolbar; the reading controls
+          (#354/#357) stay next to it, in the same meta row, and remain
+          available in every display mode. */}
+      <EntryHeader
+        key={entry.id}
+        entry={entry}
+        controls={
+          <>
+            {viewerModesFor(sourceFormat).includes('rendered') && (
+              <SegmentedControl
+                name="viewer_display_mode"
+                value={displayMode}
+                onChange={handleDisplayModeChange}
+                size="xs"
+                data={[
+                  {
+                    label:
+                      sourceFormat === 'html'
+                        ? tt('viewer.display_mode.html')
+                        : tt('viewer.display_mode.markdown'),
+                    value: 'rendered',
+                  },
+                  { label: tt('viewer.display_mode.plain'), value: 'plain' },
+                ]}
+              />
+            )}
+            <ReadingWidthControl
+              name="viewer_reading_width"
+              value={readingWidth}
+              onChange={handleReadingWidthChange}
             />
-          )}
-        </Box>
-        <Group gap="sm" wrap="nowrap" ml="auto">
-          <ReadingWidthControl
-            name="viewer_reading_width"
-            value={readingWidth}
-            onChange={handleReadingWidthChange}
-          />
-          <ReadingScaleControl
-            value={readingScale}
-            onChange={handleReadingScaleChange}
-          />
-        </Group>
-      </Group>
+            <ReadingScaleControl
+              value={readingScale}
+              onChange={handleReadingScaleChange}
+            />
+          </>
+        }
+      />
 
       <ScrollArea style={{ flex: 1 }}>
         <Box

@@ -1,0 +1,140 @@
+/* Viewer header above the reading area (issue #353). It sits outside the
+   scroll container, so the entry's identity and metadata stay visible while
+   the text scrolls. */
+
+.header {
+  flex-shrink: 0;
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-md);
+  border-bottom: 1px solid var(--mantine-color-default-border);
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  min-width: 0;
+}
+
+/* Click-to-edit title: a real button for keyboard access, styled as a heading
+   (not an <h1>/<h2> — the viewer's rendered document owns the heading
+   hierarchy, and tests/markdown anchors must keep seeing the document's own
+   headings first). */
+.titleButton {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-family: inherit;
+  font-size: var(--mantine-font-size-lg);
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: text;
+  border-radius: var(--mantine-radius-xs);
+}
+
+.titleButton:hover {
+  text-decoration: underline;
+}
+
+.titleButton:focus-visible {
+  outline: 2px solid var(--mantine-color-blue-5);
+  outline-offset: 2px;
+}
+
+.titleInput {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The pencil appears on hover/focus and stays hidden otherwise, matching the
+   mockup's hover affordance while keeping the row quiet. */
+.pencil {
+  opacity: 0;
+  transition: opacity 80ms ease-out;
+  flex-shrink: 0;
+}
+
+.titleRow:hover .pencil,
+.titleRow:focus-within .pencil,
+.noteRow:hover .pencil,
+.noteRow:focus-within .pencil {
+  opacity: 1;
+}
+
+.editHint {
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
+.noteRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--mantine-spacing-xs);
+  min-width: 0;
+}
+
+/* Two-line clamp until expanded; `pre-wrap` keeps the user's newlines. */
+.note {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.noteExpanded {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.noteToggle {
+  flex-shrink: 0;
+}
+
+.noteEdit {
+  width: 100%;
+}
+
+.noteHint {
+  margin-right: auto;
+}
+
+.addNote {
+  align-self: flex-start;
+  padding-inline: 0;
+  color: var(--mantine-color-dimmed);
+  font-weight: 400;
+}
+
+.metaRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--mantine-spacing-xs);
+  min-width: 0;
+}
+
+.meta {
+  min-width: 0;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-sm);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-left: auto;
+}

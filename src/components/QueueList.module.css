@@ -23,7 +23,7 @@
   background-color: var(--mantine-color-teal-light-hover);
 }
 
-.preview {
+.title {
   font-size: var(--mantine-font-size-sm);
   line-height: var(--mantine-line-height-sm);
   white-space: nowrap;
