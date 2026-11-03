@@ -334,7 +334,7 @@ A "Очистить кэш…" button SHALL open a nested `CleanupCacheModal` wi
 #### Scenario: Reset restores factory defaults
 - **GIVEN** the user changed the theme in the dialog
 - **WHEN** the user clicks «Сброс»
-- **THEN** the form values return to the factory defaults, the dirty markers reflect the difference from the loaded config, and field errors are cleared
+- **THEN** the form values return to the factory defaults, including the engine reset to the storage default `"teratts"` through the same availability coercion as the initial load (the form falls back to Piper when the TeraTTSv2 bundle is missing), the dirty markers reflect the difference from the loaded config, and field errors are cleared
 
 #### Scenario: Footer stays visible
 - **GIVEN** the content pane is scrolled to the bottom of a long section

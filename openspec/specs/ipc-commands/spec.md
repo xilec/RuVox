@@ -92,7 +92,7 @@ interface UIConfig {
   window_geometry: [number, number, number, number] | null;
   preview_dialog_enabled: boolean;
   hide_to_tray_on_close: boolean;  // default false: closing the window quits
-  engine: string;                  // "piper" | "silero" | "silero_native" (default) | "teratts"
+  engine: string;                  // "piper" | "silero" | "silero_native" | "teratts" (default)
   piper_voice: string;             // default "ruslan"
   teratts_voice: string;           // default "ru_m5"
 }
@@ -106,7 +106,7 @@ interface UIConfig {
 #### Scenario: UIConfig defaults include engine fields
 - GIVEN a fresh installation with no `config.json`
 - WHEN the frontend calls `invoke("get_config")`
-- THEN the response contains `engine: "silero_native"`, `piper_voice: "ruslan"` and `teratts_voice: "ru_m5"` alongside the legacy fields
+- THEN the response contains `engine: "teratts"`, `piper_voice: "ruslan"` and `teratts_voice: "ru_m5"` alongside the legacy fields
 
 #### Scenario: UIConfig defaults use brief code block mode
 - GIVEN a fresh installation with no `config.json`
