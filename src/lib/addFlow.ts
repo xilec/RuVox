@@ -1,4 +1,5 @@
 import type { EntryFormat } from './tauri';
+import { detectFormat } from './detectFormat';
 
 /**
  * Outcome of the Add-button flow decision (preview-dialog spec,
@@ -7,8 +8,9 @@ import type { EntryFormat } from './tauri';
  *
  * `direct-plain.format` is set only by the import flow (importFlow.ts),
  * where the entry format comes from the source's extension rather than the
- * clipboard defaults; the clipboard paths leave it undefined so the entry
- * keeps its historical unset-format behavior. The same split applies to
+ * clipboard defaults; the clipboard paths leave it undefined and the ingest
+ * seam detects the source format, so the entry records what it was ingested
+ * as instead of staying unclassified. The same split applies to
  * `preview.format`: imports preselect their routed format in the dialog
  * (text-import spec, "Import format routing"), while clipboard previews
  * omit it and the dialog opens in the auto-detect mode (preview-dialog
@@ -58,4 +60,23 @@ export function resolveAddAction(input: {
   if (html !== null) return { kind: 'direct-html', html, plainFallback: plain };
   if (plain !== null) return { kind: 'direct-plain', text: plain };
   return { kind: 'empty' };
+}
+
+/**
+ * Source format recorded on a new entry (preview-dialog spec, "Add flow
+ * gating"). An explicit format wins: the preview dialog's effective format,
+ * the import route and the HTML path already know what they ingested. A
+ * sanitized `html_source` without an explicit format still identifies an
+ * HTML source. Otherwise the dialog-less Add paths classify the text with
+ * the shared detector, so the entry records what it was ingested as instead
+ * of staying unclassified.
+ */
+export function sourceFormatFor(
+  text: string,
+  format?: EntryFormat,
+  htmlSource?: string,
+): EntryFormat {
+  if (format !== undefined) return format;
+  if (htmlSource) return 'html';
+  return detectFormat(text);
 }

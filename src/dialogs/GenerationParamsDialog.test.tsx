@@ -27,6 +27,7 @@ function makeEntry(overrides: Partial<TextEntry> = {}): TextEntry {
     normalized_text: null,
     status: 'ready',
     format: null,
+    display_mode: null,
     html_source: null,
     source: null,
     created_at: '2026-08-01T10:00:00',

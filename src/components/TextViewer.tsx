@@ -16,7 +16,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from 'react';
 import { notifications } from '@mantine/notifications';
-import type { EntryFormat, TextEntry, WordTimestamp } from '../lib/tauri';
+import type { DisplayMode, TextEntry, WordTimestamp } from '../lib/tauri';
 import { commands, events } from '../lib/tauri';
 import { formatError } from '../lib/errors';
 import { useT } from '../lib/i18n';
@@ -32,11 +32,13 @@ import {
 import { plainToWordHtml } from '../lib/plainTextHtml';
 import { makeInert } from '../lib/inertContent';
 import { copyLinkAddress } from '../lib/viewerCopy';
+import {
+  deriveSourceFormat,
+  resolveDisplayMode,
+  viewerModesFor,
+} from '../lib/viewerDisplay';
 import { ViewerContextMenu } from './ViewerContextMenu';
 import classes from './TextViewer.module.css';
-
-// Entries without a persisted format render in the viewer default mode.
-const DEFAULT_FORMAT: EntryFormat = "markdown";
 
 // Keep links inside the mermaid zoom modal inert, mirroring the delegated
 // handler that covers the viewer container. auxclick is included because
@@ -54,17 +56,31 @@ interface Props {
 
 export function TextViewer({ entry }: Props) {
   const tt = useT();
-  const [format, setFormat] = useState<EntryFormat>(DEFAULT_FORMAT);
+  // Seed from the entry so the first paint already shows the persisted
+  // choice: a post-paint effect would render the default view once and could
+  // flash the wrong format (e.g. markdown/mermaid before «Исходный»).
+  const [displayMode, setDisplayMode] = useState<DisplayMode>(() =>
+    entry ? resolveDisplayMode(entry, deriveSourceFormat(entry)) : 'rendered',
+  );
   const [zoomedSvg, setZoomedSvg] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const colorScheme = useComputedColorScheme("light");
 
-  // Restore the persisted display mode when another entry is selected or
-  // the entry's saved format changes (e.g. after set_entry_format lands).
-  useEffect(() => {
-    setFormat(entry?.format ?? DEFAULT_FORMAT);
-  }, [entry?.id, entry?.format]);
+  // The source format is immutable; the viewer derives the allowed views
+  // from it and restores the persisted display choice when another entry is
+  // selected or the saved mode changes (e.g. after set_entry_display_mode
+  // lands). A plain source always resolves to the verbatim view.
+  const sourceFormat = useMemo(
+    () => (entry ? deriveSourceFormat(entry) : 'markdown'),
+    [entry],
+  );
 
+  useEffect(() => {
+    setDisplayMode(entry ? resolveDisplayMode(entry, sourceFormat) : 'rendered');
+  // Only the derived fields matter; re-running on every entry_updated event
+  // would reset an in-flight optimistic switch.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entry?.id, entry?.format, entry?.html_source, entry?.original_text, entry?.display_mode, sourceFormat]);
   // Timestamps for the currently playing entry, cached to avoid re-fetching on
   // every playback_position event.
   const timestampsRef = useRef<WordTimestamp[]>([]);
@@ -78,21 +94,19 @@ export function TextViewer({ entry }: Props) {
 
   const content = useMemo(() => {
     if (!entry) return null;
-    switch (format) {
-      case "plain":
-        // Wrap each word in a span with data-orig-* so word-highlighting
-        // works in plain mode (same approach as markdown).
-        return { __html: plainToWordHtml(displayText) };
-      case "html":
-        // HTML-ingested entries render their sanitized source; entries that
-        // only have plain text (e.g. toggled to HTML manually) fall back to
-        // the original text.
-        return { __html: renderHtml(entry.html_source ?? displayText) };
-      case "markdown":
-      default:
-        return { __html: renderMarkdown(displayText) };
+    if (sourceFormat === 'plain' || displayMode === 'plain') {
+      // Verbatim view: markup stays visible. Every word is wrapped in a span
+      // with data-orig-* so word highlighting works (same as markdown).
+      return { __html: plainToWordHtml(displayText) };
     }
-  }, [entry, displayText, format]);
+    if (sourceFormat === 'html') {
+      // HTML-ingested entries render their sanitized source. A legacy entry
+      // whose source was inferred from content has no stored markup and
+      // falls back to its original text.
+      return { __html: renderHtml(entry.html_source ?? displayText) };
+    }
+    return { __html: renderMarkdown(displayText) };
+  }, [entry, displayText, displayMode, sourceFormat]);
 
   // Read-only viewer (text-display spec): neutralize interactive elements
   // after every content render. Runs post-commit over the mounted DOM, in
@@ -103,14 +117,14 @@ export function TextViewer({ entry }: Props) {
     }
   }, [content]);
 
-  // Clear highlight state whenever the displayed entry or format changes so
+  // Clear highlight state whenever the displayed entry or view changes so
   // stale highlights do not bleed across navigation.
   useEffect(() => {
     activeIdxRef.current = -1;
     if (containerRef.current) {
       clearHighlight(containerRef.current);
     }
-  }, [entry?.id, format]);
+  }, [entry?.id, displayMode, sourceFormat]);
 
   // Prefetch timestamps as soon as the entry has them on disk. Otherwise
   // the highlight pipeline depends on `playback_started` arriving after
@@ -145,12 +159,18 @@ export function TextViewer({ entry }: Props) {
   }, [entry?.id, entry?.timestamps_path]);
 
   useEffect(() => {
-    if (format !== "markdown" || !containerRef.current) return;
+    if (
+      sourceFormat !== "markdown" ||
+      displayMode !== "rendered" ||
+      !containerRef.current
+    ) {
+      return;
+    }
     renderMermaidIn(containerRef.current, colorScheme).catch((e) => {
       // Bad mermaid syntax -- keep the raw <div class="mermaid"> as-is
       console.error("mermaid render error:", e);
     });
-  }, [content, format, colorScheme]);
+  }, [content, sourceFormat, displayMode, colorScheme]);
 
   // Ctrl/Cmd+A while focus/selection is inside the viewer should select
   // only the rendered text, not the whole window. Skip when the user is
@@ -294,12 +314,18 @@ export function TextViewer({ entry }: Props) {
         const timestamps = timestampsRef.current;
         if (timestamps.length === 0) return;
 
-        // All three display modes emit data-orig-* word spans (HTML mode
-        // gets them from annotateHtmlWords over the sanitized source).
-        // Exception: a plain-text entry manually toggled to HTML renders a
-        // whitespace-collapsed fallback, whose span offsets do not match
-        // WordTimestamp.original_pos — highlighting would be misleading.
-        if (format === 'html' && !entry.html_source) return;
+        // Every rendered mode emits data-orig-* word spans (HTML mode gets
+        // them from annotateHtmlWords over the sanitized source).
+        // Exception: an entry whose html source was inferred from content has
+        // no stored markup, so its whitespace-collapsed fallback spans do not
+        // match WordTimestamp.original_pos — highlighting would be misleading.
+        if (
+          displayMode === 'rendered' &&
+          sourceFormat === 'html' &&
+          !entry.html_source
+        ) {
+          return;
+        }
 
         const newIdx = findActiveTimestamp(timestamps, position_sec);
         const prevIdx = activeIdxRef.current;
@@ -340,19 +366,20 @@ export function TextViewer({ entry }: Props) {
       unlistenFinished?.();
       unlistenPaused?.();
     };
-  // entry.id and format are intentionally included so we re-subscribe when
-  // the viewer switches entry/format.
+  // entry.id and the view are intentionally included so we re-subscribe when
+  // the viewer switches entry or renders the source differently.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entry?.id, format]);
+  }, [entry?.id, displayMode, sourceFormat]);
 
   // Optimistic local switch; persist on the entry and revert on failure.
-  function handleFormatChange(v: string) {
+  function handleDisplayModeChange(v: string) {
     if (!entry) return;
-    const next = v as EntryFormat;
-    const prev = format;
-    setFormat(next);
-    commands.setEntryFormat(entry.id, next).catch((err) => {
-      setFormat(prev);
+    const next = v as DisplayMode;
+    if (next === displayMode) return;
+    const prev = displayMode;
+    setDisplayMode(next);
+    commands.setEntryDisplayMode(entry.id, next).catch((err) => {
+      setDisplayMode(prev);
       notifications.show({ title: tt('errors.title'), message: formatError(err), color: 'red' });
     });
   }
@@ -367,18 +394,25 @@ export function TextViewer({ entry }: Props) {
 
   return (
     <Stack gap="sm" style={{ height: '100%', minHeight: 0 }}>
-      <Group justify="space-between" wrap="nowrap">
-        <SegmentedControl
-          value={format}
-          onChange={handleFormatChange}
-          size="xs"
-          data={[
-            { label: "Plain", value: "plain" },
-            { label: "Markdown", value: "markdown" },
-            { label: "HTML", value: "html" },
-          ]}
-        />
-      </Group>
+      {viewerModesFor(sourceFormat).includes('rendered') && (
+        <Group justify="space-between" wrap="nowrap">
+          <SegmentedControl
+            value={displayMode}
+            onChange={handleDisplayModeChange}
+            size="xs"
+            data={[
+              {
+                label:
+                  sourceFormat === 'html'
+                    ? tt('viewer.display_mode.html')
+                    : tt('viewer.display_mode.markdown'),
+                value: 'rendered',
+              },
+              { label: tt('viewer.display_mode.plain'), value: 'plain' },
+            ]}
+          />
+        </Group>
+      )}
 
       <ScrollArea style={{ flex: 1 }}>
         <Box

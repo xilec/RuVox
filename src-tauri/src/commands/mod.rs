@@ -22,8 +22,8 @@ use crate::pipeline::tracked_text::CharMapping;
 use crate::pipeline::{Span, TTSPipeline};
 use crate::state::AppState;
 use crate::storage::schema::{
-    EntryId, EntrySource, EntryStatus, GenerationParams, ModelParams, TextEntry, TextFormat,
-    UIConfig, UIConfigPatch, WordTimestamp,
+    DisplayMode, EntryId, EntrySource, EntryStatus, GenerationParams, ModelParams, TextEntry,
+    TextFormat, UIConfig, UIConfigPatch, WordTimestamp,
 };
 use crate::storage::service::{StorageError, StorageService};
 use crate::tts::engine::EngineKind;
@@ -441,25 +441,35 @@ pub async fn delete_audio<R: Runtime>(
     Ok(())
 }
 
-/// Persist the display format of an entry and notify the UI.
+/// Persist the viewer display mode of an entry and notify the UI.
 ///
-/// Display-only: `normalized_text`, audio, and timestamps are untouched, so
-/// no `Processing` guard is needed — the change cannot race the synthesis
-/// pipeline.
+/// Display-only: the immutable source `format`, `normalized_text`, audio, and
+/// timestamps are untouched, so no `Processing` guard is needed. The write is
+/// applied in place under the storage lock instead of persisting a
+/// read-decide-write clone of the whole entry: a synthesis completion that
+/// lands between a stale read and the write would otherwise be rolled back
+/// (status, audio path, timestamps).
 #[tauri::command]
-pub async fn set_entry_format<R: Runtime>(
+pub async fn set_entry_display_mode<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
     id: String,
-    format: TextFormat,
+    display_mode: DisplayMode,
 ) -> CmdResult<()> {
-    let mut entry = require_entry(&state.storage, &id)?;
-    entry.format = Some(format);
-    state
-        .storage
-        .update_entry(entry.clone())
-        .map_err(CommandError::from)?;
-    emit_entry_updated(&app, &entry);
+    let uuid = parse_entry_id(&id)?;
+    let applied =
+        state
+            .storage
+            .update_entry_if(&uuid, |_| true, |e| e.display_mode = Some(display_mode));
+    if !applied {
+        return Err(CommandError::not_found(
+            "entry.not_found",
+            vec![id.to_string()],
+        ));
+    }
+    if let Some(entry) = state.storage.get_entry(&uuid) {
+        emit_entry_updated(&app, &entry);
+    }
     Ok(())
 }
 

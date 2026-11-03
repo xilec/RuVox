@@ -49,12 +49,15 @@ type EntryStatus =
 
 type TextFormat = "plain" | "markdown" | "html"; // lowercase
 
+type DisplayMode = "rendered" | "plain"; // lowercase
+
 interface TextEntry {
   id: EntryId;
   original_text: string;
   normalized_text: string | null;
   status: EntryStatus;
-  format: TextFormat | null;         // null = never chosen; viewer uses the config default
+  format: TextFormat | null;         // immutable source format; null = not recorded (derived at render)
+  display_mode: DisplayMode | null;  // viewer display choice; null = default view of the source format (verbatim for a plain source)
   html_source: string | null;        // sanitized HTML for rendering; HTML-ingested entries only
   created_at: string;              // naive datetime, e.g. "2026-02-15T11:46:51.504055"
   audio_path: string | null;       // filename relative to the cache audio dir
@@ -94,9 +97,9 @@ interface UIConfig {
 ```
 
 #### Scenario: TextEntry round-trips through get_entries
-- GIVEN an entry persisted in storage with `format` and `html_source` set
+- GIVEN an entry persisted in storage with `format`, `display_mode` and `html_source` set
 - WHEN the frontend calls `invoke("get_entries")`
-- THEN each entry serializes with the field names above, `status` and `format` as lowercase strings or null, and `html_source` as a string or null
+- THEN each entry serializes with the field names above, `status`, `format` and `display_mode` as lowercase strings or null, and `html_source` as a string or null
 
 #### Scenario: UIConfig defaults include engine fields
 - GIVEN a fresh installation with no `config.json`
@@ -141,13 +144,20 @@ queue entry and start background synthesis immediately.
 
 `add_text_entry(text, play_when_ready)` is the preferred frontend path (the
 frontend reads the clipboard itself via `tauri-plugin-clipboard-manager`).
-It SHALL additionally accept optional `format` and `html_source` parameters;
-when `format` is `"html"`, `text` is the extracted plain text and
-`html_source` carries the sanitized markup for rendering. When omitted, the
-entry behaves exactly as a plain entry (`format: null`, `html_source: null`).
+It SHALL additionally accept optional `format` and `html_source` parameters.
+`format` is the immutable source format recorded at ingestion: callers that
+already know it — the preview dialog's effective format, the import route,
+and the content detection on the dialog-less Add paths — SHALL pass it. When
+`html_source` is present, `format` SHALL be `"html"`, `text` is the extracted
+plain text and `html_source` carries the sanitized markup for rendering.
+When omitted, the entry is persisted with `format: null` and the viewer
+derives the source from the content at render time; this is the shape of the
+tray path and of entries created by older builds.
 `add_clipboard_entry(play_when_ready)` reads the system clipboard in Rust via
 `arboard` on a blocking thread and exists for the system tray menu, where no
-webview clipboard API is available. Both share one implementation (`ingest_text`):
+webview clipboard API is available; it SHALL NOT set `format` and SHALL leave
+the entry unclassified (`format: null`). Both share one implementation
+(`ingest_text`):
 blank/whitespace-only text is rejected with `internal`; no length-based
 rejection applies — input of any length is accepted regardless of the active
 TTS engine (each engine bounds its own inference by chunking); the entry is
@@ -164,6 +174,16 @@ synthesis.
 - GIVEN the model is loaded
 - WHEN the frontend invokes `add_text_entry` with extracted text, `format: "html"`, and a sanitized `html_source`
 - THEN the entry is persisted with `format: "html"` and the given `html_source`, and synthesis normalizes the extracted text
+
+#### Scenario: add_text_entry with a detected source format
+- GIVEN the preview dialog is disabled and the frontend classified the clipboard text as `markdown`
+- WHEN the frontend invokes `add_text_entry` with that text and `format: "markdown"`
+- THEN the entry is persisted with `format: "markdown"` and a null `html_source`, and the viewer derives its views from that source format
+
+#### Scenario: Format omitted stays unclassified
+- GIVEN the system tray triggered `add_clipboard_entry`
+- WHEN the entry is persisted
+- THEN it carries `format: null`, `html_source: null`, and `display_mode: null`, and the viewer derives the source from the text at render time
 
 #### Scenario: blank text is rejected
 - GIVEN any engine state
@@ -183,7 +203,7 @@ synthesis.
 #### Scenario: add_clipboard_entry reads the system clipboard
 - GIVEN the tray menu triggered a read-now action
 - WHEN `add_clipboard_entry` is invoked and the clipboard contains text
-- THEN the entry is created from that text exactly as with `add_text_entry`; if the clipboard is empty or unavailable the command fails with `type: "internal"`
+- THEN the entry is created from that text exactly as with `add_text_entry`, with `format: null`; if the clipboard is empty or unavailable the command fails with `type: "internal"`
 
 #### Scenario: auto-play after synthesis
 - GIVEN `add_text_entry` was invoked with `play_when_ready: true`
@@ -375,30 +395,6 @@ racing the in-flight task.
 - WHEN `regenerate_entry` is invoked
 - THEN synthesis restarts from `pending` and the entry reaches `ready` with
   fresh audio
-
-### Requirement: Entry Format Command
-
-`set_entry_format(id, format)` SHALL persist the display format of an entry
-and notify the UI. The command SHALL accept any `TextFormat` value, store it
-on the entry, and emit `entry_updated` with the updated entry. The command
-SHALL NOT touch `normalized_text`, audio, or timestamps — switching the
-format is display-only and never triggers re-synthesis. An unknown entry id
-SHALL be rejected with a typed `not_found`-style `CommandError`.
-
-#### Scenario: format is persisted and broadcast
-- GIVEN a stored entry with `format: null`
-- WHEN the frontend calls `invoke("set_entry_format", { id, format: "html" })`
-- THEN the entry in storage has `format: "html"` and an `entry_updated` event with the updated entry is emitted
-
-#### Scenario: switch preserves audio artifacts
-- GIVEN a ready entry with synthesized audio and timestamps
-- WHEN `set_entry_format` changes its format
-- THEN `normalized_text`, `audio_path`, and `timestamps_path` are unchanged and no synthesis is started
-
-#### Scenario: unknown entry is rejected
-- GIVEN no entry with the given id
-- WHEN `set_entry_format` is called
-- THEN the command rejects with a typed error and emits no event
 
 ### Requirement: Synthesis Cancellation Command
 
@@ -1299,4 +1295,30 @@ The system SHALL provide `get_teratts_voices()` returning the voice ids from the
 - **GIVEN** a TeraTTS bundle whose manifest declares an unsupported `format_version`
 - **WHEN** `get_teratts_voices` is invoked
 - **THEN** the command succeeds with an empty list
+
+### Requirement: Entry Display Mode Command
+
+`set_entry_display_mode(id, display_mode)` SHALL persist the viewer display
+choice of an entry and notify the UI. The command SHALL accept a
+`DisplayMode` value (`"rendered"` or `"plain"`), store it in the entry's
+`display_mode`, and emit `entry_updated` with the updated entry. The command
+SHALL NOT touch the entry's source `format`, `normalized_text`, audio, or
+timestamps — switching the view is display-only and never triggers
+re-synthesis or changes the source format. An unknown entry id SHALL be
+rejected with a typed `not_found`-style `CommandError` and emit no event.
+
+#### Scenario: display mode is persisted and broadcast
+- GIVEN a stored markdown entry with `format: "markdown"` and `display_mode: null`
+- WHEN the frontend calls `invoke("set_entry_display_mode", { id, displayMode: "plain" })`
+- THEN the entry in storage has `display_mode: "plain"` and `format: "markdown"`, and an `entry_updated` event with the updated entry is emitted
+
+#### Scenario: switch preserves the source format and audio artifacts
+- GIVEN a ready entry with synthesized audio and timestamps
+- WHEN `set_entry_display_mode` changes its display mode
+- THEN `format`, `normalized_text`, `audio_path`, and `timestamps_path` are unchanged and no synthesis is started
+
+#### Scenario: unknown entry is rejected
+- GIVEN no entry with the given id
+- WHEN `set_entry_display_mode` is called
+- THEN the command rejects with a typed error and emits no event
 

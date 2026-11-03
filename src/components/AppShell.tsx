@@ -21,7 +21,7 @@ import { formatError } from '../lib/errors';
 import { useT } from '../lib/i18n';
 import { setLocale, toLocale } from '../stores/locale';
 import { resolveIngest } from '../lib/ingest';
-import { resolveAddAction } from '../lib/addFlow';
+import { resolveAddAction, sourceFormatFor } from '../lib/addFlow';
 import { resolveImport } from '../lib/importFlow';
 import { IMPORTABLE_FILE_EXTENSIONS } from '../lib/importFlow';
 import type { ImportSource } from '../lib/importFlow';
@@ -532,11 +532,15 @@ export function AppShell() {
     htmlSource?: string,
     source: EntrySource = 'clipboard',
   ) {
+    // The source format recorded at ingestion: explicit for imports and
+    // dialog choices, detected otherwise, so the viewer can derive its views
+    // without re-sniffing the text later (text-display spec).
+    const sourceFormat = sourceFormatFor(text, format, htmlSource);
     try {
       const entryId = await commands.addTextEntry(
         text,
         playWhenReady,
-        format,
+        sourceFormat,
         htmlSource,
         source,
       );

@@ -10,7 +10,7 @@ const { copyLinkAddress } = vi.hoisted(() => ({ copyLinkAddress: vi.fn() }));
 vi.mock('../lib/tauri', () => ({
   commands: {
     getTimestamps: vi.fn().mockResolvedValue([]),
-    setEntryFormat: vi.fn().mockResolvedValue(undefined),
+    setEntryDisplayMode: vi.fn().mockResolvedValue(undefined),
   },
   events: {
     playbackStarted: vi.fn().mockResolvedValue(() => {}),
@@ -34,6 +34,7 @@ function makeEntry(): TextEntry {
     normalized_text: null,
     status: 'ready',
     format: 'html',
+    display_mode: null,
     html_source:
       '<p><a href="/ru/users/maybe_elf/">maybe_elf</a></p>' +
       '<button>Кнопка</button>',

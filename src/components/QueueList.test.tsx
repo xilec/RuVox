@@ -67,6 +67,7 @@ function makeEntry(
     normalized_text: null,
     status,
     format: 'plain',
+    display_mode: null,
     html_source: null,
     source: null,
     created_at: '2026-07-27T00:00:00Z',
