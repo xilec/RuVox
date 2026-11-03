@@ -158,11 +158,6 @@
             librsvg
             openssl
             mpv-unwrapped
-            # libopus: storage::audio encodes WAV → Ogg-Opus via the
-            # `opus = "0.3"` FFI crate, which links against C libopus 1.x.
-            # buildInputs is enough — wrapGAppsHook3 picks it up for the
-            # runtime LD_LIBRARY_PATH automatically.
-            libopus
             # espeak-ng — present for its data files only (see preFixup).
             # piper-rs uses espeak-rs-sys's vendored libespeak-ng for
             # phonemization, but its data dir lives in the cargo OUT_DIR

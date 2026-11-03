@@ -32,6 +32,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   part entries keep working when no whole-word entry exists (#279).
 
 ### Changed
+- **Audio saving is faster and needs no system libopus** — the WAV → Ogg-Opus
+  transcode now uses the pure-Rust `opus1` encoder (SSE4.1/AVX2 SILK kernels)
+  instead of the C `libopus` FFI: ~1.7× faster on a 22-minute narration (8.6 s
+  → 4.9 s) at the same 32 kbps, and the app no longer needs a native Opus
+  library to build or run (#19).
 - **The viewer's format switch moved into the entry header** — it now sits at
   the right of the metadata row next to the reading width/scale controls, so
   the reading area starts directly with the text (#353).

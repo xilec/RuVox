@@ -8,31 +8,33 @@
 //! are read from the WAV in frame-sized chunks and fed straight to the
 //! encoder, so memory use stays constant regardless of audio length.
 //!
-//! libopus only accepts the five Opus-native rates (RFC 6716 §2: 8/12/16/24/48
+//! The encoder only accepts the five Opus-native rates (RFC 6716 §2: 8/12/16/24/48
 //! kHz) as an encoder input rate, so a WAV at any other rate (e.g. Piper's
 //! 22050 Hz, or 44100 Hz) is linear-resampled to the nearest native rate
 //! before encoding. The native path (Silero ttsd's 48 kHz) is passed through
 //! untouched, keeping that common case streaming.
 //!
-//! See `tmp/opus_compare/` for the prototype this was ported from and the
-//! benchmarks that motivated the choice of `opus = "0.3"` (FFI to C libopus)
-//! over the pure-Rust `opus-rs` (issue #19).
+//! Encoding and decoding run on the pure-Rust `opus1` crate (a port of
+//! libopus 1.6 with SSE4.1/AVX2 SILK kernels): it replaced the C `libopus`
+//! FFI, encoding ~1.7x faster on the 48 kHz / 32 kbps VOIP profile with no
+//! native Opus dependency (issue #19).
 
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Write};
+use std::num::NonZeroU32;
 use std::path::Path;
 
 use byteorder::{LittleEndian, WriteBytesExt};
 use ogg::{PacketReader, PacketWriteEndInfo, PacketWriter};
-use opus::{Application, Bitrate, Channels, Decoder, Encoder};
+use opus1::{Application, Bitrate, Channels, OpusDecoder, OpusEncoder, SampleRate};
 use thiserror::Error;
 
 const FRAME_MS: u32 = 20;
 const BITRATE_BPS: i32 = 32_000;
 // Ogg logical-stream serial — arbitrary 32-bit value, "RuVO" in ASCII.
 const SERIAL: u32 = 0x5275_564f;
-// Encoded packet upper bound: 4000 bytes is the max permitted by libopus
-// (`opus_encode` returns at most this for a single 20 ms frame at any bitrate).
+// Encoded packet upper bound: 4000 bytes is the Opus limit for a single
+// 20 ms frame at any bitrate.
 const MAX_PACKET_BYTES: usize = 4000;
 // Sample rates Opus accepts natively (RFC 6716 §2). The encoder is wired up
 // for whichever of these the input WAV uses. Anything outside this set is
@@ -42,9 +44,6 @@ const SUPPORTED_SAMPLE_RATES: [u32; 5] = [8_000, 12_000, 16_000, 24_000, 48_000]
 // regardless of the input rate, so one 20 ms frame advances the granule by
 // exactly 960 ticks.
 const GRANULE_PER_FRAME: u64 = 48_000 * FRAME_MS as u64 / 1000;
-// Fallback when `Encoder::get_lookahead()` is unavailable — the libopus
-// default at 48 kHz / 20 ms / VOIP, expressed in 48 kHz output samples.
-const DEFAULT_PRE_SKIP_48K: u32 = 312;
 
 #[inline]
 fn frame_samples(sample_rate: u32) -> usize {
@@ -58,7 +57,7 @@ pub enum AudioError {
     #[error("wav error: {0}")]
     Wav(#[from] hound::Error),
     #[error("opus error: {0}")]
-    Opus(#[from] opus::Error),
+    Opus(#[from] opus1::Error),
     #[error("ogg error: {0}")]
     Ogg(String),
     #[error("unsupported wav format: {0}")]
@@ -123,19 +122,19 @@ pub fn encode_wav_to_opus(wav_path: &Path, opus_path: &Path) -> Result<()> {
         nearest_supported_rate(in_rate)
     };
 
-    let mut encoder = Encoder::new(encode_rate, Channels::Mono, Application::Voip)?;
-    encoder.set_bitrate(Bitrate::Bits(BITRATE_BPS))?;
+    let mut encoder = OpusEncoder::new(
+        SampleRate::try_from(encode_rate)?,
+        Channels::Mono,
+        Application::Voip,
+    )?;
+    encoder.set_bitrate(Bitrate::BitsPerSecond(
+        NonZeroU32::new(BITRATE_BPS as u32).expect("BITRATE_BPS is non-zero"),
+    ));
 
     // Pre-skip is the leading-sample count decoders must discard, expressed in
-    // 48 kHz output ticks (RFC 7845 §4.2). Query libopus for its actual
-    // lookahead at the chosen rate and convert; if the bind is unavailable
-    // for any reason fall back to the libopus default at 48 kHz so files
-    // remain decodable, just with a tiny silence offset on lower rates.
-    let pre_skip_48k: u32 = encoder
-        .get_lookahead()
-        .ok()
-        .map(|n| (n as u32).saturating_mul(48_000) / encode_rate)
-        .unwrap_or(DEFAULT_PRE_SKIP_48K);
+    // 48 kHz output ticks (RFC 7845 §4.2). Query the encoder for its actual
+    // lookahead at the chosen rate and convert.
+    let pre_skip_48k: u32 = (encoder.lookahead() as u32).saturating_mul(48_000) / encode_rate;
     let pre_skip: u16 = pre_skip_48k.min(u16::MAX as u32) as u16;
 
     let file = BufWriter::new(File::create(opus_path)?);
@@ -231,7 +230,7 @@ fn resample_linear(input: &[f32], in_rate: u32, out_rate: u32) -> Vec<f32> {
 /// when the next frame arrives (or as the terminal `EndStream` page at the
 /// end of input). `samples` yields one float per output sample.
 fn write_frames(
-    encoder: &mut Encoder,
+    encoder: &mut OpusEncoder,
     writer: &mut PacketWriter<BufWriter<File>>,
     encode_rate: u32,
     samples: &mut dyn Iterator<Item = std::result::Result<f32, hound::Error>>,
@@ -253,7 +252,7 @@ fn write_frames(
         frame_buf[filled] = s;
         filled += 1;
         if filled == frame_samples {
-            let n = encoder.encode_float(&frame_buf, &mut encoded)?;
+            let n = encoder.encode(&frame_buf, frame_buf.len(), &mut encoded)?;
             absgp += GRANULE_PER_FRAME;
             let data = encoded[..n].to_vec();
             if let Some((prev, prev_gp)) = pending.take() {
@@ -269,7 +268,7 @@ fn write_frames(
         for slot in &mut frame_buf[filled..] {
             *slot = 0.0;
         }
-        let n = encoder.encode_float(&frame_buf, &mut encoded)?;
+        let n = encoder.encode(&frame_buf, frame_buf.len(), &mut encoded)?;
         absgp += GRANULE_PER_FRAME;
         let data = encoded[..n].to_vec();
         if let Some((prev, prev_gp)) = pending.take() {
@@ -364,7 +363,7 @@ pub fn decode_opus_to_wav(opus_path: &Path, wav_path: &Path) -> Result<()> {
 
 fn decode_opus_to_wav_stream(opus_path: &Path, wav_path: &Path) -> Result<()> {
     let mut reader = PacketReader::new(BufReader::new(File::open(opus_path)?));
-    let mut decoder = Decoder::new(OPUS_DECODE_RATE, Channels::Mono)?;
+    let mut decoder = OpusDecoder::new(SampleRate::try_from(OPUS_DECODE_RATE)?, Channels::Mono)?;
 
     let head = reader
         .read_packet()
@@ -402,7 +401,7 @@ fn decode_opus_to_wav_stream(opus_path: &Path, wav_path: &Path) -> Result<()> {
 
     while let Some(pkt) = reader.read_packet().map_err(map_ogg_read_error)? {
         let is_last = pkt.last_in_stream();
-        let n = decoder.decode_float(&pkt.data, &mut frame_buf, false)?;
+        let n = decoder.decode(&pkt.data, frame_buf.len(), &mut frame_buf)?;
         if is_last {
             audible_limit = Some(pkt.absgp_page().saturating_sub(u64::from(pre_skip)));
         }
