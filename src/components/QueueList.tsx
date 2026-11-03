@@ -63,6 +63,9 @@ function failureTone(entry: TextEntry): 'error' | 'warning' | null {
 
 interface FailureNoteProps {
   tone: 'error' | 'warning';
+  /** Raw stored `TextEntry.error_message`; identifies the failure across a UI
+   * language switch, so relabelling does not reset the expanded state. */
+  errorMessage: string;
   /** Localized prefix followed by the engine's message, verbatim. */
   message: string;
   hint?: string;
@@ -74,16 +77,25 @@ interface FailureNoteProps {
  * lines, an expand toggle when the clamp hides text, and the shared retry
  * action. Rendered from `TextEntry.error_message`, so it survives a restart
  * and does not depend on the `tts_error` toast. */
-function FailureNote({ tone, message, hint, retryBusy, onRetry }: FailureNoteProps) {
+function FailureNote({
+  tone,
+  errorMessage,
+  message,
+  hint,
+  retryBusy,
+  onRetry,
+}: FailureNoteProps) {
   const tt = useT();
   const [expanded, setExpanded] = useState(false);
   const [overflowing, setOverflowing] = useState(false);
   const textRef = useRef<HTMLDivElement>(null);
 
-  // A different message means a different failure: start collapsed again.
+  // A different stored failure means a different error: start collapsed again.
+  // Keyed on the raw message, not the localized prefix, so switching the UI
+  // language does not collapse a reason the user has expanded.
   useEffect(() => {
     setExpanded(false);
-  }, [message]);
+  }, [errorMessage]);
 
   useLayoutEffect(() => {
     const el = textRef.current;
@@ -204,6 +216,10 @@ function QueueItem({
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
+        // A nested control (retry, expand) owns its Enter/Space: without this
+        // guard the card would preventDefault the key, swallow the button's
+        // activation and select the row instead.
+        if (e.target !== e.currentTarget) return;
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
           onSelect(entry);
@@ -219,6 +235,7 @@ function QueueItem({
           {entry.error_message !== null && tone !== null && (
             <FailureNote
               tone={tone}
+              errorMessage={entry.error_message}
               message={
                 tone === 'error'
                   ? tt('queue.error.synthesis_failed', [entry.error_message])

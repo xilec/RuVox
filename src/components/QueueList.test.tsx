@@ -54,6 +54,8 @@ vi.mock('../lib/tauri', () => ({
 }));
 
 import { QueueList } from './QueueList';
+import { useLocaleStore } from '../stores/locale';
+import { useSelectedEntry } from '../stores/selectedEntry';
 
 function makeEntry(
   status: TextEntry['status'],
@@ -499,6 +501,8 @@ describe('QueueList synthesis failure', () => {
     host = document.createElement('div');
     document.body.appendChild(host);
     root = createRoot(host);
+    useLocaleStore.setState({ locale: 'ru' });
+    useSelectedEntry.setState({ selectedId: null, selectedEntry: null });
     onRegenerate.mockClear();
     regenerateEntry.mockClear();
     regenerateEntry.mockResolvedValue(undefined);
@@ -509,20 +513,35 @@ describe('QueueList synthesis failure', () => {
   afterEach(() => {
     act(() => root.unmount());
     host.remove();
+    useLocaleStore.setState({ locale: 'ru' });
     // The overflow tests shadow jsdom's zero-height layout metrics; drop the
     // shadow so other files inherit the real prototype again.
     Reflect.deleteProperty(HTMLElement.prototype, 'scrollHeight');
     Reflect.deleteProperty(HTMLElement.prototype, 'clientHeight');
   });
 
-  async function renderWith(entry: TextEntry): Promise<void> {
-    getEntries.mockResolvedValue([entry]);
+  async function renderWithEntries(entries: TextEntry[]): Promise<void> {
+    getEntries.mockResolvedValue(entries);
     await act(async () => {
       root.render(
         <MantineProvider>
           <QueueList onRegenerate={onRegenerate} />
         </MantineProvider>,
       );
+      await Promise.resolve();
+    });
+  }
+
+  async function renderWith(entry: TextEntry): Promise<void> {
+    await renderWithEntries([entry]);
+  }
+
+  /** Delivers the `entry_updated` payload the backend emits around a retry. */
+  async function deliverEntryUpdated(entry: TextEntry): Promise<void> {
+    await act(async () => {
+      for (const listener of entryUpdatedListeners) {
+        listener({ entry });
+      }
       await Promise.resolve();
     });
   }
@@ -537,12 +556,16 @@ describe('QueueList synthesis failure', () => {
     return el!;
   }
 
-  function retryButton(): HTMLButtonElement {
+  function retryButtonFor(id: string): HTMLButtonElement {
     const el = host.querySelector<HTMLButtonElement>(
-      'button[aria-label="Повторить"]',
+      `[data-entry-id="${id}"] button[aria-label="Повторить"]`,
     );
     expect(el).not.toBeNull();
     return el!;
+  }
+
+  function retryButton(): HTMLButtonElement {
+    return retryButtonFor('entry-1');
   }
 
   function buttonWithText(text: string): HTMLButtonElement {
@@ -650,17 +673,125 @@ describe('QueueList synthesis failure', () => {
     });
     expect(retryButton().disabled).toBe(true);
 
-    await act(async () => {
-      for (const listener of entryUpdatedListeners) {
-        listener({
-          entry: { ...entry, status: 'pending', error_message: null },
-        });
-      }
-      await Promise.resolve();
-    });
+    await deliverEntryUpdated({ ...entry, status: 'pending', error_message: null });
 
     expect(failureBlock()).toBeNull();
     expect(host.textContent).not.toContain('Повторить');
+  });
+
+  it('re-arms the retry when the same entry fails again after a cleared retry', async () => {
+    const entry = makeEntry('error', { error_message: 'сбой движка' });
+    await renderWith(entry);
+    act(() => {
+      retryButton().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(retryButton().disabled).toBe(true);
+
+    // `regenerate_entry` clears the failure before the fresh synthesis starts.
+    await deliverEntryUpdated({ ...entry, status: 'pending', error_message: null });
+    expect(failureBlock()).toBeNull();
+
+    // The fresh attempt failed: the new reason must offer a working retry.
+    await deliverEntryUpdated({ ...entry, status: 'error', error_message: 'снова' });
+    expect(failureText().textContent).toBe('Ошибка синтеза: снова');
+    expect(retryButton().disabled).toBe(false);
+  });
+
+  it('keeps the retry busy when another entry clears its failure', async () => {
+    const retried = makeEntry('error', { error_message: 'сбой движка' });
+    const other = makeEntry('error', {
+      id: 'entry-2',
+      original_text: 'другой текст',
+      error_message: 'другой сбой',
+    });
+    await renderWithEntries([retried, other]);
+
+    act(() => {
+      retryButtonFor('entry-1').dispatchEvent(
+        new MouseEvent('click', { bubbles: true }),
+      );
+    });
+    expect(retryButtonFor('entry-1').disabled).toBe(true);
+
+    // A null update for a different entry must not clear entry-1's busy state.
+    await deliverEntryUpdated({ ...other, status: 'pending', error_message: null });
+    expect(retryButtonFor('entry-1').disabled).toBe(true);
+
+    // The retried entry's own clear still ends its busy state.
+    await deliverEntryUpdated({ ...retried, status: 'pending', error_message: null });
+    expect(failureBlock()).toBeNull();
+  });
+
+  it('keeps the expanded reason open when the UI language changes', async () => {
+    stubLayout(true);
+    await renderWith(
+      makeEntry('error', {
+        error_message: 'Очень длинное сообщение движка. '.repeat(10),
+      }),
+    );
+    act(() => {
+      buttonWithText('Показать полностью').dispatchEvent(
+        new MouseEvent('click', { bubbles: true }),
+      );
+    });
+    expect(buttonWithText('Свернуть')).toBeDefined();
+
+    // Same stored failure, relabelled prefix: the expanded state must follow
+    // the raw error_message, not the localized text.
+    act(() => {
+      useLocaleStore.setState({ locale: 'en' });
+    });
+
+    expect(failureText().textContent).toContain('Synthesis failed:');
+    expect(buttonWithText('Collapse')).toBeDefined();
+    expect(host.textContent).not.toContain('Show full message');
+  });
+
+  it.each(['Enter', ' '] as const)(
+    '%s on the retry button retries without selecting the row',
+    async (key) => {
+      await renderWith(makeEntry('error', { error_message: 'сбой движка' }));
+      const button = retryButton();
+
+      let defaultPrevented = false;
+      act(() => {
+        const event = new KeyboardEvent('keydown', {
+          key,
+          bubbles: true,
+          cancelable: true,
+        });
+        button.dispatchEvent(event);
+        defaultPrevented = event.defaultPrevented;
+      });
+
+      // The card must not hijack Enter/Space from a nested control: no
+      // preventDefault (that would cancel the button's activation) and no
+      // row selection.
+      expect(defaultPrevented).toBe(false);
+      expect(useSelectedEntry.getState().selectedId).toBeNull();
+
+      // The browser's default action for Enter/Space on a native button.
+      act(() => {
+        button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+      expect(regenerateEntry).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('Enter on the card itself still selects the row', async () => {
+    await renderWith(makeEntry('ready'));
+    const item = host.querySelector<HTMLElement>('[data-entry-id="entry-1"]');
+    expect(item).not.toBeNull();
+    act(() => {
+      item!.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'Enter',
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+    expect(useSelectedEntry.getState().selectedId).toBe('entry-1');
   });
 
   it('shows the amber failed-regeneration note on a playable entry', async () => {
