@@ -145,6 +145,9 @@ export interface AvailableEngines {
   teratts: EngineAvailability;
 }
 
+/** Reading column width of the text viewer: "narrow" (default) | "wide". */
+export type ReadingWidth = 'narrow' | 'wide';
+
 export interface UIConfig {
   speaker: string;
   /** Shared across engines. Global default 24000 — the native Silero
@@ -162,6 +165,10 @@ export interface UIConfig {
    *  Resolved against the engine capability on the backend; the stored value
    *  is the listener's preference and is never rewritten by an engine switch. */
   english_reading: string;
+  /** Reading column width: "narrow" (default) | "wide". */
+  reading_width: ReadingWidth;
+  /** Reading text scale in percent (80–200), default 100. */
+  reading_scale: number;
   theme: Theme;
   /** UI language: "ru" (default) | "en". Mirrors UIConfig.language on the
    *  backend; narrowed to a Locale via toLocale() before use. */

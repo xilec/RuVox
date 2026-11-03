@@ -824,7 +824,11 @@ export function AppShell() {
           flexDirection: 'column',
         }}
       >
-        <TextViewer entry={selectedEntry} />
+        <TextViewer
+          entry={selectedEntry}
+          readingWidth={config?.reading_width ?? 'narrow'}
+          readingScale={config?.reading_scale ?? 100}
+        />
       </MantineAppShell.Main>
 
       <PreviewDialog

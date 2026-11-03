@@ -28,3 +28,12 @@ describe('renderMarkdown data-orig-* offsets', () => {
     expect(html).toContain('<span data-orig-start="11" data-orig-end="14">мир</span>');
   });
 });
+
+describe('renderMarkdown table scrolling', () => {
+  it('wraps tables in a horizontal scroll box', () => {
+    const html = renderMarkdown('| a | b |\n| --- | --- |\n| 1 | 2 |');
+    expect(html).toContain('<div data-scroll-x>');
+    expect(html).toContain('<table>');
+    expect(html).toContain('</table>\n</div>');
+  });
+});

@@ -16,7 +16,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from 'react';
 import { notifications } from '@mantine/notifications';
-import type { DisplayMode, TextEntry, WordTimestamp } from '../lib/tauri';
+import type { DisplayMode, ReadingWidth, TextEntry, WordTimestamp } from '../lib/tauri';
 import { commands, events } from '../lib/tauri';
 import { formatError } from '../lib/errors';
 import { useT } from '../lib/i18n';
@@ -32,11 +32,13 @@ import {
 import { plainToWordHtml } from '../lib/plainTextHtml';
 import { makeInert } from '../lib/inertContent';
 import { copyLinkAddress } from '../lib/viewerCopy';
+import { clampReadingScale, readingZoom } from '../lib/reading';
 import {
   deriveSourceFormat,
   resolveDisplayMode,
   viewerModesFor,
 } from '../lib/viewerDisplay';
+import { ReadingScaleControl, ReadingWidthControl } from './ReadingControls';
 import { ViewerContextMenu } from './ViewerContextMenu';
 import classes from './TextViewer.module.css';
 
@@ -52,10 +54,34 @@ function blockZoomLinkClick(e: ReactMouseEvent) {
 
 interface Props {
   entry: TextEntry | null;
+  /** Persisted reading-column width from UIConfig (default "narrow"). */
+  readingWidth?: ReadingWidth;
+  /** Persisted reading-scale percentage from UIConfig (default 100). */
+  readingScale?: number;
 }
 
-export function TextViewer({ entry }: Props) {
+export function TextViewer({
+  entry,
+  readingWidth: readingWidthProp = 'narrow',
+  readingScale: readingScaleProp = 100,
+}: Props) {
   const tt = useT();
+  // Local mirror of the persisted reading typography: seeded from the config
+  // props so the first paint is correct, then updated optimistically by the
+  // toolbar and re-synced when Settings saves a new config (AppShell refreshes
+  // the values in onSaved).
+  const [readingWidth, setReadingWidth] =
+    useState<ReadingWidth>(readingWidthProp);
+  const [readingScale, setReadingScale] = useState(() =>
+    clampReadingScale(readingScaleProp),
+  );
+
+  useEffect(() => {
+    setReadingWidth(readingWidthProp);
+  }, [readingWidthProp]);
+  useEffect(() => {
+    setReadingScale(clampReadingScale(readingScaleProp));
+  }, [readingScaleProp]);
   // Seed from the entry so the first paint already shows the persisted
   // choice: a post-paint effect would render the default view once and could
   // flash the wrong format (e.g. markdown/mermaid before «Исходный»).
@@ -384,6 +410,31 @@ export function TextViewer({ entry }: Props) {
     });
   }
 
+  // Optimistic reading-typography update: the toolbar is the fast path, so
+  // each click applies immediately and persists through update_config; a
+  // rejected promise reverts the control and surfaces a localized toast (the
+  // same contract as the display-mode switch above).
+  function handleReadingWidthChange(next: ReadingWidth) {
+    if (next === readingWidth) return;
+    const prev = readingWidth;
+    setReadingWidth(next);
+    commands.updateConfig({ reading_width: next }).catch((err) => {
+      setReadingWidth(prev);
+      notifications.show({ title: tt('errors.title'), message: formatError(err), color: 'red' });
+    });
+  }
+
+  function handleReadingScaleChange(next: number) {
+    const scale = clampReadingScale(next);
+    if (scale === readingScale) return;
+    const prev = readingScale;
+    setReadingScale(scale);
+    commands.updateConfig({ reading_scale: scale }).catch((err) => {
+      setReadingScale(prev);
+      notifications.show({ title: tt('errors.title'), message: formatError(err), color: 'red' });
+    });
+  }
+
   if (!entry) {
     return (
       <Stack h="100%">
@@ -394,30 +445,48 @@ export function TextViewer({ entry }: Props) {
 
   return (
     <Stack gap="sm" style={{ height: '100%', minHeight: 0 }}>
-      {viewerModesFor(sourceFormat).includes('rendered') && (
-        <Group justify="space-between" wrap="nowrap">
-          <SegmentedControl
-            value={displayMode}
-            onChange={handleDisplayModeChange}
-            size="xs"
-            data={[
-              {
-                label:
-                  sourceFormat === 'html'
-                    ? tt('viewer.display_mode.html')
-                    : tt('viewer.display_mode.markdown'),
-                value: 'rendered',
-              },
-              { label: tt('viewer.display_mode.plain'), value: 'plain' },
-            ]}
+      <Group justify="space-between" align="center" wrap="nowrap" gap="sm">
+        <Box>
+          {viewerModesFor(sourceFormat).includes('rendered') && (
+            <SegmentedControl
+              name="viewer_display_mode"
+              value={displayMode}
+              onChange={handleDisplayModeChange}
+              size="xs"
+              data={[
+                {
+                  label:
+                    sourceFormat === 'html'
+                      ? tt('viewer.display_mode.html')
+                      : tt('viewer.display_mode.markdown'),
+                  value: 'rendered',
+                },
+                { label: tt('viewer.display_mode.plain'), value: 'plain' },
+              ]}
+            />
+          )}
+        </Box>
+        <Group gap="sm" wrap="nowrap" ml="auto">
+          <ReadingWidthControl
+            name="viewer_reading_width"
+            value={readingWidth}
+            onChange={handleReadingWidthChange}
+          />
+          <ReadingScaleControl
+            value={readingScale}
+            onChange={handleReadingScaleChange}
           />
         </Group>
-      )}
+      </Group>
 
       <ScrollArea style={{ flex: 1 }}>
         <Box
           ref={containerRef}
           className={classes.content}
+          data-reading-width={readingWidth}
+          style={{
+            '--ruvox-reading-scale': String(readingZoom(readingScale)),
+          }}
           dangerouslySetInnerHTML={content ?? { __html: "" }}
         />
       </ScrollArea>

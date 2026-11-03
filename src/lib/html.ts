@@ -60,7 +60,22 @@ export function renderHtml(raw: string): string {
   container.innerHTML = sanitizeHtml(raw);
   highlightCodeBlocks(container);
   annotateHtmlWords(container);
+  wrapTablesForScrolling(container);
   return container.innerHTML;
+}
+
+/**
+ * Wrap every `<table>` in a horizontal scroll box. Same reason as the
+ * markdown renderer: `overflow-x` on the table element itself does not create
+ * a scroll container, so a wide table would overflow the reading pane.
+ */
+function wrapTablesForScrolling(container: HTMLElement): void {
+  container.querySelectorAll('table').forEach((table) => {
+    const wrapper = document.createElement('div');
+    wrapper.setAttribute('data-scroll-x', '');
+    table.parentNode?.insertBefore(wrapper, table);
+    wrapper.appendChild(table);
+  });
 }
 
 /**

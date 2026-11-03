@@ -80,9 +80,15 @@ describe('TextViewer display modes', () => {
     });
   }
 
+  // Only the display-mode switch: the toolbar now also hosts the reading
+  // width segments ("Узко"/"Широко"), which are asserted in
+  // TextViewer.reading.test.tsx.
   function controlLabels(): string[] {
-    return Array.from(host.querySelectorAll('label')).map(
-      (label) => label.textContent ?? '',
+    return Array.from(
+      host.querySelectorAll<HTMLInputElement>('input[name="viewer_display_mode"]'),
+    ).map(
+      (input) =>
+        input.parentElement?.querySelector('label')?.textContent ?? '',
     );
   }
 
@@ -156,7 +162,7 @@ describe('TextViewer display modes', () => {
     );
 
     expect(controlLabels()).toEqual([]);
-    expect(host.querySelectorAll('input[type="radio"]')).toHaveLength(0);
+    expect(host.querySelectorAll('input[name="viewer_display_mode"]')).toHaveLength(0);
     expect(host.textContent).toContain('**жирный** и `код`');
     expect(host.querySelector('strong')).toBeNull();
     expect(host.querySelector('code')).toBeNull();

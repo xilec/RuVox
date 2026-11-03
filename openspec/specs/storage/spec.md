@@ -324,6 +324,8 @@ The `UIConfig` field table SHALL gain:
 | `language` | string | `"ru"` | UI language: `"ru"` / `"en"` |
 | `teratts_voice` | string | `"ru_m5"` | TeraTTS voice id from the installed bundle manifest (`voices[].id`); `ru_m5` is the default |
 | `english_reading` | string | `"auto"` | How Latin prose is read: `"auto"` / `"native"` / `"narrated"` |
+| `reading_width` | string | `"narrow"` | Reading column width: `"narrow"` / `"wide"` |
+| `reading_scale` | number | `100` | Reading text scale in percent, clamped to 80–200 |
 
 Every existing defaulting/unknown-key/partial-update rule SHALL apply to the
 new fields unchanged.
@@ -341,6 +343,16 @@ other value SHALL fall back to `"auto"` on load and when applied through a
 `UIConfigPatch`, so a config written by a newer build cannot put the pipeline
 in an undefined state.
 
+The `reading_width` field SHALL accept the values `"narrow"` and `"wide"`, with
+`"narrow"` as the default for fresh and partial configs; any other value SHALL
+fall back to `"narrow"` on load and when applied through a `UIConfigPatch`.
+
+The `reading_scale` field SHALL be a percentage clamped to the inclusive range
+80–200 both on load and when applied through a `UIConfigPatch`: values below 80
+resolve to 80 and values above 200 resolve to 200. Values inside the range SHALL
+be stored unchanged — storage does not snap them to the UI ladder
+(80/100/125/150/175/200).
+
 #### Scenario: Older config without language key
 - **GIVEN** a `config.json` written by a pre-localization build (no `language` key)
 - **WHEN** the configuration is loaded
@@ -354,7 +366,7 @@ in an undefined state.
 #### Scenario: Missing config returns defaults
 - **GIVEN** no `config.json` in the cache directory
 - **WHEN** the configuration is loaded
-- **THEN** the default configuration is returned (`speaker` `"aidar"`, `sample_rate` `24000`, `engine` `"silero_native"`, `piper_voice` `"ruslan"`, `code_block_mode` `"brief"`, `english_reading` `"auto"`)
+- **THEN** the default configuration is returned (`speaker` `"aidar"`, `sample_rate` `24000`, `engine` `"silero_native"`, `piper_voice` `"ruslan"`, `code_block_mode` `"brief"`, `english_reading` `"auto"`, `reading_width` `"narrow"`, `reading_scale` `100`)
 
 #### Scenario: Older config without engine keys
 - **GIVEN** a `config.json` that contains only `speaker`, `sample_rate`, and `speech_rate`
@@ -417,6 +429,34 @@ in an undefined state.
 - **GIVEN** a configuration with `teratts_voice` set to `"eng_f5"`
 - **WHEN** the configuration is saved and loaded again
 - **THEN** the loaded value is `"eng_f5"` (the field accepts every id the bundle manifest ships, not a fixed set)
+
+#### Scenario: Older config without reading typography keys
+- **GIVEN** a `config.json` written by a build before the reading controls existed
+- **WHEN** the configuration is loaded
+- **THEN** it parses successfully with `reading_width` defaulted to `"narrow"` and `reading_scale` defaulted to `100`
+
+#### Scenario: Unknown reading_width value falls back to narrow
+- **GIVEN** a `config.json` with `reading_width: "huge"`
+- **WHEN** the configuration is loaded
+- **THEN** `reading_width` resolves to `"narrow"`
+- **AND** a `UIConfigPatch` carrying `"huge"` stores `"narrow"` as well
+
+#### Scenario: reading_scale clamps on load
+- **GIVEN** a `config.json` with `reading_scale: 50`
+- **WHEN** the configuration is loaded
+- **THEN** `reading_scale` resolves to `80`
+- **AND** a `config.json` with `reading_scale: 500` resolves to `200`
+
+#### Scenario: reading_scale clamps through a patch
+- **GIVEN** a stored configuration with `reading_scale: 100`
+- **WHEN** a `UIConfigPatch` carrying `reading_scale: 25` is applied
+- **THEN** the stored value is `80`
+- **AND** a patch carrying `reading_scale: 900` stores `200`
+
+#### Scenario: Reading typography round-trips
+- **GIVEN** a configuration with `reading_width: "wide"` and `reading_scale: 150`
+- **WHEN** the configuration is saved and loaded again
+- **THEN** both values stay `"wide"` and `150`
 
 ### Requirement: Entry CRUD
 

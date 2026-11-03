@@ -570,11 +570,14 @@ impl StorageService {
                 return Ok(UIConfig::default());
             }
         };
-        // Canonicalize the text-shaping modes so configs written by earlier
-        // builds (legacy "skip", unknown values) resolve to a value the
-        // pipeline and the Settings controls understand.
+        // Canonicalize the text-shaping modes and the reading typography so
+        // configs written by earlier builds (legacy "skip", unknown width
+        // values, out-of-range scales) resolve to values the pipeline and the
+        // viewer understand.
         config.code_block_mode = UIConfig::canonical_code_block_mode(&config.code_block_mode);
         config.english_reading = UIConfig::canonical_english_reading(&config.english_reading);
+        config.reading_width = UIConfig::canonical_reading_width(&config.reading_width);
+        config.reading_scale = UIConfig::clamp_reading_scale(config.reading_scale);
         Ok(config)
     }
 
@@ -916,6 +919,8 @@ mod tests {
         assert_eq!(cfg.sample_rate, 24000);
         assert_eq!(cfg.code_block_mode, "brief");
         assert_eq!(cfg.english_reading, "auto");
+        assert_eq!(cfg.reading_width, "narrow");
+        assert_eq!(cfg.reading_scale, 100);
     }
 
     fn write_config_file(cache: &std::path::Path, json: &str) {
@@ -1003,6 +1008,65 @@ mod tests {
 
         let svc = StorageService::with_cache_dir(cache).unwrap();
         assert_eq!(svc.load_config().unwrap().english_reading, "auto");
+    }
+
+    #[test]
+    fn config_without_reading_typography_keys_defaults() {
+        let dir = TempDir::new().unwrap();
+        let cache = dir.path().to_path_buf();
+        fs::create_dir_all(cache.join("audio")).unwrap();
+        write_config_file(&cache, r#"{"speaker": "xenia"}"#);
+
+        let svc = StorageService::with_cache_dir(cache).unwrap();
+        let cfg = svc.load_config().unwrap();
+        assert_eq!(cfg.reading_width, "narrow");
+        assert_eq!(cfg.reading_scale, 100);
+    }
+
+    #[test]
+    fn unknown_reading_width_falls_back_to_narrow() {
+        let dir = TempDir::new().unwrap();
+        let cache = dir.path().to_path_buf();
+        fs::create_dir_all(cache.join("audio")).unwrap();
+        write_config_file(&cache, r#"{"reading_width": "huge"}"#);
+
+        let svc = StorageService::with_cache_dir(cache).unwrap();
+        assert_eq!(svc.load_config().unwrap().reading_width, "narrow");
+    }
+
+    #[test]
+    fn persisted_reading_typography_round_trips() {
+        let dir = TempDir::new().unwrap();
+        let cache = dir.path().to_path_buf();
+        fs::create_dir_all(cache.join("audio")).unwrap();
+        write_config_file(&cache, r#"{"reading_width": "wide", "reading_scale": 150}"#);
+
+        let svc = StorageService::with_cache_dir(cache).unwrap();
+        let cfg = svc.load_config().unwrap();
+        assert_eq!(cfg.reading_width, "wide");
+        assert_eq!(cfg.reading_scale, 150);
+        svc.save_config(&cfg).unwrap();
+        let loaded = svc.load_config().unwrap();
+        assert_eq!(loaded.reading_width, "wide");
+        assert_eq!(loaded.reading_scale, 150);
+    }
+
+    #[test]
+    fn reading_scale_clamps_on_load() {
+        let cases = [(50, 80), (500, 200), (80, 80), (200, 200), (150, 150)];
+        for (raw, expected) in cases {
+            let dir = TempDir::new().unwrap();
+            let cache = dir.path().to_path_buf();
+            fs::create_dir_all(cache.join("audio")).unwrap();
+            write_config_file(&cache, &format!(r#"{{"reading_scale": {raw}}}"#));
+
+            let svc = StorageService::with_cache_dir(cache).unwrap();
+            assert_eq!(
+                svc.load_config().unwrap().reading_scale,
+                expected,
+                "reading_scale {raw} should clamp to {expected}"
+            );
+        }
     }
 
     #[test]

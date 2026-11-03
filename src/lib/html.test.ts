@@ -127,3 +127,12 @@ describe('previewTextFor', () => {
     expect(out).toBe('Вызови API');
   });
 });
+
+describe('renderHtml table scrolling', () => {
+  it('wraps tables in a horizontal scroll box', () => {
+    const out = renderHtml('<table><tr><td>a</td></tr></table>');
+    expect(out).toContain('<div data-scroll-x="">');
+    expect(out).toContain('<table>');
+    expect(out).toContain('</table></div>');
+  });
+});
