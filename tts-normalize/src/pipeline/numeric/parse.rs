@@ -1061,7 +1061,16 @@ fn parse_trailing(
             end,
         ));
     }
-    if let Some(currency) = Currency::from_symbol(&token_lower) {
+    // A currency word can end a sentence ("5 USD."); the period is not part
+    // of the abbreviation there. A period that does belong to it ("руб.")
+    // was already accepted by the exact lookup, which keeps consuming it.
+    let (currency_token, currency_end) = match token_lower.strip_suffix('.') {
+        Some(stripped) if Currency::from_symbol(&token_lower).is_none() => {
+            (stripped, start + token.len() - 1)
+        }
+        _ => (token_lower.as_str(), start + token.len()),
+    };
+    if let Some(currency) = Currency::from_symbol(currency_token) {
         if !expand_units {
             return None;
         }
@@ -1070,7 +1079,7 @@ fn parse_trailing(
                 kind: TrailingKind::Currency(currency),
                 currency: None,
             }),
-            start + token.len(),
+            currency_end,
         ));
     }
 
