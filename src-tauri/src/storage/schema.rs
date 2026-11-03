@@ -286,7 +286,7 @@ impl UIConfig {
         "auto".to_string()
     }
     fn default_reading_width() -> String {
-        "narrow".to_string()
+        Self::DEFAULT_READING_WIDTH.to_owned()
     }
     fn default_reading_scale() -> u32 {
         100
@@ -316,17 +316,21 @@ impl UIConfig {
             .to_string()
     }
 
+    /// Default reading column width.
+    pub const DEFAULT_READING_WIDTH: &'static str = "narrow";
+
     /// Inclusive bounds of the reading scale percentage.
     pub const READING_SCALE_MIN: u32 = 80;
     pub const READING_SCALE_MAX: u32 = 200;
 
     /// Canonicalize a raw `reading_width` value: `"wide"` stays, any other
-    /// value resolves to the default `"narrow"`.
-    pub fn canonical_reading_width(raw: &str) -> String {
+    /// value resolves to the default `"narrow"`. Returns a `'static` slice so
+    /// validation does not allocate; callers that store the result copy it.
+    pub fn canonical_reading_width(raw: &str) -> &'static str {
         if raw == "wide" {
-            "wide".to_string()
+            "wide"
         } else {
-            "narrow".to_string()
+            Self::DEFAULT_READING_WIDTH
         }
     }
 

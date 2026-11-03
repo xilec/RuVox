@@ -139,6 +139,7 @@ export const ru = {
   'viewer.reading_scale.decrease': 'Уменьшить масштаб чтения',
   'viewer.reading_scale.increase': 'Увеличить масштаб чтения',
   'viewer.reading_scale.reset': 'Сбросить масштаб чтения до 100%',
+  'viewer.table.scroll_label': 'Таблица с горизонтальной прокруткой',
   'viewer.mermaid_zoom_title': 'Mermaid-диаграмма',
   'viewer.mermaid_render_error':
     'Не удалось отрендерить mermaid-диаграмму. Возможно, забыт закрывающий ``` после блока.',

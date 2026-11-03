@@ -32,6 +32,7 @@ describe('clampReadingScale', () => {
 
   it('keeps an off-ladder in-range value instead of snapping it', () => {
     expect(clampReadingScale(93)).toBe(93);
+    expect(clampReadingScale(92.5)).toBe(93);
   });
 
   it('falls back to the default for non-finite input', () => {
@@ -69,6 +70,7 @@ describe('readingZoom', () => {
     expect(readingZoom(150)).toBe(1.5);
     expect(readingZoom(80)).toBe(0.8);
     expect(readingZoom(200)).toBe(2);
+    expect(readingZoom(93)).toBe(0.93);
   });
 
   it('clamps before converting', () => {

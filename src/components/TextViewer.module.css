@@ -78,6 +78,14 @@
   max-width: 100%;
 }
 
+/* Keyboard focus on the table scroll box (#364 review): the wrapper is a
+   focusable region, so the ring has to be visible against the reading pane
+   while the box scrolls with the arrow keys. */
+.content [data-scroll-x]:focus-visible {
+  outline: 2px solid var(--mantine-color-blue-5);
+  outline-offset: 2px;
+}
+
 .content table {
   border-collapse: collapse;
   width: 100%;

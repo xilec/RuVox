@@ -2,7 +2,7 @@
 // the Settings «Чтение» block use the same widgets, so the ladder, the bounds
 // and the accessible names cannot drift between the two surfaces.
 
-import { Button, Group, SegmentedControl } from '@mantine/core';
+import { Button, Group, SegmentedControl, Text } from '@mantine/core';
 import { useT } from '../lib/i18n';
 import type { ReadingWidth } from '../lib/tauri';
 import {
@@ -86,16 +86,17 @@ export function ReadingScaleControl({
       >
         −
       </Button>
-      <Button
-        variant="default"
-        size={size}
-        miw={64}
-        aria-label={tt('viewer.reading_scale.reset')}
-        title={tt('viewer.reading_scale.reset')}
-        onClick={() => onChange(READING_SCALE_DEFAULT)}
+      <Text
+        component="span"
+        size={size === 'compact-sm' ? 'sm' : 'xs'}
+        fw={500}
+        miw={48}
+        ta="center"
+        aria-live="polite"
+        aria-atomic="true"
       >
-        {scale}%
-      </Button>
+        {scale} %
+      </Text>
       <Button
         variant="default"
         size={size}
@@ -106,6 +107,17 @@ export function ReadingScaleControl({
         onClick={() => onChange(higherReadingScale(scale))}
       >
         +
+      </Button>
+      <Button
+        variant="subtle"
+        size={size}
+        px={6}
+        disabled={scale === READING_SCALE_DEFAULT}
+        aria-label={tt('viewer.reading_scale.reset')}
+        title={tt('viewer.reading_scale.reset')}
+        onClick={() => onChange(READING_SCALE_DEFAULT)}
+      >
+        ↺
       </Button>
     </Group>
   );

@@ -138,6 +138,7 @@ export const en: Record<MessageKey, string> = {
   'viewer.reading_scale.decrease': 'Decrease reading scale',
   'viewer.reading_scale.increase': 'Increase reading scale',
   'viewer.reading_scale.reset': 'Reset reading scale to 100%',
+  'viewer.table.scroll_label': 'Scrollable table',
   'viewer.mermaid_zoom_title': 'Mermaid diagram',
   'viewer.mermaid_render_error':
     'Failed to render the mermaid diagram. The closing ``` after the block may be missing.',

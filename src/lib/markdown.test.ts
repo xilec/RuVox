@@ -30,10 +30,26 @@ describe('renderMarkdown data-orig-* offsets', () => {
 });
 
 describe('renderMarkdown table scrolling', () => {
-  it('wraps tables in a horizontal scroll box', () => {
+  it('wraps tables in a keyboard-focusable scroll box', () => {
     const html = renderMarkdown('| a | b |\n| --- | --- |\n| 1 | 2 |');
-    expect(html).toContain('<div data-scroll-x>');
+    expect(html).toContain('<div data-scroll-x tabindex="0">');
     expect(html).toContain('<table>');
     expect(html).toContain('</table>\n</div>');
+  });
+
+  it('keeps headers, cells and both tables intact', () => {
+    const html = renderMarkdown(
+      '| Заголовок | Второй |\n| --- | --- |\n| ячейка | 1 |\n\n' +
+        '| Ещё | Таблица |\n| --- | --- |\n| вторая | 2 |',
+    );
+    // Highlighting wraps every word in a span, so compare the structure with
+    // the data-orig spans stripped out.
+    const plain = html.replace(/<span[^>]*>/g, '').replace(/<\/span>/g, '');
+    expect(plain.match(/<div data-scroll-x tabindex="0">/g)).toHaveLength(2);
+    expect(plain.match(/<table>/g)).toHaveLength(2);
+    expect(plain).toContain('<th>Заголовок</th>');
+    expect(plain).toContain('<th>Второй</th>');
+    expect(plain).toContain('<td>ячейка</td>');
+    expect(plain).toContain('<td>вторая</td>');
   });
 });

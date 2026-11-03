@@ -46,7 +46,10 @@ md.renderer.rules.fence = (tokens, idx) => {
 // itself does not create a scroll container (WebKitGTK lays the table out at
 // its max-content width and lets it overflow the reading pane), so wide tables
 // scroll inside their own box while narrow ones still fill the column.
-md.renderer.rules.table_open = () => '<div data-scroll-x>\n<table>\n';
+// `tabindex="0"` makes the box reachable and scrollable from the keyboard
+// (#364 review); the viewer adds the localized role and aria-label after the
+// render, where the active translation is available.
+md.renderer.rules.table_open = () => '<div data-scroll-x tabindex="0">\n<table>\n';
 md.renderer.rules.table_close = () => '</table>\n</div>\n';
 
 /**

@@ -32,7 +32,12 @@ import {
 import { plainToWordHtml } from '../lib/plainTextHtml';
 import { makeInert } from '../lib/inertContent';
 import { copyLinkAddress } from '../lib/viewerCopy';
-import { clampReadingScale, readingZoom } from '../lib/reading';
+import {
+  canonicalReadingWidth,
+  clampReadingScale,
+  READING_SCALE_DEFAULT,
+  readingZoom,
+} from '../lib/reading';
 import {
   deriveSourceFormat,
   resolveDisplayMode,
@@ -52,35 +57,53 @@ function blockZoomLinkClick(e: ReactMouseEvent) {
   }
 }
 
+interface ReadingConfigPatch {
+  reading_width?: ReadingWidth;
+  reading_scale?: number;
+}
+
 interface Props {
   entry: TextEntry | null;
-  /** Persisted reading-column width from UIConfig (default "narrow"). */
+  /** Persisted reading-column width from UIConfig; canonicalized on seed. */
   readingWidth?: ReadingWidth;
-  /** Persisted reading-scale percentage from UIConfig (default 100). */
+  /** Persisted reading-scale percentage from UIConfig; clamped on seed. */
   readingScale?: number;
+  /** Reports a persisted reading-typography patch so AppShell's config mirror
+   *  follows the toolbar (the Settings dialog refreshes it through onSaved). */
+  onReadingConfigChange?: (patch: ReadingConfigPatch) => void;
 }
 
 export function TextViewer({
   entry,
-  readingWidth: readingWidthProp = 'narrow',
-  readingScale: readingScaleProp = 100,
+  readingWidth: readingWidthProp,
+  readingScale: readingScaleProp = READING_SCALE_DEFAULT,
+  onReadingConfigChange,
 }: Props) {
   const tt = useT();
   // Local mirror of the persisted reading typography: seeded from the config
   // props so the first paint is correct, then updated optimistically by the
   // toolbar and re-synced when Settings saves a new config (AppShell refreshes
   // the values in onSaved).
-  const [readingWidth, setReadingWidth] =
-    useState<ReadingWidth>(readingWidthProp);
+  const [readingWidth, setReadingWidth] = useState<ReadingWidth>(() =>
+    canonicalReadingWidth(readingWidthProp),
+  );
   const [readingScale, setReadingScale] = useState(() =>
     clampReadingScale(readingScaleProp),
   );
+  // Last values known to be persisted; a rejected latest write rolls back to
+  // these instead of to the optimistic value captured at click time.
+  const persistedWidth = useRef(canonicalReadingWidth(readingWidthProp));
+  const persistedScale = useRef(clampReadingScale(readingScaleProp));
 
   useEffect(() => {
-    setReadingWidth(readingWidthProp);
+    const width = canonicalReadingWidth(readingWidthProp);
+    persistedWidth.current = width;
+    setReadingWidth(width);
   }, [readingWidthProp]);
   useEffect(() => {
-    setReadingScale(clampReadingScale(readingScaleProp));
+    const scale = clampReadingScale(readingScaleProp);
+    persistedScale.current = scale;
+    setReadingScale(scale);
   }, [readingScaleProp]);
   // Seed from the entry so the first paint already shows the persisted
   // choice: a post-paint effect would render the default view once and could
@@ -138,10 +161,19 @@ export function TextViewer({
   // after every content render. Runs post-commit over the mounted DOM, in
   // all display modes.
   useEffect(() => {
-    if (containerRef.current) {
-      makeInert(containerRef.current);
-    }
-  }, [content]);
+    const container = containerRef.current;
+    if (!container) return;
+    makeInert(container);
+    // Table scroll boxes are focusable so a wide table can be scrolled from
+    // the keyboard (#364 review). The renderers emit `tabindex`; the localized
+    // region name lives here, where the active catalog is available.
+    const scrollLabel = tt('viewer.table.scroll_label');
+    container.querySelectorAll<HTMLElement>('[data-scroll-x]').forEach((box) => {
+      box.setAttribute('role', 'region');
+      box.setAttribute('aria-label', scrollLabel);
+      box.setAttribute('tabindex', '0');
+    });
+  }, [content, tt]);
 
   // Clear highlight state whenever the displayed entry or view changes so
   // stale highlights do not bleed across navigation.
@@ -410,29 +442,70 @@ export function TextViewer({
     });
   }
 
+  // Persisted reading-typography writes are serialized through one chain and
+  // tagged with a monotonic per-field request id (#364 review). Two quick
+  // clicks used to race: a rejection that settled after a newer write rolled
+  // the control back to a value the user had already moved past. The chain
+  // keeps backend writes in click order; the id turns a superseded rejection
+  // into a no-op instead of a rollback.
+  const readingWriteChain = useRef<Promise<void>>(Promise.resolve());
+  const widthRequestId = useRef(0);
+  const scaleRequestId = useRef(0);
+
+  function persistReadingPatch(
+    patch: ReadingConfigPatch,
+    isLatest: () => boolean,
+    onSuccess: () => void,
+    onReject: () => void,
+  ) {
+    readingWriteChain.current = readingWriteChain.current.then(async () => {
+      try {
+        await commands.updateConfig(patch);
+        onSuccess();
+      } catch (err) {
+        if (!isLatest()) return;
+        onReject();
+        notifications.show({
+          title: tt('errors.title'),
+          message: formatError(err),
+          color: 'red',
+        });
+      }
+    });
+  }
+
   // Optimistic reading-typography update: the toolbar is the fast path, so
-  // each click applies immediately and persists through update_config; a
-  // rejected promise reverts the control and surfaces a localized toast (the
-  // same contract as the display-mode switch above).
+  // each click applies immediately and persists through update_config; only a
+  // rejected latest write reverts the control and surfaces a localized toast.
   function handleReadingWidthChange(next: ReadingWidth) {
     if (next === readingWidth) return;
-    const prev = readingWidth;
+    const requestId = (widthRequestId.current += 1);
     setReadingWidth(next);
-    commands.updateConfig({ reading_width: next }).catch((err) => {
-      setReadingWidth(prev);
-      notifications.show({ title: tt('errors.title'), message: formatError(err), color: 'red' });
-    });
+    persistReadingPatch(
+      { reading_width: next },
+      () => requestId === widthRequestId.current,
+      () => {
+        persistedWidth.current = next;
+        onReadingConfigChange?.({ reading_width: next });
+      },
+      () => setReadingWidth(persistedWidth.current),
+    );
   }
 
   function handleReadingScaleChange(next: number) {
     const scale = clampReadingScale(next);
     if (scale === readingScale) return;
-    const prev = readingScale;
+    const requestId = (scaleRequestId.current += 1);
     setReadingScale(scale);
-    commands.updateConfig({ reading_scale: scale }).catch((err) => {
-      setReadingScale(prev);
-      notifications.show({ title: tt('errors.title'), message: formatError(err), color: 'red' });
-    });
+    persistReadingPatch(
+      { reading_scale: scale },
+      () => requestId === scaleRequestId.current,
+      () => {
+        persistedScale.current = scale;
+        onReadingConfigChange?.({ reading_scale: scale });
+      },
+      () => setReadingScale(persistedScale.current),
+    );
   }
 
   if (!entry) {

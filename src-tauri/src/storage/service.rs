@@ -576,7 +576,7 @@ impl StorageService {
         // viewer understand.
         config.code_block_mode = UIConfig::canonical_code_block_mode(&config.code_block_mode);
         config.english_reading = UIConfig::canonical_english_reading(&config.english_reading);
-        config.reading_width = UIConfig::canonical_reading_width(&config.reading_width);
+        config.reading_width = UIConfig::canonical_reading_width(&config.reading_width).to_owned();
         config.reading_scale = UIConfig::clamp_reading_scale(config.reading_scale);
         Ok(config)
     }

@@ -26,6 +26,7 @@ import { formatMb as formatMbValue } from '../lib/format';
 import type { CleanupMode, EngineKind, ReadingWidth, UIConfigPatch } from '../lib/tauri';
 import type { MessageKey } from '../i18n/ru';
 import { formatError } from '../lib/errors';
+import { canonicalReadingWidth, READING_SCALE_DEFAULT } from '../lib/reading';
 import { ReadingScaleControl, ReadingWidthControl } from '../components/ReadingControls';
 import { t, useT } from '../lib/i18n';
 import { setLocale, toLocale } from '../stores/locale';
@@ -330,8 +331,8 @@ export function SettingsModal({
     max_cache_size_mb: 500,
     code_block_mode: 'brief',
     english_reading: 'auto',
-    reading_width: 'narrow',
-    reading_scale: 100,
+    reading_width: canonicalReadingWidth(null),
+    reading_scale: READING_SCALE_DEFAULT,
     theme: 'auto',
     language: 'ru',
   };

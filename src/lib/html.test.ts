@@ -129,10 +129,25 @@ describe('previewTextFor', () => {
 });
 
 describe('renderHtml table scrolling', () => {
-  it('wraps tables in a horizontal scroll box', () => {
+  it('wraps tables in a keyboard-focusable scroll box', () => {
     const out = renderHtml('<table><tr><td>a</td></tr></table>');
-    expect(out).toContain('<div data-scroll-x="">');
+    expect(out).toContain('<div data-scroll-x="" tabindex="0">');
     expect(out).toContain('<table>');
     expect(out).toContain('</table></div>');
+  });
+
+  it('keeps cell markup, colspan, classes and both tables intact', () => {
+    const out = renderHtml(
+      '<table class="wide"><tr><th colspan="2">Заголовок</th></tr>' +
+        '<tr><td class="cell">ячейка</td></tr></table>' +
+        '<table><tr><td>вторая</td></tr></table>',
+    );
+    // Word highlighting wraps text in spans; the surrounding markup stays.
+    const plain = out.replace(/<span[^>]*>/g, '').replace(/<\/span>/g, '');
+    expect(plain.match(/<table/g)).toHaveLength(2);
+    expect(plain).toContain('<table class="wide">');
+    expect(plain).toContain('<th colspan="2">Заголовок</th>');
+    expect(plain).toContain('<td class="cell">ячейка</td>');
+    expect(plain).toContain('<td>вторая</td>');
   });
 });

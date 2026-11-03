@@ -445,7 +445,7 @@ describe('SettingsModal code block narration', () => {
 
     expect(activeSegment('settings_reading_width', ['narrow', 'wide'])).toBe('wide');
     const scaleGroup = document.querySelector('[role="group"][aria-label="Масштаб чтения"]');
-    expect(scaleGroup?.textContent).toContain('150%');
+    expect(scaleGroup?.textContent).toContain('150 %');
   });
 
   it('submits the picked reading width and scale', async () => {
