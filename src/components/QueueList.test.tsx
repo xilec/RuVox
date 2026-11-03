@@ -231,6 +231,44 @@ describe('QueueList context menu', () => {
     },
   );
 
+  it('disables "Отменить синтез" while the inline cancel is in flight', async () => {
+    let resolveCancel: (() => void) | undefined;
+    cancelSynthesis.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveCancel = resolve;
+        }),
+    );
+    await renderWith(makeEntry('processing'));
+
+    const inlineCancel = host.querySelector<HTMLButtonElement>(
+      '[data-synthesis-cancel]',
+    );
+    expect(inlineCancel).not.toBeNull();
+    await act(async () => {
+      inlineCancel!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(cancelSynthesis).toHaveBeenCalledTimes(1);
+
+    // The inline call is still in flight: a menu activation now would hit an
+    // already cancelled entry and surface a false `entry.cannot_cancel` toast.
+    await openMenu();
+    const item = cancelItem();
+    expect(
+      item.hasAttribute('disabled') || item.dataset.disabled !== undefined,
+    ).toBe(true);
+
+    act(() => {
+      item.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(cancelSynthesis).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveCancel?.();
+      await Promise.resolve();
+    });
+  });
   it('shows an error notification when cancelSynthesis rejects', async () => {
     // Backend errors arrive as coded CommandError objects; formatError must
     // resolve the code, not stringify the object.

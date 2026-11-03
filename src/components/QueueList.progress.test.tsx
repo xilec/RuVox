@@ -208,6 +208,34 @@ describe('QueueList synthesis progress', () => {
     expect(elapsedText()).toBe('Синтез… 0:02');
   });
 
+  it('does not restart the timer when a fresh processing update arrives', async () => {
+    await renderWithEntries([makeEntry('processing')]);
+    await advance(2000);
+    expect(elapsedText()).toBe('Синтез… 0:02');
+
+    await deliverEntryUpdated(makeEntry('processing'));
+
+    // A repeated `processing` for the same entry is not a new start: the
+    // line keeps its clock and its single interval.
+    expect(elapsedText()).toBe('Синтез… 0:02');
+    expect(vi.getTimerCount()).toBe(1);
+
+    await advance(1000);
+    expect(elapsedText()).toBe('Синтез… 0:03');
+  });
+
+  it('clamps the elapsed time when the system clock jumps back', async () => {
+    await renderWithEntries([makeEntry('processing')]);
+    await advance(2000);
+    expect(elapsedText()).toBe('Синтез… 0:02');
+
+    // An NTP correction or a manual clock change must not render `-60:00`.
+    vi.setSystemTime(new Date(Date.now() - 3_600_000));
+    await advance(1000);
+
+    expect(elapsedText()).toBe('Синтез… 0:00');
+  });
+
   it.each(['ready', 'error', 'cancelled'] as const)(
     'stops the timer and removes the line when the entry becomes %s',
     async (status) => {
@@ -248,6 +276,47 @@ describe('QueueList synthesis progress', () => {
     expect(cancelSynthesis).toHaveBeenCalledWith('entry-1');
   });
 
+  it.each(['Enter', ' '] as const)(
+    '%s on the inline cancel button cancels without selecting the row',
+    async (key) => {
+      await renderWithEntries([makeEntry('processing')]);
+      const button = cancelButton();
+
+      let defaultPrevented = false;
+      act(() => {
+        const event = new KeyboardEvent('keydown', {
+          key,
+          bubbles: true,
+          cancelable: true,
+        });
+        button.dispatchEvent(event);
+        defaultPrevented = event.defaultPrevented;
+      });
+
+      // The card must not hijack Enter/Space from its nested cancel action:
+      // no preventDefault (that would cancel the button's activation) and no
+      // row selection.
+      expect(defaultPrevented).toBe(false);
+      expect(useSelectedEntry.getState().selectedId).toBeNull();
+
+      // The browser's default action for Enter/Space on a native button.
+      await act(async () => {
+        button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await Promise.resolve();
+      });
+      expect(cancelSynthesis).toHaveBeenCalledTimes(1);
+      expect(cancelSynthesis).toHaveBeenCalledWith('entry-1');
+    },
+  );
+
+  it('clicking the inline cancel button does not select the row', async () => {
+    await renderWithEntries([makeEntry('processing')]);
+
+    await clickCancel();
+
+    expect(cancelSynthesis).toHaveBeenCalledTimes(1);
+    expect(useSelectedEntry.getState().selectedId).toBeNull();
+  });
   it('cancels exactly once and disables the button while the call is in flight', async () => {
     let resolveCancel: (() => void) | undefined;
     cancelSynthesis.mockImplementationOnce(

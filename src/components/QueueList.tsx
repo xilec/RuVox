@@ -218,7 +218,11 @@ function SynthesisProgressLine({
     setElapsedSec(0);
     const interval = window.setInterval(() => {
       if (startedAtRef.current === null) return;
-      setElapsedSec(Math.floor((Date.now() - startedAtRef.current) / 1000));
+      // Clamp: a backward system-clock jump must not render a negative
+      // elapsed time (`-60:00`).
+      setElapsedSec(
+        Math.max(0, Math.floor((Date.now() - startedAtRef.current) / 1000)),
+      );
     }, ELAPSED_TICK_MS);
     return () => {
       // Terminal status or unmount: no runner is left to count.
@@ -462,6 +466,12 @@ export function QueueList({ onRegenerate }: QueueListProps) {
   const [cancellingIds, setCancellingIds] = useState<ReadonlySet<EntryId>>(
     () => new Set(),
   );
+  // Synchronous mirror of `cancellingIds`: disablement only lands on the next
+  // render, so a second activation that arrives before it (the inline action
+  // and the menu item share this handler) would still fire a cancel at an
+  // entry the first call already cancelled — a false `entry.cannot_cancel`
+  // toast.
+  const cancellingIdsRef = useRef<Set<EntryId>>(new Set());
   const handleRetry = useCallback(
     (id: string) => {
       setRetryingIds((prev) => new Set(prev).add(id));
@@ -576,6 +586,8 @@ export function QueueList({ onRegenerate }: QueueListProps) {
   }, [tt]);
 
   const handleCancelSynthesis = useCallback(async (id: string) => {
+    if (cancellingIdsRef.current.has(id)) return;
+    cancellingIdsRef.current.add(id);
     setCancellingIds((prev) => new Set(prev).add(id));
     try {
       await commands.cancelSynthesis(id);
@@ -593,6 +605,7 @@ export function QueueList({ onRegenerate }: QueueListProps) {
     } finally {
       // A rejection re-enables the button; on success the `cancelled` entry
       // update removes the whole progress line.
+      cancellingIdsRef.current.delete(id);
       setCancellingIds((prev) => withoutId(prev, id));
     }
   }, [tt]);
@@ -626,6 +639,13 @@ export function QueueList({ onRegenerate }: QueueListProps) {
   const menuCanPlay =
     menuEntry !== null &&
     (menuEntry.status === 'ready' || menuEntry.status === 'playing');
+  // A cancel that is already in flight must not be reachable from the menu:
+  // the second call would hit an already cancelled entry and surface a false
+  // `entry.cannot_cancel` toast.
+  const menuCanCancel =
+    menuEntry !== null &&
+    (menuEntry.status === 'processing' || menuEntry.status === 'pending') &&
+    !cancellingIds.has(menuEntry.id);
   // The params dialog needs audio context: a snapshot, or at least a
   // generation timestamp (legacy entry synthesized by an older build).
   const menuHasGeneration =
@@ -763,10 +783,7 @@ export function QueueList({ onRegenerate }: QueueListProps) {
             {tt('queue.menu.generation_params')}
           </Menu.Item>
           <Menu.Item
-            disabled={
-              menuEntry === null ||
-              (menuEntry.status !== 'processing' && menuEntry.status !== 'pending')
-            }
+            disabled={!menuCanCancel}
             onClick={() => menuEntry && handleCancelSynthesis(menuEntry.id)}
           >
             {tt('queue.menu.cancel_synthesis')}
