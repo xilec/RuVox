@@ -506,3 +506,73 @@ subcategory = "unit"
 status = "target"
 input = "−5 °C"
 expected = "минус пять градусов Цельсия"
+
+[[case]]
+id = "cardinals/fraction-one-tenth"
+subcategory = "decimal"
+status = "locked"
+input = "0,1"
+expected = "ноль целых одна десятая"
+note = "the denominator agrees with the numerator: 'одна десятая', not 'одна десятых'"
+
+[[case]]
+id = "cardinals/fraction-two-25-kg"
+subcategory = "decimal"
+status = "locked"
+input = "2,25 кг"
+expected = "две целых двадцать пять сотых килограмма"
+note = "the integer part counts 'целая' and reads feminine ('две целых')"
+
+[[case]]
+id = "cardinals/unit-about-21-kg"
+subcategory = "unit"
+status = "locked"
+input = "около 21 кг"
+expected = "около двадцати одного килограмма"
+note = "a genitive count ending in one takes the singular genitive noun"
+
+[[case]]
+id = "cardinals/unit-more-than-1-kg"
+subcategory = "unit"
+status = "locked"
+input = "более 1 кг"
+expected = "более одного килограмма"
+
+[[case]]
+id = "cardinals/slash-half-kg"
+subcategory = "fraction"
+status = "locked"
+input = "1/2 кг"
+expected = "одна вторая килограмма"
+note = "a slash fraction owns the unit noun like a comma fraction"
+
+[[case]]
+id = "cardinals/huge-number"
+subcategory = "integer"
+status = "locked"
+input = "1000000000000"
+expected = "один ноль ноль ноль ноль ноль ноль ноль ноль ноль ноль ноль ноль"
+note = "above 999_999_999_999 the cardinal builder cannot name the value; the digit-by-digit fallback keeps it speakable"
+
+[[case]]
+id = "cardinals/version-leading-zero"
+subcategory = "code"
+status = "locked"
+input = "v1.02"
+expected = "один точка ноль два"
+note = "a leading zero in a dotted group carries information and is read digit by digit"
+
+[[case]]
+id = "cardinals/degree-bare"
+subcategory = "unit"
+status = "locked"
+input = "Угол 45°"
+expected = "Угол сорок пять градусов"
+
+[[case]]
+id = "cardinals/prerelease-digits"
+subcategory = "code"
+status = "locked"
+input = "1.2.0-rc1"
+expected = "один точка два точка ноль эр си один"
+note = "digits after a pre-release suffix are part of the reading, not dropped"

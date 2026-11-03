@@ -178,4 +178,151 @@ mod tests {
         // A bare number without a unit is still the layer's own.
         assert_eq!(read_all("5", false), "пять");
     }
+
+    #[test]
+    fn decades_cover_the_twentieth_and_twenty_first_centuries() {
+        assert_eq!(read_all("в 1910-х годах", true), "в десятых годах");
+        assert_eq!(
+            read_all("в 2010-х годах", true),
+            "в две тысячи десятых годах"
+        );
+        assert_eq!(read_all("2010-е годы", true), "две тысячи десятые годы");
+    }
+
+    #[test]
+    fn currency_prefix_agrees_with_the_count() {
+        assert_eq!(read_all("$2", true), "два доллара");
+        assert_eq!(read_all("$21", true), "двадцать один доллар");
+        assert_eq!(read_all("около $1", true), "около одного доллара");
+        assert_eq!(read_all("$1,5", true), "полтора доллара");
+    }
+
+    #[test]
+    fn year_range_outside_the_nineteen_hundreds() {
+        assert_eq!(
+            read_all("1812–1814 годы", true),
+            "с тысяча восемьсот двенадцатого по тысяча восемьсот четырнадцатый год"
+        );
+    }
+
+    #[test]
+    fn fractions_agree_in_gender_and_number() {
+        assert_eq!(read_all("0,1", true), "ноль целых одна десятая");
+        assert_eq!(
+            read_all("2,25 кг", true),
+            "две целых двадцать пять сотых килограмма"
+        );
+        assert_eq!(
+            read_all("около 21 кг", true),
+            "около двадцати одного килограмма"
+        );
+        assert_eq!(read_all("более 1 кг", true), "более одного килограмма");
+    }
+
+    #[test]
+    fn scale_one_keeps_the_case() {
+        assert_eq!(
+            read_all("около 1 млн рублей", true),
+            "около миллиона рублей"
+        );
+    }
+
+    #[test]
+    fn dative_and_prepositional_contexts() {
+        assert_eq!(read_all("к 8 марта", true), "к восьмому марта");
+        assert_eq!(read_all("к 5-й главе", true), "к пятой главе");
+    }
+
+    #[test]
+    fn slash_and_mixed_fractions_own_their_unit() {
+        assert_eq!(read_all("1/2 кг", true), "одна вторая килограмма");
+        assert_eq!(read_all("1½ кг", true), "полтора килограмма");
+    }
+
+    #[test]
+    fn huge_numbers_read_digit_by_digit() {
+        assert_eq!(
+            read_all("1000000000000", true),
+            "один ноль ноль ноль ноль ноль ноль ноль ноль ноль ноль ноль ноль"
+        );
+    }
+
+    #[test]
+    fn dotted_groups_keep_leading_zeros() {
+        assert_eq!(read_all("v1.02", true), "один точка ноль два");
+    }
+
+    #[test]
+    fn hundred_thousandth_is_one_word() {
+        assert_eq!(read_all("100000-й", true), "стотысячный");
+    }
+
+    #[test]
+    fn roman_abbreviation_and_single_letter_centuries() {
+        assert_eq!(read_all("XX в.", true), "двадцатый век");
+        assert_eq!(read_all("в XX в.", true), "в двадцатом веке");
+        assert_eq!(read_all("V век", true), "пятый век");
+    }
+
+    #[test]
+    fn version_suffix_digits_are_read() {
+        assert_eq!(
+            read_all("1.2.0-rc1", true),
+            "один точка два точка ноль эр си один"
+        );
+    }
+
+    #[test]
+    fn bare_degree_is_owned() {
+        assert_eq!(read_all("Угол 45°", true), "Угол сорок пять градусов");
+    }
+
+    #[test]
+    fn spaced_plus_is_not_a_suffix() {
+        assert_eq!(read_all("2 + 2", true), "два + два");
+    }
+
+    #[test]
+    fn currency_prefix_is_left_alone_for_native_units() {
+        assert_eq!(read_all("$5", false), "$5");
+    }
+
+    #[test]
+    fn ordinal_suffixes_that_were_missing() {
+        assert_eq!(read_all("5-ие классы", true), "пятые классы");
+        assert_eq!(read_all("5-ими", true), "пятыми");
+        assert_eq!(read_all("5-ого", true), "пятого");
+    }
+
+    #[test]
+    fn phone_groups() {
+        assert_eq!(
+            read_all("+7 921 1234567", true),
+            "плюс семь девятьсот двадцать один один два три четыре пять шесть семь"
+        );
+        assert_eq!(read_all("1 + 2 3 4", true), "один + два три четыре");
+    }
+
+    #[test]
+    fn short_time_units_are_recognized() {
+        assert_eq!(read_all("5 мин", true), "пять минут");
+        assert_eq!(read_all("10 сек", true), "десять секунд");
+        assert_eq!(read_all("2 ч", true), "два часа");
+    }
+
+    #[test]
+    fn long_fraction_tails_use_the_technical_register() {
+        assert_eq!(
+            read_all("0,0000001", true),
+            "ноль точка ноль ноль ноль ноль ноль ноль один"
+        );
+    }
+
+    #[test]
+    fn prefixes_need_a_word_start() {
+        // The prefix stays for the symbol phase; the digits are still read,
+        // but the numeric layer must not merge them into a currency reading.
+        assert_eq!(read_all("US$5", true), "US$пять");
+        assert_eq!(read_all("x~5", true), "x~пять");
+    }
 }
