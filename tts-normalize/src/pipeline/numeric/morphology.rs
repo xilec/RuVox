@@ -851,10 +851,10 @@ pub fn fraction(int: u64, frac: &str, gender: Gender, case: Case) -> String {
     // "N с половиной" is the natural reading of a half; "полтора" covers 1.5.
     if frac == "5" {
         return match int {
-            1 => match (case, gender) {
-                (Case::Genitive, _) => "полутора".to_string(),
-                (_, Gender::Feminine) => "полторы".to_string(),
-                _ => "полтора".to_string(),
+            1 => match (case.nominal(), gender) {
+                (true, Gender::Feminine) => "полторы".to_string(),
+                (true, _) => "полтора".to_string(),
+                (false, _) => "полутора".to_string(),
             },
             _ => format!(
                 "{} с половиной",
@@ -892,7 +892,7 @@ pub fn fraction(int: u64, frac: &str, gender: Gender, case: Case) -> String {
 }
 
 /// Simple fraction "1/2" → "одна вторая", "2/3" → "две третьих".
-pub fn simple_fraction(numerator: u64, denominator: u64) -> Option<String> {
+pub fn simple_fraction(numerator: u64, denominator: u64, case: Case) -> Option<String> {
     let (stem, class) = match denominator {
         2 => ("втор", Class::Stressed),
         3 => ("трет", Class::Soft),
@@ -906,16 +906,23 @@ pub fn simple_fraction(numerator: u64, denominator: u64) -> Option<String> {
         _ => return None,
     };
     // A single denominator is a feminine adjective ("одна вторая"), a count
-    // of them a genitive plural ("две третьих", "три четвёртых").
-    let (number, case) = if numerator == 1 {
+    // of them a plural noun ("две третьих", "три четвёртых"); both agree with
+    // the case the quantity is used in. The nominative/accusative pair keeps
+    // the dictionary form of the fraction.
+    let (number, dictionary_case) = if numerator == 1 {
         (Number::Singular, Case::Nominative)
     } else {
         (Number::Plural, Case::Genitive)
     };
+    let (numerator_case, denominator_case) = if case.nominal() {
+        (Case::Nominative, dictionary_case)
+    } else {
+        (case, case)
+    };
     Some(format!(
         "{} {}",
-        cardinal(numerator, Gender::Feminine, Case::Nominative),
-        ending(stem, class, Gender::Feminine, case, number)
+        cardinal(numerator, Gender::Feminine, numerator_case),
+        ending(stem, class, Gender::Feminine, denominator_case, number)
     ))
 }
 
@@ -1105,8 +1112,29 @@ mod tests {
             fraction(21, "25", Gender::Masculine, Case::Nominative),
             "двадцать одна целая двадцать пять сотых"
         );
-        assert_eq!(simple_fraction(1, 2).as_deref(), Some("одна вторая"));
-        assert_eq!(simple_fraction(2, 3).as_deref(), Some("две третьих"));
-        assert_eq!(simple_fraction(3, 4).as_deref(), Some("три четвёртых"));
+        assert_eq!(
+            simple_fraction(1, 2, Case::Nominative).as_deref(),
+            Some("одна вторая")
+        );
+        assert_eq!(
+            simple_fraction(2, 3, Case::Nominative).as_deref(),
+            Some("две третьих")
+        );
+        assert_eq!(
+            simple_fraction(3, 4, Case::Nominative).as_deref(),
+            Some("три четвёртых")
+        );
+        assert_eq!(
+            simple_fraction(1, 2, Case::Genitive).as_deref(),
+            Some("одной второй")
+        );
+        assert_eq!(
+            simple_fraction(2, 3, Case::Genitive).as_deref(),
+            Some("двух третьих")
+        );
+        assert_eq!(
+            simple_fraction(1, 2, Case::Dative).as_deref(),
+            Some("одной второй")
+        );
     }
 }

@@ -319,7 +319,8 @@ fn read_fraction(
         return Some(read_technical_fraction(int, frac, trailing));
     }
     let case = case_at(text, span.start, forced);
-    let tail = trailing_reading(trailing, text, span, case);
+    let adjectival = !(frac == "5" && int >= 1);
+    let tail = trailing_reading(trailing, text, span, case, adjectival);
     let mut out = morphology::fraction(int, frac, tail.gender, case);
     if let Some(suffix) = tail.suffix {
         out.push(' ');
@@ -368,8 +369,10 @@ fn read_slash(
     let numerator = readable_value(number)?;
     let denominator: u64 = number.slash_groups.first()?.parse().ok()?;
     let case = case_at(text, span.start, forced);
-    let mut out = morphology::simple_fraction(numerator, denominator)?;
-    let tail = trailing_reading(trailing, text, span, case);
+    let mut out = morphology::simple_fraction(numerator, denominator, case)?;
+    // A simple fraction is an adjective ("одна вторая"), so its unit stays
+    // in the genitive singular regardless of the outer case.
+    let tail = trailing_reading(trailing, text, span, case, true);
     if let Some(suffix) = tail.suffix {
         out.push(' ');
         out.push_str(&suffix);
@@ -387,7 +390,8 @@ fn read_mixed(
 ) -> Option<String> {
     let int = readable_value(number)?;
     let case = case_at(text, span.start, forced);
-    let tail = trailing_reading(trailing, text, span, case);
+    let adjectival = int == 0 || !matches!(half, MixedFraction::Half);
+    let tail = trailing_reading(trailing, text, span, case, adjectival);
     // A bare mixed fraction reads "две с половиной"; with a unit the
     // integer part agrees with the unit ("два с половиной километра").
     let gender = if trailing.is_some() {
@@ -425,13 +429,15 @@ struct QuantityTail {
 /// Noun a fractional quantity takes from its trailing construct.
 ///
 /// A fraction ends in "-ая/-их", so the noun stays in the genitive singular
-/// ("одна вторая килограмма"), or in the genitive plural in oblique contexts
-/// ("около полутора долларов").
+/// ("одна вторая килограмма"). A numeral-like fraction takes the genitive
+/// plural in an oblique context ("около полутора долларов"); the
+/// `adjectival` flag selects the first rule.
 fn trailing_reading(
     trailing: Option<Trailing>,
     text: &str,
     span: &Span,
     case: Case,
+    adjectival: bool,
 ) -> QuantityTail {
     let Some(trailing) = trailing else {
         let next = next_word(text, span.end);
@@ -448,23 +454,19 @@ fn trailing_reading(
                     suffix: Some(unit.forms.sg_nom.to_string()),
                 };
             }
-            let noun = if case == Case::Genitive {
-                unit.forms.pl_gen
-            } else {
-                unit.forms.sg_gen
-            };
+            let noun = fraction_noun(
+                (unit.forms.sg_nom, unit.forms.sg_gen, unit.forms.pl_gen),
+                case,
+                adjectival,
+            );
             QuantityTail {
                 gender: unit.forms.gender,
-                suffix: Some(append_tail(noun, unit.forms.tail)),
+                suffix: Some(append_tail(&noun, unit.forms.tail)),
             }
         }
         TrailingKind::Scale(scale) => {
             let forms = scale.forms();
-            let noun = if case == Case::Genitive {
-                forms.2
-            } else {
-                forms.1
-            };
+            let noun = fraction_noun((forms.0, forms.1, forms.2), case, adjectival);
             let suffix = match trailing.currency {
                 Some(currency) => format!("{noun} {}", currency.forms().2),
                 None => noun.to_string(),
@@ -476,22 +478,14 @@ fn trailing_reading(
         }
         TrailingKind::Currency(currency) => {
             let forms = currency.forms();
-            let noun = if case == Case::Genitive {
-                forms.2
-            } else {
-                forms.1
-            };
+            let noun = fraction_noun((forms.0, forms.1, forms.2), case, adjectival);
             QuantityTail {
                 gender: forms.3,
                 suffix: Some(noun.to_string()),
             }
         }
         TrailingKind::Percent => {
-            let noun = if case == Case::Genitive {
-                PERCENT.2
-            } else {
-                PERCENT.1
-            };
+            let noun = fraction_noun(PERCENT, case, adjectival);
             QuantityTail {
                 gender: Gender::Masculine,
                 suffix: Some(noun.to_string()),
@@ -1079,7 +1073,7 @@ fn head_case(head: &str) -> Case {
     }
 }
 
-fn append_tail(noun: &'static str, tail: &'static str) -> String {
+fn append_tail(noun: &str, tail: &str) -> String {
     if tail.is_empty() {
         noun.to_string()
     } else {
