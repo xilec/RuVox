@@ -38,6 +38,11 @@ body {
   /* Reading text in TextViewer: larger and airier than UI text. */
   --ruvox-reading-font-size: 17px;
   --ruvox-reading-line-height: 1.6;
+  /* Reading pane: line measure of the narrow column and the browser-like
+     zoom multiplier applied to the content (1 = 100 %). The viewer overrides
+     the scale inline from UIConfig.reading_scale. */
+  --ruvox-reading-measure: 70ch;
+  --ruvox-reading-scale: 1;
 
   /* Floating preview window chrome: above app chrome, below Mantine
      notifications. */

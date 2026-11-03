@@ -7,6 +7,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 ## [Unreleased]
 
 ### Added
+- **Reading width and scale** — the viewer gains a «Узко | Широко» column
+  switch and a `[ − ] 100% [ + ]` scale stepper (80–200 %) applied as CSS
+  `zoom` to the whole rendered document, so text, headings, code, tables and
+  images grow together in every display mode; both choices persist and are
+  mirrored in a new Settings «Чтение» block (#354, #357).
 - **Synthesis progress and inline cancel in the queue** — a running entry
   shows «Синтез… 0:42», a queued one «В очереди», and both offer «Отменить» (#352).
 - **Synthesis failures stay on the queue card** — the stored engine reason and

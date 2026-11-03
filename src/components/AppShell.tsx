@@ -18,6 +18,7 @@ import { commands } from '../lib/tauri';
 import type { EntryFormat, EntrySource, UIConfig, UnlistenFn } from '../lib/tauri';
 import type { ReadTextFileResult, TextEntry } from '../lib/tauri';
 import { formatError } from '../lib/errors';
+import { canonicalReadingWidth, READING_SCALE_DEFAULT } from '../lib/reading';
 import { useT } from '../lib/i18n';
 import { setLocale, toLocale } from '../stores/locale';
 import { resolveIngest } from '../lib/ingest';
@@ -824,7 +825,17 @@ export function AppShell() {
           flexDirection: 'column',
         }}
       >
-        <TextViewer entry={selectedEntry} />
+        <TextViewer
+          entry={selectedEntry}
+          readingWidth={canonicalReadingWidth(config?.reading_width)}
+          readingScale={config?.reading_scale ?? READING_SCALE_DEFAULT}
+          // Keep the AppShell config mirror in step with the toolbar: the
+          // viewer persists on its own (Settings refreshes through onSaved),
+          // so without this a later remount would seed stale props.
+          onReadingConfigChange={(patch) => {
+            setConfig((prev) => (prev ? { ...prev, ...patch } : prev));
+          }}
+        />
       </MantineAppShell.Main>
 
       <PreviewDialog

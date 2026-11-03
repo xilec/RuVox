@@ -1598,6 +1598,12 @@ fn apply_config_patch(config: &mut UIConfig, patch: UIConfigPatch) {
     if let Some(v) = patch.english_reading {
         config.english_reading = UIConfig::canonical_english_reading(&v);
     }
+    if let Some(v) = patch.reading_width {
+        config.reading_width = UIConfig::canonical_reading_width(&v).to_owned();
+    }
+    if let Some(v) = patch.reading_scale {
+        config.reading_scale = UIConfig::clamp_reading_scale(v);
+    }
     if let Some(v) = patch.theme {
         config.theme = v;
     }

@@ -60,7 +60,26 @@ export function renderHtml(raw: string): string {
   container.innerHTML = sanitizeHtml(raw);
   highlightCodeBlocks(container);
   annotateHtmlWords(container);
+  wrapTablesForScrolling(container);
   return container.innerHTML;
+}
+
+/**
+ * Wrap every `<table>` in a horizontal scroll box. Same reason as the
+ * markdown renderer: `overflow-x` on the table element itself does not create
+ * a scroll container, so a wide table would overflow the reading pane.
+ * `tabindex="0"` makes the box reachable and scrollable from the keyboard
+ * (#364 review); the viewer adds the localized role and aria-label after the
+ * render, where the active translation is available.
+ */
+function wrapTablesForScrolling(container: HTMLElement): void {
+  container.querySelectorAll('table').forEach((table) => {
+    const wrapper = document.createElement('div');
+    wrapper.setAttribute('data-scroll-x', '');
+    wrapper.setAttribute('tabindex', '0');
+    table.parentNode?.insertBefore(wrapper, table);
+    wrapper.appendChild(table);
+  });
 }
 
 /**

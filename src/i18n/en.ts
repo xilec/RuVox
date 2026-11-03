@@ -131,6 +131,14 @@ export const en: Record<MessageKey, string> = {
   'viewer.display_mode.markdown': 'Markdown',
   'viewer.display_mode.html': 'HTML',
   'viewer.display_mode.plain': 'Raw',
+  'viewer.reading_width.label': 'Reading width',
+  'viewer.reading_width.narrow': 'Narrow',
+  'viewer.reading_width.wide': 'Wide',
+  'viewer.reading_scale.label': 'Reading scale',
+  'viewer.reading_scale.decrease': 'Decrease reading scale',
+  'viewer.reading_scale.increase': 'Increase reading scale',
+  'viewer.reading_scale.reset': 'Reset reading scale to 100%',
+  'viewer.table.scroll_label': 'Scrollable table',
   'viewer.mermaid_zoom_title': 'Mermaid diagram',
   'viewer.mermaid_render_error':
     'Failed to render the mermaid diagram. The closing ``` after the block may be missing.',
@@ -185,6 +193,11 @@ export const en: Record<MessageKey, string> = {
   'settings.section.cache': 'Cache',
   'settings.section.logs': 'Logs',
   'settings.section.interface': 'Interface',
+  'settings.section.reading': 'Reading',
+  'settings.reading.width.description':
+    'Narrow caps a line at about 70 characters and centers the column; Wide uses the full pane width.',
+  'settings.reading.scale.description':
+    'Scales the whole text and its content like browser zoom: headings, code, tables and images grow together.',
   'settings.section.updates': 'Updates',
   'settings.engine.label': 'Engine',
   'settings.engine.description':

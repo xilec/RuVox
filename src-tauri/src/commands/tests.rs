@@ -76,6 +76,8 @@ fn apply_config_patch_applies_each_field_in_isolation() {
         max_cache_size_mb: _,
         code_block_mode: _,
         english_reading: _,
+        reading_width: _,
+        reading_scale: _,
         theme: _,
         player_hotkeys: _,
         window_geometry: _,
@@ -160,6 +162,20 @@ fn apply_config_patch_applies_each_field_in_isolation() {
             },
         },
         Case {
+            field: "reading_width",
+            patch: UIConfigPatch {
+                reading_width: Some("wide".to_string()),
+                ..Default::default()
+            },
+        },
+        Case {
+            field: "reading_scale",
+            patch: UIConfigPatch {
+                reading_scale: Some(150),
+                ..Default::default()
+            },
+        },
+        Case {
             field: "theme",
             patch: UIConfigPatch {
                 theme: Some("dark".to_string()),
@@ -227,6 +243,45 @@ fn apply_config_patch_applies_each_field_in_isolation() {
     }
 }
 
+/// Reading typography is not a plain assignment: an unknown width
+/// canonicalizes to `"narrow"` and out-of-range scales clamp to 80–200,
+/// while in-range values pass through unchanged.
+#[test]
+fn apply_config_patch_canonicalizes_reading_typography() {
+    let mut config = UIConfig::default();
+    apply_config_patch(
+        &mut config,
+        UIConfigPatch {
+            reading_width: Some("huge".to_string()),
+            reading_scale: Some(25),
+            ..Default::default()
+        },
+    );
+    assert_eq!(config.reading_width, "narrow");
+    assert_eq!(config.reading_scale, 80);
+
+    apply_config_patch(
+        &mut config,
+        UIConfigPatch {
+            reading_width: Some("wide".to_string()),
+            reading_scale: Some(900),
+            ..Default::default()
+        },
+    );
+    assert_eq!(config.reading_width, "wide");
+    assert_eq!(config.reading_scale, 200);
+
+    // In-range values are stored as-is; storage does not snap to the ladder.
+    apply_config_patch(
+        &mut config,
+        UIConfigPatch {
+            reading_scale: Some(93),
+            ..Default::default()
+        },
+    );
+    assert_eq!(config.reading_scale, 93);
+}
+
 /// `window_geometry` is `Option<Option<[i32; 4]>>` in the patch: the outer
 /// `Option` says whether the patch touches the field at all, the inner
 /// one says whether the new value is "set" or "cleared". Distinct enough
@@ -286,6 +341,8 @@ fn apply_config_patch_all_none_leaves_config_untouched() {
         max_cache_size_mb: 1000,
         code_block_mode: "skip".to_string(),
         english_reading: "narrated".to_string(),
+        reading_width: "wide".to_string(),
+        reading_scale: 150,
         theme: "dark".to_string(),
         player_hotkeys: custom_hotkeys,
         window_geometry: Some([1, 2, 3, 4]),

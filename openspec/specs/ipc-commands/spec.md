@@ -85,6 +85,8 @@ interface UIConfig {
   max_cache_size_mb: number;       // default 500
   code_block_mode: string;         // "brief" (default) | "read"
   english_reading: string;         // "auto" (default) | "native" | "narrated"
+  reading_width: string;           // "narrow" (default) | "wide"
+  reading_scale: number;           // percent, default 100, clamped 80–200
   theme: string;                   // "light" | "dark" | "auto"
   player_hotkeys: Record<string, string>;
   window_geometry: [number, number, number, number] | null;
@@ -125,6 +127,14 @@ interface UIConfig {
   `config.json` written before `hide_to_tray_on_close` existed
 - WHEN the frontend calls `invoke("get_config")`
 - THEN the response contains `hide_to_tray_on_close: false`
+
+#### Scenario: UIConfig defaults include reading typography
+
+- GIVEN a fresh installation with no `config.json`, or an existing
+  `config.json` written before the reading controls existed
+- WHEN the frontend calls `invoke("get_config")`
+- THEN the response contains `reading_width: "narrow"` and `reading_scale: 100`,
+  with out-of-range persisted values already canonicalized
 
 ### Requirement: Frontend Parameter Casing
 
@@ -564,6 +574,11 @@ preview normalization requests SHALL use the new values without an app
 restart. A synthesis already in flight when the settings change MAY finish on
 the previous values.
 
+When the patch carries `reading_width` or `reading_scale`, `update_config`
+SHALL persist them canonically and `get_config()` SHALL return the persisted
+values; the canonicalization rules are defined once in the storage capability
+(`Config File Schema`).
+
 #### Scenario: partial patch updates only named fields
 - GIVEN a stored config with `theme: "auto"`
 - WHEN `update_config` is invoked with `{ theme: "dark" }`
@@ -586,6 +601,11 @@ the previous values.
 - GIVEN the pipeline is narrating code blocks in brief mode
 - WHEN `update_config` is invoked with `{ code_block_mode: "read" }`
 - THEN a subsequent `preview_normalize` call reads fenced code blocks in full mode, without restarting the app
+
+#### Scenario: reading typography persists through a patch
+- GIVEN a stored config with the default reading typography
+- WHEN `update_config` is invoked with `{ reading_width: "wide", reading_scale: 125 }`
+- THEN a following `get_config` returns `reading_width: "wide"` and `reading_scale: 125`
 
 ### Requirement: Engine Availability Command
 

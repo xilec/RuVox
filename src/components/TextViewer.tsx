@@ -16,7 +16,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from 'react';
 import { notifications } from '@mantine/notifications';
-import type { DisplayMode, TextEntry, WordTimestamp } from '../lib/tauri';
+import type { DisplayMode, ReadingWidth, TextEntry, WordTimestamp } from '../lib/tauri';
 import { commands, events } from '../lib/tauri';
 import { formatError } from '../lib/errors';
 import { useT } from '../lib/i18n';
@@ -33,10 +33,17 @@ import { plainToWordHtml } from '../lib/plainTextHtml';
 import { makeInert } from '../lib/inertContent';
 import { copyLinkAddress } from '../lib/viewerCopy';
 import {
+  canonicalReadingWidth,
+  clampReadingScale,
+  READING_SCALE_DEFAULT,
+  readingZoom,
+} from '../lib/reading';
+import {
   deriveSourceFormat,
   resolveDisplayMode,
   viewerModesFor,
 } from '../lib/viewerDisplay';
+import { ReadingScaleControl, ReadingWidthControl } from './ReadingControls';
 import { ViewerContextMenu } from './ViewerContextMenu';
 import classes from './TextViewer.module.css';
 
@@ -50,12 +57,54 @@ function blockZoomLinkClick(e: ReactMouseEvent) {
   }
 }
 
-interface Props {
-  entry: TextEntry | null;
+interface ReadingConfigPatch {
+  reading_width?: ReadingWidth;
+  reading_scale?: number;
 }
 
-export function TextViewer({ entry }: Props) {
+interface Props {
+  entry: TextEntry | null;
+  /** Persisted reading-column width from UIConfig; canonicalized on seed. */
+  readingWidth?: ReadingWidth;
+  /** Persisted reading-scale percentage from UIConfig; clamped on seed. */
+  readingScale?: number;
+  /** Reports a persisted reading-typography patch so AppShell's config mirror
+   *  follows the toolbar (the Settings dialog refreshes it through onSaved). */
+  onReadingConfigChange?: (patch: ReadingConfigPatch) => void;
+}
+
+export function TextViewer({
+  entry,
+  readingWidth: readingWidthProp,
+  readingScale: readingScaleProp = READING_SCALE_DEFAULT,
+  onReadingConfigChange,
+}: Props) {
   const tt = useT();
+  // Local mirror of the persisted reading typography: seeded from the config
+  // props so the first paint is correct, then updated optimistically by the
+  // toolbar and re-synced when Settings saves a new config (AppShell refreshes
+  // the values in onSaved).
+  const [readingWidth, setReadingWidth] = useState<ReadingWidth>(() =>
+    canonicalReadingWidth(readingWidthProp),
+  );
+  const [readingScale, setReadingScale] = useState(() =>
+    clampReadingScale(readingScaleProp),
+  );
+  // Last values known to be persisted; a rejected latest write rolls back to
+  // these instead of to the optimistic value captured at click time.
+  const persistedWidth = useRef(canonicalReadingWidth(readingWidthProp));
+  const persistedScale = useRef(clampReadingScale(readingScaleProp));
+
+  useEffect(() => {
+    const width = canonicalReadingWidth(readingWidthProp);
+    persistedWidth.current = width;
+    setReadingWidth(width);
+  }, [readingWidthProp]);
+  useEffect(() => {
+    const scale = clampReadingScale(readingScaleProp);
+    persistedScale.current = scale;
+    setReadingScale(scale);
+  }, [readingScaleProp]);
   // Seed from the entry so the first paint already shows the persisted
   // choice: a post-paint effect would render the default view once and could
   // flash the wrong format (e.g. markdown/mermaid before «Исходный»).
@@ -112,10 +161,19 @@ export function TextViewer({ entry }: Props) {
   // after every content render. Runs post-commit over the mounted DOM, in
   // all display modes.
   useEffect(() => {
-    if (containerRef.current) {
-      makeInert(containerRef.current);
-    }
-  }, [content]);
+    const container = containerRef.current;
+    if (!container) return;
+    makeInert(container);
+    // Table scroll boxes are focusable so a wide table can be scrolled from
+    // the keyboard (#364 review). The renderers emit `tabindex`; the localized
+    // region name lives here, where the active catalog is available.
+    const scrollLabel = tt('viewer.table.scroll_label');
+    container.querySelectorAll<HTMLElement>('[data-scroll-x]').forEach((box) => {
+      box.setAttribute('role', 'region');
+      box.setAttribute('aria-label', scrollLabel);
+      box.setAttribute('tabindex', '0');
+    });
+  }, [content, tt]);
 
   // Clear highlight state whenever the displayed entry or view changes so
   // stale highlights do not bleed across navigation.
@@ -384,6 +442,72 @@ export function TextViewer({ entry }: Props) {
     });
   }
 
+  // Persisted reading-typography writes are serialized through one chain and
+  // tagged with a monotonic per-field request id (#364 review). Two quick
+  // clicks used to race: a rejection that settled after a newer write rolled
+  // the control back to a value the user had already moved past. The chain
+  // keeps backend writes in click order; the id turns a superseded rejection
+  // into a no-op instead of a rollback.
+  const readingWriteChain = useRef<Promise<void>>(Promise.resolve());
+  const widthRequestId = useRef(0);
+  const scaleRequestId = useRef(0);
+
+  function persistReadingPatch(
+    patch: ReadingConfigPatch,
+    isLatest: () => boolean,
+    onSuccess: () => void,
+    onReject: () => void,
+  ) {
+    readingWriteChain.current = readingWriteChain.current.then(async () => {
+      try {
+        await commands.updateConfig(patch);
+        onSuccess();
+      } catch (err) {
+        if (!isLatest()) return;
+        onReject();
+        notifications.show({
+          title: tt('errors.title'),
+          message: formatError(err),
+          color: 'red',
+        });
+      }
+    });
+  }
+
+  // Optimistic reading-typography update: the toolbar is the fast path, so
+  // each click applies immediately and persists through update_config; only a
+  // rejected latest write reverts the control and surfaces a localized toast.
+  function handleReadingWidthChange(next: ReadingWidth) {
+    if (next === readingWidth) return;
+    const requestId = (widthRequestId.current += 1);
+    setReadingWidth(next);
+    persistReadingPatch(
+      { reading_width: next },
+      () => requestId === widthRequestId.current,
+      () => {
+        persistedWidth.current = next;
+        onReadingConfigChange?.({ reading_width: next });
+      },
+      () => setReadingWidth(persistedWidth.current),
+    );
+  }
+
+  function handleReadingScaleChange(next: number) {
+    const scale = clampReadingScale(next);
+    if (scale === readingScale) return;
+    const requestId = (scaleRequestId.current += 1);
+    setReadingScale(scale);
+    persistReadingPatch(
+      { reading_scale: scale },
+      () => requestId === scaleRequestId.current,
+      () => {
+        persistedScale.current = scale;
+        onReadingConfigChange?.({ reading_scale: scale });
+      },
+      () => setReadingScale(persistedScale.current),
+    );
+  }
+
   if (!entry) {
     return (
       <Stack h="100%">
@@ -394,30 +518,48 @@ export function TextViewer({ entry }: Props) {
 
   return (
     <Stack gap="sm" style={{ height: '100%', minHeight: 0 }}>
-      {viewerModesFor(sourceFormat).includes('rendered') && (
-        <Group justify="space-between" wrap="nowrap">
-          <SegmentedControl
-            value={displayMode}
-            onChange={handleDisplayModeChange}
-            size="xs"
-            data={[
-              {
-                label:
-                  sourceFormat === 'html'
-                    ? tt('viewer.display_mode.html')
-                    : tt('viewer.display_mode.markdown'),
-                value: 'rendered',
-              },
-              { label: tt('viewer.display_mode.plain'), value: 'plain' },
-            ]}
+      <Group justify="space-between" align="center" wrap="nowrap" gap="sm">
+        <Box>
+          {viewerModesFor(sourceFormat).includes('rendered') && (
+            <SegmentedControl
+              name="viewer_display_mode"
+              value={displayMode}
+              onChange={handleDisplayModeChange}
+              size="xs"
+              data={[
+                {
+                  label:
+                    sourceFormat === 'html'
+                      ? tt('viewer.display_mode.html')
+                      : tt('viewer.display_mode.markdown'),
+                  value: 'rendered',
+                },
+                { label: tt('viewer.display_mode.plain'), value: 'plain' },
+              ]}
+            />
+          )}
+        </Box>
+        <Group gap="sm" wrap="nowrap" ml="auto">
+          <ReadingWidthControl
+            name="viewer_reading_width"
+            value={readingWidth}
+            onChange={handleReadingWidthChange}
+          />
+          <ReadingScaleControl
+            value={readingScale}
+            onChange={handleReadingScaleChange}
           />
         </Group>
-      )}
+      </Group>
 
       <ScrollArea style={{ flex: 1 }}>
         <Box
           ref={containerRef}
           className={classes.content}
+          data-reading-width={readingWidth}
+          style={{
+            '--ruvox-reading-scale': String(readingZoom(readingScale)),
+          }}
           dangerouslySetInnerHTML={content ?? { __html: "" }}
         />
       </ScrollArea>

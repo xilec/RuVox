@@ -93,6 +93,8 @@ function makeConfig(overrides: Partial<UIConfig> = {}): UIConfig {
     max_cache_size_mb: 500,
     code_block_mode: 'brief',
     english_reading: 'auto',
+    reading_width: 'narrow',
+    reading_scale: 100,
     theme: 'auto',
     language: 'ru',
     player_hotkeys: {},
@@ -434,5 +436,54 @@ describe('SettingsModal code block narration', () => {
       await Promise.resolve();
     });
     expect(traySwitch!.checked).toBe(false);
+  });
+  it('renders the saved reading width and scale', async () => {
+    getConfig.mockResolvedValue(
+      makeConfig({ reading_width: 'wide', reading_scale: 150 }),
+    );
+    await renderDialog();
+
+    expect(activeSegment('settings_reading_width', ['narrow', 'wide'])).toBe('wide');
+    const scaleGroup = document.querySelector('[role="group"][aria-label="Масштаб чтения"]');
+    expect(scaleGroup?.textContent).toContain('150 %');
+  });
+
+  it('submits the picked reading width and scale', async () => {
+    await renderDialog();
+
+    const wide = document.querySelector<HTMLInputElement>(
+      'input[name="settings_reading_width"][value="wide"]',
+    );
+    expect(wide, 'reading width segment rendered').toBeTruthy();
+    await act(async () => {
+      wide!.click();
+      await Promise.resolve();
+    });
+
+    const increase = [...document.querySelectorAll<HTMLButtonElement>('button')].find(
+      (b) => b.getAttribute('aria-label') === 'Увеличить масштаб чтения',
+    );
+    expect(increase, 'scale increase button rendered').toBeTruthy();
+    await act(async () => {
+      increase!.click();
+      await Promise.resolve();
+    });
+    await clickSave();
+
+    const patch = updateConfig.mock.calls[0][0];
+    expect(patch.reading_width).toBe('wide');
+    expect(patch.reading_scale).toBe(125);
+  });
+
+  it('keeps the saved reading typography in the patch when untouched', async () => {
+    getConfig.mockResolvedValue(
+      makeConfig({ reading_width: 'wide', reading_scale: 150 }),
+    );
+    await renderDialog();
+    await clickSave();
+
+    const patch = updateConfig.mock.calls[0][0];
+    expect(patch.reading_width).toBe('wide');
+    expect(patch.reading_scale).toBe(150);
   });
 });

@@ -23,9 +23,11 @@ import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { getVersion } from '@tauri-apps/api/app';
 import { commands } from '../lib/tauri';
 import { formatMb as formatMbValue } from '../lib/format';
-import type { CleanupMode, EngineKind, UIConfigPatch } from '../lib/tauri';
+import type { CleanupMode, EngineKind, ReadingWidth, UIConfigPatch } from '../lib/tauri';
 import type { MessageKey } from '../i18n/ru';
 import { formatError } from '../lib/errors';
+import { canonicalReadingWidth, READING_SCALE_DEFAULT } from '../lib/reading';
+import { ReadingScaleControl, ReadingWidthControl } from '../components/ReadingControls';
 import { t, useT } from '../lib/i18n';
 import { setLocale, toLocale } from '../stores/locale';
 import { PIPER_VOICES } from '../lib/piperVoices';
@@ -52,6 +54,8 @@ interface SettingsFormValues {
   max_cache_size_mb: number;
   code_block_mode: string;
   english_reading: string;
+  reading_width: ReadingWidth;
+  reading_scale: number;
   theme: string;
   language: string;
 }
@@ -327,6 +331,8 @@ export function SettingsModal({
     max_cache_size_mb: 500,
     code_block_mode: 'brief',
     english_reading: 'auto',
+    reading_width: canonicalReadingWidth(null),
+    reading_scale: READING_SCALE_DEFAULT,
     theme: 'auto',
     language: 'ru',
   };
@@ -373,6 +379,8 @@ export function SettingsModal({
           max_cache_size_mb: config.max_cache_size_mb,
           code_block_mode: config.code_block_mode,
           english_reading: config.english_reading,
+          reading_width: config.reading_width,
+          reading_scale: config.reading_scale,
           theme: config.theme,
           language: config.language,
         };
@@ -509,6 +517,8 @@ export function SettingsModal({
         max_cache_size_mb: values.max_cache_size_mb,
         code_block_mode: values.code_block_mode,
         english_reading: values.english_reading,
+        reading_width: values.reading_width,
+        reading_scale: values.reading_scale,
         theme: values.theme as UIConfigPatch['theme'],
         language: values.language,
       },
@@ -809,6 +819,37 @@ export function SettingsModal({
               {tt('settings.open_folder')}
             </Button>
           </Group>
+
+          <Divider />
+
+          <Text size="sm" fw={500} c="dimmed">
+            {tt('settings.section.reading')}
+          </Text>
+
+          <Stack gap={4}>
+            <Text size="sm">{tt('viewer.reading_width.label')}</Text>
+            <ReadingWidthControl
+              name="settings_reading_width"
+              value={form.values.reading_width}
+              onChange={(v) => form.setFieldValue('reading_width', v)}
+              size="sm"
+            />
+            <Text size="xs" c="dimmed">
+              {tt('settings.reading.width.description')}
+            </Text>
+          </Stack>
+
+          <Stack gap={4}>
+            <Text size="sm">{tt('viewer.reading_scale.label')}</Text>
+            <ReadingScaleControl
+              value={form.values.reading_scale}
+              onChange={(v) => form.setFieldValue('reading_scale', v)}
+              size="compact-sm"
+            />
+            <Text size="xs" c="dimmed">
+              {tt('settings.reading.scale.description')}
+            </Text>
+          </Stack>
 
           <Divider />
 

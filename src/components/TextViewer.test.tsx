@@ -106,7 +106,11 @@ describe('TextViewer read-only behavior', () => {
     root = createRoot(host);
     renderWith(makeEntry());
 
-    expect(host.querySelector('button')?.hasAttribute('disabled')).toBe(true);
+    // Scope to the rendered document: the toolbar above it has its own
+    // (enabled) reading controls.
+    expect(
+      host.querySelector('[data-reading-width] button')?.hasAttribute('disabled'),
+    ).toBe(true);
     expect(host.querySelector('a')?.getAttribute('title')).toBe(
       '/ru/users/maybe_elf/',
     );

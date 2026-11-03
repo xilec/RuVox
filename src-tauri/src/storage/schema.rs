@@ -211,6 +211,16 @@ pub struct UIConfig {
     /// listener's preference and is never rewritten by an engine switch.
     #[serde(default = "UIConfig::default_english_reading")]
     pub english_reading: String,
+    /// Reading column width: `"narrow"` (default) | `"wide"`. Unknown
+    /// strings canonicalize to `"narrow"` on load and patch (see
+    /// [`UIConfig::canonical_reading_width`]).
+    #[serde(default = "UIConfig::default_reading_width")]
+    pub reading_width: String,
+    /// Reading text scale in percent, default 100. Values outside
+    /// [`UIConfig::READING_SCALE_MIN`]–[`UIConfig::READING_SCALE_MAX`] are
+    /// clamped on load and patch (see [`UIConfig::clamp_reading_scale`]).
+    #[serde(default = "UIConfig::default_reading_scale")]
+    pub reading_scale: u32,
     #[serde(default = "UIConfig::default_theme")]
     pub theme: String,
     #[serde(default = "UIConfig::default_player_hotkeys")]
@@ -275,6 +285,12 @@ impl UIConfig {
     fn default_english_reading() -> String {
         "auto".to_string()
     }
+    fn default_reading_width() -> String {
+        Self::DEFAULT_READING_WIDTH.to_owned()
+    }
+    fn default_reading_scale() -> u32 {
+        100
+    }
     fn default_theme() -> String {
         "auto".to_string()
     }
@@ -298,6 +314,29 @@ impl UIConfig {
         crate::pipeline::EnglishReading::from_config(raw)
             .as_config_str()
             .to_string()
+    }
+
+    /// Default reading column width.
+    pub const DEFAULT_READING_WIDTH: &'static str = "narrow";
+
+    /// Inclusive bounds of the reading scale percentage.
+    pub const READING_SCALE_MIN: u32 = 80;
+    pub const READING_SCALE_MAX: u32 = 200;
+
+    /// Canonicalize a raw `reading_width` value: `"wide"` stays, any other
+    /// value resolves to the default `"narrow"`. Returns a `'static` slice so
+    /// validation does not allocate; callers that store the result copy it.
+    pub fn canonical_reading_width(raw: &str) -> &'static str {
+        if raw == "wide" {
+            "wide"
+        } else {
+            Self::DEFAULT_READING_WIDTH
+        }
+    }
+
+    /// Clamp a reading scale percentage to the supported range.
+    pub fn clamp_reading_scale(percent: u32) -> u32 {
+        percent.clamp(Self::READING_SCALE_MIN, Self::READING_SCALE_MAX)
     }
 
     fn default_player_hotkeys() -> std::collections::HashMap<String, String> {
@@ -328,6 +367,8 @@ impl Default for UIConfig {
             max_cache_size_mb: Self::default_max_cache_size_mb(),
             code_block_mode: Self::default_code_block_mode(),
             english_reading: Self::default_english_reading(),
+            reading_width: Self::default_reading_width(),
+            reading_scale: Self::default_reading_scale(),
             theme: Self::default_theme(),
             player_hotkeys: Self::default_player_hotkeys(),
             window_geometry: None,
@@ -354,6 +395,8 @@ pub struct UIConfigPatch {
     pub max_cache_size_mb: Option<u32>,
     pub code_block_mode: Option<String>,
     pub english_reading: Option<String>,
+    pub reading_width: Option<String>,
+    pub reading_scale: Option<u32>,
     pub theme: Option<String>,
     pub player_hotkeys: Option<std::collections::HashMap<String, String>>,
     pub window_geometry: Option<Option<[i32; 4]>>,

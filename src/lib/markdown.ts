@@ -42,6 +42,16 @@ md.renderer.rules.fence = (tokens, idx) => {
   return `<pre><code${langClass}>${highlighted}</code></pre>\n`;
 };
 
+// Wrap tables in a horizontal scroll box: `overflow-x` on the <table> element
+// itself does not create a scroll container (WebKitGTK lays the table out at
+// its max-content width and lets it overflow the reading pane), so wide tables
+// scroll inside their own box while narrow ones still fill the column.
+// `tabindex="0"` makes the box reachable and scrollable from the keyboard
+// (#364 review); the viewer adds the localized role and aria-label after the
+// render, where the active translation is available.
+md.renderer.rules.table_open = () => '<div data-scroll-x tabindex="0">\n<table>\n';
+md.renderer.rules.table_close = () => '</table>\n</div>\n';
+
 /**
  * Render markdown source to HTML with data-orig-start/data-orig-end
  * attributes on inline text spans so that U5 word-highlighting can locate

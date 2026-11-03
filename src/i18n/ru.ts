@@ -132,6 +132,14 @@ export const ru = {
   'viewer.display_mode.markdown': 'Markdown',
   'viewer.display_mode.html': 'HTML',
   'viewer.display_mode.plain': 'Исходный',
+  'viewer.reading_width.label': 'Ширина чтения',
+  'viewer.reading_width.narrow': 'Узко',
+  'viewer.reading_width.wide': 'Широко',
+  'viewer.reading_scale.label': 'Масштаб чтения',
+  'viewer.reading_scale.decrease': 'Уменьшить масштаб чтения',
+  'viewer.reading_scale.increase': 'Увеличить масштаб чтения',
+  'viewer.reading_scale.reset': 'Сбросить масштаб чтения до 100%',
+  'viewer.table.scroll_label': 'Таблица с горизонтальной прокруткой',
   'viewer.mermaid_zoom_title': 'Mermaid-диаграмма',
   'viewer.mermaid_render_error':
     'Не удалось отрендерить mermaid-диаграмму. Возможно, забыт закрывающий ``` после блока.',
@@ -186,6 +194,11 @@ export const ru = {
   'settings.section.cache': 'Кэш',
   'settings.section.logs': 'Логи',
   'settings.section.interface': 'Интерфейс',
+  'settings.section.reading': 'Чтение',
+  'settings.reading.width.description':
+    '«Узко» ограничивает строку примерно 70 символами и центрирует колонку, «Широко» занимает всю ширину панели.',
+  'settings.reading.scale.description':
+    'Масштабирует весь текст и содержимое, как zoom в браузере: заголовки, код, таблицы и картинки растут вместе.',
   'settings.section.updates': 'Обновления',
   'settings.engine.label': 'Движок',
   'settings.engine.description':
