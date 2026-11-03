@@ -16,7 +16,7 @@ Modern heavy TTS models, as a rule, natively read numbers, links, and English te
 
 RuVox takes the second path: normalization is a compensating layer that rewrites English terms, abbreviations, code, numbers, and URLs into a sounding Russian form, so the lightweight engine reads the text in full. `getUserData()` → «гет юзер дата», `API` → «эй пи ай», `/api/v2/users` — as a path, not letter by letter. The pronunciation remains approximate — a deliberate trade-off: instead of beautiful speech and powerful hardware, RuVox gives you speed of comprehension and a light resource footprint.
 
-Narration is performed by one of four TTS engines: Silero TTS v5 in-process on ONNX Runtime (the [`silero-native`](silero-native/) crate, default; model bundle downloaded on demand), [Piper](https://github.com/rhasspy/piper) (in-process via `piper-rs`, zero-dependency fallback), [TeraTTSv2](https://huggingface.co/TeraSpace/TeraTTSv2) (in-process on ONNX Runtime, the [`teratts`](teratts/) crate, 44.1 kHz; reads Russian prose, English terms, identifiers and code blocks with the selected voice, while URLs and email stay Russian; ~410 MB bundle downloaded on demand), or, optionally, [Silero TTS](https://github.com/snakers4/silero-models) out-of-process via the `ttsd` Python sidecar (kept as a fallback).
+Narration is performed by one of four TTS engines: [TeraTTSv2](https://huggingface.co/TeraSpace/TeraTTSv2) (in-process on ONNX Runtime, the [`teratts`](teratts/) crate, 44.1 kHz; the default — reads Russian prose, English terms, identifiers and code blocks with the selected voice, while URLs and email stay Russian; ~410 MB bundle downloaded on demand), Silero TTS v5 in-process on ONNX Runtime (the [`silero-native`](silero-native/) crate; faster and lighter — a ~230 MB bundle, English read through normalization), [Piper](https://github.com/rhasspy/piper) (in-process via `piper-rs`, zero-dependency fallback with no model download), or, optionally, [Silero TTS](https://github.com/snakers4/silero-models) out-of-process via the `ttsd` Python sidecar (kept as a fallback).
 
 All synthesis runs locally on your machine — no cloud TTS, nothing is sent anywhere. The network is only used to download voice models on demand, check for app updates, and import text by URL.
 
@@ -34,7 +34,7 @@ Ready-made builds are published on [Releases](https://github.com/xilec/RuVox/rel
 | Debian / Ubuntu | `*.deb` | `sudo dpkg -i ./ruvox_*.deb`; the system `mpv` is installed automatically as a dependency; updates with the system |
 | Any Linux distribution | `*.AppImage` | runs directly (requires FUSE; where it is unavailable, use `--appimage-extract-and-run`); mpv is bundled; in-app auto-updates |
 
-The engine's voice model is downloaded on demand at first use (the Silero Native bundle is ~230 MB, the TeraTTSv2 bundle ~410 MB).
+The default engine's model is downloaded once on demand: on first launch RuVox offers the TeraTTSv2 bundle (~410 MB), and declining is not persisted — the session runs on Piper and the offer returns on the next launch. The Silero Native bundle (~230 MB) is downloaded from Settings → Models and voices.
 
 ## Stack
 
@@ -43,11 +43,12 @@ The engine's voice model is downloaded on demand at first use (the Silero Native
 | Shell | [Tauri 2](https://tauri.app/) (Rust + native webview) |
 | Frontend | React 18 + TypeScript 5 + [Mantine 8](https://mantine.dev/) |
 | Backend | Rust (normalization pipeline, storage, TTS manager) |
-| TTS | native Silero v5 (in-process, ONNX Runtime, [`silero-native`](silero-native/) crate, default); Piper (in-process, `piper-rs` + `onnxruntime`, fallback); Silero via `ttsd` (optional Python 3.12 subprocess, fallback) |
+| TTS | TeraTTSv2 (in-process, ONNX Runtime, [`teratts`](teratts/) crate, 44.1 kHz, default); native Silero v5 (in-process, ONNX Runtime, [`silero-native`](silero-native/) crate, faster and lighter); Piper (in-process, `piper-rs` + `onnxruntime`, fallback with no model download); Silero via `ttsd` (optional Python 3.12 subprocess, fallback) |
 | Audio | `tauri-plugin-mpv` (libmpv with `scaletempo2`) |
 
 ## Features
 
+- **TeraTTSv2 by default** — reads Russian prose, English terms and code more naturally; its ~410 MB bundle is downloaded once and offered on first launch. Faster and lighter is Silero Native (~230 MB, from Settings); Piper needs no download at all.
 - **Cross-checking with the text** — synchronous highlighting of the word being read: a fragment that is hard to catch by ear can be instantly verified against the original.
 - **[Normalization](#normalization)** — English (camelCase / snake_case), abbreviations, numbers, dates, URLs, email, code.
 - **English reading** — a Settings choice: «Авто» / Auto (whatever the engine can do), «Нативно» / Native (the engine's English voice) or «По-русски» / In Russian (transliteration); on an engine without an English voice, «Нативно» reads in Russian and the choice is kept.
@@ -156,6 +157,6 @@ cd ttsd && uv run python -m pytest                              # Python subproc
 
 Application code is GPL-3.0 — see [LICENSE.md](LICENSE.md).
 
-> **Important:** the voice model of the default engine (Silero Native) is distributed under the CC BY-NC-SA 4.0 license and may be used for non-commercial purposes only. See [silero-native/NOTICE](silero-native/NOTICE) for details. For use without license restrictions, choose the Piper engine — both Piper itself and its voice models are MIT-licensed.
+> **Important:** the Silero Native voice model is distributed under the CC BY-NC-SA 4.0 license and may be used for non-commercial purposes only. See [silero-native/NOTICE](silero-native/NOTICE) for details. For use without license restrictions, choose the Piper engine — both Piper itself and its voice models are MIT-licensed.
 
 > **TeraTTSv2:** the model is distributed under the TeraTTSv2 Model License (Open RAIL-M with a commercial attribution condition) and the BigScience Open RAIL-M License; commercial use is allowed when the attribution condition is met. Public use must carry the attribution "Text-to-speech powered by TeraTTSv2 by TeraSpace" with a link to the [model](https://huggingface.co/TeraSpace/TeraTTSv2). See [teratts/NOTICE](teratts/NOTICE) for details.

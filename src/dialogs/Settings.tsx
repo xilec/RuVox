@@ -136,7 +136,7 @@ const SAMPLE_RATES = [8000, 24000, 48000];
 // form): form state updates are async, so form.getValues() inside the click
 // handler still returns the pre-reset values.
 const SETTINGS_DEFAULTS: SettingsFormValues = {
-  engine: 'silero_native',
+  engine: 'teratts',
   piper_voice: 'ruslan',
   teratts_voice: 'ru_m5',
   speaker: 'aidar',

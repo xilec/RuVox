@@ -185,16 +185,25 @@ export const ru = {
     'Переписывается всё, что синтезатор не читает напрямую: идентификаторы (getUserData → «гет юзер дата»), сокращения (API → «эй пи ай»), числа и даты, URL и email, операторы и спецсимволы, содержимое блоков кода.\nФормат источника (Авто / Обычный текст / Markdown / HTML) определяет подготовку текста: из HTML извлекается читаемый текст, а mermaid-диаграммы заменяются фразой «Тут мермэйд диаграмма». Озвучка блоков кода зависит от настройки в окне настроек: «Кратко» заменяет блок короткой фразой («далее следует пример кода на пайтон»), «Читать полностью» проговаривает код целиком.',
   'preview.explain.readme_link': 'Подробнее — в разделе «Нормализация» README',
 
-  // ── Silero bundle prompt (first run) ────────────────────────────────────
-  'bundle.prompt.title': 'Скачать движок Silero?',
-  'bundle.prompt.body':
-    'Движок по умолчанию — «Silero (нативный)» — звучит заметно лучше, но требует одноразового скачивания моделей (~230 МБ). Пока модели не скачаны, приложение работает на встроенном движке Piper.',
+  // ── Model bundle prompt (first run) ────────────────────────────────────
+  'bundle.prompt.teratts.title': 'Движок по умолчанию — TeraTTSv2',
+  'bundle.prompt.teratts.body':
+    'Он естественнее читает русскую прозу, английские термины и код. Для работы нужен бандл моделей ~410 МБ — скачивается один раз, синтез идёт локально. Цена: первый синтез медленнее и памяти нужно больше (пик ~3,9 ГиБ).',
+  'bundle.prompt.teratts.download': 'Скачать (~410 МБ)',
+  'bundle.prompt.teratts.alternative':
+    'Быстрее и легче: Silero Native (~230 МБ) — в Настройках.',
+  'bundle.prompt.silero_native.title': 'Скачать движок Silero?',
+  'bundle.prompt.silero_native.body':
+    'Сохранённый движок — «Silero (нативный)» — звучит заметно лучше встроенного Piper, но требует одноразового скачивания моделей (~230 МБ). Пока модели не скачаны, приложение работает на Piper.',
+  'bundle.prompt.silero_native.download': 'Скачать (~230 МБ)',
   'bundle.prompt.downloading': 'Скачивается: {0}',
-  'bundle.prompt.download': 'Скачать (~230 МБ)',
   'bundle.prompt.stay_on_piper': 'Остаться на Piper',
   'bundle.prompt.error_title': 'Не удалось скачать бандл',
-  'bundle.ready.title': 'Движок Silero готов',
-  'bundle.ready.message':
+  'bundle.ready.teratts.title': 'Движок TeraTTSv2 готов',
+  'bundle.ready.teratts.message':
+    'Бандл моделей скачан, движок «TeraTTSv2» активирован.',
+  'bundle.ready.silero_native.title': 'Движок Silero готов',
+  'bundle.ready.silero_native.message':
     'Бандл моделей скачан, движок «Silero (нативный)» активирован.',
   'bundle.downloaded_not_started.title': 'Бандл скачан, но движок не запустился',
   'bundle.unknown_error': 'неизвестная ошибка',
@@ -219,8 +228,8 @@ export const ru = {
     'Масштабирует весь текст и содержимое, как zoom в браузере: заголовки, код, таблицы и картинки растут вместе.',
   'settings.engine.label': 'Движок',
   'settings.engine.description':
-    'Piper и Silero (нативный) — встроенные, не требуют Python.',
-  'settings.engine.silero_native': 'Silero (нативный, рекомендуемый)',
+    'TeraTTSv2 — по умолчанию: бандл ~410 МБ скачивается один раз. Piper и Silero (нативный) — встроенные, не требуют Python.',
+  'settings.engine.silero_native': 'Silero (нативный)',
   'settings.engine.piper': 'Piper',
   'settings.engine.silero': 'Silero (Python)',
   'settings.engine.teratts': 'TeraTTSv2',

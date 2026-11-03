@@ -45,6 +45,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   part entries keep working when no whole-word entry exists (#279).
 
 ### Changed
+- **TeraTTSv2 is the default engine** — a fresh config (or one written before
+  the `engine` field) now starts on TeraTTSv2, and the first launch offers its
+  ~410 MB model bundle in an engine-parameterized prompt that states what the
+  default buys and what it costs (a larger one-time download, a slower first
+  synthesis, ~3.9 GiB peak memory). Declining runs the session on Piper
+  without persisting anything and asks again on the next launch; accepting
+  activates the engine without a restart. Existing configs keep their saved
+  engine — no migration — Silero Native stays the faster, lighter ~230 MB
+  alternative in Settings, Piper stays the zero-download fallback, and the
+  "experimental" label is gone from the README (#359).
 - **Settings split into sections with search** — the dialog is now a two-pane
   window with a section nav (engine and voice, text reading, notifications,
   storage, interface, dictionary, about), a search field that matches labels

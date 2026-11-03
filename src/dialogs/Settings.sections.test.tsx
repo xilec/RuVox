@@ -625,6 +625,9 @@ describe('SettingsModal sections', () => {
   });
 
   it('reset restores factory defaults and clears the dirty markers', async () => {
+    // The factory default engine is TeraTTSv2: a config already on it keeps
+    // reset from reporting an engine change.
+    getConfig.mockResolvedValue(makeConfig({ engine: 'teratts' }));
     await renderDialog();
     await clickNav('interface');
     const themeInput = document.querySelector<HTMLInputElement>('input[value="Авто"]');

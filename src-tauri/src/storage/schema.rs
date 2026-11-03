@@ -245,8 +245,10 @@ pub struct UIConfig {
     /// default: a close request quits the app.
     #[serde(default)]
     pub hide_to_tray_on_close: bool,
-    /// Active TTS engine: `"piper"` | `"silero"` | `"silero_native"` (default)
-    /// | `"teratts"`.
+    /// Active TTS engine: `"piper"` | `"silero"` | `"silero_native"` |
+    /// `"teratts"` (default). The default applies to fresh configs and to
+    /// configs written before the field existed; a persisted value is never
+    /// migrated to a newer default.
     #[serde(default = "UIConfig::default_engine")]
     pub engine: String,
     /// Active Piper voice id (`"ruslan"` by default — see `tts::piper::catalog`).
@@ -269,7 +271,7 @@ impl UIConfig {
         24000
     }
     fn default_engine() -> String {
-        "silero_native".to_string()
+        "teratts".to_string()
     }
     fn default_piper_voice() -> String {
         "ruslan".to_string()
@@ -489,7 +491,7 @@ mod tests {
         assert!(c.notify_on_error);
         assert_eq!(c.max_cache_size_mb, 500);
         assert!(!c.speaker.is_empty());
-        assert_eq!(c.engine, "silero_native");
+        assert_eq!(c.engine, "teratts");
         assert_eq!(c.piper_voice, "ruslan");
         assert_eq!(c.teratts_voice, "ru_m5");
         assert!(!c.hide_to_tray_on_close);
@@ -505,14 +507,23 @@ mod tests {
     }
 
     #[test]
-    fn config_missing_engine_keys_defaults_to_silero_native() {
+    fn config_missing_engine_keys_defaults_to_teratts() {
         // Existing pre-#42 configs have no engine/piper_voice — must parse and
         // silently adopt the current default engine.
         let json = r#"{"speaker":"xenia","sample_rate":48000,"speech_rate":1.0}"#;
         let c: UIConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(c.engine, "silero_native");
+        assert_eq!(c.engine, "teratts");
         assert_eq!(c.piper_voice, "ruslan");
         assert_eq!(c.teratts_voice, "ru_m5");
+    }
+
+    #[test]
+    fn config_persisted_silero_native_engine_is_not_migrated() {
+        // The default moved to TeraTTSv2, but a config that already names its
+        // engine keeps it: no silent switch on upgrade.
+        let json = r#"{"engine":"silero_native","speaker":"xenia"}"#;
+        let c: UIConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(c.engine, "silero_native");
     }
 
     #[test]
@@ -528,7 +539,7 @@ mod tests {
         assert_eq!(c.speaker, "aidar");
         // Everything else falls back to the defaults.
         assert_eq!(c.sample_rate, 24000);
-        assert_eq!(c.engine, "silero_native");
+        assert_eq!(c.engine, "teratts");
     }
 
     #[test]

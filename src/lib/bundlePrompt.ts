@@ -1,16 +1,29 @@
-import type { AvailableEngines, UIConfig } from './tauri';
+import type { AvailableEngines } from './tauri';
+
+/** Engines whose first run needs a downloadable model bundle. */
+export type BundlePromptEngine = 'teratts' | 'silero_native';
+
+/** Every engine the first-run prompt can be raised for. */
+const BUNDLE_ENGINES: readonly BundlePromptEngine[] = ['teratts', 'silero_native'];
+
+function isBundleEngine(engine: string): engine is BundlePromptEngine {
+  return (BUNDLE_ENGINES as readonly string[]).includes(engine);
+}
 
 /**
- * First-run prompt decision: offer the one-time Silero Native bundle
- * download only when the persisted engine is `silero_native` and the
- * availability probe reports the bundle missing. Users who explicitly
- * picked another engine never see the prompt, and once the bundle is on
- * disk the probe flips to available and the prompt stops appearing
- * (ui spec: first-run bundle prompt).
+ * First-run prompt decision: the engine whose model bundle the persisted
+ * engine needs while the availability probe reports it missing, or `null`
+ * when no prompt applies. `piper` has no bundle, `silero` (ttsd) needs the
+ * Python stack rather than a bundle, and unknown values never prompt. A
+ * persisted engine is never migrated, so this is also the engine the prompt
+ * activates once the bundle is on disk (ui spec: first-run model bundle
+ * prompt).
  */
-export function shouldOfferBundleDownload(
-  config: Pick<UIConfig, 'engine'>,
+export function bundlePromptEngine(
+  config: { engine: string },
   availability: AvailableEngines,
-): boolean {
-  return config.engine === 'silero_native' && !availability.silero_native.available;
+): BundlePromptEngine | null {
+  const engine = config.engine;
+  if (!isBundleEngine(engine)) return null;
+  return availability[engine].available ? null : engine;
 }

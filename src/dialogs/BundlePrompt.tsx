@@ -5,9 +5,13 @@ import { commands, events } from '../lib/tauri';
 import { formatError } from '../lib/errors';
 import { useT } from '../lib/i18n';
 import { bundleDownloadPercent } from '../lib/bundleDownload';
+import type { MessageKey } from '../i18n/ru';
+import type { BundlePromptEngine } from '../lib/bundlePrompt';
 
-interface SileroBundlePromptProps {
+interface BundlePromptProps {
   opened: boolean;
+  /** Engine whose bundle to offer; `null` renders no prompt. */
+  engine: BundlePromptEngine | null;
   onClose: () => void;
 }
 
@@ -16,15 +20,51 @@ interface BundleProgress {
   percent: number;
 }
 
+/** Everything that varies between the bundle engines; the mechanics are shared. */
+interface BundlePromptCopy {
+  title: MessageKey;
+  body: MessageKey;
+  downloadLabel: MessageKey;
+  /** One-line pointer to the lighter alternative (TeraTTSv2 only). */
+  alternative: MessageKey | null;
+  readyTitle: MessageKey;
+  readyMessage: MessageKey;
+  start: () => Promise<void>;
+}
+
+const PROMPTS: Record<BundlePromptEngine, BundlePromptCopy> = {
+  teratts: {
+    title: 'bundle.prompt.teratts.title',
+    body: 'bundle.prompt.teratts.body',
+    downloadLabel: 'bundle.prompt.teratts.download',
+    alternative: 'bundle.prompt.teratts.alternative',
+    readyTitle: 'bundle.ready.teratts.title',
+    readyMessage: 'bundle.ready.teratts.message',
+    start: () => commands.downloadTerattsBundle(),
+  },
+  silero_native: {
+    title: 'bundle.prompt.silero_native.title',
+    body: 'bundle.prompt.silero_native.body',
+    downloadLabel: 'bundle.prompt.silero_native.download',
+    alternative: null,
+    readyTitle: 'bundle.ready.silero_native.title',
+    readyMessage: 'bundle.ready.silero_native.message',
+    start: () => commands.downloadSileroNativeBundle(),
+  },
+};
+
 /**
- * First-run prompt shown when the persisted engine is silero_native but the
- * model bundle is not downloaded: offer the one-time ~230 MB download or
- * keep running on the built-in Piper engine for this run (ui spec:
- * first-run bundle prompt). Declining persists nothing, so the prompt
- * reappears on the next launch while the bundle is still missing.
+ * First-run prompt shown when the persisted engine needs a model bundle that
+ * is not downloaded yet: offer the one-time download or keep running on the
+ * built-in Piper engine for this run (ui spec: first-run model bundle
+ * prompt). The engine, size, download command and activation call come from
+ * PROMPTS; the progress, error and decline mechanics are shared. Declining
+ * persists nothing, so the prompt reappears on the next launch while the
+ * bundle is still missing.
  */
-export function SileroBundlePrompt({ opened, onClose }: SileroBundlePromptProps) {
+export function BundlePrompt({ opened, engine, onClose }: BundlePromptProps) {
   const tt = useT();
+  const prompt = engine === null ? null : PROMPTS[engine];
   const [download, setDownload] = useState<BundleProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   // True between bundle_download_started and bundle_download_finished so a
@@ -33,30 +73,35 @@ export function SileroBundlePrompt({ opened, onClose }: SileroBundlePromptProps)
   const downloadActiveRef = useRef(false);
 
   // Live bundle-download progress, driven by the backend's
-  // bundle_download_* events. Subscribed only while the prompt is open.
+  // bundle_download_* events. Subscribed only while the prompt is open and
+  // filtered to the prompted engine: Settings can start its own download, and
+  // its events must not close this prompt or activate the wrong engine.
   useEffect(() => {
-    if (!opened) return;
+    if (!opened || engine === null) return;
     const unlisteners = [
-      events.bundleDownloadStarted(() => {
+      events.bundleDownloadStarted((p) => {
+        if (p.engine !== engine) return;
         downloadActiveRef.current = true;
         setDownload({ file: 'manifest.json', percent: 0 });
       }),
       events.bundleDownloadProgress((p) => {
+        if (p.engine !== engine) return;
         setDownload({ file: p.file, percent: bundleDownloadPercent(p) });
       }),
       events.bundleDownloadFinished((p) => {
+        if (p.engine !== engine) return;
         downloadActiveRef.current = false;
         setDownload(null);
         if (p.ok) {
-          // The persisted engine is already silero_native; the update only
-          // makes the EngineSwitcher rebuild onto the native engine for this
-          // session now that the bundle exists.
+          // The persisted engine already names this engine; the update only
+          // makes the EngineSwitcher rebuild onto it for this session now
+          // that the bundle exists.
           commands
-            .updateConfig({ engine: 'silero_native' })
+            .updateConfig({ engine })
             .then(() => {
               notifications.show({
-                title: tt('bundle.ready.title'),
-                message: tt('bundle.ready.message'),
+                title: tt(PROMPTS[engine].readyTitle),
+                message: tt(PROMPTS[engine].readyMessage),
                 color: 'green',
               });
             })
@@ -81,18 +126,19 @@ export function SileroBundlePrompt({ opened, onClose }: SileroBundlePromptProps)
       });
     };
     // onClose is a per-render inline closure; resubscribing on it would churn
-    // listeners every render — subscribing on `opened` is sufficient (`tt`
-    // re-subscribes on locale switch so toasts use the active catalog).
+    // listeners every render — subscribing on `opened`/`engine` is sufficient
+    // (`tt` re-subscribes on locale switch so toasts use the active catalog).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opened, tt]);
+  }, [opened, engine, tt]);
 
   const handleDownload = () => {
+    if (prompt === null) return;
     setError(null);
     // Switch to the progress view immediately — the started event lands one
     // IPC round-trip later, and without this the button stays clickable and
     // the user can queue a second download.
     setDownload({ file: 'manifest.json', percent: 0 });
-    commands.downloadSileroNativeBundle().catch((err) => {
+    prompt.start().catch((err) => {
       // Mid-download failures are already reported by the
       // bundle_download_finished { ok: false } event; only a command that
       // failed before starting needs the inline error here.
@@ -104,7 +150,12 @@ export function SileroBundlePrompt({ opened, onClose }: SileroBundlePromptProps)
   };
 
   return (
-    <Modal opened={opened} onClose={onClose} title={tt('bundle.prompt.title')} centered>
+    <Modal
+      opened={opened && prompt !== null}
+      onClose={onClose}
+      title={prompt === null ? '' : tt(prompt.title)}
+      centered
+    >
       <Stack gap="md">
         {download ? (
           <>
@@ -112,9 +163,7 @@ export function SileroBundlePrompt({ opened, onClose }: SileroBundlePromptProps)
             <Progress value={download.percent} />
           </>
         ) : (
-          <Text size="sm">
-            {tt('bundle.prompt.body')}
-          </Text>
+          <Text size="sm">{prompt === null ? '' : tt(prompt.body)}</Text>
         )}
         {error && (
           <Alert color="red" title={tt('bundle.prompt.error_title')}>
@@ -130,9 +179,14 @@ export function SileroBundlePrompt({ opened, onClose }: SileroBundlePromptProps)
             loading={download !== null}
             disabled={download !== null}
           >
-            {tt('bundle.prompt.download')}
+            {prompt === null ? '' : tt(prompt.downloadLabel)}
           </Button>
         </Group>
+        {prompt?.alternative && (
+          <Text size="xs" c="dimmed">
+            {tt(prompt.alternative)}
+          </Text>
+        )}
       </Stack>
     </Modal>
   );

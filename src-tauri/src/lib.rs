@@ -220,10 +220,10 @@ fn resolve_ttsd_dir<R: Runtime>(app: &AppHandle<R>) -> std::path::PathBuf {
 /// - `engine = "silero"` but probe says unavailable → silent migration to
 ///   Piper; the user's `engine` value on disk is left untouched so they
 ///   can roll back by installing the Silero stack.
-/// - `engine = "silero_native"` (default) *and* the model bundle is on disk →
+/// - `engine = "silero_native"` *and* the model bundle is on disk →
 ///   in-process [`tts::SileroNativeEngine`]. A missing bundle falls back
 ///   to Piper the same way; the config value is preserved.
-/// - `engine = "teratts"` *and* its model bundle is on disk →
+/// - `engine = "teratts"` (default) *and* its model bundle is on disk →
 ///   in-process [`tts::TeraTtsEngine`]. A missing bundle falls back to Piper
 ///   the same way; the config value is preserved.
 ///
