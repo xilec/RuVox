@@ -3,6 +3,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MantineProvider } from '@mantine/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { notifications } from '@mantine/notifications';
 
 vi.mock('../lib/tauri', () => ({
   commands: {
@@ -10,6 +11,8 @@ vi.mock('../lib/tauri', () => ({
       Promise.resolve([{ scope: 'global', name: 'Global', entries: [] }]),
     ),
     saveDictionary: vi.fn(() => Promise.resolve()),
+    pickDictionaryImportPath: vi.fn(() => Promise.resolve(null)),
+    importDictionary: vi.fn(() => Promise.resolve({ added: 0, updated: 0, skipped: 0 })),
     // The preview controls resolve the serving engine on open (issue #349);
     // Piper is the active engine in these tests.
     getConfig: vi.fn(() =>
@@ -53,6 +56,7 @@ vi.mock('@mantine/modals', () => ({
 import { DictionaryModal } from './DictionaryModal';
 import { translate } from '../lib/i18n';
 import { commands } from '../lib/tauri';
+import type { PreviewPronunciationResult } from '../lib/tauri';
 
 let container: HTMLDivElement;
 let root: Root;
@@ -70,6 +74,13 @@ beforeEach(() => {
   vi.mocked(commands.previewPronunciation).mockClear();
   vi.mocked(commands.pausePlayback).mockClear();
   vi.mocked(commands.stopPlayback).mockClear();
+  vi.mocked(commands.saveDictionary).mockClear();
+  vi.mocked(commands.importDictionary).mockClear();
+  vi.mocked(commands.pickDictionaryImportPath).mockClear();
+  vi.mocked(commands.getConfig).mockClear();
+  vi.mocked(commands.getAvailableEngines).mockClear();
+  vi.mocked(commands.getDictionaries).mockClear();
+  vi.mocked(notifications.show).mockClear();
 });
 
 afterEach(() => {
@@ -112,14 +123,19 @@ function clickButton(label: string) {
   act(() => button.click());
 }
 
-/** Type into the input whose label is exactly `label`. */
-function typeInto(label: string, value: string) {
+/** The input element of the field labelled `label` (null when absent). */
+function fieldFor(label: string): HTMLInputElement | null {
   const labelEl = [...document.querySelectorAll('label')].find(
     (candidate) => candidate.textContent?.trim() === label,
   );
-  const field = labelEl?.htmlFor
+  return labelEl?.htmlFor
     ? (document.getElementById(labelEl.htmlFor) as HTMLInputElement | null)
     : null;
+}
+
+/** Type into the input whose label is exactly `label`. */
+function typeInto(label: string, value: string) {
+  const field = fieldFor(label);
   if (!field) throw new Error(`field ${label} not found`);
   act(() => {
     const setValue = Object.getOwnPropertyDescriptor(
@@ -234,13 +250,7 @@ describe('DictionaryModal field help', () => {
 
 /** Read the current value of the input labelled `label`. */
 function fieldValue(label: string): string {
-  const labelEl = [...document.querySelectorAll('label')].find(
-    (candidate) => candidate.textContent?.trim() === label,
-  );
-  const field = labelEl?.htmlFor
-    ? (document.getElementById(labelEl.htmlFor) as HTMLInputElement | null)
-    : null;
-  return field?.value ?? '';
+  return fieldFor(label)?.value ?? '';
 }
 
 describe('DictionaryModal quick-add', () => {
@@ -276,12 +286,6 @@ describe('DictionaryModal quick-add', () => {
   });
 });
 
-interface PreviewResult {
-  spoken_text: string;
-  wav_base64: string;
-  duration_sec: number;
-}
-
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;
@@ -292,13 +296,26 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-describe('DictionaryModal pronunciation preview', () => {
-  const FIXTURE: PreviewResult = {
-    spoken_text: 'тест',
-    wav_base64: 'UklGRg==',
-    duration_sec: 0.4,
-  };
+/** Preview response for the cases that only need a playable WAV. */
+const FIXTURE: PreviewPronunciationResult = {
+  spoken_text: 'тест',
+  wav_base64: 'UklGRg==',
+  duration_sec: 0.4,
+};
 
+/** Labels the preview cases drive the dialog with — no raw Russian. */
+const ADD_LABEL = translate('ru', 'dictionary.add');
+const SAVE_LABEL = translate('ru', 'common.save');
+const CANCEL_LABEL = translate('ru', 'common.cancel');
+const FROM_LABEL = translate('ru', 'dictionary.form.from');
+const TO_LABEL = translate('ru', 'dictionary.form.to');
+
+/** A rejected Tauri command shaped like `CommandError`. */
+function codedError(code: string) {
+  return { type: 'synthesis_error', code, params: [], message: `backend: ${code}` };
+}
+
+describe('DictionaryModal pronunciation preview', () => {
   /** The play/stop control of one field. */
   const control = (field: 'from' | 'to') =>
     document.querySelector<HTMLButtonElement>(`[data-preview="${field}"]`);
@@ -306,7 +323,22 @@ describe('DictionaryModal pronunciation preview', () => {
   /** Open the add form once the serving-engine probe has settled. */
   async function openAddForm() {
     await vi.waitFor(() => expect(commands.getAvailableEngines).toHaveBeenCalled());
-    clickButton('Добавить слово');
+    clickButton(ADD_LABEL);
+  }
+
+  /** Wait for the control to offer "stop" — proof the preview is playing. */
+  async function waitForPlayback(field: 'from' | 'to') {
+    await vi.waitFor(() =>
+      expect(control(field)!.getAttribute('aria-label')).toBe(
+        translate('ru', 'dictionary.preview.stop'),
+      ),
+    );
+  }
+
+  /** Type a value that makes the `from` control playable. */
+  async function typePlayableFrom(value = 'IPv6') {
+    typeInto(FROM_LABEL, value);
+    await vi.waitFor(() => expect(control('from')!.disabled).toBe(false));
   }
 
   /** Select a dictionary scope through the Mantine combobox. */
@@ -336,20 +368,20 @@ describe('DictionaryModal pronunciation preview', () => {
     expect(control('to')!.disabled).toBe(true);
   });
 
-  it('disables a control while its field is invalid', async () => {
+  it('enables a control on a valid value and disables it again when the value breaks', async () => {
     await renderModal();
     await openAddForm();
-    typeInto('Слово', 'getUserData()');
-    typeInto('Как произносить', 'Моск+ва');
-    expect(control('from')!.disabled).toBe(true);
-    expect(control('to')!.disabled).toBe(true);
+    // Start from a value the control accepts: a permanently disabled control
+    // would otherwise pass the "invalid" half of this test.
+    await typePlayableFrom();
+    typeInto(FROM_LABEL, 'getUserData()');
+    await vi.waitFor(() => expect(control('from')!.disabled).toBe(true));
   });
 
   it('speaks the current reading of the word', async () => {
     await renderModal();
     await openAddForm();
-    typeInto('Слово', 'IPv6');
-    await vi.waitFor(() => expect(control('from')!.disabled).toBe(false));
+    await typePlayableFrom();
     act(() => control('from')!.click());
     await vi.waitFor(() =>
       expect(commands.previewPronunciation).toHaveBeenCalledWith('IPv6', 'normalize'),
@@ -359,7 +391,7 @@ describe('DictionaryModal pronunciation preview', () => {
   it('speaks the typed spoken form', async () => {
     await renderModal();
     await openAddForm();
-    typeInto('Как произносить', 'айпи ви ш+есть');
+    typeInto(TO_LABEL, 'айпи ви ш+есть');
     await vi.waitFor(() => expect(control('to')!.disabled).toBe(false));
     act(() => control('to')!.click());
     await vi.waitFor(() =>
@@ -368,13 +400,12 @@ describe('DictionaryModal pronunciation preview', () => {
   });
 
   it('blocks both controls while synthesizing', async () => {
-    const pending = deferred<PreviewResult>();
+    const pending = deferred<PreviewPronunciationResult>();
     vi.mocked(commands.previewPronunciation).mockReturnValueOnce(pending.promise);
     await renderModal();
     await openAddForm();
-    typeInto('Слово', 'IPv6');
-    typeInto('Как произносить', 'шесть');
-    await vi.waitFor(() => expect(control('from')!.disabled).toBe(false));
+    await typePlayableFrom();
+    typeInto(TO_LABEL, 'шесть');
 
     act(() => control('from')!.click());
     await vi.waitFor(() => expect(control('from')!.getAttribute('data-loading')).toBe('true'));
@@ -384,24 +415,15 @@ describe('DictionaryModal pronunciation preview', () => {
       pending.resolve(FIXTURE);
       await Promise.resolve();
     });
-    await vi.waitFor(() =>
-      expect(control('from')!.getAttribute('aria-label')).toBe(
-        translate('ru', 'dictionary.preview.stop'),
-      ),
-    );
+    await waitForPlayback('from');
   });
 
   it('stops the audio on a second click', async () => {
     await renderModal();
     await openAddForm();
-    typeInto('Слово', 'IPv6');
-    await vi.waitFor(() => expect(control('from')!.disabled).toBe(false));
+    await typePlayableFrom();
     act(() => control('from')!.click());
-    await vi.waitFor(() =>
-      expect(control('from')!.getAttribute('aria-label')).toBe(
-        translate('ru', 'dictionary.preview.stop'),
-      ),
-    );
+    await waitForPlayback('from');
 
     act(() => control('from')!.click());
     await vi.waitFor(() =>
@@ -415,69 +437,250 @@ describe('DictionaryModal pronunciation preview', () => {
   it('serves a repeated preview from the cache', async () => {
     await renderModal();
     await openAddForm();
-    typeInto('Слово', 'IPv6');
-    await vi.waitFor(() => expect(control('from')!.disabled).toBe(false));
-    act(() => control('from')!.click());
-    await vi.waitFor(() => expect(commands.previewPronunciation).toHaveBeenCalledTimes(1));
-    act(() => control('from')!.click());
-    await vi.waitFor(() => expect(control('from')!.getAttribute('data-preview')).toBe('from'));
+    await typePlayableFrom();
 
     act(() => control('from')!.click());
-    await vi.waitFor(() => expect(commands.previewPronunciation).toHaveBeenCalledTimes(1));
+    await waitForPlayback('from');
+    // Stop, then play again: the second play must come from the cache.
+    act(() => control('from')!.click());
+    await vi.waitFor(() =>
+      expect(control('from')!.getAttribute('aria-label')).toBe(
+        translate('ru', 'dictionary.preview.from.aria'),
+      ),
+    );
+    act(() => control('from')!.click());
+    await waitForPlayback('from');
+
+    expect(commands.previewPronunciation).toHaveBeenCalledTimes(1);
+    // Two plays, no second synthesis: the blob URL is recreated per playback.
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(2);
   });
 
-  it('shows one inline message and keeps the values on failure', async () => {
-    vi.mocked(commands.previewPronunciation).mockRejectedValueOnce({
-      type: 'synthesis_error',
-      code: 'bundle_not_installed',
-      message: 'бандл не скачан',
+  it('retires the cache after a save', async () => {
+    await renderModal();
+    await openAddForm();
+    await typePlayableFrom();
+    typeInto(TO_LABEL, 'ай пи ви ш+есть');
+
+    act(() => control('from')!.click());
+    await waitForPlayback('from');
+    clickButton(SAVE_LABEL);
+    await vi.waitFor(() => expect(commands.saveDictionary).toHaveBeenCalledTimes(1));
+
+    clickButton(ADD_LABEL);
+    await typePlayableFrom();
+    act(() => control('from')!.click());
+    // The saved dictionary changed, so the cached reading is retired.
+    await vi.waitFor(() => expect(commands.previewPronunciation).toHaveBeenCalledTimes(2));
+  });
+
+  it('retires the cache after an import', async () => {
+    vi.mocked(commands.pickDictionaryImportPath).mockResolvedValueOnce('/tmp/words.toml');
+    vi.mocked(commands.importDictionary).mockResolvedValueOnce({
+      added: 1,
+      updated: 0,
+      skipped: 0,
     });
     await renderModal();
     await openAddForm();
-    typeInto('Слово', 'IPv6');
-    await vi.waitFor(() => expect(control('from')!.disabled).toBe(false));
+    await typePlayableFrom();
+
+    act(() => control('from')!.click());
+    await waitForPlayback('from');
+    act(() => control('from')!.click());
+    await vi.waitFor(() =>
+      expect(control('from')!.getAttribute('aria-label')).toBe(
+        translate('ru', 'dictionary.preview.from.aria'),
+      ),
+    );
+
+    clickButton(translate('ru', 'dictionary.import'));
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain(
+        translate('ru', 'dictionary.import.choose.title'),
+      ),
+    );
+    clickButton(translate('ru', 'dictionary.import.merge'));
+    await vi.waitFor(() => expect(commands.importDictionary).toHaveBeenCalledTimes(1));
+
+    act(() => control('from')!.click());
+    await vi.waitFor(() => expect(commands.previewPronunciation).toHaveBeenCalledTimes(2));
+  });
+
+  it('pauses narration before the preview synthesizes', async () => {
+    await renderModal();
+    await openAddForm();
+    await typePlayableFrom();
+
+    act(() => control('from')!.click());
+    await vi.waitFor(() => expect(commands.previewPronunciation).toHaveBeenCalledTimes(1));
+    // The pause lands first: the click is the user asking to listen now, and
+    // a cache miss can take seconds.
+    const pauseOrder = vi.mocked(commands.pausePlayback).mock.invocationCallOrder[0];
+    const synthesisOrder =
+      vi.mocked(commands.previewPronunciation).mock.invocationCallOrder[0];
+    expect(pauseOrder).toBeLessThan(synthesisOrder);
+
+    // The preview still succeeds, and pauses again right before the audio for
+    // narration started while it was synthesizing.
+    await waitForPlayback('from');
+    expect(commands.pausePlayback).toHaveBeenCalledTimes(2);
+    expect(commands.stopPlayback).not.toHaveBeenCalled();
+  });
+
+  it('reports a failed pause without failing the preview', async () => {
+    vi.mocked(commands.pausePlayback).mockRejectedValueOnce(
+      codedError('playback.pause_failed'),
+    );
+    await renderModal();
+    await openAddForm();
+    await typePlayableFrom();
+
+    act(() => control('from')!.click());
+    await vi.waitFor(() =>
+      expect(vi.mocked(notifications.show)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: translate('ru', 'dictionary.preview.pause_failed.title'),
+        }),
+      ),
+    );
+    await waitForPlayback('from');
+  });
+
+  it('shows one inline message and keeps the values on failure', async () => {
+    vi.mocked(commands.previewPronunciation).mockRejectedValueOnce(
+      codedError('bundle_not_installed'),
+    );
+    await renderModal();
+    await openAddForm();
+    await typePlayableFrom();
     act(() => control('from')!.click());
 
     await vi.waitFor(() => {
       expect(document.querySelector('[data-preview-error]')?.textContent).toContain(
-        translate('ru', 'dictionary.preview.error.model_missing'),
+        translate('ru', 'errors.bundle_not_installed'),
       );
     });
-    expect(fieldValue('Слово')).toBe('IPv6');
+    expect(fieldValue(FROM_LABEL)).toBe('IPv6');
+    // A failed synthesis leaves the narration paused: no resume.
+    expect(commands.pausePlayback).toHaveBeenCalledTimes(1);
   });
 
-  it('pauses narration instead of stopping it', async () => {
-    await renderModal();
-    await openAddForm();
-    typeInto('Слово', 'IPv6');
-    await vi.waitFor(() => expect(control('from')!.disabled).toBe(false));
-    act(() => control('from')!.click());
-    await vi.waitFor(() => expect(commands.pausePlayback).toHaveBeenCalledTimes(1));
-    expect(commands.stopPlayback).not.toHaveBeenCalled();
-  });
+  // Every engine rejection the backend can answer with must land in one
+  // localized sentence, interpolated into the "Не удалось прослушать" wrapper
+  // (the same `formatError` the rest of the app uses).
+  const ENGINE_REJECTIONS: [string, string][] = [
+    ['preview.engine_busy', 'errors.preview.engine_busy'],
+    ['preview.invalid_stress', 'errors.preview.invalid_stress'],
+    ['voice_not_installed', 'errors.voice_not_installed'],
+  ];
 
-  it('stops the preview when the editor closes', async () => {
-    await renderModal();
-    await openAddForm();
-    typeInto('Слово', 'IPv6');
-    await vi.waitFor(() => expect(control('from')!.disabled).toBe(false));
-    act(() => control('from')!.click());
-    await vi.waitFor(() =>
-      expect(control('from')!.getAttribute('aria-label')).toBe(
-        translate('ru', 'dictionary.preview.stop'),
-      ),
+  for (const [code, key] of ENGINE_REJECTIONS) {
+    it(`localizes a ${code} rejection`, async () => {
+      vi.mocked(commands.previewPronunciation).mockRejectedValueOnce(codedError(code));
+      await renderModal();
+      await openAddForm();
+      await typePlayableFrom();
+      act(() => control('from')!.click());
+
+      await vi.waitFor(() => {
+        expect(document.querySelector('[data-preview-error]')?.textContent).toBe(
+          translate('ru', 'dictionary.preview.error', [translate('ru', key)]),
+        );
+      });
+    });
+  }
+
+  it('reports a playback failure', async () => {
+    vi.mocked(HTMLMediaElement.prototype.play).mockRejectedValueOnce(
+      new Error('no audio device'),
     );
+    await renderModal();
+    await openAddForm();
+    await typePlayableFrom();
+    act(() => control('from')!.click());
 
-    clickButton('Отмена');
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-preview-error]')?.textContent).toBe(
+        translate('ru', 'dictionary.preview.error.play_failed'),
+      );
+    });
+  });
+
+  it('ignores an aborted play instead of reporting an error', async () => {
+    vi.mocked(HTMLMediaElement.prototype.play).mockRejectedValueOnce(
+      new DOMException('The play() request was interrupted', 'AbortError'),
+    );
+    await renderModal();
+    await openAddForm();
+    await typePlayableFrom();
+    act(() => control('from')!.click());
+
+    await vi.waitFor(() => expect(commands.previewPronunciation).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(document.querySelector('[data-preview-error]')).toBeNull();
+  });
+
+  it('drops a response that arrives after the editor closed', async () => {
+    const pending = deferred<PreviewPronunciationResult>();
+    vi.mocked(commands.previewPronunciation).mockReturnValueOnce(pending.promise);
+    await renderModal();
+    await openAddForm();
+    await typePlayableFrom();
+
+    act(() => control('from')!.click());
+    await vi.waitFor(() => expect(control('from')!.getAttribute('data-loading')).toBe('true'));
+
+    clickButton(CANCEL_LABEL);
+    await vi.waitFor(() => expect(control('from')).toBeNull());
+
+    await act(async () => {
+      pending.resolve(FIXTURE);
+      await Promise.resolve();
+    });
+    // The stale response must not build an object URL or start playback.
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+    expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+  });
+
+  it('stops the preview and releases the audio when the editor closes', async () => {
+    await renderModal();
+    await openAddForm();
+    await typePlayableFrom();
+    act(() => control('from')!.click());
+    await waitForPlayback('from');
+
+    clickButton(CANCEL_LABEL);
     await vi.waitFor(() => expect(control('from')).toBeNull());
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:preview-audio');
+    // `releaseAudio` pauses the element before dropping its source.
+    expect(HTMLMediaElement.prototype.pause).toHaveBeenCalled();
+  });
+
+  it('places the hint right under the spoken-form field', async () => {
+    await renderModal();
+    await vi.waitFor(() => expect(commands.getAvailableEngines).toHaveBeenCalled());
+    await selectScope('TeraTTSv2');
+    clickButton(ADD_LABEL);
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-preview-hint]')?.textContent).toContain('Piper');
+    });
+
+    const hint = document.querySelector('[data-preview-hint]')!;
+    const toField = fieldFor(TO_LABEL)!;
+    const formsField = fieldFor(translate('ru', 'dictionary.form.forms'))!;
+    expect(toField.compareDocumentPosition(hint) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(hint.compareDocumentPosition(formsField) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('names the serving engine when the scope belongs to another engine', async () => {
     await renderModal();
     await vi.waitFor(() => expect(commands.getAvailableEngines).toHaveBeenCalled());
     await selectScope('TeraTTSv2');
-    clickButton('Добавить слово');
+    clickButton(ADD_LABEL);
     await vi.waitFor(() => {
       expect(document.querySelector('[data-preview-hint]')?.textContent).toContain('Piper');
     });
@@ -487,7 +690,7 @@ describe('DictionaryModal pronunciation preview', () => {
     await renderModal();
     await vi.waitFor(() => expect(commands.getAvailableEngines).toHaveBeenCalled());
     await selectScope('Piper');
-    clickButton('Добавить слово');
+    clickButton(ADD_LABEL);
     expect(document.querySelector('[data-preview-hint]')).toBeNull();
   });
 });

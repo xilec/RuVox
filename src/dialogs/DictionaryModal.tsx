@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActionIcon,
   Badge,
+  Box,
   Button,
   Divider,
   Group,
@@ -36,10 +37,9 @@ import {
   entryKey,
   findFormCollision,
   isSingleSourceToken,
-  MAX_TO_LEN,
+  isSpokenFormSynthesizable,
   parseFormList,
   sortAndFilterEntries,
-  spokenForm,
   validateEntryInput,
   type DictionaryValidationReason,
 } from '../lib/userDictionary';
@@ -112,15 +112,37 @@ const SCOPE_LABEL_KEY: Record<DictionaryScope, Parameters<ReturnType<typeof useT
   teratts: 'dictionary.scope.teratts',
 };
 
-/** Engine error codes that mean the active engine cannot produce the sound. */
-const MODEL_MISSING_CODES = new Set(['bundle_not_installed', 'model_not_loaded']);
-const VOICE_MISSING_CODES = new Set(['voice_not_installed']);
+/** Preview cache size limit: every entry holds a whole WAV, and the editor
+ *  only replays a handful of words before a save retires the cache. */
+const PREVIEW_CACHE_MAX = 12;
 
-/** Machine-readable `code` of a rejected command, or '' when it has none. */
-function errorCode(err: unknown): string {
-  if (typeof err !== 'object' || err === null || !('code' in err)) return '';
-  const code = (err as { code?: unknown }).code;
-  return typeof code === 'string' ? code : '';
+/** Read a cached preview and mark it most recently used. `Map` iterates in
+ *  insertion order, so re-inserting moves the entry to the end. */
+function takeCachedPreview(
+  cache: Map<string, PreviewPronunciationResult>,
+  key: string,
+): PreviewPronunciationResult | undefined {
+  const cached = cache.get(key);
+  if (cached === undefined) return undefined;
+  cache.delete(key);
+  cache.set(key, cached);
+  return cached;
+}
+
+/** Insert a fresh preview past the LRU limit: the least recently used
+ *  readings are dropped first (issue #349 review). */
+function cachePreview(
+  cache: Map<string, PreviewPronunciationResult>,
+  key: string,
+  result: PreviewPronunciationResult,
+) {
+  cache.delete(key);
+  cache.set(key, result);
+  while (cache.size > PREVIEW_CACHE_MAX) {
+    const oldest = cache.keys().next().value;
+    if (oldest === undefined) break;
+    cache.delete(oldest);
+  }
 }
 
 /** Decode the base64 WAV of a preview response into a playable blob. */
@@ -130,15 +152,6 @@ function wavBlob(base64: string): Blob {
   for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
   return new Blob([bytes], { type: 'audio/wav' });
 }
-
-/** True when the typed spoken form can be synthesized: mirrors the backend
- *  gate (non-empty, at most one well-formed mark, within the length limit). */
-function isSpokenFormPlayable(value: string): boolean {
-  if (value.length === 0) return false;
-  const spoken = spokenForm(value);
-  return spoken !== null && spoken.length > 0 && [...spoken].length <= MAX_TO_LEN;
-}
-
 export function DictionaryModal({
   opened,
   onClose,
@@ -198,22 +211,27 @@ export function DictionaryModal({
     setPreviewPlaying(null);
   }, [releaseAudio]);
 
-  /** Short localized detail for a failed preview (issue #349). */
-  const previewErrorMessage = useCallback(
-    (err: unknown): string => {
-      const code = errorCode(err);
-      if (code === 'preview.engine_busy') {
-        return tt('dictionary.preview.error.engine_busy');
-      }
-      if (code === 'preview.invalid_stress') {
-        return tt('dictionary.preview.error.invalid_stress');
-      }
-      if (MODEL_MISSING_CODES.has(code)) return tt('dictionary.preview.error.model_missing');
-      if (VOICE_MISSING_CODES.has(code)) return tt('dictionary.preview.error.voice_missing');
-      return formatError(err);
-    },
-    [tt],
-  );
+  /** Pause narration, never stop it: the preview speaks over the pause and
+   *  the user resumes where they left off. A failed pause is reported without
+   *  failing the preview itself — the audio still plays. */
+  const pauseNarration = useCallback(async () => {
+    try {
+      await commands.pausePlayback();
+    } catch (e) {
+      notifications.show({
+        title: tt('dictionary.preview.pause_failed.title'),
+        message: formatError(e),
+        color: 'yellow',
+      });
+    }
+  }, [tt]);
+
+  /** Retire every cached reading: after a dictionary write (save or import)
+   *  the saved dictionary no longer matches what the cache holds. */
+  const bumpPreviewRevision = useCallback(() => {
+    previewRevisionRef.current += 1;
+    previewCacheRef.current.clear();
+  }, []);
 
   /** Play (or stop) one field's pronunciation preview. */
   const startPreview = useCallback(
@@ -225,7 +243,7 @@ export function DictionaryModal({
       }
       const value = (field === 'from' ? editor.from : editor.to).trim();
       const playable =
-        field === 'from' ? isSingleSourceToken(value) : isSpokenFormPlayable(value);
+        field === 'from' ? isSingleSourceToken(value) : isSpokenFormSynthesizable(value);
       if (!playable) return;
 
       const mode = field === 'from' ? 'normalize' : 'spoken';
@@ -241,7 +259,13 @@ export function DictionaryModal({
         stopPreview();
         setPreviewError(null);
         const seq = previewSeqRef.current;
-        let result = previewCacheRef.current.get(key);
+        // Pause narration as the preview starts, not when synthesis returns:
+        // the click is the user asking to listen now, and a cache miss can
+        // take seconds. Narration is never resumed afterwards.
+        await pauseNarration();
+        if (seq !== previewSeqRef.current) return;
+
+        let result = takeCachedPreview(previewCacheRef.current, key);
         if (!result) {
           setPreviewBusy(field);
           try {
@@ -249,11 +273,13 @@ export function DictionaryModal({
           } catch (e) {
             if (seq !== previewSeqRef.current) return;
             setPreviewBusy(null);
-            setPreviewError(tt('dictionary.preview.error', [previewErrorMessage(e)]));
+            // No resume on failure: the paused narration is the user's own
+            // state, not a placeholder for the preview.
+            setPreviewError(tt('dictionary.preview.error', [formatError(e)]));
             return;
           }
           if (seq !== previewSeqRef.current) return;
-          previewCacheRef.current.set(key, result);
+          cachePreview(previewCacheRef.current, key, result);
         }
 
         const audio = audioRef.current;
@@ -261,13 +287,10 @@ export function DictionaryModal({
           setPreviewBusy(null);
           return;
         }
-        // Narration is paused (never stopped) right before the preview
-        // speaks, and is not resumed afterwards.
-        try {
-          await commands.pausePlayback();
-        } catch (e) {
-          console.warn('dictionary preview: pausing narration failed', e);
-        }
+        // Second pause, right before the audio starts: a cache hit skips the
+        // synthesis wait above, and a narration started in between must still
+        // yield to the preview.
+        await pauseNarration();
         if (seq !== previewSeqRef.current) return;
 
         releaseAudio();
@@ -279,8 +302,12 @@ export function DictionaryModal({
         try {
           await audio.play();
         } catch (e) {
+          // A fast play→stop (or a newer preview superseding this one)
+          // rejects the pending play: neither is a playback error, and a
+          // stale response must not clear the new preview's state.
+          if (seq !== previewSeqRef.current) return;
+          if (e instanceof DOMException && e.name === 'AbortError') return;
           stopPreview();
-          console.warn('dictionary preview: playback failed', e);
           setPreviewError(tt('dictionary.preview.error.play_failed'));
         }
       })();
@@ -289,9 +316,9 @@ export function DictionaryModal({
       editor,
       previewPlaying,
       stopPreview,
+      pauseNarration,
       previewEngine,
       previewVoice,
-      previewErrorMessage,
       releaseAudio,
       tt,
     ],
@@ -300,7 +327,8 @@ export function DictionaryModal({
   /** One play/stop control, rendered in a field's `rightSection`. */
   const renderPreviewControl = (field: PreviewField) => {
     const value = (field === 'from' ? editor?.from : editor?.to)?.trim() ?? '';
-    const playable = field === 'from' ? isSingleSourceToken(value) : isSpokenFormPlayable(value);
+    const playable =
+      field === 'from' ? isSingleSourceToken(value) : isSpokenFormSynthesizable(value);
     const busy = previewBusy === field;
     const playing = previewPlaying === field;
     // Both controls are blocked while either preview synthesizes.
@@ -321,18 +349,23 @@ export function DictionaryModal({
         withArrow
         zIndex={TOOLTIP_Z}
       >
-        <ActionIcon
-          variant="subtle"
-          size="sm"
-          radius="xl"
-          aria-label={label}
-          disabled={disabled}
-          loading={busy}
-          data-preview={field}
-          onClick={() => startPreview(field)}
-        >
-          {playing ? <IconStop /> : <IconPlay />}
-        </ActionIcon>
+        {/* The tooltip has to open while the field is empty, when the
+            control is disabled: a disabled Mantine button swallows pointer
+            events, so the span wrapper carries them. */}
+        <Box component="span" display="flex">
+          <ActionIcon
+            variant="subtle"
+            size="sm"
+            radius="xl"
+            aria-label={label}
+            disabled={disabled}
+            loading={busy}
+            data-preview={field}
+            onClick={() => startPreview(field)}
+          >
+            {playing ? <IconStop /> : <IconPlay />}
+          </ActionIcon>
+        </Box>
       </Tooltip>
     );
   };
@@ -435,7 +468,7 @@ export function DictionaryModal({
           scope,
           next.map(({ from, to, forms }) => ({ from, to, forms })),
         );
-        previewRevisionRef.current += 1;
+        bumpPreviewRevision();
         setStatusSafe('saved');
         onSaved?.();
         refreshCollections(scope).catch(() => {});
@@ -448,7 +481,7 @@ export function DictionaryModal({
         });
       }
     },
-    [onSaved, refreshCollections, scope, setStatusSafe, tt],
+    [bumpPreviewRevision, onSaved, refreshCollections, scope, setStatusSafe, tt],
   );
 
   const retrySave = useCallback(() => {
@@ -549,7 +582,7 @@ export function DictionaryModal({
       try {
         const report = await commands.importDictionary(path, mode, scope);
         await refreshCollections(scope);
-        previewRevisionRef.current += 1;
+        bumpPreviewRevision();
         setStatusSafe('saved');
         onSaved?.();
         notifications.show({
@@ -569,7 +602,7 @@ export function DictionaryModal({
         });
       }
     },
-    [onSaved, pendingImport, refreshCollections, scope, setStatusSafe, tt],
+    [bumpPreviewRevision, onSaved, pendingImport, refreshCollections, scope, setStatusSafe, tt],
   );
 
   const handleExport = useCallback(async () => {
@@ -763,6 +796,18 @@ export function DictionaryModal({
                 softWarning !== null ? tt(VALIDATION_KEY[softWarning]) : undefined
               }
             />
+            {/* Directly under the field they belong to: the hint explains what
+                the preview will say, the error replaces it on failure. */}
+            {previewHint !== null && (
+              <Text size="xs" c="dimmed" data-preview-hint>
+                {previewHint}
+              </Text>
+            )}
+            {previewError !== null && (
+              <Text size="xs" c="red" data-preview-error>
+                {previewError}
+              </Text>
+            )}
             <TextInput
               label={tt('dictionary.form.forms')}
               rightSection={
@@ -793,16 +838,6 @@ export function DictionaryModal({
                   : undefined
               }
             />
-            {previewHint !== null && (
-              <Text size="xs" c="dimmed" data-preview-hint>
-                {previewHint}
-              </Text>
-            )}
-            {previewError !== null && (
-              <Text size="xs" c="red" data-preview-error>
-                {previewError}
-              </Text>
-            )}
             <Popover
               width={380}
               position="bottom-start"
