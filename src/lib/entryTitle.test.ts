@@ -25,6 +25,16 @@ const CASES: ReadonlyArray<[input: string, expected: string | null]> = [
   ['#', null],
   ['- ', null],
   ['\u2003\n', null],
+  // CRLF input: the trailing `\r` is whitespace, not part of the title.
+  ['## Заголовок\r\nТекст', 'Заголовок'],
+  // A lone `\r` is not a line break, but it still collapses to a space.
+  ['Заголовок\rХвост', 'Заголовок Хвост'],
+  // NEL (U+0085) is Unicode White_Space — trimmed at the edge and collapsed
+  // inside, unlike JS `String.prototype.trim`.
+  ['\u0085# Заголовок', 'Заголовок'],
+  ['# Заголовок\u0085Текст', 'Заголовок Текст'],
+  // BOM (U+FEFF) is not White_Space, unlike JS `String.prototype.trim`.
+  ['\uFEFF# Заголовок', '\uFEFF# Заголовок'],
 ];
 
 describe('deriveTitle', () => {
@@ -49,6 +59,13 @@ describe('deriveTitle', () => {
     expect(title).not.toBeNull();
     expect(Array.from(title!)).toHaveLength(TITLE_MAX_CHARS - 1);
     expect(title!.endsWith(' ')).toBe(false);
+  });
+
+  it('caps an astral character whole instead of splitting a surrogate', () => {
+    const text = `${'ж'.repeat(TITLE_MAX_CHARS - 1)}😀хвост`;
+    const title = deriveTitle(text);
+    expect(title).toBe(`${'ж'.repeat(TITLE_MAX_CHARS - 1)}😀`);
+    expect(Array.from(title!)).toHaveLength(TITLE_MAX_CHARS);
   });
 
   it('strips nested markers', () => {

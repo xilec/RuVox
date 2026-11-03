@@ -84,7 +84,7 @@ describe('EntryHeader', () => {
     act(() => {
       root.render(
         <MantineProvider>
-          <EntryHeader entry={entry} />
+          <EntryHeader key={entry.id} entry={entry} />
         </MantineProvider>,
       );
     });
@@ -133,6 +133,27 @@ describe('EntryHeader', () => {
           cancelable: true,
           ...modifiers,
         }),
+      );
+    });
+  }
+
+  /** A promise the test settles explicitly, to order two IPC responses. */
+  function deferred() {
+    let resolve!: () => void;
+    let reject!: (reason: unknown) => void;
+    const promise = new Promise<void>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  }
+
+  /** Dispatch React's `focusout` with an explicit `relatedTarget`, the way a
+   *  browser reports a Tab move (jsdom's `focus()` does not fill it in). */
+  function blurTo(field: Element, target: Element | null): void {
+    act(() => {
+      field.dispatchEvent(
+        new FocusEvent('focusout', { bubbles: true, relatedTarget: target }),
       );
     });
   }
@@ -330,5 +351,237 @@ describe('EntryHeader', () => {
       delete (HTMLElement.prototype as { scrollHeight?: number }).scrollHeight;
       delete (HTMLElement.prototype as { clientHeight?: number }).clientHeight;
     }
+  });
+
+  it('keeps the newer title when an earlier edit settles last', async () => {
+    const first = deferred();
+    const second = deferred();
+    setEntryTitle
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise);
+    render(makeEntry());
+
+    act(() => buttonByLabel('Тёмная сторона инлайнинга').click());
+    typeInto(titleInput(), 'Первое имя');
+    keyDown(titleInput(), 'Enter');
+
+    act(() => buttonByLabel('Первое имя').click());
+    typeInto(titleInput(), 'Второе имя');
+    keyDown(titleInput(), 'Enter');
+
+    expect(setEntryTitle).toHaveBeenNthCalledWith(1, 'entry-1', 'Первое имя');
+    expect(setEntryTitle).toHaveBeenNthCalledWith(2, 'entry-1', 'Второе имя');
+
+    // The newer write echoes first, then the superseded one settles last with
+    // its older value: the header must keep the edit the user made last.
+    await act(async () => {
+      second.resolve();
+      await Promise.resolve();
+    });
+    render(makeEntry({ title: 'Второе имя' }));
+
+    await act(async () => {
+      first.resolve();
+      await Promise.resolve();
+    });
+    render(makeEntry({ title: 'Первое имя' }));
+
+    expect(host.textContent).toContain('Второе имя');
+    expect(host.textContent).not.toContain('Первое имя');
+  });
+
+  it('ignores a superseded title rejection after a newer edit resolved', async () => {
+    const first = deferred();
+    setEntryTitle
+      .mockImplementationOnce(() => first.promise)
+      .mockResolvedValueOnce(undefined);
+    render(makeEntry());
+
+    act(() => buttonByLabel('Тёмная сторона инлайнинга').click());
+    typeInto(titleInput(), 'Первое имя');
+    keyDown(titleInput(), 'Enter');
+
+    act(() => buttonByLabel('Первое имя').click());
+    typeInto(titleInput(), 'Второе имя');
+    keyDown(titleInput(), 'Enter');
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      first.reject(new Error('boom'));
+      await Promise.resolve();
+    });
+
+    expect(host.textContent).toContain('Второе имя');
+    expect(host.textContent).not.toContain('Тёмная сторона инлайнинга');
+    expect(showNotification).not.toHaveBeenCalled();
+  });
+
+  it('ignores a superseded note rejection after a newer edit resolved', async () => {
+    const first = deferred();
+    setEntryNote
+      .mockImplementationOnce(() => first.promise)
+      .mockResolvedValueOnce(undefined);
+    render(makeEntry());
+
+    act(() => buttonByLabel('Редактировать заметку').click());
+    typeInto(noteTextarea(), 'первая заметка');
+    keyDown(noteTextarea(), 'Enter', { ctrlKey: true });
+
+    act(() => buttonByLabel('Редактировать заметку').click());
+    typeInto(noteTextarea(), 'вторая заметка');
+    keyDown(noteTextarea(), 'Enter', { ctrlKey: true });
+
+    await act(async () => {
+      first.reject(new Error('boom'));
+      await Promise.resolve();
+    });
+
+    expect(host.textContent).toContain('вторая заметка');
+    expect(showNotification).not.toHaveBeenCalled();
+  });
+
+  it('caps title and note by code points, keeping an astral character whole', () => {
+    render(makeEntry());
+
+    act(() => buttonByLabel('Тёмная сторона инлайнинга').click());
+    typeInto(titleInput(), `${'ж'.repeat(199)}😀хвост`);
+    keyDown(titleInput(), 'Enter');
+    const title = setEntryTitle.mock.calls[0]?.[1] as string;
+    expect(title).toBe(`${'ж'.repeat(199)}😀`);
+    expect(Array.from(title)).toHaveLength(200);
+
+    act(() => buttonByLabel('Редактировать заметку').click());
+    typeInto(noteTextarea(), `${'ж'.repeat(1999)}😀хвост`);
+    keyDown(noteTextarea(), 'Enter', { ctrlKey: true });
+    const note = setEntryNote.mock.calls[0]?.[1] as string;
+    expect(note).toBe(`${'ж'.repeat(1999)}😀`);
+    expect(Array.from(note)).toHaveLength(2000);
+  });
+
+  it('seeds the editor with the derived title for a legacy entry', () => {
+    render(makeEntry({ title: null }));
+
+    act(() => buttonByLabel('Установка').click());
+
+    expect(titleInput().value).toBe('Установка');
+  });
+
+  it('stores a value equal to the derived title as null', () => {
+    render(makeEntry({ title: 'Своё имя' }));
+
+    act(() => buttonByLabel('Своё имя').click());
+    typeInto(titleInput(), '  Установка  ');
+    keyDown(titleInput(), 'Enter');
+
+    expect(setEntryTitle).toHaveBeenCalledWith('entry-1', null);
+    expect(host.textContent).toContain('Установка');
+  });
+
+  it('keeps the editor open while Tab moves focus inside the title row', () => {
+    render(makeEntry());
+
+    act(() => buttonByLabel('Тёмная сторона инлайнинга').click());
+    const input = titleInput();
+    typeInto(input, 'Новое имя');
+
+    blurTo(input, buttonByText('Сохранить'));
+    expect(titleInput()).not.toBeNull();
+    expect(setEntryTitle).not.toHaveBeenCalled();
+
+    blurTo(titleInput(), buttonByText('Отмена'));
+    expect(setEntryTitle).not.toHaveBeenCalled();
+
+    act(() => buttonByText('Сохранить').click());
+    expect(setEntryTitle).toHaveBeenCalledWith('entry-1', 'Новое имя');
+  });
+
+  it('returns focus to the title button after Enter and to the note pencil after Escape', () => {
+    render(makeEntry());
+
+    act(() => buttonByLabel('Тёмная сторона инлайнинга').click());
+    const input = titleInput();
+    input.focus();
+    typeInto(input, 'Новое имя');
+    keyDown(input, 'Enter');
+    expect(document.activeElement).toBe(buttonByLabel('Новое имя'));
+
+    act(() => buttonByLabel('Редактировать заметку').click());
+    const textarea = noteTextarea();
+    textarea.focus();
+    keyDown(textarea, 'Escape');
+    expect(document.activeElement).toBe(buttonByLabel('Редактировать заметку'));
+  });
+
+  it('does not commit a plain Enter in the note', () => {
+    render(makeEntry());
+
+    act(() => buttonByLabel('Редактировать заметку').click());
+    typeInto(noteTextarea(), 'строка');
+    keyDown(noteTextarea(), 'Enter');
+
+    expect(setEntryNote).not.toHaveBeenCalled();
+    expect(noteTextarea()).not.toBeNull();
+  });
+
+  it('saves the note on blur', () => {
+    render(makeEntry({ note: null }));
+
+    act(() => buttonByText('Добавить заметку').click());
+    typeInto(noteTextarea(), '  заметка  ');
+    act(() => noteTextarea().blur());
+
+    expect(setEntryNote).toHaveBeenCalledWith('entry-1', 'заметка');
+  });
+
+  it('clears a blank note to null on blur', () => {
+    render(makeEntry());
+
+    act(() => buttonByLabel('Редактировать заметку').click());
+    typeInto(noteTextarea(), '   ');
+    act(() => noteTextarea().blur());
+
+    expect(setEntryNote).toHaveBeenCalledWith('entry-1', null);
+  });
+
+  it('rolls the note back and shows a red toast when IPC fails', async () => {
+    setEntryNote.mockRejectedValueOnce(new Error('boom'));
+    render(makeEntry());
+
+    act(() => buttonByLabel('Редактировать заметку').click());
+    typeInto(noteTextarea(), 'Откатится');
+    keyDown(noteTextarea(), 'Enter', { ctrlKey: true });
+
+    expect(host.textContent).toContain('Откатится');
+    await vi.waitFor(() => {
+      expect(showNotification).toHaveBeenCalledWith(
+        expect.objectContaining({ color: 'red' }),
+      );
+    });
+    expect(host.textContent).not.toContain('Откатится');
+    expect(host.textContent).toContain('вернуться к бенчмаркам Wasm');
+  });
+
+  it('commits an open note draft when the entry changes', () => {
+    render(makeEntry());
+    act(() => buttonByLabel('Редактировать заметку').click());
+    typeInto(noteTextarea(), 'черновик A');
+
+    render(
+      makeEntry({
+        id: 'entry-2',
+        title: 'Другая запись',
+        note: null,
+        original_text: 'Текст второй записи',
+      }),
+    );
+
+    expect(setEntryNote).toHaveBeenCalledWith('entry-1', 'черновик A');
+    expect(setEntryTitle).not.toHaveBeenCalled();
+    expect(
+      host.querySelector('textarea[aria-label="Заметка к записи"]'),
+    ).toBeNull();
+    expect(host.textContent).toContain('Другая запись');
   });
 });

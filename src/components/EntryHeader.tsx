@@ -15,13 +15,20 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type FocusEvent,
   type ReactNode,
 } from 'react';
 import type { TextEntry } from '../lib/tauri';
 import { commands } from '../lib/tauri';
 import { formatError } from '../lib/errors';
 import { useT } from '../lib/i18n';
-import { entryDisplayTitle, TITLE_MAX_CHARS } from '../lib/entryTitle';
+import {
+  capCodePoints,
+  deriveTitle,
+  entryDisplayTitle,
+  TITLE_MAX_CHARS,
+  trimWhiteSpace,
+} from '../lib/entryTitle';
 import { ABSENT, displayEngine, displayVoice } from '../lib/generationDisplay';
 import { formatNaiveUtcDateTime } from '../lib/datetime';
 import { STATUS_KEY, statusBadgeColor } from '../lib/entryStatus';
@@ -31,6 +38,23 @@ import classes from './EntryHeader.module.css';
 
 /** Maximum note length; mirrors the backend command limit. */
 const NOTE_MAX_CHARS = 2000;
+
+/**
+ * Normalize a title draft the way `set_entry_title` does: trim Unicode
+ * whitespace, cap at the code-point limit, and store `null` when the value is
+ * empty or equals the derived fallback — "cleared" and "back to derived" are
+ * the same stored state.
+ */
+function normalizeTitleDraft(draft: string, entry: TextEntry): string | null {
+  const next = capCodePoints(trimWhiteSpace(draft), TITLE_MAX_CHARS);
+  if (next === '') return null;
+  return next === deriveTitle(entry.original_text) ? null : next;
+}
+
+/** Normalize a note draft: trim the edges and cap at the backend limit. */
+function normalizeNoteDraft(draft: string): string | null {
+  return capCodePoints(trimWhiteSpace(draft), NOTE_MAX_CHARS) || null;
+}
 
 interface EntryHeaderProps {
   entry: TextEntry;
@@ -43,17 +67,23 @@ interface EntryHeaderProps {
 /**
  * Viewer header above the reading area (issue #353): editable title and note,
  * plus the entry's metadata — date added, status, and the engine/voice that
- * produced the current recording. Edits are optimistic; a rejected IPC call
- * rolls the value back and shows the red error toast. Opening a draft is
- * never disturbed by incoming `entry_updated` events (e.g. a status change),
- * because drafts live in local state and are seeded only when editing starts.
+ * produced the current recording.
+ *
+ * Edits are optimistic: the value renders immediately, and a rejection rolls
+ * it back to the persisted one with the red error toast. Each field tags its
+ * writes with a monotonic request id, so a superseded write that settles last
+ * can neither roll back a newer edit nor release its override (the same guard
+ * as the reading controls, #364). Opening a draft is never disturbed by
+ * incoming `entry_updated` events (e.g. a status change), because drafts live
+ * in local state and are seeded only when editing starts.
  */
 export function EntryHeader({ entry, controls }: EntryHeaderProps) {
   const tt = useT();
   const locale = useLocaleStore((s) => s.locale);
 
   // Optimistic overrides: `undefined` means "render the persisted value".
-  // They are cleared once the matching `entry_updated` lands.
+  // They are released once the matching `entry_updated` lands — see the
+  // guarded effects below.
   const [titleOverride, setTitleOverride] = useState<string | null | undefined>(
     undefined,
   );
@@ -71,6 +101,26 @@ export function EntryHeader({ entry, controls }: EntryHeaderProps) {
   // follows the unmount does not commit a second time.
   const skipTitleBlur = useRef(false);
   const skipNoteBlur = useRef(false);
+  // Per-field write bookkeeping: `requestId` names the newest edit,
+  // `settledId` the edit that settled last, `pending` counts the unsettled
+  // writes. A superseded write may settle after a newer one, so it must
+  // neither roll the newer override back nor release it when its stale echo
+  // lands out of order.
+  const titleRequestId = useRef(0);
+  const titleSettledId = useRef(0);
+  const [titlePending, setTitlePending] = useState(0);
+  const noteRequestId = useRef(0);
+  const noteSettledId = useRef(0);
+  const [notePending, setNotePending] = useState(0);
+  // The edit rows, so Tab between a field and its Save/Cancel buttons does not
+  // look like leaving the editor (blur commits otherwise).
+  const titleRowRef = useRef<HTMLDivElement>(null);
+  const noteEditRef = useRef<HTMLDivElement>(null);
+  // Keyboard exits hand focus back to the control that opened the editor.
+  const titleButtonRef = useRef<HTMLButtonElement>(null);
+  const noteEditButtonRef = useRef<HTMLButtonElement>(null);
+  const restoreTitleFocus = useRef(false);
+  const restoreNoteFocus = useRef(false);
 
   const storedTitle = titleOverride !== undefined ? titleOverride : entry.title;
   const storedNote = noteOverride !== undefined ? noteOverride : entry.note;
@@ -79,17 +129,26 @@ export function EntryHeader({ entry, controls }: EntryHeaderProps) {
     original_text: entry.original_text,
   });
 
-  // Drop the optimistic override once the persisted value catches up.
+  // Release an optimistic value only when the entry has caught up with it and
+  // the newest edit is the one that settled. A superseded write can settle
+  // last and echo its older value; clearing the override while that write is
+  // still out would flash it back over the edit the user actually made.
   useEffect(() => {
+    if (titlePending > 0 || titleSettledId.current !== titleRequestId.current) {
+      return;
+    }
     setTitleOverride((current) =>
       current !== undefined && entry.title === current ? undefined : current,
     );
-  }, [entry.title]);
+  }, [entry.title, titlePending]);
   useEffect(() => {
+    if (notePending > 0 || noteSettledId.current !== noteRequestId.current) {
+      return;
+    }
     setNoteOverride((current) =>
       current !== undefined && entry.note === current ? undefined : current,
     );
-  }, [entry.note]);
+  }, [entry.note, notePending]);
   // A collapsed note starts collapsed again when its text changes.
   useEffect(() => {
     setNoteExpanded(false);
@@ -110,8 +169,56 @@ export function EntryHeader({ entry, controls }: EntryHeaderProps) {
     return () => observer.disconnect();
   }, [storedNote, noteExpanded]);
 
+  // Latest render values for the unmount cleanup: a `[]` effect's cleanup
+  // closure cannot read state. `TextViewer` keys this header by entry id, so
+  // switching entries unmounts it without a blur — commit an open draft on the
+  // way out (fire-and-forget, errors ignored) instead of losing the edit. Esc
+  // already closed the editor, and a draft equal to the stored value needs no
+  // write.
+  const latest = useRef({
+    entry,
+    titleEditing,
+    titleDraft,
+    noteEditing,
+    noteDraft,
+  });
+  useEffect(() => {
+    latest.current = { entry, titleEditing, titleDraft, noteEditing, noteDraft };
+  }, [entry, titleEditing, titleDraft, noteEditing, noteDraft]);
+  useEffect(
+    () => () => {
+      const snapshot = latest.current;
+      if (snapshot.titleEditing) {
+        const next = normalizeTitleDraft(snapshot.titleDraft, snapshot.entry);
+        if (next !== snapshot.entry.title) {
+          void commands.setEntryTitle(snapshot.entry.id, next).catch(() => {});
+        }
+      }
+      if (snapshot.noteEditing) {
+        const next = normalizeNoteDraft(snapshot.noteDraft);
+        if (next !== snapshot.entry.note) {
+          void commands.setEntryNote(snapshot.entry.id, next).catch(() => {});
+        }
+      }
+    },
+    [],
+  );
+
+  // Enter/Esc end the edit without a pointer move; hand focus back to the
+  // control that opened the editor instead of dropping it on the document.
+  useEffect(() => {
+    if (titleEditing || !restoreTitleFocus.current) return;
+    restoreTitleFocus.current = false;
+    titleButtonRef.current?.focus();
+  }, [titleEditing]);
+  useEffect(() => {
+    if (noteEditing || !restoreNoteFocus.current) return;
+    restoreNoteFocus.current = false;
+    noteEditButtonRef.current?.focus();
+  }, [noteEditing]);
+
   function startTitleEdit() {
-    setTitleDraft(storedTitle ?? '');
+    setTitleDraft(storedTitle ?? entryDisplayTitle(entry));
     skipTitleBlur.current = false;
     setTitleEditing(true);
   }
@@ -122,26 +229,41 @@ export function EntryHeader({ entry, controls }: EntryHeaderProps) {
   }
 
   function commitTitle() {
-    const next = titleDraft.trim().slice(0, TITLE_MAX_CHARS).trimEnd() || null;
-    const previous = titleOverride;
+    const next = normalizeTitleDraft(titleDraft, entry);
     finishTitleEdit();
-    if (next === (previous !== undefined ? previous : entry.title)) return;
+    if (next === (titleOverride !== undefined ? titleOverride : entry.title)) {
+      return;
+    }
+    const requestId = (titleRequestId.current += 1);
     setTitleOverride(next);
-    commands.setEntryTitle(entry.id, next).catch((err) => {
-      setTitleOverride(previous);
-      notifications.show({
-        title: tt('errors.title'),
-        message: formatError(err),
-        color: 'red',
-      });
-    });
+    setTitlePending((pending) => pending + 1);
+    void commands.setEntryTitle(entry.id, next).then(
+      () => {
+        titleSettledId.current = requestId;
+        setTitlePending((pending) => pending - 1);
+      },
+      (err) => {
+        titleSettledId.current = requestId;
+        setTitlePending((pending) => pending - 1);
+        // A superseded edit keeps its hands off the newer override.
+        if (requestId !== titleRequestId.current) return;
+        setTitleOverride(undefined);
+        notifications.show({
+          title: tt('errors.title'),
+          message: formatError(err),
+          color: 'red',
+        });
+      },
+    );
   }
 
-  function handleTitleBlur() {
+  function handleTitleBlur(event: FocusEvent<HTMLInputElement>) {
     if (skipTitleBlur.current) {
       skipTitleBlur.current = false;
       return;
     }
+    const next = event.relatedTarget;
+    if (next instanceof Node && titleRowRef.current?.contains(next)) return;
     commitTitle();
   }
 
@@ -157,26 +279,39 @@ export function EntryHeader({ entry, controls }: EntryHeaderProps) {
   }
 
   function commitNote() {
-    const next = noteDraft.trim().slice(0, NOTE_MAX_CHARS).trimEnd() || null;
-    const previous = noteOverride;
+    const next = normalizeNoteDraft(noteDraft);
     finishNoteEdit();
-    if (next === (previous !== undefined ? previous : entry.note)) return;
+    if (next === (noteOverride !== undefined ? noteOverride : entry.note)) return;
+    const requestId = (noteRequestId.current += 1);
     setNoteOverride(next);
-    commands.setEntryNote(entry.id, next).catch((err) => {
-      setNoteOverride(previous);
-      notifications.show({
-        title: tt('errors.title'),
-        message: formatError(err),
-        color: 'red',
-      });
-    });
+    setNotePending((pending) => pending + 1);
+    void commands.setEntryNote(entry.id, next).then(
+      () => {
+        noteSettledId.current = requestId;
+        setNotePending((pending) => pending - 1);
+      },
+      (err) => {
+        noteSettledId.current = requestId;
+        setNotePending((pending) => pending - 1);
+        // A superseded edit keeps its hands off the newer override.
+        if (requestId !== noteRequestId.current) return;
+        setNoteOverride(undefined);
+        notifications.show({
+          title: tt('errors.title'),
+          message: formatError(err),
+          color: 'red',
+        });
+      },
+    );
   }
 
-  function handleNoteBlur() {
+  function handleNoteBlur(event: FocusEvent<HTMLTextAreaElement>) {
     if (skipNoteBlur.current) {
       skipNoteBlur.current = false;
       return;
     }
+    const next = event.relatedTarget;
+    if (next instanceof Node && noteEditRef.current?.contains(next)) return;
     commitNote();
   }
 
@@ -184,9 +319,9 @@ export function EntryHeader({ entry, controls }: EntryHeaderProps) {
   const processing = entry.status === 'processing';
 
   return (
-    <div className={classes.header}>
+    <div className={classes.header} data-entry-header>
       <Stack gap={4}>
-        <div className={classes.titleRow}>
+        <div className={classes.titleRow} ref={titleRowRef}>
           {titleEditing ? (
             <>
               <TextInput
@@ -196,9 +331,11 @@ export function EntryHeader({ entry, controls }: EntryHeaderProps) {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
+                    restoreTitleFocus.current = true;
                     commitTitle();
                   } else if (e.key === 'Escape') {
                     e.preventDefault();
+                    restoreTitleFocus.current = true;
                     finishTitleEdit();
                   }
                 }}
@@ -233,6 +370,7 @@ export function EntryHeader({ entry, controls }: EntryHeaderProps) {
           ) : (
             <>
               <button
+                ref={titleButtonRef}
                 type="button"
                 className={classes.titleButton}
                 onClick={startTitleEdit}
@@ -257,16 +395,18 @@ export function EntryHeader({ entry, controls }: EntryHeaderProps) {
         </div>
 
         {noteEditing ? (
-          <Stack gap={4} className={classes.noteEdit}>
+          <Stack gap={4} className={classes.noteEdit} ref={noteEditRef}>
             <Textarea
               value={noteDraft}
               onChange={(e) => setNoteDraft(e.currentTarget.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Escape') {
                   e.preventDefault();
+                  restoreNoteFocus.current = true;
                   finishNoteEdit();
                 } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                   e.preventDefault();
+                  restoreNoteFocus.current = true;
                   commitNote();
                 }
               }}
@@ -331,6 +471,7 @@ export function EntryHeader({ entry, controls }: EntryHeaderProps) {
               </Button>
             )}
             <ActionIcon
+              ref={noteEditButtonRef}
               className={classes.pencil}
               variant="subtle"
               color="gray"
@@ -344,6 +485,7 @@ export function EntryHeader({ entry, controls }: EntryHeaderProps) {
           </div>
         ) : (
           <Button
+            ref={noteEditButtonRef}
             variant="subtle"
             size="compact-xs"
             color="gray"

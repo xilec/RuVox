@@ -166,4 +166,22 @@ describe('Queue item titles and search (#353)', () => {
     expect(visibleIds()).toEqual([]);
     expect(host.textContent).toContain('Ничего не найдено');
   });
+
+  it('filters by the derived title of a legacy entry', async () => {
+    // The derived title is not a substring of `original_text`: the Markdown
+    // marker and the repeated spaces only disappear in the derived form, so a
+    // filter over the raw fields alone would miss the entry the card shows.
+    getEntries.mockResolvedValue([
+      makeEntry({
+        id: 'derived',
+        title: null,
+        note: null,
+        original_text: '## Заголовок  с   пробелами\nТекст',
+      }),
+    ]);
+    await renderList();
+    await search('заголовок с пробелами');
+
+    expect(visibleIds()).toEqual(['derived']);
+  });
 });

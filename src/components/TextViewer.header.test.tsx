@@ -3,7 +3,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MantineProvider } from '@mantine/core';
-import type { TextEntry } from '../lib/tauri';
+import { commands, type TextEntry } from '../lib/tauri';
 
 vi.mock('../lib/tauri', () => ({
   commands: {
@@ -63,6 +63,8 @@ describe('TextViewer entry header', () => {
     host = document.createElement('div');
     document.body.appendChild(host);
     root = createRoot(host);
+    vi.mocked(commands.setEntryTitle).mockClear();
+    vi.mocked(commands.setEntryNote).mockClear();
   });
 
   afterEach(() => {
@@ -113,14 +115,27 @@ describe('TextViewer entry header', () => {
   it('keeps the format switch and reading controls together in the header', () => {
     render(makeEntry());
 
+    const header = host.querySelector<HTMLElement>('[data-entry-header]');
+    expect(header).not.toBeNull();
     expect(
-      host.querySelectorAll('input[name="viewer_display_mode"]'),
+      header!.contains(host.querySelector('input[name="viewer_display_mode"]')),
+    ).toBe(true);
+    expect(
+      header!.contains(host.querySelector('input[name="viewer_reading_width"]')),
+    ).toBe(true);
+    expect(
+      header!.contains(
+        host.querySelector('[role="group"][aria-label="Масштаб чтения"]'),
+      ),
+    ).toBe(true);
+    expect(
+      header!.querySelectorAll('input[name="viewer_display_mode"]'),
     ).toHaveLength(2);
     expect(
-      host.querySelectorAll('input[name="viewer_reading_width"]'),
+      header!.querySelectorAll('input[name="viewer_reading_width"]'),
     ).toHaveLength(2);
     expect(
-      host.querySelector('[role="group"][aria-label="Масштаб чтения"]'),
+      header!.querySelector('[role="group"][aria-label="Масштаб чтения"]'),
     ).not.toBeNull();
   });
 
@@ -133,5 +148,44 @@ describe('TextViewer entry header', () => {
     expect(
       host.querySelectorAll('input[name="viewer_reading_width"]'),
     ).toHaveLength(2);
+  });
+  it('commits an open draft when the selected entry changes', () => {
+    render(makeEntry());
+
+    const pencil = host.querySelector<HTMLButtonElement>(
+      'button[aria-label="Редактировать заметку"]',
+    );
+    expect(pencil).not.toBeNull();
+    act(() => pencil!.click());
+
+    const textarea = host.querySelector<HTMLTextAreaElement>(
+      'textarea[aria-label="Заметка к записи"]',
+    );
+    expect(textarea).not.toBeNull();
+    act(() => {
+      Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        'value',
+      )?.set?.call(textarea, 'черновик A');
+      textarea!.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    // `TextViewer` keys `EntryHeader` by entry id: switching entries unmounts
+    // the editor without a blur, so the draft must be committed on the way
+    // out instead of being lost with the component.
+    render(
+      makeEntry({
+        id: 'entry-2',
+        title: 'Другая запись',
+        note: null,
+        original_text: 'Текст второй записи',
+      }),
+    );
+
+    expect(commands.setEntryNote).toHaveBeenCalledWith('entry-1', 'черновик A');
+    expect(
+      host.querySelector('textarea[aria-label="Заметка к записи"]'),
+    ).toBeNull();
+    expect(titleButton('Другая запись')).not.toBeNull();
   });
 });

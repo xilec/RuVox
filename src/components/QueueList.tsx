@@ -398,11 +398,14 @@ export function QueueList({ onRegenerate }: QueueListProps) {
   const filteredEntries = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return entries;
-    // Case-insensitive substring over the entry identity (#353): the stored
-    // title, the note and the source text. The derived title is built from
-    // `original_text`, so legacy entries match through that field too.
+    // Case-insensitive substring over the entry identity (#353): the title
+    // shown on the card, the note and the source text. The card shows
+    // `entryDisplayTitle`, so a legacy entry (`title = null`) is searchable by
+    // the derived title it visibly carries — the derived text is not always a
+    // substring of `original_text` (Markdown markers and collapsed whitespace
+    // are stripped).
     return entries.filter((e) =>
-      [e.title, e.note, e.original_text].some((value) =>
+      [entryDisplayTitle(e), e.title, e.note, e.original_text].some((value) =>
         value?.toLowerCase().includes(q),
       ),
     );
