@@ -17,7 +17,8 @@ Backend pieces that exist today:
   mark removed. `UserDictionary::resolve(word, mark_stress)` is the pipeline's
   insertion rule: with `mark_stress` the stored `to` is used as typed, without
   it the mark is stripped. `TTSPipeline` sets `mark_stress` from
-  `profile.stress != Stress::None`.
+  `profile.stress != Stress::None`, and the preview's `spoken` mode uses the
+  same test.
 - `TtsEngine::synthesize(text, voice, sample_rate, out_wav, char_mapping)`
   writes a WAV to `out_wav` and returns `SynthesizeOutput { timestamps,
   duration_sec }`. `voice_for_engine(kind, config)` (in `commands/synthesis.rs`)
@@ -25,6 +26,19 @@ Backend pieces that exist today:
 - `synthesize_audio` is the *queue* path: it stages the file, registers the
   entry, writes timestamps, emits events and runs the Opus transcode. The
   preview must not touch any of that.
+
+The stress policy is easy to mix up — it is per profile, not per engine
+generation:
+
+| Engine kind     | Profile                 | Stress   | Explicit `+` |
+|-----------------|-------------------------|----------|--------------|
+| `silero` (ttsd) | `SILERO_PROFILE`        | `None`   | stripped     |
+| `silero_native` | `SILERO_NATIVE_PROFILE` | `Auto`   | kept         |
+| `piper`         | `PIPER_PROFILE`         | `None`   | stripped     |
+| `teratts`       | `TERATTS_PROFILE`       | `Manual` | kept         |
+
+An explicit mark reaches the engine only when `stress != Stress::None`: `Auto`
+lets it override the predicted stress, `Manual` renders only explicit marks.
 
 ## Goals / Non-Goals
 
@@ -34,7 +48,8 @@ Backend pieces that exist today:
   typed spoken form will sound on the active engine.
 - No side effects: no entry, no timestamps, no queue state, no synthesis
   events, no player involvement.
-- The preview never fights the queue and never leaves a file behind.
+- The preview never queues behind a narration and never leaves a file
+  behind.
 - The control's state machine (disabled → spinner → stop) is testable without
   a real engine.
 
@@ -71,49 +86,61 @@ next cleanup). The cache directory is resolved once at startup into
 `AppState.preview_dir` (a `TempDir` in tests) so the command never guesses a
 platform path and tests stay hermetic.
 
-**The preview refuses to start while the queue is synthesizing.** A
-`synthesize_entered` entry means the engine is inside `tts.synthesize` for a
-queue entry. The engines do tolerate a second caller structurally — the `ttsd`
-driver serializes requests over one pipe, Piper holds a model mutex for the
-whole chunk loop, both ONNX engines mutex their sessions — but the preview
-would wait behind a narration that can run for minutes with only a spinner to
-show for it, and TeraTTS shares one `cancel` flag between runs
-(`run_synthesis` resets it at start, `kill_current` sets it): a concurrent
-preview would clear a narration's cancellation, and cancelling the narration
-would abort the preview. The command therefore returns a typed
-`preview.engine_busy` error while `synthesize_entered` is non-empty, and the
-form renders it as a short inline line («движок занят озвучиванием»). Previews
-are additionally serialized among themselves by a dedicated
-`tokio::sync::Mutex` in `AppState`. Rejected: a shared mutex taken by both the
-queue path and the preview (it would serialize queue syntheses with each
-other — TeraTTS deliberately runs several lanes — and a preview would hold a
-narration up for its duration); disabling the controls in the UI while an
-entry is processing (racy, and the modal cannot see a synthesis started from
-the tray).
+**The preview and the queue share one engine lock.** `AppState.preview_lock`
+serializes every engine call. The queue's `synthesize_audio` holds it around
+`tts.synthesize_spans` (and around the Piper voice-download retry); the preview
+holds it around its own `tts.synthesize`. The preview takes it with `try_lock`,
+so it never waits behind a narration that can run for minutes: when the lock is
+held it returns a typed `preview.engine_busy` error, and the form renders it as
+a short inline line («движок занят озвучиванием»). In the other direction the
+queue waits for at most one short preview, which keeps a single engine from
+serving two callers at once — with TeraTTS a second caller would otherwise race
+the shared cancellation flag (`run_synthesis` resets it at start,
+`kill_current` sets it), clearing a narration's cancellation or aborting the
+preview. The `synthesize_entered` marker is set inside the lock, so "marker
+non-empty" stays equivalent to "the engine is really taken" and a preview
+cannot slip between its check and the engine call. Concurrent previews are
+serialized by the same lock.
 
-The remaining race — a queue synthesis that starts after the busy check — is
-accepted and documented: every engine survives the overlap structurally, and
-the worst case is a cancel of that narration aborting the preview with a typed
-error that surfaces inline and is retryable. Nothing in storage or the queue is
-involved.
+Rejected: letting the preview wait on the lock (the user would watch a spinner
+behind a whole narration); a shared lock around the whole queue synthesis
+instead of just the engine call (normalization and post-processing would
+serialize too); disabling the controls in the UI while an entry is processing
+(racy, and the modal cannot see a synthesis started from the tray).
 
 **One `<audio>` element per dialog, cache keyed by the request.** The dialog
-owns one `<audio ref>`; starting a preview revokes the previous object URL,
-sets the new one, pauses narration through the existing `pause_playback`
-command (never `stop_playback`, and no resume afterwards) and calls `play()`.
-`ended` and `error` clear the playing state; closing the editor or the modal
-stops the element and revokes the URL.
+owns one `<audio ref>`. Starting a preview stops the current audio and revokes
+its object URL, pauses narration through the existing `pause_playback` command
+before the command call — the click is the user asking to listen now, and a
+cache miss can take seconds — then sets the new URL, pauses again right before
+`play()` (a cache hit skips the synthesis wait, and narration may have started
+in between), and never resumes. `ended` and `error` clear the playing state;
+closing the editor or the modal stops the element and revokes the URL, and a
+response that arrives after the close is dropped by the request sequence
+counter.
+
+The command rejects input longer than 200 Unicode code points with
+`preview.text_too_long` before the pipeline or the engine runs: the controls
+only ever send one word or one spoken form, and the command is reachable
+directly, so a pasted paragraph would keep the engine busy for seconds. The
+temporary WAV is owned by an RAII guard that deletes it on every exit path
+(success, engine error, read failure, aborted task); a startup sweep removes
+files older than ten minutes left behind by a crash. A failed read of the WAV
+surfaces as `preview.audio_read_failed` with the IO error instead of a generic
+message.
 
 The in-memory cache is keyed by
 `(engine, voice, mode, request text, dictionary revision)`. The issue names
 `(engine, voice, spoken_text)`, but the response's `spoken_text` is only known
 after the round trip — using it as the key would require a second synthesis to
 look it up. The request inputs plus the dictionary state determine the audio
-deterministically, and a save/import bumps the revision so a cached «Слово»
-reading cannot outlive a dictionary write. Rejected: caching by `spoken_text`
-after the response only (does not satisfy "a second click does not
-synthesize"); no cache invalidation on save (a stale reading after the user
-just added the entry).
+deterministically, and any dictionary write (save or import) bumps the revision
+and clears the map, so a cached «Слово» reading cannot outlive a dictionary
+write. The cache is bounded to 12 entries with LRU eviction: every entry holds
+a whole WAV and the editor only replays a handful of words before a save
+retires it. Rejected: caching by `spoken_text` after the response only (does
+not satisfy "a second click does not synthesize"); no cache invalidation on
+save (a stale reading after the user just added the entry).
 
 **The engine hint reuses the Settings fallback logic.** The active engine can
 differ from the persisted `config.engine` when the startup probe fell back
@@ -127,9 +154,13 @@ helper mirroring the backend `voice_for_engine`. Rejected: passing
 serving one).
 
 **Failures are inline, never a toast.** The form keeps the entered values and
-renders one short line under the fields: the preview error prefix plus a short
-detail for the known cases (`bundle_not_installed` / `model_not_loaded` →
-«модель не установлена», `voice_not_installed` → «голос не установлен»,
-`preview.engine_busy` → «движок занят озвучиванием»), otherwise the localized
-`formatError` detail. A notification would steal attention from a form the
+renders one short line under the fields with the localized `formatError`
+detail. Every failure goes through the shared catalog: the `preview.*` codes
+(`preview.engine_busy`, `preview.invalid_stress`, `preview.invalid_mode`,
+`preview.empty_text`, `preview.text_too_long`) and the engine site codes the
+catalog knows (`voice_not_installed`, `bundle_not_installed`, `native.*`,
+`teratts_cancelled`) have short messages; anything else falls back to the
+backend `message`. The command's own validation failures serialize as
+`type = "internal"`, engine failures as `type = "synthesis_error"` with the
+engine's site code kept. A notification would steal attention from a form the
 user is still filling and could hide the entered values behind a modal stack.

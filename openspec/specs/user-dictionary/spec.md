@@ -630,10 +630,11 @@ well formed.
 Playing «Слово» SHALL speak the current reading of the token: the Rust
 normalization pipeline run with the active engine's profile, the saved
 dictionary applied and the entry being added absent (in edit mode the saved
-entry is part of the dictionary). Playing «Как произносить» SHALL speak the
-typed spoken form verbatim, with the `+` mark kept only when the active engine's
-text profile renders stress and stripped otherwise — the same decision the
-pipeline makes when it inserts the entry's `to`.
+entry is part of the dictionary, so its saved `to` is spoken). Playing «Как
+произносить» SHALL speak the typed spoken form verbatim, with the `+` mark kept
+only when the active engine's text profile renders stress and stripped
+otherwise — the same decision the pipeline makes when it inserts the entry's
+`to`.
 
 A preview SHALL use the active engine only: it SHALL NOT switch engines, load a
 second model, or change any setting. When the selected scope belongs to an
@@ -646,16 +647,20 @@ synthesis events or playback state; the narration channel SHALL be untouched
 except for the pause described below. While a preview is being synthesized the
 control SHALL show progress and both preview controls SHALL be blocked; while
 the audio plays the control SHALL show a stop affordance and a second click
-SHALL stop the audio. Starting a preview while narration is playing SHALL pause
-the narration (not stop it) through the existing playback path, and SHALL NOT
-resume it afterwards.
+SHALL stop the audio. Activating the other field's control while a preview
+plays SHALL stop the current audio and play the new preview. Starting a preview
+while narration is playing SHALL pause the narration (not stop it) through the
+existing playback path at the moment the preview is requested — before the
+synthesis starts — and again right before the audio plays; the narration SHALL
+NOT be resumed afterwards.
 
 A failing preview SHALL render one short inline message inside the form and
 SHALL leave the entered values untouched. Repeating a preview of identical
 input on the same engine and voice SHALL be served from an in-memory cache and
-SHALL NOT synthesize again; a successful dictionary write SHALL invalidate the
-cache. Closing the editor SHALL stop a playing preview and release its audio
-resource.
+SHALL NOT synthesize again; any dictionary write (save or import) SHALL retire
+the cache. Closing the editor SHALL stop a playing preview and release its
+audio resource, and a response that arrives after the editor closed SHALL be
+discarded.
 
 #### Scenario: Controls appear next to the help icons
 
@@ -690,6 +695,14 @@ resource.
 - WHEN the user activates its play control
 - THEN the preview command is invoked with "айпи ви ш+есть" and mode "spoken"
 
+#### Scenario: Edit mode speaks the saved reading
+
+- GIVEN the saved dictionary maps "kubectl" to "куб контрол" and the user is
+  editing that entry
+- WHEN the user activates the play control of the «Слово» field
+- THEN the preview command is invoked with "kubectl" and mode "normalize", and
+  the audio speaks "куб контрол"
+
 #### Scenario: Synthesizing blocks both controls
 
 - GIVEN a preview request is in flight
@@ -703,18 +716,40 @@ resource.
 - WHEN the user activates the same control again
 - THEN the audio stops and the control returns to its play state
 
+#### Scenario: Playing the other field replaces the preview
+
+- GIVEN a preview of «Слово» is playing
+- WHEN the user activates the play control of «Как произносить»
+- THEN the current audio stops and the new preview plays; only the second
+  control shows the playing state
+
 #### Scenario: Repeated preview uses the cache
 
 - GIVEN a preview of "IPv6" already played on the current engine and voice
 - WHEN the user activates the same control again
 - THEN the audio plays again without a new preview command call
 
+#### Scenario: A dictionary change retires the cache
+
+- GIVEN a preview of "IPv6" is cached
+- WHEN the user saves or imports a dictionary
+- THEN the next activation of the same control calls the preview command again
+
 #### Scenario: Narration is paused, not stopped
 
 - GIVEN narration is playing
 - WHEN the user starts a preview
-- THEN the playback pause command is called, the playback stop command is not,
-  and narration stays paused after the preview ends
+- THEN the playback pause command is called before the preview request starts
+  synthesizing, the playback stop command is not, and narration stays paused
+  after the preview ends
+
+#### Scenario: Over-long preview input reports the limit inline
+
+- GIVEN the «Как произносить» field holds a valid spoken form longer than 200
+  code points
+- WHEN the user starts a preview
+- THEN the inline message reports that the input is too long
+  (`preview.text_too_long`) and the entered value is unchanged
 
 #### Scenario: Preview failure stays inline
 
@@ -741,3 +776,9 @@ resource.
 - WHEN the user closes the editor
 - THEN the audio stops and its object URL is released
 
+#### Scenario: A late response after close is discarded
+
+- GIVEN a preview request is in flight in the add form
+- WHEN the user closes the editor before the command returns
+- THEN the response is discarded: no audio starts and no preview state is
+  restored
