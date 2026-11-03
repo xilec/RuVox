@@ -148,6 +148,19 @@ export const ru = {
   'viewer.menu.copy_image': 'Скопировать изображение',
   'viewer.menu.copy_image_address': 'Скопировать адрес изображения',
 
+  // ── Viewer header (entry metadata, #353) ─────────────────────────────
+  'header.title.edit': 'Редактировать заголовок',
+  'header.title.edit_aria': 'Заголовок записи',
+  'header.title.placeholder': 'Заголовок',
+  'header.title.kbd_hint': 'Enter — сохранить, Esc — отмена',
+  'header.note.add': 'Добавить заметку',
+  'header.note.edit': 'Редактировать заметку',
+  'header.note.edit_aria': 'Заметка к записи',
+  'header.note.placeholder': 'Заметка',
+  'header.note.kbd_hint': 'Ctrl+Enter — сохранить, Esc — отмена',
+  'header.note.expand': 'Показать полностью',
+  'header.note.collapse': 'Свернуть',
+  'header.not_narrated': 'не озвучено',
   // ── Preview dialog ──────────────────────────────────────────────────────
   'preview.title': 'Предпросмотр нормализации',
   'preview.close': 'Закрыть',

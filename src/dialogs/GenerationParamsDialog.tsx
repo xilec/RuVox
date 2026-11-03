@@ -3,8 +3,13 @@ import type { GenerationParams, ModelParams, TextEntry } from '../lib/tauri';
 import { formatDuration, formatMb } from '../lib/format';
 import { useT } from '../lib/i18n';
 import type { MessageKey } from '../i18n/ru';
-import { PIPER_VOICES } from '../lib/piperVoices';
 import { useLocaleStore } from '../stores/locale';
+import {
+  ABSENT,
+  displayEngine,
+  displayVoice,
+} from '../lib/generationDisplay';
+import { formatNaiveUtcDateTime } from '../lib/datetime';
 
 export interface GenerationParamsDialogProps {
   entry: TextEntry | null;
@@ -14,31 +19,8 @@ export interface GenerationParamsDialogProps {
 
 type T = (key: MessageKey, params?: readonly (string | number)[]) => string;
 
-/** Placeholder for values the snapshot does not carry — absent, never guessed
- *  (spec `ui`, "Voiceover parameters dialog"). */
-const ABSENT = '—';
 /** Short display form of a sha256 checksum. */
 const SHA_DISPLAY_LEN = 12;
-
-function displayEngine(engine: string, tt: T): string {
-  switch (engine) {
-    case 'silero_native':
-      return tt('generation.engine.silero_native');
-    case 'piper':
-      return tt('generation.engine.piper');
-    case 'silero':
-      return tt('generation.engine.silero');
-    case 'teratts':
-      return tt('generation.engine.teratts');
-    default:
-      return engine;
-  }
-}
-
-function displayVoice(voice: string, tt: T): string {
-  const known = PIPER_VOICES.find((v) => v.id === voice);
-  return known ? tt(known.key) : voice;
-}
 
 function displayCodeBlockMode(mode: string, tt: T): string {
   switch (mode) {
@@ -64,14 +46,6 @@ function shortSha(sha: string): string {
   return `${sha.slice(0, SHA_DISPLAY_LEN)}…`;
 }
 
-/** The stored naive timestamps are UTC (storage spec); without the suffix
- *  JS would parse them as local time. chrono may write 3/6/9 fractional
- *  digits while some JS engines only guarantee parsing exactly 3, so trim
- *  to milliseconds. Rendered in the app language, not the webview locale. */
-function formatGeneratedAt(naiveUtc: string, locale: 'ru' | 'en'): string {
-  const tag = locale === 'ru' ? 'ru-RU' : 'en-US';
-  return new Date(`${naiveUtc.replace(/(\.\d{3})\d+$/, '$1')}Z`).toLocaleString(tag);
-}
 
 function displayAudio(g: GenerationParams, tt: T): string {
   const parts: Array<string | null> = [g.audio_codec];
@@ -115,7 +89,7 @@ export function GenerationParamsDialog({ entry, opened, onClose }: GenerationPar
   const rows: Array<[label: string, value: string]> = [
     [tt('generation.source'), entry.source ? displaySource(entry.source, tt) : ABSENT],
     [tt('generation.engine'), g ? displayEngine(g.engine, tt) : ABSENT],
-    [tt('generation.voice'), g ? displayVoice(g.voice, tt) : ABSENT],
+    [tt('generation.voice'), g ? displayVoice(g.engine, g.voice, tt) : ABSENT],
     [
       tt('generation.sample_rate'),
       g?.sample_rate != null ? tt('generation.sample_rate.value', [g.sample_rate]) : ABSENT,
@@ -134,7 +108,9 @@ export function GenerationParamsDialog({ entry, opened, onClose }: GenerationPar
     [tt('generation.duration'), entry.duration_sec != null ? formatDuration(entry.duration_sec) : ABSENT],
     [
       tt('generation.generated_at'),
-      entry.audio_generated_at ? formatGeneratedAt(entry.audio_generated_at, locale) : ABSENT,
+      entry.audio_generated_at
+        ? formatNaiveUtcDateTime(entry.audio_generated_at, locale)
+        : ABSENT,
     ],
     [tt('generation.count'), String(entry.generation_count)],
   ];

@@ -852,7 +852,171 @@ async fn set_entry_display_mode_unknown_entry_is_rejected() {
     assert!(events.lock().unwrap().is_empty());
 }
 
-// ── HTML ingestion ───────────────────────────────────────────────────
+// ── set_entry_title / set_entry_note ────────────────────────
+
+/// A newly added entry carries a title seeded from its first line; the
+/// editable command trims the new value, persists it and emits it.
+#[tokio::test(flavor = "multi_thread")]
+async fn set_entry_title_trims_persists_and_emits() {
+    let t = build_test_app();
+    let id = add_text_entry(
+        t.app.handle().clone(),
+        t.state(),
+        "# Заголовок\n\nТекст".to_string(),
+        false,
+        Some(TextFormat::Markdown),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let uuid = entry_uuid(&id);
+    wait_entry_status(&t, &uuid, EntryStatus::Ready).await;
+    assert_eq!(
+        t.state().storage.get_entry(&uuid).unwrap().title.as_deref(),
+        Some("Заголовок"),
+        "the title is seeded from the first line on add"
+    );
+
+    let events = record_events(&t.app, &["entry_updated"]);
+    set_entry_title(
+        t.app.handle().clone(),
+        t.state(),
+        id.clone(),
+        Some("  Новое имя  ".to_string()),
+    )
+    .await
+    .unwrap();
+
+    let entry = t.state().storage.get_entry(&uuid).unwrap();
+    assert_eq!(entry.title.as_deref(), Some("Новое имя"));
+    // A display-only edit never touches the recording.
+    assert_eq!(entry.status, EntryStatus::Ready);
+    assert!(entry.audio_path.is_some());
+
+    let log = events.lock().unwrap();
+    let payload = last_entry_updated(&log);
+    assert_eq!(payload["entry"]["id"], id);
+    assert_eq!(payload["entry"]["title"], "Новое имя");
+}
+
+/// Empty and whitespace-only titles clear the stored value, so the UI falls
+/// back to the derived title instead of rendering an empty header.
+#[tokio::test(flavor = "multi_thread")]
+async fn set_entry_title_empty_clears_to_none() {
+    let t = build_test_app();
+    let id = add_ready_entry(&t).await;
+    let uuid = entry_uuid(&id);
+
+    set_entry_title(
+        t.app.handle().clone(),
+        t.state(),
+        id.clone(),
+        Some("  ".into()),
+    )
+    .await
+    .unwrap();
+    assert_eq!(t.state().storage.get_entry(&uuid).unwrap().title, None);
+
+    set_entry_title(
+        t.app.handle().clone(),
+        t.state(),
+        id.clone(),
+        Some("Имя".into()),
+    )
+    .await
+    .unwrap();
+    set_entry_title(t.app.handle().clone(), t.state(), id.clone(), None)
+        .await
+        .unwrap();
+    assert_eq!(t.state().storage.get_entry(&uuid).unwrap().title, None);
+}
+
+/// The title limit is enforced in Unicode characters, not bytes.
+#[tokio::test(flavor = "multi_thread")]
+async fn set_entry_title_caps_at_200_chars() {
+    let t = build_test_app();
+    let id = add_ready_entry(&t).await;
+    let uuid = entry_uuid(&id);
+
+    let long = "ж".repeat(250);
+    set_entry_title(t.app.handle().clone(), t.state(), id.clone(), Some(long))
+        .await
+        .unwrap();
+    let title = t.state().storage.get_entry(&uuid).unwrap().title.unwrap();
+    assert_eq!(title.chars().count(), 200);
+}
+
+/// Notes persist with their internal newlines, are trimmed at the edges,
+/// capped at 2000 characters, and clear to `None` when empty.
+#[tokio::test(flavor = "multi_thread")]
+async fn set_entry_note_trims_and_caps() {
+    let t = build_test_app();
+    let id = add_ready_entry(&t).await;
+    let uuid = entry_uuid(&id);
+
+    set_entry_note(
+        t.app.handle().clone(),
+        t.state(),
+        id.clone(),
+        Some("  первая строка\nвторая строка  ".into()),
+    )
+    .await
+    .unwrap();
+    let entry = t.state().storage.get_entry(&uuid).unwrap();
+    assert_eq!(entry.note.as_deref(), Some("первая строка\nвторая строка"));
+    // The note is metadata: it never feeds the synthesis pipeline.
+    let normalized_before = entry.normalized_text.clone();
+    assert_eq!(entry.status, EntryStatus::Ready);
+
+    let long = "я".repeat(2100);
+    set_entry_note(t.app.handle().clone(), t.state(), id.clone(), Some(long))
+        .await
+        .unwrap();
+    let note = t.state().storage.get_entry(&uuid).unwrap().note.unwrap();
+    assert_eq!(note.chars().count(), 2000);
+    assert_eq!(
+        t.state().storage.get_entry(&uuid).unwrap().normalized_text,
+        normalized_before,
+        "editing the note must not re-run or alter normalization"
+    );
+
+    set_entry_note(
+        t.app.handle().clone(),
+        t.state(),
+        id.clone(),
+        Some("   ".into()),
+    )
+    .await
+    .unwrap();
+    assert_eq!(t.state().storage.get_entry(&uuid).unwrap().note, None);
+}
+
+/// Unknown ids are typed `not_found` errors and emit no event.
+#[tokio::test(flavor = "multi_thread")]
+async fn set_entry_title_and_note_unknown_entry_is_rejected() {
+    let t = build_test_app();
+    let events = record_events(&t.app, &["entry_updated"]);
+    let missing = uuid::Uuid::new_v4().to_string();
+
+    let err = set_entry_title(
+        t.app.handle().clone(),
+        t.state(),
+        missing.clone(),
+        Some("x".into()),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(err, CommandError::NotFound { .. }));
+
+    let err = set_entry_note(t.app.handle().clone(), t.state(), missing, Some("x".into()))
+        .await
+        .unwrap_err();
+    assert!(matches!(err, CommandError::NotFound { .. }));
+    assert!(events.lock().unwrap().is_empty());
+}
+
+// ── HTML ingestion ─────────────────────────────────────────
 
 /// `add_text_entry` with `format: "html"` persists the sanitized
 /// `html_source` and synthesizes the extracted text, not the markup.

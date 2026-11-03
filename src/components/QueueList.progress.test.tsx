@@ -73,6 +73,8 @@ function makeEntry(
     display_mode: null,
     html_source: null,
     source: null,
+    title: null,
+    note: null,
     created_at: '2026-07-27T00:00:00Z',
     audio_generated_at: null,
     audio_path: null,
@@ -374,7 +376,7 @@ describe('QueueList synthesis progress', () => {
     await renderWithEntries([makeEntry('processing', { original_text: longText })]);
 
     expect(cancelButton().getAttribute('aria-label')).toBe(
-      `Отменить синтез: ${longText.slice(0, 60)}\u2026`,
+      `Отменить синтез: ${longText}`,
     );
   });
 

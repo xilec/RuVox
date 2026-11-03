@@ -7,6 +7,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
 ## [Unreleased]
 
 ### Added
+- **Editable title and note in the viewer** — every entry gets a title seeded
+  from its first line and an editable note, shown with the date added, the
+  status and the engine/voice of the current recording in a header above the
+  text; saving is optimistic with rollback and a toast on failure, clearing
+  the title falls back to the derived one, and an incoming status update never
+  discards an open draft (#353).
+- **Titles in the queue and search over title and note** — queue cards show
+  the entry title (or the derived fallback) on one line with the full title in
+  the tooltip, and the queue search matches titles and notes as well as the
+  source text (#353).
 - **Reading width and scale** — the viewer gains a «Узко | Широко» column
   switch and a `[ − ] 100% [ + ]` scale stepper (80–200 %) applied as CSS
   `zoom` to the whole rendered document, so text, headings, code, tables and
@@ -22,6 +32,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   part entries keep working when no whole-word entry exists (#279).
 
 ### Changed
+- **The viewer's format switch moved into the entry header** — it now sits at
+  the right of the metadata row next to the reading width/scale controls, so
+  the reading area starts directly with the text (#353).
 - **The viewer switches only between the rendered view and the source** — a
   markdown entry offers «Markdown | Исходный», an HTML entry «HTML |
   Исходный», and a plain entry has no switch at all; the choice survives

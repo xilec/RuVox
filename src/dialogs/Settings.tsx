@@ -31,6 +31,7 @@ import { ReadingScaleControl, ReadingWidthControl } from '../components/ReadingC
 import { t, useT } from '../lib/i18n';
 import { setLocale, toLocale } from '../stores/locale';
 import { PIPER_VOICES } from '../lib/piperVoices';
+import { SILERO_SPEAKERS } from '../lib/sileroVoices';
 import { ModelAssetsDialog } from './ModelAssets';
 import { checkForUpdatesManual, updaterSupported } from '../lib/updater';
 import {
@@ -119,13 +120,13 @@ const SPEAKER_OPTIONS: ReadonlyArray<{
   label: string;
   key: MessageKey | null;
 }> = [
-  { value: 'aidar', label: 'Aidar', key: null },
-  { value: 'baya', label: 'Baya', key: null },
-  { value: 'kseniya', label: 'Kseniya', key: null },
-  { value: 'xenia', label: 'Xenia', key: null },
-  { value: 'eugene', label: 'Eugene', key: null },
+  ...SILERO_SPEAKERS.map((speaker) => ({
+    value: speaker.id,
+    label: speaker.label,
+    key: null,
+  })),
   // `random` is the only label that is prose rather than a voice name.
-  { value: 'random', label: '', key: 'settings.speaker.random' },
+  { value: RANDOM_SPEAKER, label: '', key: 'settings.speaker.random' },
 ];
 
 /** `random` is a ttsd-only feature (the Python wrapper picks a speaker per

@@ -473,6 +473,86 @@ pub async fn set_entry_display_mode<R: Runtime>(
     Ok(())
 }
 
+/// Maximum stored title length in Unicode scalar values. Mirrors the seeding
+/// cap in [`crate::storage::title::TITLE_MAX_CHARS`].
+const TITLE_MAX_CHARS: usize = crate::storage::title::TITLE_MAX_CHARS;
+/// Maximum stored note length in Unicode scalar values.
+const NOTE_MAX_CHARS: usize = 2000;
+
+/// Normalize a user-supplied title or note value: trim, treat empty as
+/// absent, and cap at `max_chars` (re-trimming the end, since the cap can
+/// cut mid-whitespace).
+fn normalize_metadata_value(value: Option<String>, max_chars: usize) -> Option<String> {
+    let value = value?;
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let capped: String = trimmed.chars().take(max_chars).collect();
+    let capped = capped.trim_end();
+    (!capped.is_empty()).then(|| capped.to_string())
+}
+
+/// Persist the editable title of an entry and notify the UI (issue #353).
+///
+/// A `None` (or empty / whitespace-only) title clears the stored value, so the
+/// UI falls back to the title derived from `original_text`. The write goes
+/// through [`StorageService::update_entry_if`] so a synthesis completion that
+/// lands concurrently cannot be rolled back by a read-decide-write clone
+/// (issue #363).
+#[tauri::command]
+pub async fn set_entry_title<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    id: String,
+    title: Option<String>,
+) -> CmdResult<()> {
+    let uuid = parse_entry_id(&id)?;
+    let title = normalize_metadata_value(title, TITLE_MAX_CHARS);
+    let applied = state
+        .storage
+        .update_entry_if(&uuid, |_| true, |e| e.title = title);
+    if !applied {
+        return Err(CommandError::not_found(
+            "entry.not_found",
+            vec![id.to_string()],
+        ));
+    }
+    if let Some(entry) = state.storage.get_entry(&uuid) {
+        emit_entry_updated(&app, &entry);
+    }
+    Ok(())
+}
+
+/// Persist the editable note of an entry and notify the UI (issue #353).
+///
+/// Notes are plain text limited to 2000 characters; they are never part of
+/// the TTS input. Same atomic-write and clear-on-empty rules as
+/// [`set_entry_title`].
+#[tauri::command]
+pub async fn set_entry_note<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    id: String,
+    note: Option<String>,
+) -> CmdResult<()> {
+    let uuid = parse_entry_id(&id)?;
+    let note = normalize_metadata_value(note, NOTE_MAX_CHARS);
+    let applied = state
+        .storage
+        .update_entry_if(&uuid, |_| true, |e| e.note = note);
+    if !applied {
+        return Err(CommandError::not_found(
+            "entry.not_found",
+            vec![id.to_string()],
+        ));
+    }
+    if let Some(entry) = state.storage.get_entry(&uuid) {
+        emit_entry_updated(&app, &entry);
+    }
+    Ok(())
+}
+
 /// Regenerate audio for an existing entry: re-run the synthesis pipeline
 /// against the stored `original_text` with the current settings. Useful when
 /// the user has changed `speaker`, `speech_rate`, or other normalization
