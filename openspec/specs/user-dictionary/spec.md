@@ -618,3 +618,126 @@ nor closing it, nor the offer itself SHALL issue a player command.
   without confirming a regeneration
 - THEN playback continues uninterrupted
 
+### Requirement: Editor pronunciation preview
+
+The add and edit forms SHALL render a play control at the right edge of both
+the «Слово» and the «Как произносить» fields, next to the existing help icon.
+The control SHALL be disabled while its field is empty or invalid: «Слово»
+requires one valid source token as defined by "Dictionary entry semantics", and
+«Как произносить» requires a non-empty spoken form whose optional `+` mark is
+well formed.
+
+Playing «Слово» SHALL speak the current reading of the token: the Rust
+normalization pipeline run with the active engine's profile, the saved
+dictionary applied and the entry being added absent (in edit mode the saved
+entry is part of the dictionary). Playing «Как произносить» SHALL speak the
+typed spoken form verbatim, with the `+` mark kept only when the active engine's
+text profile renders stress and stripped otherwise — the same decision the
+pipeline makes when it inserts the entry's `to`.
+
+A preview SHALL use the active engine only: it SHALL NOT switch engines, load a
+second model, or change any setting. When the selected scope belongs to an
+engine other than the active one, the form SHALL state which engine is speaking
+(«Прослушивание — движком «Piper»…»). The global scope SHALL never raise the
+hint.
+
+A preview SHALL NOT create or modify an entry, timestamps, queue state,
+synthesis events or playback state; the narration channel SHALL be untouched
+except for the pause described below. While a preview is being synthesized the
+control SHALL show progress and both preview controls SHALL be blocked; while
+the audio plays the control SHALL show a stop affordance and a second click
+SHALL stop the audio. Starting a preview while narration is playing SHALL pause
+the narration (not stop it) through the existing playback path, and SHALL NOT
+resume it afterwards.
+
+A failing preview SHALL render one short inline message inside the form and
+SHALL leave the entered values untouched. Repeating a preview of identical
+input on the same engine and voice SHALL be served from an in-memory cache and
+SHALL NOT synthesize again; a successful dictionary write SHALL invalidate the
+cache. Closing the editor SHALL stop a playing preview and release its audio
+resource.
+
+#### Scenario: Controls appear next to the help icons
+
+- GIVEN the user opens the add form
+- WHEN the form renders
+- THEN the «Слово» and «Как произносить» fields each show a play control next to
+  their help icon
+
+#### Scenario: Empty field disables its control
+
+- GIVEN the add form is open and both fields are empty
+- WHEN the form renders
+- THEN both preview controls are disabled
+
+#### Scenario: Invalid field disables its control
+
+- GIVEN the «Слово» field contains "getUserData()" and the «Как произносить»
+  field contains a malformed mark
+- WHEN the form renders
+- THEN the «Слово» control and the «Как произносить» control are both disabled
+
+#### Scenario: Word preview asks for the normalized reading
+
+- GIVEN the «Слово» field contains "IPv6" and the field is valid
+- WHEN the user activates its play control
+- THEN the preview command is invoked with "IPv6" and mode "normalize"
+
+#### Scenario: Spoken-form preview asks for the spoken reading
+
+- GIVEN the «Как произносить» field contains "айпи ви ш+есть" and the field is
+  valid
+- WHEN the user activates its play control
+- THEN the preview command is invoked with "айпи ви ш+есть" and mode "spoken"
+
+#### Scenario: Synthesizing blocks both controls
+
+- GIVEN a preview request is in flight
+- WHEN the form renders
+- THEN the control that started the preview shows progress and both preview
+  controls are disabled
+
+#### Scenario: Playing control stops the audio
+
+- GIVEN a preview is playing
+- WHEN the user activates the same control again
+- THEN the audio stops and the control returns to its play state
+
+#### Scenario: Repeated preview uses the cache
+
+- GIVEN a preview of "IPv6" already played on the current engine and voice
+- WHEN the user activates the same control again
+- THEN the audio plays again without a new preview command call
+
+#### Scenario: Narration is paused, not stopped
+
+- GIVEN narration is playing
+- WHEN the user starts a preview
+- THEN the playback pause command is called, the playback stop command is not,
+  and narration stays paused after the preview ends
+
+#### Scenario: Preview failure stays inline
+
+- GIVEN the active engine's model is not installed
+- WHEN the user starts a preview
+- THEN one short inline message appears inside the form and the entered values
+  are unchanged
+
+#### Scenario: Foreign scope names the speaking engine
+
+- GIVEN the TeraTTS scope is selected and the active engine is Piper
+- WHEN the add form renders
+- THEN the form states that the preview plays with the Piper engine
+
+#### Scenario: Active scope shows no engine hint
+
+- GIVEN the Piper scope is selected and the active engine is Piper
+- WHEN the add form renders
+- THEN no engine hint is shown
+
+#### Scenario: Closing the editor stops the preview
+
+- GIVEN a preview is playing in the add form
+- WHEN the user closes the editor
+- THEN the audio stops and its object URL is released
+
