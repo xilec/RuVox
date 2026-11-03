@@ -18,9 +18,8 @@ fn pipeline_plain_russian() {
 
 #[test]
 fn pipeline_invalid_time_falls_through_to_numbers() {
-    // Invariant: normalize_time returns an out-of-range clock value unchanged,
-    // so the time phase is a no-op and does not consume the region. TrackedText
-    // skips no-op replacements, leaving the digits for the number phase to read.
+    // Invariant: the time parser rejects an out-of-range clock value, leaving
+    // the digits for the number reader, so "25:00" is not narrated as a clock.
     let mut p = TTSPipeline::new();
     assert_eq!(
         p.process_text("В 25:00 встреча"),
@@ -271,8 +270,11 @@ fn pipeline_number_embedded_in_earlier_number() {
         p.process_text("Счёт 10:1 в нашу пользу."),
         "Счёт десять:один в нашу пользу."
     );
+    // A space-separated three-digit group is a thousands separator, so
+    // "42 142" is one number; the regression this test guards (replacing
+    // "42" inside "142") still shows in the ungrouped "142 42" above.
     assert_eq!(p.process_text("142 42"), "сто сорок два сорок два");
-    assert_eq!(p.process_text("42 142"), "сорок два сто сорок два");
+    assert_eq!(p.process_text("42 142"), "сорок две тысячи сто сорок два");
 }
 
 #[test]

@@ -391,8 +391,8 @@ id = "dates/year-1900"
 subcategory = "year-context"
 status = "target"
 input = "в 1900 году"
-expected = "в тысяча девятьсотом году"
-note = "the 1900-1999 rule also drops 'одна тысяча' at the boundary"
+expected = "в тысяча девятисотом году"
+note = "the 1900-1999 rule also drops 'одна тысяча' at the boundary; the hundreds is the final component and stays ordinal, so 900-й = девятисотый (gramota.ru), not девятьсотый"
 
 [[case]]
 id = "dates/time-range"
@@ -435,3 +435,34 @@ subcategory = "range"
 status = "target"
 input = "с 1 по 5 мая"
 expected = "с первого по пятое мая"
+
+[[case]]
+id = "dates/decade-1910"
+subcategory = "decade"
+status = "locked"
+input = "в 1910-х годах"
+expected = "в десятых годах"
+note = "the last two digits name a 1900s decade; the 1910s stem is 'десят', not a tens ordinal"
+
+[[case]]
+id = "dates/decade-2010"
+subcategory = "decade"
+status = "locked"
+input = "в 2010-х годах"
+expected = "в две тысячи десятых годах"
+note = "a 2000s decade keeps 'две тысячи' so the 2010s cannot read as the 1910s"
+
+[[case]]
+id = "dates/decade-2010-nominative"
+subcategory = "decade"
+status = "locked"
+input = "2010-е годы"
+expected = "две тысячи десятые годы"
+
+[[case]]
+id = "dates/year-range-1812"
+subcategory = "range"
+status = "locked"
+input = "1812–1814 годы"
+expected = "с тысяча восемьсот двенадцатого по тысяча восемьсот четырнадцатый год"
+note = "a year range uses the same 1000..=2199 window as a single year, and the 'годы' noun is never dropped"

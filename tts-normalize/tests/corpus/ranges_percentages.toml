@@ -279,3 +279,25 @@ subcategory = "pair"
 status = "target"
 input = "в 2,5 раза"
 expected = "в два с половиной раза"
+
+[[case]]
+id = "ranges_percentages/percent-preposition"
+subcategory = "percentage"
+status = "locked"
+input = "при 10 %"
+expected = "при десяти процентах"
+
+[[case]]
+id = "ranges_percentages/percent-preposition-five"
+subcategory = "percentage"
+status = "locked"
+input = "при 5 %"
+expected = "при пяти процентах"
+
+[[case]]
+id = "ranges_percentages/non-year-range-with-years"
+subcategory = "year-range"
+status = "locked"
+input = "5–10 годы"
+expected = "5-10 годы"
+note = "the 'годы' year-range word cannot claim bounds that are not years; the span stays unclaimed (robustness case)"

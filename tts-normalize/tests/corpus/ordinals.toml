@@ -374,3 +374,35 @@ subcategory = "context"
 status = "target"
 input = "том 2"
 expected = "том второй"
+
+[[case]]
+id = "ordinals/plural-neuter-nominative"
+subcategory = "suffix-nominative"
+status = "locked"
+input = "5-ие классы"
+expected = "пятые классы"
+note = "the -ие spelling was missing from the scanner inventory"
+
+[[case]]
+id = "ordinals/plural-instrumental-long"
+subcategory = "suffix-oblique"
+status = "locked"
+input = "5-ими"
+expected = "пятыми"
+note = "the -ими spelling was missing from the scanner inventory"
+
+[[case]]
+id = "ordinals/genitive-long"
+subcategory = "suffix-oblique"
+status = "locked"
+input = "5-ого"
+expected = "пятого"
+note = "the -ого spelling was missing from the scanner inventory"
+
+[[case]]
+id = "ordinals/dative-chapter"
+subcategory = "suffix-oblique"
+status = "locked"
+input = "к 5-й главе"
+expected = "к пятой главе"
+note = "the preposition before a feminine '-й' ordinal selects the dative"

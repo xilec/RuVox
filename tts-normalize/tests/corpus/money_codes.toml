@@ -249,3 +249,79 @@ status = "target"
 input = "г. Москва"
 expected = "город Москва"
 note = "the 'г.' homograph: city here, year in dates/year-abbreviation"
+
+[[case]]
+id = "money_codes/dollars-two"
+subcategory = "currency"
+status = "locked"
+input = "$2"
+expected = "два доллара"
+
+[[case]]
+id = "money_codes/dollars-twenty-one"
+subcategory = "currency"
+status = "locked"
+input = "$21"
+expected = "двадцать один доллар"
+note = "the prefix noun agrees with the count: 'двадцать один доллар', not 'долларов'"
+
+[[case]]
+id = "money_codes/dollars-about-one"
+subcategory = "currency"
+status = "locked"
+input = "около $1"
+expected = "около одного доллара"
+
+[[case]]
+id = "money_codes/dollars-and-half"
+subcategory = "currency"
+status = "locked"
+input = "$1,5"
+expected = "полтора доллара"
+note = "a fractional prefix count takes the genitive singular, not the nominative"
+
+[[case]]
+id = "money_codes/million-about-one"
+subcategory = "scale"
+status = "locked"
+input = "около 1 млн рублей"
+expected = "около миллиона рублей"
+note = "a lone scale word keeps the case: 'около миллиона', not 'около миллион'"
+
+[[case]]
+id = "money_codes/usd-word"
+subcategory = "currency"
+status = "locked"
+input = "5 USD"
+expected = "пять долларов"
+
+[[case]]
+id = "money_codes/ruble-abbreviation"
+subcategory = "currency"
+status = "locked"
+input = "5 р."
+expected = "пять рублей"
+
+[[case]]
+id = "money_codes/dollars-preposition"
+subcategory = "currency"
+status = "locked"
+input = "к $5"
+expected = "к пяти долларам"
+note = "the currency noun follows the numeral into the dative"
+
+[[case]]
+id = "money_codes/euro-preposition"
+subcategory = "currency"
+status = "locked"
+input = "к €5"
+expected = "к пяти евро"
+note = "an indeclinable currency keeps its form in the dative"
+
+[[case]]
+id = "money_codes/usd-sentence-dot"
+subcategory = "currency"
+status = "locked"
+input = "Счёт 5 USD."
+expected = "Счёт пять долларов."
+note = "the sentence period after a currency word stays outside the span"

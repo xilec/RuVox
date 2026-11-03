@@ -506,3 +506,168 @@ subcategory = "unit"
 status = "target"
 input = "−5 °C"
 expected = "минус пять градусов Цельсия"
+
+[[case]]
+id = "cardinals/fraction-one-tenth"
+subcategory = "decimal"
+status = "locked"
+input = "0,1"
+expected = "ноль целых одна десятая"
+note = "the denominator agrees with the numerator: 'одна десятая', not 'одна десятых'"
+
+[[case]]
+id = "cardinals/fraction-two-25-kg"
+subcategory = "decimal"
+status = "locked"
+input = "2,25 кг"
+expected = "две целых двадцать пять сотых килограмма"
+note = "the integer part counts 'целая' and reads feminine ('две целых')"
+
+[[case]]
+id = "cardinals/unit-about-21-kg"
+subcategory = "unit"
+status = "locked"
+input = "около 21 кг"
+expected = "около двадцати одного килограмма"
+note = "a genitive count ending in one takes the singular genitive noun"
+
+[[case]]
+id = "cardinals/unit-more-than-1-kg"
+subcategory = "unit"
+status = "locked"
+input = "более 1 кг"
+expected = "более одного килограмма"
+
+[[case]]
+id = "cardinals/slash-half-kg"
+subcategory = "fraction"
+status = "locked"
+input = "1/2 кг"
+expected = "одна вторая килограмма"
+note = "a slash fraction owns the unit noun like a comma fraction"
+
+[[case]]
+id = "cardinals/huge-number"
+subcategory = "integer"
+status = "locked"
+input = "1000000000000"
+expected = "один ноль ноль ноль ноль ноль ноль ноль ноль ноль ноль ноль ноль"
+note = "above 999_999_999_999 the cardinal builder cannot name the value; the digit-by-digit fallback keeps it speakable"
+
+[[case]]
+id = "cardinals/version-leading-zero"
+subcategory = "code"
+status = "locked"
+input = "v1.02"
+expected = "один точка ноль два"
+note = "a leading zero in a dotted group carries information and is read digit by digit"
+
+[[case]]
+id = "cardinals/version-prerelease-dot"
+subcategory = "code"
+status = "locked"
+input = "1.0.0-beta.2"
+expected = "один точка ноль точка ноль бета два"
+note = "a dot group after the pre-release suffix is read after the suffix word"
+
+[[case]]
+id = "cardinals/degree-bare"
+subcategory = "unit"
+status = "locked"
+input = "Угол 45°"
+expected = "Угол сорок пять градусов"
+
+[[case]]
+id = "cardinals/prerelease-digits"
+subcategory = "code"
+status = "locked"
+input = "1.2.0-rc1"
+expected = "один точка два точка ноль эр си один"
+note = "digits after a pre-release suffix are part of the reading, not dropped"
+
+[[case]]
+id = "cardinals/unit-preposition-dative"
+subcategory = "case"
+status = "locked"
+input = "к 5 кг"
+expected = "к пяти килограммам"
+note = "a dative preposition puts the numeral and the unit into the same case"
+
+[[case]]
+id = "cardinals/unit-preposition-prepositional"
+subcategory = "case"
+status = "locked"
+input = "об 1 кг"
+expected = "об одном килограмме"
+note = "a prepositional preposition keeps the numeral and the unit in one case"
+
+[[case]]
+id = "cardinals/unit-preposition-plural"
+subcategory = "case"
+status = "locked"
+input = "о 2 кг"
+expected = "о двух килограммах"
+note = "a count other than one takes the plural in the prepositional"
+
+[[case]]
+id = "cardinals/scale-preposition-dative"
+subcategory = "case"
+status = "locked"
+input = "к 2 тыс."
+expected = "к двум тысячам"
+
+[[case]]
+id = "cardinals/scale-preposition-one"
+subcategory = "case"
+status = "locked"
+input = "к 1 млн"
+expected = "к миллиону"
+note = "a lone scale word keeps the case: 'к миллиону', not 'к миллион'"
+
+[[case]]
+id = "cardinals/slash-half-about-kg"
+subcategory = "fraction"
+status = "locked"
+input = "около 1/2 кг"
+expected = "около одной второй килограмма"
+note = "an adjectival fraction keeps the unit in the genitive singular"
+
+[[case]]
+id = "cardinals/mixed-fraction-preposition"
+subcategory = "fraction"
+status = "locked"
+input = "к 1,5 кг"
+expected = "к полутора килограммам"
+note = "'полтора' becomes 'полутора' in oblique cases and the unit follows in the plural"
+
+[[case]]
+id = "cardinals/dotted-group-long"
+subcategory = "decimal"
+status = "locked"
+input = "1.1758881234567"
+expected = "один точка один семь пять восемь восемь восемь один два три четыре пять шесть семь"
+note = "a dotted group above 999_999_999_999 is read digit by digit, not through the cardinal builder"
+
+[[case]]
+id = "cardinals/dotted-group-exact-trillion"
+subcategory = "decimal"
+status = "locked"
+input = "1.1000000000000"
+expected = "один точка один ноль ноль ноль ноль ноль ноль ноль ноль ноль ноль ноль ноль"
+note = "an exact 1e12 group has no cardinal form; digit-by-digit keeps the reading complete"
+
+[[case]]
+id = "cardinals/prerelease-leading-zero"
+subcategory = "code"
+status = "locked"
+input = "1.0.0-rc01"
+expected = "один точка ноль точка ноль эр си ноль один"
+note = "a leading zero in the pre-release digits is a code, not a count"
+
+[[case]]
+id = "cardinals/technical-fraction-unit"
+subcategory = "fraction"
+status = "locked"
+input = "0,0000001 кг"
+expected = "ноль точка ноль ноль ноль ноль ноль ноль один килограммов"
+note = "a fraction tail longer than six digits keeps the technical register and still names the unit"
