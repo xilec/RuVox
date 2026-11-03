@@ -3,9 +3,7 @@
 ## Purpose
 
 Covers the normalization preview dialog (FF 1.1): a floating, non-modal window (`src/dialogs/PreviewDialog.tsx`) that shows the clipboard text and its normalized form side by side before synthesis, lets the user edit the source text with live re-normalization, and only then creates a queue entry. Also covers the `preview_normalize` backend command and the `preview_dialog_enabled` configuration gate that controls whether the dialog appears in the Add flow.
-
 ## Requirements
-
 ### Requirement: Add flow gating
 
 The Add-button flow SHALL probe both clipboard flavors before deciding:
@@ -34,7 +32,12 @@ for **either** flavor — HTML content SHALL NOT bypass the dialog:
 
 When `preview_dialog_enabled` is `false`, no dialog opens and the flow is
 the direct ingestion path: HTML flavor → HTML ingestion (plain fallback when
-extraction yields no readable text), otherwise plain-text `addTextEntry`.
+extraction yields no readable text), otherwise plain-text ingestion. Because
+no dialog asked the user, these paths SHALL record the source format the
+system actually ingested by content detection (`detectFormat(text)`) as the
+entry's immutable `format`; the plain-flavour fallback SHALL be classified
+the same way. The same detection-based rule applies to an import that falls
+back to the direct path without a dialog.
 
 An empty clipboard or a clipboard read failure SHALL surface the neutral
 «Буфер обмена пуст» hint, not an error notification (on Windows an empty
@@ -74,7 +77,17 @@ the dialog.
 - GIVEN `preview_dialog_enabled` is `false`
 - WHEN the user clicks Add
 - THEN no dialog opens: HTML content is ingested through the HTML path,
-  plain text goes to `commands.addTextEntry(text, true)` directly
+  plain text goes to `commands.addTextEntry(text, true)` directly, and the
+  entry records the content-detected source format (`plain`, `markdown`, or
+  `html`) as its immutable `format`
+
+#### Scenario: Plain fallback records its detected format
+
+- GIVEN `preview_dialog_enabled` is `false` and the clipboard holds HTML
+  markup that yields no readable text, with a plain-text flavor present
+- WHEN the user clicks Add
+- THEN the plain flavor is ingested and the entry records the format detected
+  from that text
 
 #### Scenario: Empty clipboard is a hint, not an error
 
@@ -258,7 +271,7 @@ format controls both the right preview pane and what happens when
 "Синтезировать" is pressed:
 
 - `plain` / `markdown`: the (original or edited) text is ingested unchanged
-  and that value SHALL be persisted as the entry's `format`.
+  and that value SHALL be persisted as the entry's immutable source `format`.
 - `html`: the text SHALL be treated as HTML markup — sanitized and
   extracted on the frontend (`sanitizeHtml` + `extractTextForTts`) — and
   the entry SHALL be created with `format: "html"`, the extracted text as
@@ -271,6 +284,11 @@ format controls both the right preview pane and what happens when
   - otherwise (an explicit selector choice, or no plain flavor on the
     clipboard) → the system SHALL reject ingestion with a red error
     notification and create no entry.
+
+The selector chooses the source format only; it SHALL NOT choose the
+viewer's display mode. The entry's rendered/verbatim choice is stored
+separately in `display_mode` (text-display spec, "Display mode switching"),
+and the viewer derives its allowed views from the persisted `format`.
 
 The right preview pane SHALL reflect the effective format: with `html` it
 shows the normalization of the extracted text (what will actually be
@@ -331,7 +349,8 @@ re-trigger the debounced preview.
 - GIVEN the dialog is open and `markdown` is the effective format
 - WHEN the user presses "Синтезировать"
 - THEN the entry is created with the text unchanged and `format:
-  "markdown"` persisted, so the viewer renders it in markdown mode
+  "markdown"` persisted, so the viewer offers the markdown rendered view and
+  the verbatim view
 
 #### Scenario: Preview follows the selector
 
@@ -615,3 +634,4 @@ explaining what a valid token is.
 - WHEN the user selects the whole phrase
 - THEN the "В словарь" action stays disabled with the hint explaining that a
   token is one word
+
