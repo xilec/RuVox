@@ -781,6 +781,9 @@ impl TTSPipeline {
         tracked.sub(re_space_before_newline(), |_| "\n".to_string());
 
         let mut mapping = tracked.build_mapping();
+        // The single gate for the markup invariant: whatever a phase produced,
+        // no `<`/`>` may leave the pipeline outside a native code block.
+        self.read_leftover_markup(&mut mapping);
         // The narrating phases are done, so the blocks the engine reads are
         // put back into the text; their mapping keeps the source block range.
         for block in native_code {
@@ -832,6 +835,65 @@ impl TTSPipeline {
             mapping,
             spans,
         }
+    }
+
+    /// Read a `<`/`>` that survived every phase, so it cannot reach an engine.
+    ///
+    /// TeraTTS reads the delimiters only as its own tag syntax and rejects the
+    /// segment; the alphabet-gated engines drop the character and lose what it
+    /// stood for. The prose phase reads the brackets it can still see, but a
+    /// later phase — inline code, code narration, a dictionary reading — writes
+    /// into an already-replaced region, and `TrackedText` refuses to edit those
+    /// (that is what keeps a phase from re-processing another's output), so its
+    /// brackets would silently survive. Reading them once on the finished
+    /// narration text closes that hole for every producer, present and future,
+    /// and keeps the invariant in one place instead of trusting each normalizer.
+    ///
+    /// Native code blocks are still placeholders here: their text is restored
+    /// afterwards and its delimiters belong to the adapter (the TeraTTS
+    /// neutralizer blanks them inside the code-block span).
+    fn read_leftover_markup(&self, mapping: &mut CharMapping) {
+        if !mapping.transformed.contains('<') && !mapping.transformed.contains('>') {
+            return;
+        }
+
+        let mut text = String::with_capacity(mapping.transformed.len() + 32);
+        let mut char_map = Vec::with_capacity(mapping.char_map.len() + 32);
+        let mut chars = mapping.transformed.chars().enumerate().peekable();
+        let mut previous: Option<char> = None;
+        while let Some((index, character)) = chars.next() {
+            if !matches!(character, '<' | '>') {
+                text.push(character);
+                char_map.push(mapping.char_map[index]);
+                previous = Some(character);
+                continue;
+            }
+            // Every codepoint of the reading maps to the bracket it replaces,
+            // exactly like the prose phase's replacement.
+            let range = mapping.char_map[index];
+            let mut buffer = [0u8; 4];
+            let symbol = character.encode_utf8(&mut buffer);
+            // This runs after the whitespace post-processing, so the padding is
+            // added only where a neighbour does not already provide one.
+            let pad_before = !previous.is_some_and(char::is_whitespace);
+            let pad_after = !chars.peek().is_some_and(|(_, next)| next.is_whitespace());
+            if pad_before {
+                text.push(' ');
+                char_map.push(range);
+            }
+            for reading_character in self.symbol_normalizer.normalize(symbol).chars() {
+                text.push(reading_character);
+                char_map.push(range);
+            }
+            if pad_after {
+                text.push(' ');
+                char_map.push(range);
+            }
+            previous = text.chars().next_back();
+        }
+
+        mapping.transformed = text;
+        mapping.char_map = char_map;
     }
 
     // ── Private processing helpers ─────────────────────────────────────────────

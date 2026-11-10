@@ -1499,6 +1499,7 @@ fn pipeline_never_emits_markup_characters_for_prose() {
         "Значение a > b",
         "Значение a < b",
         "Тег <div> тут",
+        "Метод возвращает `Cow<str>` при потере",
         "Смотри <https://example.com/ путь>",
         "если a >= b",
         "если a <= b",
@@ -1519,6 +1520,38 @@ fn pipeline_never_emits_markup_characters_for_prose() {
             );
         }
     }
+}
+
+/// The incident text (2026-11-10): the inline-code phase narrates each
+/// identifier part, so `Cow<str>` becomes `ков<стр>` — produced inside an
+/// already-replaced region, where `TrackedText` refuses every later edit. The
+/// prose bracket phase therefore could not see it, and TeraTTS rejected the
+/// whole generation with `text_invalid_tags`. The reading and the position it
+/// maps back to are pinned here; the case is also part of the cross-profile
+/// markup sweep above.
+#[test]
+fn pipeline_reads_brackets_inside_narrated_inline_code() {
+    let input = "Метод возвращает `Cow<str>` при потере";
+    let mut p = TTSPipeline::new();
+    let out = p.process_for_engine(input, &profiles::TERATTS_PROFILE);
+    assert_eq!(
+        out.text, "Метод возвращает ков меньше стр больше при потере",
+        "markup from the inline-code phase reached the engine text"
+    );
+
+    // The reading points back at the bracket inside the code fragment. It
+    // inherits the inline-code replacement's range — every codepoint of a
+    // replacement maps to the whole replaced source range, so the exact
+    // bracket position is not recoverable here.
+    let bracket = input[..input.find('<').unwrap()].chars().count();
+    let reading = out.text[..out.text.find("меньше").unwrap()].chars().count();
+    let range = out
+        .mapping
+        .get_original_range(reading, reading + "меньше".chars().count());
+    assert!(
+        range.0 <= bracket && bracket < range.1,
+        "the reading maps to {range:?}, which does not cover the bracket at {bracket}"
+    );
 }
 
 /// The incident text: a shell redirect with no spaces around the bracket.

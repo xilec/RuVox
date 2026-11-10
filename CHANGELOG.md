@@ -182,6 +182,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   cost the user a good recording; the stored file is now replaced only by a
   successful synthesis, and a failure or cancel returns the entry to `ready`
   with the old audio still playable.
+- **A generic type in inline code no longer fails a TeraTTS generation** — the
+  inline-code phase narrates `Cow<str>` into an already-finalized region, where
+  the bracket pass could not edit it, so the whole synthesis aborted with
+  `text_invalid_tags`; the pipeline now reads any leftover `<`/`>` once after
+  every phase, while native code blocks still keep their delimiters.
 
 ### Added
 - **Model bundle updates and cleanup** — Settings shows installed versions,
