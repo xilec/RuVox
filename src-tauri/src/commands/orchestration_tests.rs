@@ -47,31 +47,30 @@ async fn wait_entry_status(t: &TestApp, uuid: &uuid::Uuid, status: EntryStatus) 
     .await;
 }
 
-/// Payload of the most recent `entry_updated` event in the log.
-fn last_entry_updated(log: &[(String, serde_json::Value)]) -> serde_json::Value {
-    log.iter()
-        .rev()
-        .find(|(n, _)| n == "entry_updated")
-        .unwrap_or_else(|| panic!("no entry_updated event in {log:?}"))
-        .1
-        .clone()
-}
-
-/// Wait for the most recent `entry_updated` event to be observed.
+/// Wait for an `entry_updated` payload accepted by `matches` and return it.
 ///
-/// `App::emit` normally reaches mock-runtime listeners synchronously, but
-/// dispatch can land a moment after the command resolves on a loaded CI
-/// runner; polling keeps the assertion free of that scheduling race.
-async fn wait_last_entry_updated(log: &crate::test_support::EventLog) -> serde_json::Value {
-    wait_until("entry_updated event", TIMEOUT, || {
+/// Polling keeps the assertion free of the dispatch race: `App::emit` normally
+/// reaches mock-runtime listeners synchronously, but dispatch can land a moment
+/// after the command resolves on a loaded CI runner. The payload is selected by
+/// content, not by position: the synthesis worker reads the entry and only then
+/// emits it, so an edit landing in that window makes the stale payload the last
+/// one delivered — after the event the command under test caused.
+async fn wait_entry_updated_matching(
+    log: &crate::test_support::EventLog,
+    matches: impl Fn(&serde_json::Value) -> bool,
+) -> serde_json::Value {
+    wait_until("matching entry_updated event", TIMEOUT, || {
         log.lock()
             .unwrap()
             .iter()
-            .any(|(name, _)| name == "entry_updated")
+            .any(|(name, payload)| name == "entry_updated" && matches(payload))
     })
     .await;
     let log = log.lock().unwrap();
-    last_entry_updated(&log)
+    log.iter()
+        .find(|(name, payload)| name == "entry_updated" && matches(payload))
+        .map(|(_, payload)| payload.clone())
+        .expect("wait_until observed a matching entry_updated")
 }
 
 /// Add an entry through the real ingestion command and wait until the
@@ -581,11 +580,12 @@ async fn cancel_synthesis_aborts_in_flight_task_and_marks_entry_cancelled() {
     assert!(t.state().synthesis_tasks.lock().is_empty());
     assert!(t.state().synthesize_entered.lock().is_empty());
 
-    // The last entry_updated is the flip to cancelled.
+    // The flip to cancelled is emitted; the `ready`-must-not-follow check
+    // comes after the gate is released below.
     {
-        let payload = wait_last_entry_updated(&events).await;
+        let payload =
+            wait_entry_updated_matching(&events, |p| p["entry"]["status"] == "cancelled").await;
         assert_eq!(payload["entry"]["id"], id);
-        assert_eq!(payload["entry"]["status"], "cancelled");
     }
 
     // The task was aborted at the blocked await: releasing the gate
@@ -769,10 +769,11 @@ async fn delete_audio_resets_entry_and_emits_entry_updated() {
     assert!(!audio_file.exists());
     assert!(!ts_file.exists());
 
-    let payload = wait_last_entry_updated(&events).await;
+    let payload = wait_entry_updated_matching(&events, |p| {
+        p["entry"]["status"] == "pending" && p["entry"]["audio_path"].is_null()
+    })
+    .await;
     assert_eq!(payload["entry"]["id"], id);
-    assert_eq!(payload["entry"]["status"], "pending");
-    assert!(payload["entry"]["audio_path"].is_null());
 }
 
 // ── set_entry_display_mode ───────────────────────────────────────────
@@ -808,9 +809,9 @@ async fn set_entry_display_mode_persists_and_preserves_audio_artifacts() {
     assert_eq!(entry.timestamps_path, before.timestamps_path);
     assert_eq!(entry.status, EntryStatus::Ready);
 
-    let payload = wait_last_entry_updated(&events).await;
+    let payload =
+        wait_entry_updated_matching(&events, |p| p["entry"]["display_mode"] == "plain").await;
     assert_eq!(payload["entry"]["id"], id);
-    assert_eq!(payload["entry"]["display_mode"], "plain");
 }
 
 /// The source format is written once at ingestion: switching the viewer's
@@ -908,9 +909,9 @@ async fn set_entry_title_trims_persists_and_emits() {
     assert_eq!(entry.status, EntryStatus::Ready);
     assert!(entry.audio_path.is_some());
 
-    let payload = wait_last_entry_updated(&events).await;
+    let payload =
+        wait_entry_updated_matching(&events, |p| p["entry"]["title"] == "Новое имя").await;
     assert_eq!(payload["entry"]["id"], id);
-    assert_eq!(payload["entry"]["title"], "Новое имя");
 }
 
 /// Empty and whitespace-only titles clear the stored value, so the UI falls
