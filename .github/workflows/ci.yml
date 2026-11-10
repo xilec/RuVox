@@ -217,6 +217,14 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
+      # The runner image ships apt lists frozen at image-build time. On
+      # ubuntu-26.04 (what `ubuntu-latest` started resolving to on 2026-11-10)
+      # they still pinned libsoup-3.0-dev=3.6.6-1ubuntu0.1, which the archive
+      # had already pruned (404): the cached install below resolved to nothing,
+      # stored an empty package set and the link step then failed on every
+      # GTK/WebKit library. The action resolves versions from these lists, so
+      # refresh them first.
+      - run: sudo apt-get update
       # cache-apt-pkgs after the 2026-08-19 incident: azure.archive.ubuntu.com
       # throttled package downloads to KB/s, so raw apt-get install of the
       # webkit/mpv dev tree (~140 packages incl. libav*) hung for 40-60 min
