@@ -85,11 +85,12 @@ fn re_inline_code() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"`([^`\n]+)`").expect("valid regex"))
 }
 
-/// Whether an inline-code token is a filesystem path rather than an
-/// identifier: it starts at the root, at the home directory or with an
-/// explicit relative prefix, and carries at least one separator. Such a token
-/// is read by the path normalizer, the same one prose paths go through.
-fn is_inline_file_path(token: &str) -> bool {
+/// Whether a token is a filesystem path: it starts at the root, at the home
+/// directory or with an explicit relative prefix, and carries at least one
+/// separator. Both the prose path phase and the inline-code phase decide
+/// path-likeness here; the prose regex can only produce the rooted forms, so
+/// the relative prefixes are what inline code adds.
+fn is_filesystem_path(token: &str) -> bool {
     (token.starts_with('/')
         || token.starts_with('~')
         || token.starts_with("./")
@@ -605,7 +606,7 @@ impl TTSPipeline {
                     return matched.as_str().to_string();
                 }
                 let path = caps.get(1).unwrap().as_str();
-                if path.contains('/') && (path.starts_with('/') || path.starts_with('~')) {
+                if is_filesystem_path(path) {
                     url_norm.normalize_filepath(path)
                 } else {
                     path.to_string()
@@ -936,7 +937,7 @@ impl TTSPipeline {
             // prose: character-by-character code transliteration would turn
             // `~/.dsh/cordis.patch.yml` into unpronounceable Cyrillic clusters
             // («дсх», «паткх») that an engine skips entirely.
-            if is_inline_file_path(&processed) {
+            if is_filesystem_path(&processed) {
                 let url_norm =
                     URLPathNormalizer::new(&self.english_normalizer, &self.number_normalizer)
                         .with_user_dictionary(&self.user_dictionary, self.mark_stress);
@@ -969,7 +970,12 @@ impl TTSPipeline {
         code.split_whitespace()
             .map(|word| {
                 let lower = word.to_lowercase();
-                if lower.contains('-') && lower.chars().any(|c| c.is_ascii_alphabetic()) {
+                // Underscores win over dashes, mirroring the phase's own
+                // branch order, so `--dry_run` splits like `dry_run`.
+                if !lower.contains('_')
+                    && lower.contains('-')
+                    && lower.chars().any(|c| c.is_ascii_alphabetic())
+                {
                     // A flag's dashes are separators, not sounds, and the kebab
                     // split also reads the words around them: `--force` → «форс»,
                     // `--dry-run` → «драй ран».

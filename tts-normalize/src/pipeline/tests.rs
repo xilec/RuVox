@@ -650,6 +650,17 @@ fn backticked_words_read_like_prose() {
 }
 
 #[test]
+fn backticked_flag_with_a_symbol_keeps_the_underscore_split() {
+    // A symbol in the same span routes the words through the special-symbol
+    // branch; a dashed and underscored flag must still split at underscores,
+    // like it does in a span without the symbol.
+    let mut p = TTSPipeline::new();
+    p.set_english_reading(EnglishReading::Narrated);
+    let out = p.process_for_engine("`→ --dry_run`", &crate::profiles::TERATTS_PROFILE);
+    assert_eq!(out.text, "стрелка драй ран");
+}
+
+#[test]
 fn backticked_path_reads_through_the_path_normalizer() {
     // A path in inline code used to be transliterated character by character
     // («~/.дсх/кордис.паткх.ймл»): the vowel-less clusters are unreadable, so
