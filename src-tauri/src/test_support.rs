@@ -35,7 +35,7 @@ use tempfile::TempDir;
 
 use crate::dictionary::DictionaryStore;
 use crate::pipeline::TTSPipeline;
-use crate::player::{PlayerBackend, Result as PlayerResult};
+use crate::player::{FakePreviewAudio, PlayerBackend, Result as PlayerResult};
 use crate::state::AppState;
 use crate::storage::service::StorageService;
 use crate::tts::engine::EngineKind;
@@ -331,6 +331,8 @@ pub fn record_events(app: &App<MockRuntime>, event_names: &[&str]) -> EventLog {
 pub struct TestApp {
     pub app: App<MockRuntime>,
     pub player: Arc<FakePlayer>,
+    /// Records every `preview_play` payload and every `preview_stop` call.
+    pub preview_audio: Arc<FakePreviewAudio>,
     /// The stub TTS engine behind the switcher — steer `synthesize` via its
     /// knobs (`fail_with`, `block_synthesis`).
     pub engine: Arc<StubEngine>,
@@ -391,6 +393,7 @@ pub fn build_test_app_with_kind(kind: EngineKind) -> TestApp {
         Arc::clone(&emitter),
     ));
     let player = Arc::new(FakePlayer::new());
+    let preview_audio = Arc::new(FakePreviewAudio::new());
 
     app.manage(AppState {
         storage,
@@ -412,12 +415,14 @@ pub fn build_test_app_with_kind(kind: EngineKind) -> TestApp {
         synthesis_tasks: Arc::new(ParkingMutex::new(std::collections::HashMap::new())),
         synthesize_entered: Arc::new(ParkingMutex::new(std::collections::HashSet::new())),
         preview_dir: storage_dir.path().join("preview"),
+        preview_audio: preview_audio.clone(),
         preview_lock: Arc::new(tokio::sync::Mutex::new(())),
     });
 
     TestApp {
         app,
         player,
+        preview_audio,
         engine,
         _storage_dir: storage_dir,
         _voices_dir: voices_dir,

@@ -492,6 +492,15 @@ export const commands = {
   ): Promise<PreviewPronunciationResult> =>
     tauriInvoke('preview_pronunciation', { text, mode }),
 
+  /** Play a synthesized preview WAV through the app's preview mpv player
+   *  (issue #349). The webview never decodes audio: the bytes come back here
+   *  from the in-memory cache and the backend writes them for mpv. */
+  previewPlay: (wavBase64: string): Promise<void> =>
+    tauriInvoke('preview_play', { wavBase64 }),
+
+  /** Stop and release the preview player. Idempotent. */
+  previewStop: (): Promise<void> => tauriInvoke('preview_stop'),
+
   /** Native save dialog for an entry's audio export (#225): the default name
    * and filter follow the entry's stored audio format (rfd backend, like the
    * import picker). null = the user cancelled the dialog. */
