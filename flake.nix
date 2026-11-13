@@ -4,12 +4,32 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    # Toolchain source that does not depend on the nixpkgs pin: see the
+    # rustToolchain comment below.
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
+  outputs = { self, nixpkgs, flake-utils, rust-overlay }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        pkgs = import nixpkgs { inherit system; };
+        pkgs = import nixpkgs {
+          inherit system;
+          overlays = [ (import rust-overlay) ];
+        };
+
+        # Release-branch nixpkgs (NixOS 25.11/26.05) still ships rustc 1.96,
+        # while opus1 0.3 declares rust-version 1.98.  CI builds with
+        # dtolnay/rust-toolchain@stable, so take the toolchain from
+        # rust-overlay and pin it deliberately: bump together with CI.
+        rustToolchain = pkgs.rust-bin.stable."1.99.1".default;
+        rustPlatform = pkgs.makeRustPlatform {
+          rustc = rustToolchain;
+          cargo = rustToolchain;
+        };
+
         lib = pkgs.lib;
 
         # Runtime libs not in buildInputs (and therefore not picked up by
@@ -90,7 +110,7 @@
         #     are not in buildInputs because Tauri itself doesn't need them).
         #   - WEBKIT_DISABLE_DMABUF_RENDERER=1 for KDE Plasma 6 Wayland
         #     (see issue #3).
-        mkRuvox = { withSilero ? false }: pkgs.rustPlatform.buildRustPackage (finalAttrs: {
+        mkRuvox = { withSilero ? false }: rustPlatform.buildRustPackage (finalAttrs: {
           pname = if withSilero then "ruvox-with-silero" else "ruvox";
           version = "0.2.0";
           src = ./.;
