@@ -32,4 +32,4 @@
 - [x] 5.1 `cargo fmt --check`, `cargo clippy -- -D warnings`, and the app crate's `cargo test`.
 - [x] 5.2 `pnpm typecheck`, `pnpm eslint`, and `pnpm test:unit`.
 - [x] 5.3 `openspec validate --specs --strict` (pinned 1.6.0) passes for this change.
-- [ ] 5.4 Manual pass: start the app, play both preview controls, stop one mid-clip, close the editor while playing, and confirm the WebKit web process never crashes and no preview WAV remains in the cache directory.
+- [x] 5.4 Manual pass: start the app, play both preview controls, stop one mid-clip, close the editor while playing, and confirm the WebKit web process never crashes and no preview WAV remains in the cache directory.

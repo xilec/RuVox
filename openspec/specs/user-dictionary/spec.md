@@ -654,13 +654,19 @@ existing playback path at the moment the preview is requested — before the
 synthesis starts — and again right before the audio plays; the narration SHALL
 NOT be resumed afterwards.
 
+Playback SHALL use the application's audio player (the bundled mpv) in an
+instance reserved for previews and SHALL NOT use the webview's HTML media
+stack; the narration player's loaded entry, position and events SHALL remain
+untouched.
+
 A failing preview SHALL render one short inline message inside the form and
 SHALL leave the entered values untouched. Repeating a preview of identical
 input on the same engine and voice SHALL be served from an in-memory cache and
 SHALL NOT synthesize again; any dictionary write (save or import) SHALL retire
-the cache. Closing the editor SHALL stop a playing preview and release its
-audio resource, and a response that arrives after the editor closed SHALL be
-discarded.
+the cache. Closing the editor SHALL stop a playing preview and delete its
+temporary WAV; the player instance stays alive for later previews and is
+destroyed on application exit. A response that arrives after the editor closed
+SHALL be discarded and SHALL NOT leave a clip playing.
 
 #### Scenario: Controls appear next to the help icons
 
@@ -723,6 +729,13 @@ discarded.
 - THEN the current audio stops and the new preview plays; only the second
   control shows the playing state
 
+#### Scenario: Playback stays off the webview media stack
+
+- GIVEN the dictionary editor is open with a valid «Слово»
+- WHEN the user activates its play control
+- THEN the synthesized WAV is handed to the preview player and the dialog
+  contains no audio or video element
+
 #### Scenario: Repeated preview uses the cache
 
 - GIVEN a preview of "IPv6" already played on the current engine and voice
@@ -774,7 +787,8 @@ discarded.
 
 - GIVEN a preview is playing in the add form
 - WHEN the user closes the editor
-- THEN the audio stops and its object URL is released
+- THEN the preview player is stopped, the temporary WAV is deleted, and the
+  control returns to its play state
 
 #### Scenario: A late response after close is discarded
 
@@ -782,3 +796,4 @@ discarded.
 - WHEN the user closes the editor before the command returns
 - THEN the response is discarded: no audio starts and no preview state is
   restored
+
