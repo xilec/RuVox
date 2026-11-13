@@ -290,12 +290,17 @@ mode is owned solely by the setting.
 The system SHALL normalize Markdown structure before content phases: inline
 code spans (`` `code` ``) SHALL be processed as code (snake_case, kebab-case,
 or camelCase normalization applied to the span content, with Greek letters
-and arrows pre-expanded); ATX headings (`#` through `######`) SHALL be
-stripped while the heading text is kept; links `[text](url)` SHALL be reduced
-to their link text, with the URL removed and the text left available for
-later normalization phases; numbered list markers `N.` at line start SHALL be
-replaced with the Russian ordinal followed by a colon ("первое:", "второе:",
-…, "десятое:" for 1–10, and the cardinal number words for larger numbers).
+and arrows pre-expanded), and an English word in inline code SHALL read
+exactly as the same word reads in prose — the span SHALL NOT use the
+per-letter transliteration table. When the span content is a filesystem path
+(starts with `/`, `~`, `./` or `../` and contains `/`), it SHALL instead be
+read by the path normalizer, the same one a path in prose goes through. ATX
+headings (`#` through `######`) SHALL be stripped while the heading text is
+kept; links `[text](url)` SHALL be reduced to their link text, with the URL
+removed and the text left available for later normalization phases; numbered
+list markers `N.` at line start SHALL be replaced with the Russian ordinal
+followed by a colon ("первое:", "второе:", …, "десятое:" for 1–10, and the
+cardinal number words for larger numbers).
 
 #### Scenario: Heading stripped
 
@@ -321,6 +326,20 @@ replaced with the Russian ordinal followed by a colon ("первое:", "вто�
 - GIVEN the input "Вызови `get_user` здесь"
 - WHEN the pipeline processes it
 - THEN the inline code span is read as "гет юзер"
+
+#### Scenario: Inline code word reads like prose
+
+- GIVEN the input "Смотри `view` и `--force`"
+- WHEN the pipeline processes it
+- THEN the words read "вью" and "форс" — the same as outside backticks — not
+  the letter-by-letter "виев" and "форке"
+
+#### Scenario: Inline code path reads as a path
+
+- GIVEN the input "Проверь `~/.dsh/cordis.patch.yml`"
+- WHEN the pipeline processes it
+- THEN the span reads "тильда слэш точка дш слэш кордис точка патч точка имл"
+  instead of a character-by-character transliteration the engine would skip
 
 ### Requirement: URLs, emails, IP addresses, and file paths
 
@@ -909,8 +928,13 @@ The system SHALL split and normalize code identifiers before English word
 processing: camelCase and PascalCase identifiers SHALL be split at case
 boundaries; snake_case and SCREAMING_CASE SHALL be split at underscores;
 kebab-case SHALL be split at hyphens. Each part SHALL be resolved through the
-`CODE_WORDS` dictionary ("get" → "гет") with a transliteration fallback, and
-numeric parts SHALL be read as Russian number words.
+user dictionary, the `CODE_WORDS` dictionary ("get" → "гет"), the curated
+English tables (`IT_TERMS`, then `ENGLISH_WORDS`) and finally the English
+spelling rules, so a word part sounds the same inside an identifier and in
+prose and the per-letter transliteration table SHALL NOT decide a word part.
+Leading and trailing punctuation on a part carries no sound and SHALL be
+dropped before resolution (`forge*` reads "фордж"). Numeric parts SHALL be
+read as Russian number words.
 
 #### Scenario: camelCase identifier
 
@@ -923,6 +947,13 @@ numeric parts SHALL be read as Russian number words.
 - GIVEN the input "max_retry_count"
 - WHEN the pipeline processes it
 - THEN each underscore-separated part is read as a separate spoken word
+
+#### Scenario: Curated English word inside an identifier
+
+- GIVEN the input "Строка forge-panel"
+- WHEN the pipeline processes it
+- THEN the identifier reads "фордж панел" (the curated "фордж", not the
+  letter-by-letter "форге")
 
 ### Requirement: English words, abbreviations, and transliteration
 
@@ -950,8 +981,22 @@ resolution path: it keeps an all-caps token from letter-by-letter spelling
 a wrong inflection composition ("living" reads "ливинг", not "лайвинг"), or it
 supplies a stem whose inflected forms would otherwise degrade ("drive" keeps
 "driver"/"driving" readable), or it is an irregular reading the rules cannot
-express ("kubernetes", "nginx"). When
-an exact `IT_TERMS` entry does not exist but the word ends in a recognized
+express ("kubernetes", "nginx").
+
+A second curated table, `ENGLISH_WORDS`, SHALL hold everyday vocabulary with
+an established Russian reading that the spelling rules get wrong ("cleanup" →
+"клинап", "untracked" → "антрэкед", "view" → "вью", "office" → "офис",
+"session" → "сэшон", "force" → "форс", "forge" → "фордж", "head" → "хээд").
+It SHALL be consulted after `IT_TERMS`, in any letter case, before inflection
+composition and before the spelling rules, and SHALL NOT repeat a technical
+term already curated in `IT_TERMS` ("one word, one home"). The same curated
+chain SHALL decide an English word inside an identifier, an inline-code span,
+and a URL, email or file-path word, so a word never sounds different depending
+on the markup or the address around it. `AS_WORD` SHALL mirror the reading of
+an everyday word whose all-caps form is short enough to be spelled ("head" →
+"хээд", so git's "HEAD" is not read "эйч и эй ди").
+
+When an exact `IT_TERMS` entry does not exist but the word ends in a recognized
 English inflection suffix (`s`, `es`, `ies`, `ed`, `ing`, `er`, `ers`, `able`,
 `ally`, `ment`, `ments`, `ation`) and its stem is an `IT_TERMS` entry,
 compose the curated stem reading with the spelling-rule transliteration of the
@@ -977,9 +1022,10 @@ letters, counting "y" as a vowel ("DEVELOPER" → "девелопер", "LINUX" 
 SHALL be recorded in the unknown-words map because it is resolved by
 transliteration. Every other all-uppercase token SHALL be spelled via
 `AbbreviationNormalizer` (special cases like "ios" → "ай оу эс", `AS_WORD`
-entries like "json" → "джейсон", otherwise letter-by-letter via the same
-shared letter-name table); `AS_WORD` dictionary for mixed-case entries; and
-finally spelling-rule transliteration in alphabetic runs.
+entries like "json" → "джейсон" and "head" → "хээд", otherwise
+letter-by-letter via the same shared letter-name table); `AS_WORD` dictionary
+for mixed-case entries; and finally spelling-rule transliteration in alphabetic
+runs.
 
 Common function words SHALL be curated in a `FUNCTION_WORDS` table consulted
 before `IT_TERMS` and before the spelling rules, and in any letter case: "the"
@@ -999,7 +1045,8 @@ soft `c`/`g` before `e`/`i`/`y`; voiced `s` between vowels and in `-sion`/
 ("method" is an irregular exception: "мэтод") and "т" otherwise ("thin" →
 "тин"); `ck` → "к", `qu` →
 "кв", `x` → "кс"/"кз", and final `-le` → "л". Vowel reduction and stress
-placement SHALL remain out of scope; irregular words SHALL stay in `IT_TERMS`.
+placement SHALL remain out of scope; irregular technical words SHALL stay in
+`IT_TERMS` and everyday irregular words in `ENGLISH_WORDS`.
 
 Words resolved by transliteration SHALL be recorded in the unknown-words map,
 which SHALL be cleared at the start of every `process_with_char_mapping`
@@ -1234,6 +1281,14 @@ runs before this phase (see "User dictionary application in normalization").
 - WHEN the pipeline processes it
 - THEN the article reads "зэ" both times and the conjunction reads "энд", not
   "те" and "анд"
+
+#### Scenario: Everyday word from the curated table
+
+- GIVEN the input "cleanup HEAD Office Session untracked view"
+- WHEN the pipeline processes it
+- THEN the words read "клинап хээд офис сэшон антрэкед вью" instead of the
+  spelling-rule readings "клинуп", "эйч и эй ди", "оффайс", "сесжн",
+  "унтрэкед" and "вив"
 
 ### Requirement: Numbers
 

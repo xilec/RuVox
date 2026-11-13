@@ -194,7 +194,7 @@ impl<'a> URLPathNormalizer<'a> {
     }
 
     /// Attach the user dictionary so URL word reading honors user entries
-    /// before `IT_TERMS` (change `user-dictionary`).
+    /// before the curated tables (change `user-dictionary`).
     pub fn with_user_dictionary(mut self, dict: &'a UserDictionary, mark_stress: bool) -> Self {
         self.mark_stress = mark_stress;
         self.user_dictionary = Some(dict);
@@ -257,8 +257,9 @@ impl<'a> URLPathNormalizer<'a> {
                 {
                     return to;
                 }
-                // Check IT_TERMS first (e.g. "github" → "гитхаб").
-                if let Some(v) = super::english::IT_TERMS.get(lower.as_str()) {
+                // Check the curated tables first (e.g. "github" → "гитхаб",
+                // "patch" → "патч").
+                if let Some(v) = super::english::curated_reading(&lower) {
                     return v.to_string();
                 }
                 super::english::transliterate_simple(&lower)

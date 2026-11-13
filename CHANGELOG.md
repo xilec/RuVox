@@ -150,6 +150,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   on the next save (#350).
 
 ### Fixed
+- **English words read the same in code and prose** — inline code and
+  identifier parts used a separate per-letter transliteration, so `view`
+  sounded «виев», `--force` — «форке» and `forge` — «форге» while the same
+  words in prose read «вью», «форс», «фордж»; a filesystem path in backticks
+  degraded into «~/.дсх/кордис.паткх.ймл» and was skipped instead of narrated.
+  Both paths now resolve words through the curated English tables and the
+  spelling rules, a path in inline code is read by the path normalizer, and a
+  flag's dashes are silent. A new curated `ENGLISH_WORDS` table fixes everyday
+  vocabulary the rules get wrong: `cleanup` → «клинап», `HEAD` → «хээд»,
+  `Office` → «офис», `Session` → «сэшон», `untracked` → «антрэкед», `view` →
+  «вью», `plugin` → «плагин», `turn` → «тёрн», `unavailable` →
+  «анэвейлабл».
 - **Pronunciation preview no longer depends on the webview's media stack** —
   the dictionary editor's preview plays its WAV in a dedicated mpv instance,
   the same player RuVox ships for narration, instead of an HTML `<audio>`

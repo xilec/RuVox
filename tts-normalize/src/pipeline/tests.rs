@@ -622,6 +622,73 @@ fn english_reading_narrated_transliterates_on_a_capable_engine() {
 }
 
 #[test]
+fn everyday_english_words_read_from_the_curated_table() {
+    let mut p = TTSPipeline::new();
+    p.set_english_reading(EnglishReading::Narrated);
+    let out = p.process_for_engine(
+        "cleanup HEAD Office Session untracked view plugin turn unavailable",
+        &crate::profiles::TERATTS_PROFILE,
+    );
+    assert_eq!(
+        out.text,
+        "клинап хээд офис сэшон антрэкед вью плагин тёрн анэвейлабл"
+    );
+    // The curated lookup runs in any letter case: the all-caps form must not
+    // fall back to letter-by-letter spelling.
+    assert_eq!(p.process_text("VIEW"), "вью");
+}
+
+#[test]
+fn backticked_words_read_like_prose() {
+    // Inline code used to bypass the English word tables and transliterate
+    // letter by letter: `view` sounded «виев», `force` — «форке» and `forge` —
+    // «форге», while the same words in prose read «вью», «форс», «фордж».
+    let mut p = TTSPipeline::new();
+    p.set_english_reading(EnglishReading::Narrated);
+    let out = p.process_for_engine(
+        "`--force`, `forge`, `plugin` и `view`",
+        &crate::profiles::TERATTS_PROFILE,
+    );
+    assert_eq!(out.text, "форс, фордж, плагин и вью");
+}
+
+#[test]
+fn backticked_flag_with_a_symbol_keeps_the_underscore_split() {
+    // A symbol in the same span routes the words through the special-symbol
+    // branch; a dashed and underscored flag must still split at underscores,
+    // like it does in a span without the symbol.
+    let mut p = TTSPipeline::new();
+    p.set_english_reading(EnglishReading::Narrated);
+    let out = p.process_for_engine("`→ --dry_run`", &crate::profiles::TERATTS_PROFILE);
+    assert_eq!(out.text, "стрелка драй ран");
+}
+
+#[test]
+fn backticked_path_reads_through_the_path_normalizer() {
+    // A path in inline code used to be transliterated character by character
+    // («~/.дсх/кордис.паткх.ймл»): the vowel-less clusters are unreadable, so
+    // the engine skipped the fragment. It must read like a path in prose.
+    let mut p = TTSPipeline::new();
+    p.set_english_reading(EnglishReading::Narrated);
+    let out = p.process_for_engine(
+        "`~/.dsh/cordis.patch.yml`",
+        &crate::profiles::TERATTS_PROFILE,
+    );
+    assert_eq!(
+        out.text,
+        "тильда слэш точка дш слэш кордис точка патч точка имл"
+    );
+}
+
+#[test]
+fn quotation_marks_do_not_change_a_word_reading() {
+    // Phase 2 rewrites «...» to plain quotes; the English phase then reads the
+    // word exactly as it reads it outside quotes.
+    let mut p = TTSPipeline::new();
+    assert_eq!(p.process_text("«force» и force"), "\"форс\" и форс");
+}
+
+#[test]
 fn narrated_prose_keeps_native_identifiers() {
     let mut p = TTSPipeline::new();
     p.set_english_reading(EnglishReading::Narrated);

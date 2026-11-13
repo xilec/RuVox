@@ -298,6 +298,49 @@ pub static IT_TERMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     m
 });
 
+/// General English vocabulary with an established Russian reading.
+///
+/// [`IT_TERMS`] holds technical terms; this table holds everyday words the
+/// spelling rules get wrong. Both are consulted before the rule-based
+/// transliteration, and the identifier normalizer reads them the same way the
+/// prose phase does — a word must not sound different just because it is
+/// wrapped in backticks.
+///
+/// Keys and values are lowercase; keep the list curated rather than complete:
+/// a word belongs here only when the rules produce a reading a Russian
+/// speaker would not recognize.
+pub static ENGLISH_WORDS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
+    let mut m = HashMap::new();
+    // Development-process words
+    m.insert("cleanup", "клинап");
+    m.insert("untracked", "антрэкед");
+    m.insert("view", "вью");
+    m.insert("plugin", "плагин");
+    m.insert("unavailable", "анэвейлабл");
+    m.insert("turn", "тёрн");
+    // Git and shells
+    m.insert("head", "хээд");
+    m.insert("force", "форс");
+    m.insert("forge", "фордж");
+    // Everyday homographs of the rules
+    m.insert("office", "офис");
+    m.insert("session", "сэшон");
+    m
+});
+
+/// The curated reading of an English word: [`IT_TERMS`] first, then
+/// [`ENGLISH_WORDS`], then [`FUNCTION_WORDS`].
+///
+/// Kept here so the prose phase and the identifier normalizer resolve words
+/// through one chain instead of two drifting tables.
+pub fn curated_reading(lower: &str) -> Option<&'static str> {
+    IT_TERMS
+        .get(lower)
+        .or_else(|| ENGLISH_WORDS.get(lower))
+        .or_else(|| FUNCTION_WORDS.get(lower))
+        .copied()
+}
+
 /// Common function words whose reading the spelling rules get wrong.
 ///
 /// Kept apart from [`IT_TERMS`]: those are technical terms, while these are the
@@ -678,7 +721,7 @@ fn transliterate_word(word: &str) -> String {
 /// Normalizes an English word to Russian phonetic spelling.
 ///
 /// Lookup order:
-/// 1. Built-in `IT_TERMS` dictionary.
+/// 1. Built-in curated tables: `IT_TERMS`, then `ENGLISH_WORDS`.
 /// 2. Bounded inflection composition for known `IT_TERMS` stems.
 /// 3. Spelling-rule transliteration via `transliterate_simple`.
 ///
@@ -719,8 +762,11 @@ impl EnglishNormalizer {
 
         let text_lower = text.to_lowercase();
 
-        // 1. Built-in IT_TERMS
+        // 1. Built-in curated tables: IT_TERMS, then everyday English words.
         if let Some(v) = IT_TERMS.get(text_lower.as_str()) {
+            return v.to_string();
+        }
+        if let Some(v) = ENGLISH_WORDS.get(text_lower.as_str()) {
             return v.to_string();
         }
 
@@ -910,6 +956,51 @@ mod tests {
     #[test_case("agile" => "эджайл"; "agile")]
     fn it_terms_dev_process(word: &str) -> String {
         normalizer().normalize(word, false)
+    }
+
+    #[test_case("cleanup" => "клинап"; "cleanup")]
+    #[test_case("plugin" => "плагин"; "plugin")]
+    #[test_case("unavailable" => "анэвейлабл"; "unavailable")]
+    #[test_case("turn" => "тёрн"; "turn")]
+    #[test_case("head" => "хээд"; "head")]
+    #[test_case("office" => "офис"; "office")]
+    #[test_case("session" => "сэшон"; "session")]
+    #[test_case("untracked" => "антрэкед"; "untracked")]
+    #[test_case("view" => "вью"; "view")]
+    #[test_case("force" => "форс"; "force")]
+    #[test_case("forge" => "фордж"; "forge")]
+    fn everyday_english_words(word: &str) -> String {
+        normalizer().normalize(word, false)
+    }
+
+    #[test]
+    fn everyday_words_have_one_home_and_short_caps_mirrors() {
+        use crate::pipeline::normalizers::abbreviations::{as_word, is_word_like};
+        use crate::pipeline::normalizers::code::CodeIdentifierNormalizer;
+
+        // One word, one home: the tables are consulted in sequence, but a
+        // duplicate would let a later edit change the reading in one place and
+        // leave the other stale.
+        let code = CodeIdentifierNormalizer::new();
+        for (word, reading) in ENGLISH_WORDS.iter() {
+            assert!(!IT_TERMS.contains_key(word), "{word} is also in IT_TERMS");
+            assert!(
+                !FUNCTION_WORDS.contains_key(word),
+                "{word} is also in FUNCTION_WORDS"
+            );
+            assert!(!code.contains_builtin(word), "{word} is also in CODE_WORDS");
+
+            // A token too short or too vowel-poor for the word-like rule is
+            // spelled by the all-caps branch, so `AS_WORD` has to mirror the
+            // curated reading ("HEAD" → «хээд», "VIEW" → «вью»).
+            if !is_word_like(word) {
+                assert_eq!(
+                    as_word().get(word),
+                    Some(reading),
+                    "{word} needs an AS_WORD mirror"
+                );
+            }
+        }
     }
 
     #[test_case("framework" => "фреймворк"; "framework")]

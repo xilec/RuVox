@@ -85,6 +85,19 @@ fn re_inline_code() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"`([^`\n]+)`").expect("valid regex"))
 }
 
+/// Whether a token is a filesystem path: it starts at the root, at the home
+/// directory or with an explicit relative prefix, and carries at least one
+/// separator. Both the prose path phase and the inline-code phase decide
+/// path-likeness here; the prose regex can only produce the rooted forms, so
+/// the relative prefixes are what inline code adds.
+fn is_filesystem_path(token: &str) -> bool {
+    (token.starts_with('/')
+        || token.starts_with('~')
+        || token.starts_with("./")
+        || token.starts_with("../"))
+        && token.contains('/')
+}
+
 fn re_heading() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"(?m)^#{1,6}\s+").expect("valid regex"))
@@ -593,7 +606,7 @@ impl TTSPipeline {
                     return matched.as_str().to_string();
                 }
                 let path = caps.get(1).unwrap().as_str();
-                if path.contains('/') && (path.starts_with('/') || path.starts_with('~')) {
+                if is_filesystem_path(path) {
                     url_norm.normalize_filepath(path)
                 } else {
                     path.to_string()
@@ -920,6 +933,17 @@ impl TTSPipeline {
             }
             processed = processed.split_whitespace().collect::<Vec<_>>().join(" ");
 
+            // A filesystem path reads through the same normalizer as a path in
+            // prose: character-by-character code transliteration would turn
+            // `~/.dsh/cordis.patch.yml` into unpronounceable Cyrillic clusters
+            // («дсх», «паткх») that an engine skips entirely.
+            if is_filesystem_path(&processed) {
+                let url_norm =
+                    URLPathNormalizer::new(&self.english_normalizer, &self.number_normalizer)
+                        .with_user_dictionary(&self.user_dictionary, self.mark_stress);
+                return url_norm.normalize_filepath(&processed);
+            }
+
             if has_special {
                 return self.normalize_code_words(&processed);
             }
@@ -946,14 +970,30 @@ impl TTSPipeline {
         code.split_whitespace()
             .map(|word| {
                 let lower = word.to_lowercase();
-                // CodeIdentifierNormalizer.normalize_snake_case handles single words
-                // (no underscores) correctly: it looks up the user dictionary,
-                // then the CODE_WORDS dict, then transliterates.
-                self.code_normalizer.normalize_snake_case(
-                    &lower,
-                    &self.user_dictionary,
-                    self.mark_stress,
-                )
+                // Underscores win over dashes, mirroring the phase's own
+                // branch order, so `--dry_run` splits like `dry_run`.
+                if !lower.contains('_')
+                    && lower.contains('-')
+                    && lower.chars().any(|c| c.is_ascii_alphabetic())
+                {
+                    // A flag's dashes are separators, not sounds, and the kebab
+                    // split also reads the words around them: `--force` → «форс»,
+                    // `--dry-run` → «драй ран».
+                    self.code_normalizer.normalize_kebab_case(
+                        &lower,
+                        &self.user_dictionary,
+                        self.mark_stress,
+                    )
+                } else {
+                    // Single words go through the shared chain: the user
+                    // dictionary, the code-word table, curated English words,
+                    // then the English spelling rules.
+                    self.code_normalizer.normalize_snake_case(
+                        &lower,
+                        &self.user_dictionary,
+                        self.mark_stress,
+                    )
+                }
             })
             .collect::<Vec<_>>()
             .join(" ")
@@ -1133,17 +1173,18 @@ impl TTSPipeline {
     fn english_word_reading(&mut self, word: &str) -> String {
         let word_lower = word.to_lowercase();
 
-        // Priority: single letter by name → function words → IT_TERMS →
-        // composed inflection → abbreviations → transliterate
-        use crate::pipeline::normalizers::english::{FUNCTION_WORDS, IT_TERMS};
+        // Priority: single letter by name → curated tables (in any letter
+        // case) → composed inflection → abbreviations → transliterate
+        use crate::pipeline::normalizers::english::curated_reading;
         if word.len() == 1 {
             // Lone letters are read by English letter name via the same
             // table as code identifiers ("x" → "икс"), not
             // transliterated, and are not tracked as unknown words.
             CodeIdentifierNormalizer::spell_abbreviation(word)
-        } else if let Some(v) = FUNCTION_WORDS.get(word_lower.as_str()) {
-            v.to_string()
-        } else if let Some(v) = IT_TERMS.get(word_lower.as_str()) {
+        } else if let Some(v) = curated_reading(&word_lower) {
+            // One chain for prose, identifiers and inline code. The lookup runs
+            // in any letter case, so "VIEW" reads "вью" exactly like "view"
+            // instead of being spelled out.
             v.to_string()
         } else if let Some(composed) = self.english_normalizer.compose_inflection(word) {
             // Bounded inflection composition is attempted before the

@@ -1,0 +1,1 @@
+Проверь `~/.dsh/cordis.patch.yml`

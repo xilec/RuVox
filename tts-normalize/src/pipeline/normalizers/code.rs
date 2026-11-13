@@ -206,7 +206,6 @@ impl CodeIdentifierNormalizer {
         code_words.insert("attr", "аттр");
         code_words.insert("attribute", "атрибьют");
         code_words.insert("context", "контекст");
-        code_words.insert("session", "сешн");
         code_words.insert("token", "токен");
         code_words.insert("cache", "кэш");
         code_words.insert("store", "стор");
@@ -603,8 +602,16 @@ impl CodeIdentifierNormalizer {
         let result: Vec<String> = parts
             .iter()
             .map(|part| {
+                // Trailing or leading punctuation in a code token (`forge*`,
+                // `worktrees:`, and a flag's `--` before its word) carries no
+                // sound: read the alphabetic core.
+                let core = part.trim_matches(|c: char| !c.is_ascii_alphanumeric());
+                let part = if !core.is_empty() && core.chars().all(|c| c.is_ascii_alphabetic()) {
+                    core
+                } else {
+                    part
+                };
                 let part_lower = part.to_lowercase();
-
                 if part.chars().all(|c| c.is_ascii_digit()) {
                     // Numeric part
                     let n: u64 = part.parse().unwrap_or(0);
@@ -617,9 +624,18 @@ impl CodeIdentifierNormalizer {
                     translation
                 } else if let Some(&translation) = self.code_words.get(part_lower.as_str()) {
                     translation.to_string()
+                } else if let Some(translation) = super::english::curated_reading(&part_lower) {
+                    // A curated English word wins over letter-by-letter spelling:
+                    // `HEAD` sounds «хээд», not «эйч и эй ди».
+                    translation.to_string()
                 } else if part.len() >= 2 && part.chars().all(|c| c.is_ascii_uppercase()) {
                     // All-caps abbreviation not in any dictionary: spell letter by letter
                     Self::spell_abbreviation(part)
+                } else if part.chars().all(|c| c.is_ascii_lowercase()) {
+                    // Identifiers and inline code read English words through the
+                    // same spelling rules as prose, so `view` sounds the same in
+                    // backticks and outside them.
+                    super::english::transliterate_simple(&part_lower)
                 } else {
                     self.basic_transliterate(&part_lower)
                 }
@@ -725,7 +741,7 @@ mod tests {
         let dict = dict_with("kubectl", "куб контрол");
         assert_eq!(
             normalizer().normalize_snake_case("kubectl_apply", &dict, false),
-            "куб контрол апплй"
+            "куб контрол аппли"
         );
     }
 
@@ -825,5 +841,25 @@ mod tests {
     #[test_case("vue-router" => "вью роутер"; "vue_router")]
     fn kebab_case(input: &str) -> String {
         normalizer().normalize_kebab_case(input, &UserDictionary::default(), false)
+    }
+
+    // --- English word fallback for identifiers and inline code ---
+
+    #[test_case("view" => "вью"; "view")]
+    #[test_case("cleanup" => "клинап"; "cleanup")]
+    #[test_case("HEAD" => "хээд"; "head")]
+    #[test_case("force" => "форс"; "force")]
+    #[test_case("forge" => "фордж"; "forge")]
+    fn english_word_fallback(input: &str) -> String {
+        normalizer().normalize_snake_case(input, &UserDictionary::default(), false)
+    }
+
+    // Punctuation glued to a word part is dropped, but only when the core is
+    // purely alphabetic: `forge*` is the word, `foo1;` keeps its characters.
+    #[test_case("forge*" => "фордж"; "trailing star")]
+    #[test_case("worktrees:" => "ворктрис"; "trailing colon")]
+    #[test_case("foo1;" => "фоо1;"; "digit keeps the punctuation")]
+    fn punctuation_around_a_word_part(input: &str) -> String {
+        normalizer().normalize_snake_case(input, &UserDictionary::default(), false)
     }
 }
