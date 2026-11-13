@@ -160,7 +160,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   flag's dashes are silent. A new curated `ENGLISH_WORDS` table fixes everyday
   vocabulary the rules get wrong: `cleanup` → «клинап», `HEAD` → «хээд»,
   `Office` → «офис», `Session` → «сэшон», `untracked` → «антрэкед», `view` →
-  «вью», `plugin` → «плагин».
+  «вью», `plugin` → «плагин», `turn` → «тёрн», `unavailable` →
+  «анэвейлабл».
 - **Pronunciation preview no longer depends on the webview's media stack** —
   the dictionary editor's preview plays its WAV in a dedicated mpv instance,
   the same player RuVox ships for narration, instead of an HTML `<audio>`

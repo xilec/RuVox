@@ -52,6 +52,7 @@ static AS_WORD: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(||
         // spell letter by letter; they mirror `ENGLISH_WORDS`.
         ("head", "хээд"),
         ("view", "вью"),
+        ("turn", "тёрн"),
     ]
     .into_iter()
     .collect()

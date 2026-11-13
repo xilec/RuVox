@@ -626,10 +626,13 @@ fn everyday_english_words_read_from_the_curated_table() {
     let mut p = TTSPipeline::new();
     p.set_english_reading(EnglishReading::Narrated);
     let out = p.process_for_engine(
-        "cleanup HEAD Office Session untracked view plugin",
+        "cleanup HEAD Office Session untracked view plugin turn unavailable",
         &crate::profiles::TERATTS_PROFILE,
     );
-    assert_eq!(out.text, "клинап хээд офис сэшон антрэкед вью плагин");
+    assert_eq!(
+        out.text,
+        "клинап хээд офис сэшон антрэкед вью плагин тёрн анэвейлабл"
+    );
     // The curated lookup runs in any letter case: the all-caps form must not
     // fall back to letter-by-letter spelling.
     assert_eq!(p.process_text("VIEW"), "вью");
