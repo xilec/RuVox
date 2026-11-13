@@ -626,10 +626,10 @@ fn everyday_english_words_read_from_the_curated_table() {
     let mut p = TTSPipeline::new();
     p.set_english_reading(EnglishReading::Narrated);
     let out = p.process_for_engine(
-        "cleanup HEAD Office Session untracked view",
+        "cleanup HEAD Office Session untracked view plugin",
         &crate::profiles::TERATTS_PROFILE,
     );
-    assert_eq!(out.text, "клинап хээд офис сэшон антрэкед вью");
+    assert_eq!(out.text, "клинап хээд офис сэшон антрэкед вью плагин");
     // The curated lookup runs in any letter case: the all-caps form must not
     // fall back to letter-by-letter spelling.
     assert_eq!(p.process_text("VIEW"), "вью");
@@ -643,10 +643,10 @@ fn backticked_words_read_like_prose() {
     let mut p = TTSPipeline::new();
     p.set_english_reading(EnglishReading::Narrated);
     let out = p.process_for_engine(
-        "`--force`, `forge` и `view`",
+        "`--force`, `forge`, `plugin` и `view`",
         &crate::profiles::TERATTS_PROFILE,
     );
-    assert_eq!(out.text, "форс, фордж и вью");
+    assert_eq!(out.text, "форс, фордж, плагин и вью");
 }
 
 #[test]

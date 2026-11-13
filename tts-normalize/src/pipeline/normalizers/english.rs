@@ -315,6 +315,7 @@ pub static ENGLISH_WORDS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(
     m.insert("cleanup", "клинап");
     m.insert("untracked", "антрэкед");
     m.insert("view", "вью");
+    m.insert("plugin", "плагин");
     // Git and shells
     m.insert("head", "хээд");
     m.insert("force", "форс");
@@ -956,6 +957,7 @@ mod tests {
     }
 
     #[test_case("cleanup" => "клинап"; "cleanup")]
+    #[test_case("plugin" => "плагин"; "plugin")]
     #[test_case("head" => "хээд"; "head")]
     #[test_case("office" => "офис"; "office")]
     #[test_case("session" => "сэшон"; "session")]

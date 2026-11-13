@@ -1,1 +1,1 @@
-Смотри `view` и `HEAD`
+Смотри `view`, `plugin` и `HEAD`
