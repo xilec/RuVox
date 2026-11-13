@@ -630,6 +630,9 @@ fn everyday_english_words_read_from_the_curated_table() {
         &crate::profiles::TERATTS_PROFILE,
     );
     assert_eq!(out.text, "клинап хээд офис сэшон антрэкед вью");
+    // The curated lookup runs in any letter case: the all-caps form must not
+    // fall back to letter-by-letter spelling.
+    assert_eq!(p.process_text("VIEW"), "вью");
 }
 
 #[test]
@@ -670,6 +673,7 @@ fn quotation_marks_do_not_change_a_word_reading() {
     let mut p = TTSPipeline::new();
     assert_eq!(p.process_text("«force» и force"), "\"форс\" и форс");
 }
+
 #[test]
 fn narrated_prose_keeps_native_identifiers() {
     let mut p = TTSPipeline::new();

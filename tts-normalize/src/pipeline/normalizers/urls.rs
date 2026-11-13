@@ -194,7 +194,7 @@ impl<'a> URLPathNormalizer<'a> {
     }
 
     /// Attach the user dictionary so URL word reading honors user entries
-    /// before `IT_TERMS` (change `user-dictionary`).
+    /// before the curated tables (change `user-dictionary`).
     pub fn with_user_dictionary(mut self, dict: &'a UserDictionary, mark_stress: bool) -> Self {
         self.mark_stress = mark_stress;
         self.user_dictionary = Some(dict);

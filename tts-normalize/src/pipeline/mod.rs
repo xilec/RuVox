@@ -967,23 +967,27 @@ impl TTSPipeline {
 
     fn normalize_code_words(&self, code: &str) -> String {
         code.split_whitespace()
-            .filter_map(|word| {
-                // A command-line flag's leading dashes carry no sound: read
-                // the word as if it stood alone (`--force` → «форс»).
-                let word = word.trim_start_matches('-');
-                if word.is_empty() {
-                    return None;
-                }
+            .map(|word| {
                 let lower = word.to_lowercase();
-                // CodeIdentifierNormalizer.normalize_snake_case reads single
-                // words through the shared chain: the user dictionary, the
-                // code-word table, curated English words, then the English
-                // spelling rules.
-                Some(self.code_normalizer.normalize_snake_case(
-                    &lower,
-                    &self.user_dictionary,
-                    self.mark_stress,
-                ))
+                if lower.contains('-') && lower.chars().any(|c| c.is_ascii_alphabetic()) {
+                    // A flag's dashes are separators, not sounds, and the kebab
+                    // split also reads the words around them: `--force` → «форс»,
+                    // `--dry-run` → «драй ран».
+                    self.code_normalizer.normalize_kebab_case(
+                        &lower,
+                        &self.user_dictionary,
+                        self.mark_stress,
+                    )
+                } else {
+                    // Single words go through the shared chain: the user
+                    // dictionary, the code-word table, curated English words,
+                    // then the English spelling rules.
+                    self.code_normalizer.normalize_snake_case(
+                        &lower,
+                        &self.user_dictionary,
+                        self.mark_stress,
+                    )
+                }
             })
             .collect::<Vec<_>>()
             .join(" ")
@@ -1163,17 +1167,18 @@ impl TTSPipeline {
     fn english_word_reading(&mut self, word: &str) -> String {
         let word_lower = word.to_lowercase();
 
-        // Priority: single letter by name → function words → IT_TERMS →
-        // composed inflection → abbreviations → transliterate
-        use crate::pipeline::normalizers::english::{FUNCTION_WORDS, IT_TERMS};
+        // Priority: single letter by name → curated tables (in any letter
+        // case) → composed inflection → abbreviations → transliterate
+        use crate::pipeline::normalizers::english::curated_reading;
         if word.len() == 1 {
             // Lone letters are read by English letter name via the same
             // table as code identifiers ("x" → "икс"), not
             // transliterated, and are not tracked as unknown words.
             CodeIdentifierNormalizer::spell_abbreviation(word)
-        } else if let Some(v) = FUNCTION_WORDS.get(word_lower.as_str()) {
-            v.to_string()
-        } else if let Some(v) = IT_TERMS.get(word_lower.as_str()) {
+        } else if let Some(v) = curated_reading(&word_lower) {
+            // One chain for prose, identifiers and inline code. The lookup runs
+            // in any letter case, so "VIEW" reads "вью" exactly like "view"
+            // instead of being spelled out.
             v.to_string()
         } else if let Some(composed) = self.english_normalizer.compose_inflection(word) {
             // Bounded inflection composition is attempted before the

@@ -48,8 +48,10 @@ static AS_WORD: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(||
         ("pop", "поп"),
         // DevOps
         ("devops", "девопс"),
-        // Git's `HEAD` is a word, not an initialism.
+        // Short everyday words that the all-caps rule would otherwise
+        // spell letter by letter; they mirror `ENGLISH_WORDS`.
         ("head", "хээд"),
+        ("view", "вью"),
     ]
     .into_iter()
     .collect()

@@ -603,7 +603,8 @@ impl CodeIdentifierNormalizer {
             .iter()
             .map(|part| {
                 // Trailing or leading punctuation in a code token (`forge*`,
-                // `worktrees:`) carries no sound: read the alphabetic core.
+                // `worktrees:`, and a flag's `--` before its word) carries no
+                // sound: read the alphabetic core.
                 let core = part.trim_matches(|c: char| !c.is_ascii_alphanumeric());
                 let part = if !core.is_empty() && core.chars().all(|c| c.is_ascii_alphabetic()) {
                     core
@@ -850,6 +851,15 @@ mod tests {
     #[test_case("force" => "форс"; "force")]
     #[test_case("forge" => "фордж"; "forge")]
     fn english_word_fallback(input: &str) -> String {
+        normalizer().normalize_snake_case(input, &UserDictionary::default(), false)
+    }
+
+    // Punctuation glued to a word part is dropped, but only when the core is
+    // purely alphabetic: `forge*` is the word, `foo1;` keeps its characters.
+    #[test_case("forge*" => "фордж"; "trailing star")]
+    #[test_case("worktrees:" => "ворктрис"; "trailing colon")]
+    #[test_case("foo1;" => "фоо1;"; "digit keeps the punctuation")]
+    fn punctuation_around_a_word_part(input: &str) -> String {
         normalizer().normalize_snake_case(input, &UserDictionary::default(), false)
     }
 }

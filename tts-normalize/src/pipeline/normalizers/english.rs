@@ -718,7 +718,7 @@ fn transliterate_word(word: &str) -> String {
 /// Normalizes an English word to Russian phonetic spelling.
 ///
 /// Lookup order:
-/// 1. Built-in `IT_TERMS` dictionary.
+/// 1. Built-in curated tables: `IT_TERMS`, then `ENGLISH_WORDS`.
 /// 2. Bounded inflection composition for known `IT_TERMS` stems.
 /// 3. Spelling-rule transliteration via `transliterate_simple`.
 ///
@@ -968,12 +968,32 @@ mod tests {
     }
 
     #[test]
-    fn everyday_words_do_not_duplicate_it_terms() {
+    fn everyday_words_have_one_home_and_short_caps_mirrors() {
+        use crate::pipeline::normalizers::abbreviations::{as_word, is_word_like};
+        use crate::pipeline::normalizers::code::CodeIdentifierNormalizer;
+
         // One word, one home: the tables are consulted in sequence, but a
         // duplicate would let a later edit change the reading in one place and
         // leave the other stale.
-        for word in ENGLISH_WORDS.keys() {
+        let code = CodeIdentifierNormalizer::new();
+        for (word, reading) in ENGLISH_WORDS.iter() {
             assert!(!IT_TERMS.contains_key(word), "{word} is also in IT_TERMS");
+            assert!(
+                !FUNCTION_WORDS.contains_key(word),
+                "{word} is also in FUNCTION_WORDS"
+            );
+            assert!(!code.contains_builtin(word), "{word} is also in CODE_WORDS");
+
+            // A token too short or too vowel-poor for the word-like rule is
+            // spelled by the all-caps branch, so `AS_WORD` has to mirror the
+            // curated reading ("HEAD" → «хээд», "VIEW" → «вью»).
+            if !is_word_like(word) {
+                assert_eq!(
+                    as_word().get(word),
+                    Some(reading),
+                    "{word} needs an AS_WORD mirror"
+                );
+            }
         }
     }
 
