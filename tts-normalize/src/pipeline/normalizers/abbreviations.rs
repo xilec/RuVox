@@ -48,6 +48,8 @@ static AS_WORD: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(||
         ("pop", "поп"),
         // DevOps
         ("devops", "девопс"),
+        // Git's `HEAD` is a word, not an initialism.
+        ("head", "хээд"),
     ]
     .into_iter()
     .collect()
@@ -347,6 +349,12 @@ mod tests {
         assert_eq!(map.get("api"), None); // api is spelled out, not in AS_WORD
     }
 
+    #[test]
+    fn head_reads_as_a_word() {
+        // Git's `HEAD` is a word in jargon; spelling the four letters would
+        // skip the reading the curated English table already knows.
+        assert_eq!(normalizer().normalize("HEAD"), "хээд");
+    }
     // --- Word-like all-caps calibration (#290) ---
 
     #[test_case("DEVELOPER"; "developer")]

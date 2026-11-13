@@ -257,8 +257,9 @@ impl<'a> URLPathNormalizer<'a> {
                 {
                     return to;
                 }
-                // Check IT_TERMS first (e.g. "github" → "гитхаб").
-                if let Some(v) = super::english::IT_TERMS.get(lower.as_str()) {
+                // Check the curated tables first (e.g. "github" → "гитхаб",
+                // "patch" → "патч").
+                if let Some(v) = super::english::curated_reading(&lower) {
                     return v.to_string();
                 }
                 super::english::transliterate_simple(&lower)

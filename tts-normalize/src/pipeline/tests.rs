@@ -622,6 +622,55 @@ fn english_reading_narrated_transliterates_on_a_capable_engine() {
 }
 
 #[test]
+fn everyday_english_words_read_from_the_curated_table() {
+    let mut p = TTSPipeline::new();
+    p.set_english_reading(EnglishReading::Narrated);
+    let out = p.process_for_engine(
+        "cleanup HEAD Office Session untracked view",
+        &crate::profiles::TERATTS_PROFILE,
+    );
+    assert_eq!(out.text, "клинап хээд офис сэшон антрэкед вью");
+}
+
+#[test]
+fn backticked_words_read_like_prose() {
+    // Inline code used to bypass the English word tables and transliterate
+    // letter by letter: `view` sounded «виев», `force` — «форке» and `forge` —
+    // «форге», while the same words in prose read «вью», «форс», «фордж».
+    let mut p = TTSPipeline::new();
+    p.set_english_reading(EnglishReading::Narrated);
+    let out = p.process_for_engine(
+        "`--force`, `forge` и `view`",
+        &crate::profiles::TERATTS_PROFILE,
+    );
+    assert_eq!(out.text, "форс, фордж и вью");
+}
+
+#[test]
+fn backticked_path_reads_through_the_path_normalizer() {
+    // A path in inline code used to be transliterated character by character
+    // («~/.дсх/кордис.паткх.ймл»): the vowel-less clusters are unreadable, so
+    // the engine skipped the fragment. It must read like a path in prose.
+    let mut p = TTSPipeline::new();
+    p.set_english_reading(EnglishReading::Narrated);
+    let out = p.process_for_engine(
+        "`~/.dsh/cordis.patch.yml`",
+        &crate::profiles::TERATTS_PROFILE,
+    );
+    assert_eq!(
+        out.text,
+        "тильда слэш точка дш слэш кордис точка патч точка имл"
+    );
+}
+
+#[test]
+fn quotation_marks_do_not_change_a_word_reading() {
+    // Phase 2 rewrites «...» to plain quotes; the English phase then reads the
+    // word exactly as it reads it outside quotes.
+    let mut p = TTSPipeline::new();
+    assert_eq!(p.process_text("«force» и force"), "\"форс\" и форс");
+}
+#[test]
 fn narrated_prose_keeps_native_identifiers() {
     let mut p = TTSPipeline::new();
     p.set_english_reading(EnglishReading::Narrated);

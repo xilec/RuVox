@@ -85,6 +85,18 @@ fn re_inline_code() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"`([^`\n]+)`").expect("valid regex"))
 }
 
+/// Whether an inline-code token is a filesystem path rather than an
+/// identifier: it starts at the root, at the home directory or with an
+/// explicit relative prefix, and carries at least one separator. Such a token
+/// is read by the path normalizer, the same one prose paths go through.
+fn is_inline_file_path(token: &str) -> bool {
+    (token.starts_with('/')
+        || token.starts_with('~')
+        || token.starts_with("./")
+        || token.starts_with("../"))
+        && token.contains('/')
+}
+
 fn re_heading() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"(?m)^#{1,6}\s+").expect("valid regex"))
@@ -920,6 +932,17 @@ impl TTSPipeline {
             }
             processed = processed.split_whitespace().collect::<Vec<_>>().join(" ");
 
+            // A filesystem path reads through the same normalizer as a path in
+            // prose: character-by-character code transliteration would turn
+            // `~/.dsh/cordis.patch.yml` into unpronounceable Cyrillic clusters
+            // («дсх», «паткх») that an engine skips entirely.
+            if is_inline_file_path(&processed) {
+                let url_norm =
+                    URLPathNormalizer::new(&self.english_normalizer, &self.number_normalizer)
+                        .with_user_dictionary(&self.user_dictionary, self.mark_stress);
+                return url_norm.normalize_filepath(&processed);
+            }
+
             if has_special {
                 return self.normalize_code_words(&processed);
             }
@@ -944,16 +967,23 @@ impl TTSPipeline {
 
     fn normalize_code_words(&self, code: &str) -> String {
         code.split_whitespace()
-            .map(|word| {
+            .filter_map(|word| {
+                // A command-line flag's leading dashes carry no sound: read
+                // the word as if it stood alone (`--force` → «форс»).
+                let word = word.trim_start_matches('-');
+                if word.is_empty() {
+                    return None;
+                }
                 let lower = word.to_lowercase();
-                // CodeIdentifierNormalizer.normalize_snake_case handles single words
-                // (no underscores) correctly: it looks up the user dictionary,
-                // then the CODE_WORDS dict, then transliterates.
-                self.code_normalizer.normalize_snake_case(
+                // CodeIdentifierNormalizer.normalize_snake_case reads single
+                // words through the shared chain: the user dictionary, the
+                // code-word table, curated English words, then the English
+                // spelling rules.
+                Some(self.code_normalizer.normalize_snake_case(
                     &lower,
                     &self.user_dictionary,
                     self.mark_stress,
-                )
+                ))
             })
             .collect::<Vec<_>>()
             .join(" ")
