@@ -45,8 +45,7 @@ impl CharMapping {
         let mut orig_end = self.char_map[ts].1;
 
         let te = trans_end.min(len);
-        for i in (ts + 1)..te {
-            let entry = self.char_map[i];
+        for entry in self.char_map.iter().take(te).skip(ts + 1) {
             if entry.0 < orig_start {
                 orig_start = entry.0;
             }
