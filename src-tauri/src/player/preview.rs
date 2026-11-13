@@ -7,12 +7,12 @@
 //! plugin as narration, keyed by [`PREVIEW_WINDOW_LABEL`] so it never touches
 //! the narration player's loaded entry, position or `playback_*` events.
 //!
-//! The instance lives only while a preview plays: it is created by
-//! [`MpvPreviewAudio::play`] and destroyed by [`MpvPreviewAudio::stop`], the
-//! editor's close path, [`Drop`] and the app's exit handler. `--idle=yes`
-//! keeps it alive after the WAV ends so the stop path always kills a live
-//! process instead of racing an exit; the editor stops it when the reported
-//! duration elapses.
+//! The instance is created by the first [`MpvPreviewAudio::play`] and then
+//! reused: `--idle=yes` keeps mpv alive between clips. Re-initializing a
+//! killed instance is what leaves the plugin's IPC socket behind, so
+//! [`MpvPreviewAudio::stop`] only halts playback and deletes the WAV; the
+//! process is destroyed by [`MpvPreviewAudio::shutdown`] (app exit and
+//! [`Drop`]). The editor stops playback when the reported duration elapses.
 
 use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
@@ -44,12 +44,18 @@ pub trait PreviewAudioBackend: Send + Sync {
     /// that is still playing is stopped (and its file deleted) first.
     fn play(&self, wav: &[u8]) -> Result<(), PreviewAudioError>;
 
-    /// Stop and destroy the preview instance and delete its WAV. Idempotent:
-    /// a missing instance or file is not an error.
+    /// Stop playback and delete the WAV. Idempotent: a missing instance or
+    /// file is not an error. The mpv process stays alive for the next clip.
     fn stop(&self) -> Result<(), PreviewAudioError>;
+
+    /// Destroy the preview instance. Called on app exit and from [`Drop`]; a
+    /// later `play` starts a fresh process.
+    fn shutdown(&self) -> Result<(), PreviewAudioError> {
+        Ok(())
+    }
 }
 
-/// Production preview player: one short-lived mpv process per playback.
+/// Production preview player: one idle mpv process shared by all clips.
 pub struct MpvPreviewAudio {
     app: AppHandle<Wry>,
     /// Directory for the temporary WAVs (`<app cache>/preview`).
@@ -59,6 +65,37 @@ pub struct MpvPreviewAudio {
     current: Mutex<Option<PathBuf>>,
 }
 
+/// Owns the temporary WAV of the preview that may be playing right now.
+///
+/// Split from the mpv control so the cleanup paths are covered by unit tests
+/// that need no process, display or audio device.
+struct PreviewFiles<'a> {
+    dir: &'a Path,
+}
+
+impl<'a> PreviewFiles<'a> {
+    fn new(dir: &'a Path) -> Self {
+        Self { dir }
+    }
+
+    /// Write `wav` under a fresh UUID name; `create_dir_all` makes the first
+    /// preview self-sufficient.
+    fn write(&self, wav: &[u8]) -> std::io::Result<PathBuf> {
+        std::fs::create_dir_all(self.dir)?;
+        let path = self.dir.join(format!("{}.wav", uuid::Uuid::new_v4()));
+        std::fs::write(&path, wav)?;
+        Ok(path)
+    }
+
+    /// Remove `path`, ignoring a file that is already gone.
+    fn delete(path: &Path) {
+        if let Err(e) = std::fs::remove_file(path)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!("preview: failed to delete {}: {e}", path.display());
+        }
+    }
+}
 impl MpvPreviewAudio {
     pub fn new(app: AppHandle<Wry>, dir: PathBuf) -> Self {
         Self {
@@ -68,17 +105,28 @@ impl MpvPreviewAudio {
         }
     }
 
-    /// Start the mpv instance and hand it the file. Split from [`Self::play`]
-    /// so the caller can clean up the file on every failure path.
+    /// Start the instance if needed and hand it the file. A failed start is
+    /// retried once after dropping the plugin's IPC socket: a killed mpv
+    /// leaves the socket file behind, and a fresh process then cannot bind it
+    /// (`connect` → `ECONNREFUSED`), which would fail every later preview.
     fn start(&self, path: &Path) -> Result<(), PreviewAudioError> {
+        let first = self.init_and_load(path);
+        if first.is_ok() {
+            return first;
+        }
+        tracing::warn!("preview: mpv start failed, resetting its IPC socket: {first:?}");
+        self.reset_ipc();
+        self.init_and_load(path)
+    }
+
+    fn init_and_load(&self, path: &Path) -> Result<(), PreviewAudioError> {
         let resource_dir = self.app.path().resource_dir().ok();
         let config = MpvConfig {
             path: resolve_mpv_path(resource_dir.as_deref())
                 .to_string_lossy()
                 .into_owned(),
             // Audio-only, no speed filter: the preview is a short clip at the
-            // recorded rate. Idle keeps the process alive after EOF so stop
-            // always kills a live child instead of racing an exit.
+            // recorded rate. Idle keeps the process between clips.
             args: vec![
                 "--no-video".to_string(),
                 "--no-ytdl".to_string(),
@@ -88,14 +136,55 @@ impl MpvPreviewAudio {
             ipc_timeout_ms: 2000,
             show_mpv_output: false,
         };
-        self.app
-            .mpv()
-            .init(config, PREVIEW_WINDOW_LABEL)
-            .map_err(|e| PreviewAudioError::Init(e.to_string()))?;
+        // The plugin locks its instance map with `unwrap` and can panic while
+        // holding it; catching keeps the app and the narration player alive.
+        let init = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            self.app.mpv().init(config, PREVIEW_WINDOW_LABEL)
+        }));
+        match init {
+            Err(_) => return Err(PreviewAudioError::Init("mpv init panicked".into())),
+            Ok(Err(e)) => return Err(PreviewAudioError::Init(e.to_string())),
+            Ok(Ok(_)) => {}
+        }
 
         self.command(json!(["loadfile", path]))?;
         self.command(json!(["set_property", "pause", false]))?;
         Ok(())
+    }
+
+    /// Drop the instance and the stale IPC socket it may have left behind.
+    fn reset_ipc(&self) {
+        let _ = self.destroy();
+        #[cfg(unix)]
+        {
+            // Mirrors tauri-plugin-mpv 0.5.2 `ipc::get_ipc_pipe` (not
+            // re-exported): the plugin names the socket after the main process
+            // and the instance label.
+            let socket = format!(
+                "/tmp/tauri_plugin_mpv_socket_{}_{}",
+                std::process::id(),
+                PREVIEW_WINDOW_LABEL
+            );
+            if let Err(e) = std::fs::remove_file(&socket)
+                && e.kind() != std::io::ErrorKind::NotFound
+            {
+                tracing::warn!("preview: failed to remove stale mpv socket {socket}: {e}");
+            }
+        }
+    }
+    /// Whether the plugin holds a live-looking instance for the preview label.
+    ///
+    /// `Mpv::command` unwraps that map, and a missing entry panics while the
+    /// plugin's mutex is locked: the poison would then break narration too.
+    /// A poisoned map (an earlier panic elsewhere in the plugin) is reported as
+    /// absent rather than panicking again.
+    fn has_instance(&self) -> bool {
+        self.app
+            .mpv()
+            .instances
+            .lock()
+            .map(|instances| instances.contains_key(PREVIEW_WINDOW_LABEL))
+            .unwrap_or(false)
     }
 
     fn command(&self, command: serde_json::Value) -> Result<(), PreviewAudioError> {
@@ -121,17 +210,15 @@ impl MpvPreviewAudio {
     /// Kill the instance, if any. A plugin error is reported but never blocks
     /// deleting the WAV: the process may already be gone.
     fn destroy(&self) -> Result<(), PreviewAudioError> {
-        self.app
-            .mpv()
-            .destroy(PREVIEW_WINDOW_LABEL)
-            .map_err(|e| PreviewAudioError::Command(e.to_string()))
-    }
-
-    fn delete_file(path: &Path) {
-        if let Err(e) = std::fs::remove_file(path)
-            && e.kind() != std::io::ErrorKind::NotFound
-        {
-            tracing::warn!("preview: failed to delete {}: {e}", path.display());
+        // `kill_mpv_process` also unwraps the plugin's instance map: a poisoned
+        // map would turn an exit cleanup into a second panic.
+        let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            self.app.mpv().destroy(PREVIEW_WINDOW_LABEL)
+        }));
+        match result {
+            Err(_) => Err(PreviewAudioError::Command("mpv destroy panicked".into())),
+            Ok(Err(e)) => Err(PreviewAudioError::Command(e.to_string())),
+            Ok(Ok(_)) => Ok(()),
         }
     }
 }
@@ -140,17 +227,22 @@ impl PreviewAudioBackend for MpvPreviewAudio {
     fn play(&self, wav: &[u8]) -> Result<(), PreviewAudioError> {
         let mut current = self.current.lock();
 
-        // The plugin inserts into its instance map by label: a live instance
-        // would be leaked by a second init, so stop the old preview first.
-        if current.take().is_some()
-            && let Err(e) = self.destroy()
-        {
-            tracing::warn!("preview: failed to stop the previous instance: {e}");
+        // Replace: stop the clip that may still be playing and delete its
+        // file. The process is kept — re-initializing it is what the plugin's
+        // stale IPC socket breaks (`start`).
+        if let Some(previous) = current.take() {
+            // Guard the command: the plugin's dispatcher unwraps its instance
+            // map, and a panic there poisons the plugin's global mutex, which
+            // would break narration too.
+            if self.has_instance()
+                && let Err(e) = self.command(json!(["stop"]))
+            {
+                tracing::debug!("preview: stopping the previous clip failed: {e}");
+            }
+            PreviewFiles::delete(&previous);
         }
 
-        std::fs::create_dir_all(&self.dir)?;
-        let path = self.dir.join(format!("{}.wav", uuid::Uuid::new_v4()));
-        std::fs::write(&path, wav)?;
+        let path = PreviewFiles::new(&self.dir).write(wav)?;
 
         match self.start(&path) {
             Ok(()) => {
@@ -158,8 +250,7 @@ impl PreviewAudioBackend for MpvPreviewAudio {
                 Ok(())
             }
             Err(e) => {
-                Self::delete_file(&path);
-                let _ = self.destroy();
+                PreviewFiles::delete(&path);
                 Err(e)
             }
         }
@@ -168,17 +259,35 @@ impl PreviewAudioBackend for MpvPreviewAudio {
     fn stop(&self) -> Result<(), PreviewAudioError> {
         let mut current = self.current.lock();
         let path = current.take();
-        let destroy = self.destroy();
-        if let Some(path) = path {
-            Self::delete_file(&path);
+        // Keep the process: `stop` halts the clip but leaves mpv idle. Never
+        // send the command to an absent instance: the plugin's dispatcher
+        // unwraps the map and a panic there poisons the mutex used by the
+        // narration player as well.
+        if path.is_some()
+            && self.has_instance()
+            && let Err(e) = self.command(json!(["stop"]))
+        {
+            tracing::debug!("preview: stop command failed: {e}");
         }
-        destroy
+        if let Some(path) = path {
+            PreviewFiles::delete(&path);
+        }
+        Ok(())
+    }
+
+    fn shutdown(&self) -> Result<(), PreviewAudioError> {
+        let mut current = self.current.lock();
+        if let Some(path) = current.take() {
+            PreviewFiles::delete(&path);
+        }
+        self.reset_ipc();
+        Ok(())
     }
 }
 
 impl Drop for MpvPreviewAudio {
     fn drop(&mut self) {
-        let _ = self.destroy();
+        let _ = self.shutdown();
     }
 }
 
@@ -234,5 +343,37 @@ impl PreviewAudioBackend for FakePreviewAudio {
     fn stop(&self) -> Result<(), PreviewAudioError> {
         self.stops.fetch_add(1, Ordering::SeqCst);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn preview_files_writes_and_deletes_a_temporary_wav() {
+        let root = tempfile::TempDir::new().unwrap();
+        let dir = root.path().join("preview");
+        let files = PreviewFiles::new(&dir);
+
+        let path = files.write(b"RIFF....WAVE").unwrap();
+
+        assert_eq!(path.parent().unwrap(), dir);
+        assert_eq!(std::fs::read(&path).unwrap(), b"RIFF....WAVE");
+        PreviewFiles::delete(&path);
+        assert!(!path.exists());
+        // Idempotent: the sweep or a double stop may delete it first.
+        PreviewFiles::delete(&path);
+    }
+
+    #[test]
+    fn preview_files_reports_an_unusable_cache_directory() {
+        let root = tempfile::TempDir::new().unwrap();
+        let blocker = root.path().join("preview");
+        std::fs::write(&blocker, b"not a directory").unwrap();
+
+        let err = PreviewFiles::new(&blocker).write(b"RIFF").unwrap_err();
+
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
     }
 }

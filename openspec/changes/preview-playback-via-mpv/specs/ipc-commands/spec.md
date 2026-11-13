@@ -14,11 +14,14 @@ narration player or emit `playback_*` events. A malformed base64 payload SHALL
 be rejected with `preview.invalid_audio`, a decoded payload larger than 8 MiB
 with `preview.audio_too_large`, and a player failure with `preview.play_failed`
 carrying the underlying message. Starting a new preview while one plays SHALL
-first destroy the previous instance and delete its file.
+first stop the previous clip and delete its file; the mpv process itself SHALL
+be reused. A start that fails because the plugin's IPC socket is stale SHALL be
+retried once after the socket file is removed, and only a second failure is
+reported.
 
-`preview_stop` SHALL stop and destroy the preview instance and delete the
-temporary WAV. It SHALL succeed when no preview is playing or the instance has
-already exited. A failure to destroy the instance SHALL be reported as
+`preview_stop` SHALL stop playback and delete the temporary WAV. It SHALL
+succeed when no preview is playing. The preview instance SHALL stay alive and
+idle for the next preview; a failure to reach it SHALL be reported as
 `preview.stop_failed` and SHALL NOT block the file cleanup.
 
 The preview instance SHALL be destroyed on application exit. The startup sweep
@@ -32,12 +35,12 @@ behind.
 - THEN the preview mpv instance is playing the WAV and the narration player has
   received no command
 
-#### Scenario: stop destroys the player and deletes the file
+#### Scenario: stop halts playback and deletes the file
 
 - GIVEN `preview_play` started a preview
 - WHEN the frontend invokes `preview_stop`
-- THEN the preview instance is destroyed, its temporary WAV is deleted, and no
-  playback event is emitted
+- THEN playback stops, its temporary WAV is deleted, the instance stays alive
+  for the next preview, and no playback event is emitted
 
 #### Scenario: stop is idempotent
 
@@ -57,9 +60,16 @@ behind.
 - WHEN the command runs
 - THEN it returns `preview.audio_too_large` before writing any file
 
-#### Scenario: replacing a preview destroys the previous instance
+#### Scenario: replacing a preview stops the previous clip
 
 - GIVEN a preview is playing
 - WHEN the frontend invokes `preview_play` again
-- THEN the previous instance is destroyed and its file deleted before the new
-  playback starts
+- THEN the previous clip is stopped and its file deleted before the new playback
+  starts, without recreating the mpv process
+
+#### Scenario: a stale IPC socket does not break the next preview
+
+- GIVEN a previous mpv process was killed and left its IPC socket file behind
+- WHEN the frontend invokes `preview_play`
+- THEN the command removes the stale socket, retries the start once, and plays
+  the WAV through a fresh instance

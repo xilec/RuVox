@@ -1136,9 +1136,10 @@ pub fn run() {
                 }
                 if let Some(state) = app_handle.try_state::<AppState>() {
                     // The preview instance is a second mpv process; exit is
-                    // the backstop when the editor never closed it.
-                    if let Err(e) = state.preview_audio.stop() {
-                        tracing::warn!("preview mpv stop on exit failed: {e}");
+                    // the backstop when the editor never closed it. Stop
+                    // playback and destroy the process.
+                    if let Err(e) = state.preview_audio.shutdown() {
+                        tracing::warn!("preview mpv shutdown on exit failed: {e}");
                     }
                 }
                 if let Err(e) = app_handle.mpv().destroy(player::WINDOW_LABEL) {

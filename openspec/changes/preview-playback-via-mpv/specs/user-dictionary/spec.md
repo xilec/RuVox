@@ -45,9 +45,10 @@ A failing preview SHALL render one short inline message inside the form and
 SHALL leave the entered values untouched. Repeating a preview of identical
 input on the same engine and voice SHALL be served from an in-memory cache and
 SHALL NOT synthesize again; any dictionary write (save or import) SHALL retire
-the cache. Closing the editor SHALL stop a playing preview, destroy its player
-instance and delete its temporary WAV; a response that arrives after the editor
-closed SHALL be discarded.
+the cache. Closing the editor SHALL stop a playing preview and delete its
+temporary WAV; the player instance stays alive for later previews and is
+destroyed on application exit. A response that arrives after the editor closed
+SHALL be discarded and SHALL NOT leave a clip playing.
 
 #### Scenario: Controls appear next to the help icons
 
@@ -168,8 +169,8 @@ closed SHALL be discarded.
 
 - GIVEN a preview is playing in the add form
 - WHEN the user closes the editor
-- THEN the preview player is stopped and destroyed, the temporary WAV is
-  deleted, and the control returns to its play state
+- THEN the preview player is stopped, the temporary WAV is deleted, and the
+  control returns to its play state
 
 #### Scenario: A late response after close is discarded
 

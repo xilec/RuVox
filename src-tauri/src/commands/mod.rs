@@ -631,18 +631,34 @@ pub async fn preview_play(state: State<'_, AppState>, wav_base64: String) -> Cmd
         return Err(CommandError::internal("preview.audio_too_large", vec![]));
     }
 
-    state.preview_audio.play(&bytes).map_err(|e| {
-        CommandError::internal("preview.play_failed", vec![]).with_message(e.to_string())
-    })
+    // mpv startup busy-waits up to `ipc_timeout_ms` while holding the plugin's
+    // instance map; keep that off the async runtime's workers.
+    let player = Arc::clone(&state.preview_audio);
+    tokio::task::spawn_blocking(move || player.play(&bytes))
+        .await
+        .map_err(|e| {
+            CommandError::internal("preview.play_failed", vec![])
+                .with_message(format!("preview player task failed: {e}"))
+        })?
+        .map_err(|e| {
+            CommandError::internal("preview.play_failed", vec![]).with_message(e.to_string())
+        })
 }
 
 /// Stop and release the preview player. Idempotent: the editor calls it on
 /// every close, and the playback-end timer may race a manual stop.
 #[tauri::command]
 pub async fn preview_stop(state: State<'_, AppState>) -> CmdResult<()> {
-    state.preview_audio.stop().map_err(|e| {
-        CommandError::internal("preview.stop_failed", vec![]).with_message(e.to_string())
-    })
+    let player = Arc::clone(&state.preview_audio);
+    tokio::task::spawn_blocking(move || player.stop())
+        .await
+        .map_err(|e| {
+            CommandError::internal("preview.stop_failed", vec![])
+                .with_message(format!("preview player task failed: {e}"))
+        })?
+        .map_err(|e| {
+            CommandError::internal("preview.stop_failed", vec![]).with_message(e.to_string())
+        })
 }
 
 /// Return all entries sorted by created_at descending.

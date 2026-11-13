@@ -645,12 +645,14 @@ describe('DictionaryModal pronunciation preview', () => {
     act(() => control('from')!.click());
     await waitForPlayback('from');
 
+    // The mount/start path already called stop; only the timer may call it now.
+    vi.mocked(commands.previewStop).mockClear();
+
     // The dialog stops the backend player after `duration_sec` plus a margin;
-    // the backend destroys mpv and deletes the WAV on that stop.
-    await vi.waitFor(
-      () => expect(commands.previewStop).toHaveBeenCalled(),
-      { timeout: 3000 },
-    );
+    // the backend halts playback and deletes the WAV on that stop.
+    await vi.waitFor(() => expect(commands.previewStop).toHaveBeenCalledTimes(1), {
+      timeout: 3000,
+    });
     await vi.waitFor(() =>
       expect(control('from')!.getAttribute('aria-label')).toBe(
         translate('ru', 'dictionary.preview.from.aria'),

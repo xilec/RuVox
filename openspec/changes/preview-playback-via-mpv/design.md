@@ -41,25 +41,27 @@ the plugin's map. The narration player keeps the `main` label.
 
 ## Decisions
 
-**A dedicated mpv instance with the plugin label `preview`, created per
-playback and destroyed on stop.** The dialog already pauses narration before a
+**A dedicated mpv instance with the plugin label `preview`, created lazily and
+reused.** The dialog already pauses narration before a
 preview, but it must not take over the narration player: `Player::load` would
 replace the loaded entry, its position and the `playback_*` events that drive
 the queue UI, and restoring the narration afterwards would require remembering
-and reloading the file. A separate instance has none of that state — it loads
-one WAV, plays it and dies. Keeping it alive between previews was rejected: an
-idle mpv process costs memory for a control used in short bursts, while the
-spawn costs roughly 100-150 ms once the audio is already synthesized. Rejected:
-a sentinel entry id inside the narration player (corrupts `current_entry_id`
-and the UI), and a second long-lived instance (same memory argument).
+and reloading the file. A separate instance has none of that state — it only
+ever loads a preview WAV. The instance is created by the first preview and
+stays alive between clips: recreating it per clip is what breaks. The plugin's
+`destroy` kills the process but leaves its IPC socket file behind, and a fresh
+mpv then cannot bind the same path (`connect` → `ECONNREFUSED`), which fails
+every preview after the first — observed in the manual pass. An idle audio-only
+mpv costs a few megabytes, so the process is destroyed only on app exit. A
+sentinel entry id inside the narration player (corrupts `current_entry_id` and
+the UI) was rejected.
 
 The instance is configured audio-only (`--no-video`, `--no-ytdl`, `--idle=yes`)
 and uses the same `resolve_mpv_path` as the player, so the bundled AppImage /
 NSIS mpv and the PATH fallback behave identically. `--idle=yes` keeps the
-process alive after the WAV ends, so the stop path always kills a live process
-instead of racing a process that already exited. The plugin's map entry is
-removed by `destroy` on every path; `Drop` and the app's `RunEvent::Exit`
-destroy it as a backstop.
+process alive after the WAV ends, so `stop` only halts the clip; `Drop` and the
+app's `RunEvent::Exit` destroy the instance. A failed start resets the plugin's
+stale IPC socket file and retries once before reporting `preview.play_failed`.
 
 **The WAV still travels as base64; only playback moved.** `preview_play`
 decodes the payload, writes it to `<app cache>/preview/<uuid>.wav` and starts
@@ -97,9 +99,10 @@ thin and exercised manually.
 `preview.invalid_audio`; a decoded payload above 8 MiB answers
 `preview.audio_too_large` (the command is reachable directly, and a 200-word
 preview is under 2 MB); an mpv failure answers `preview.play_failed` with the
-plugin message, and a failed destroy answers `preview.stop_failed` while the
-WAV is still deleted. The dialog keeps showing its single inline
-`dictionary.preview.error.play_failed` line for playback failures, as today.
+plugin message, and `preview_stop` answers `preview.stop_failed` only when its
+blocking task cannot run (the WAV is still deleted). The dialog keeps showing
+its single inline `dictionary.preview.error.play_failed` line for playback
+failures, as today.
 
 **The CSP loses `media-src 'self' blob:`.** Nothing in the webview decodes
 audio or video any more; `default-src 'self'` covers the remaining needs and the
@@ -107,13 +110,13 @@ audio or video any more; `default-src 'self'` covers the remaining needs and the
 
 ## Risks / Trade-offs
 
-- [mpv spawn latency per preview] → the instance is created only after
-  synthesis finishes, when the user is already waiting; measured startup is
-  ~100-150 ms.
-- [A second mpv process while a preview plays] → one process per active
-  preview, destroyed on stop/close/exit; no idle instance is kept.
+- [mpv spawn latency on the first preview] → the instance is created only
+  after synthesis finishes, when the user is already waiting; measured startup
+  is ~100-150 ms.
+- [An idle mpv process between previews] → audio-only and driven by
+  `--idle=yes`; a few megabytes for the app's lifetime, destroyed on exit.
 - [Webview timer throttling delays the automatic stop] → mpv stays idle after
-  EOF (no sound), and the next preview, editor close or app exit destroys it;
+  EOF (no sound); a second preview, the next stop or app exit clears it, and
   the startup sweep deletes a leftover WAV after a crash.
 - [Engine-reported `duration_sec` drives the auto-stop] → the 500 ms margin
   absorbs clock differences; a manual click stops instantly, and a second
@@ -124,3 +127,6 @@ audio or video any more; `default-src 'self'` covers the remaining needs and the
   are serialized by one mutex, the `preview` label has no window (so the
   plugin's close handler never removes it), and every exit path removes the
   instance through `destroy`.
+- [A killed mpv leaves its IPC socket behind] → a failed start deletes the
+  socket file (named after the main process and the label, the same scheme as
+  the plugin's `ipc::get_ipc_pipe`) and retries once.

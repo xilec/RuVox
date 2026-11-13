@@ -1,10 +1,11 @@
 ## 1. Preview player backend
 
 - [x] 1.1 Add the `preview` plugin window label to `player/mod.rs` and expose `resolve_mpv_path` to the new module.
-- [x] 1.2 Create `src-tauri/src/player/preview.rs`: `PreviewAudioError`, the `PreviewAudioBackend` trait (`play(&[u8])`, `stop()`), and `MpvPreviewAudio` writing `<cache>/preview/<uuid>.wav`, starting an audio-only mpv instance, and destroying it plus the file on stop.
-- [x] 1.3 Serialize play/stop in `MpvPreviewAudio` and destroy the instance from `Drop`.
-- [x] 1.4 Add `preview_audio: Arc<dyn PreviewAudioBackend>` to `AppState`, construct it in `lib.rs`, and destroy the instance on `RunEvent::Exit`.
+- [x] 1.2 Create `src-tauri/src/player/preview.rs`: `PreviewAudioError`, the `PreviewAudioBackend` trait (`play(&[u8])`, `stop()`, `shutdown()`), and `MpvPreviewAudio` writing `<cache>/preview/<uuid>.wav`, starting an audio-only mpv instance lazily, and reusing it across clips.
+- [x] 1.3 Serialize play/stop in `MpvPreviewAudio`; `stop` halts playback and deletes the WAV, a failed start resets the plugin's stale IPC socket and retries once, and `Drop` destroys the instance.
+- [x] 1.4 Add `preview_audio: Arc<dyn PreviewAudioBackend>` to `AppState`, construct it in `lib.rs`, and shut the instance down on `RunEvent::Exit`.
 - [x] 1.5 Add a fake backend to `test_support.rs` and expose it through `TestApp` beside the fake player.
+- [x] 1.6 Unit-test the temporary-file bookkeeping (`PreviewFiles`) without mpv.
 
 ## 2. IPC commands
 

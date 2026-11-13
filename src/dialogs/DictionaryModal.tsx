@@ -296,7 +296,12 @@ export function DictionaryModal({
           setPreviewError(tt('dictionary.preview.error.play_failed'));
           return;
         }
-        if (seq !== previewSeqRef.current) return;
+        if (seq !== previewSeqRef.current) {
+          // The editor closed (or a newer preview won) while play was in
+          // flight: stop the clip the backend may have just started.
+          void commands.previewStop().catch(() => {});
+          return;
+        }
 
         setPreviewBusy(null);
         setPreviewPlaying(field);
