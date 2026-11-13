@@ -5,5 +5,5 @@
 
 ## 2. Archive
 
-- [ ] 2.1 Archive `drop-quickadd-regen-prompt` first, then this change.
-- [ ] 2.2 `openspec validate --specs --strict` passes with the requirement restored.
+- [x] 2.1 Archive `drop-quickadd-regen-prompt` first, then this change.
+- [x] 2.2 `openspec validate --specs --strict` passes with the requirement restored.
