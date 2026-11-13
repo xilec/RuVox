@@ -687,8 +687,8 @@ mod tests {
         assert_eq!(mapping.original, "Hello world");
         assert_eq!(mapping.transformed, "Hello world");
         assert_eq!(mapping.char_map.len(), 11);
-        for i in 0..11 {
-            assert_eq!(mapping.char_map[i], (i, i + 1));
+        for (i, entry) in mapping.char_map.iter().enumerate() {
+            assert_eq!(*entry, (i, i + 1));
         }
     }
 
@@ -806,13 +806,13 @@ mod tests {
         let mapping = tracked.build_mapping();
 
         // "Hello " stays same (codepoints 0–5)
-        for i in 0..6 {
-            assert_eq!(mapping.char_map[i], (i, i + 1));
+        for (i, entry) in mapping.char_map.iter().take(6).enumerate() {
+            assert_eq!(*entry, (i, i + 1));
         }
 
         // "мир" (3 codepoints) maps to original "world" (codepoints 6–11)
-        for i in 6..9 {
-            assert_eq!(mapping.char_map[i], (6, 11));
+        for entry in &mapping.char_map[6..9] {
+            assert_eq!(*entry, (6, 11));
         }
     }
 
@@ -866,16 +866,16 @@ mod tests {
         let mapping = tracked.build_mapping();
 
         // "Привет" (6 codepoints) maps to "Hello" (codepoints 0–5)
-        for i in 0..6 {
-            assert_eq!(mapping.char_map[i], (0, 5));
+        for entry in &mapping.char_map[0..6] {
+            assert_eq!(*entry, (0, 5));
         }
 
         // Space at codepoint 6 maps to space at codepoint 5–6
         assert_eq!(mapping.char_map[6], (5, 6));
 
         // "мир" (3 codepoints) maps to "world" (codepoints 6–11)
-        for i in 7..10 {
-            assert_eq!(mapping.char_map[i], (6, 11));
+        for entry in &mapping.char_map[7..10] {
+            assert_eq!(*entry, (6, 11));
         }
     }
 
@@ -887,8 +887,8 @@ mod tests {
 
         let mapping = tracked.build_mapping();
 
-        for i in 0..char_len(&mapping.transformed) {
-            assert_eq!(mapping.char_map[i], (0, 5));
+        for entry in &mapping.char_map[..char_len(&mapping.transformed)] {
+            assert_eq!(*entry, (0, 5));
         }
     }
 
@@ -901,8 +901,8 @@ mod tests {
         let mapping = tracked.build_mapping();
 
         // "гет" (3 codepoints) maps to full "getUserData" (11 codepoints)
-        for i in 0..3 {
-            assert_eq!(mapping.char_map[i], (0, 11));
+        for entry in &mapping.char_map[0..3] {
+            assert_eq!(*entry, (0, 11));
         }
     }
 
@@ -1058,9 +1058,15 @@ mod tests {
         let forty_two_cp = char_len("42");
         let soroki_dva_cp = char_len("сорок два");
 
-        for i in prefix_cp..(prefix_cp + soroki_dva_cp) {
+        for (i, entry) in mapping
+            .char_map
+            .iter()
+            .enumerate()
+            .take(prefix_cp + soroki_dva_cp)
+            .skip(prefix_cp)
+        {
             assert_eq!(
-                mapping.char_map[i],
+                *entry,
                 (prefix_cp, prefix_cp + forty_two_cp),
                 "char_map[{}] should map to 42's codepoint range",
                 i
@@ -1082,9 +1088,15 @@ mod tests {
         let original_end_cp = original_start_cp + char_len("getUserData");
 
         let get_user_data_ru = "гет юзер дата";
-        for i in original_start_cp..(original_start_cp + char_len(get_user_data_ru)) {
+        for (i, entry) in mapping
+            .char_map
+            .iter()
+            .enumerate()
+            .take(original_start_cp + char_len(get_user_data_ru))
+            .skip(original_start_cp)
+        {
             assert_eq!(
-                mapping.char_map[i],
+                *entry,
                 (original_start_cp, original_end_cp),
                 "char_map[{}] should map to getUserData's codepoint range",
                 i
@@ -1344,8 +1356,8 @@ mod tests {
 
         assert_eq!(tracked.text(), "a b a");
         let mapping = tracked.build_mapping();
-        for i in 0..5 {
-            assert_eq!(mapping.char_map[i], (i, i + 1));
+        for (i, entry) in mapping.char_map.iter().enumerate() {
+            assert_eq!(*entry, (i, i + 1));
         }
     }
 
