@@ -19,7 +19,6 @@ import type { EntryFormat, EntrySource, UIConfig, UnlistenFn } from '../lib/taur
 import type { ReadTextFileResult, TextEntry } from '../lib/tauri';
 import { formatError } from '../lib/errors';
 import { canonicalReadingWidth, READING_SCALE_DEFAULT } from '../lib/reading';
-import { entryDisplayTitle } from '../lib/entryTitle';
 import { useT } from '../lib/i18n';
 import { setLocale, toLocale } from '../stores/locale';
 import { resolveIngest } from '../lib/ingest';
@@ -36,7 +35,6 @@ import { useSearchQuery } from '../stores/searchQuery';
 import { PreviewDialog } from '../dialogs/PreviewDialog';
 import { SettingsModal } from '../dialogs/Settings';
 import { DictionaryModal } from '../dialogs/DictionaryModal';
-import { RegeneratePrompt } from '../dialogs/RegeneratePrompt';
 import { BundlePrompt } from '../dialogs/BundlePrompt';
 import { EncodingDialog } from '../dialogs/EncodingDialog';
 import { UrlImportDialog } from '../dialogs/UrlImportDialog';
@@ -89,14 +87,6 @@ export function AppShell() {
   // stored original_text; only a confirmed «Перегенерировать» reaches the
   // backend, so cancelling never touches the existing audio.
   const [regenEntry, setRegenEntry] = useState<TextEntry | null>(null);
-  // Viewer quick-add session (user-dictionary spec, "Viewer quick-add"): the
-  // entry whose recording a dictionary save can make stale, and whether the
-  // editor actually wrote anything before it closed. Refs, not state, so the
-  // editor callbacks never capture a stale session.
-  const dictQuickAddEntry = useRef<TextEntry | null>(null);
-  const dictQuickAddSaved = useRef(false);
-  // «Переозвучить сейчас?» offer raised after a viewer quick-add save.
-  const [regenPromptEntry, setRegenPromptEntry] = useState<TextEntry | null>(null);
   const [config, setConfig] = useState<UIConfig | null>(null);
   const configLoaded = useRef(false);
   const [promptEngine, setPromptEngine] = useState<BundlePromptEngine | null>(null);
@@ -628,22 +618,16 @@ export function AppShell() {
 
   /** Viewer context menu «В словарь» (user-dictionary spec, "Viewer
    *  quick-add"): open the existing editor prefilled with the selected word
-   *  and remember the entry whose audio a save can make stale. The player is
-   *  not touched here: only a confirmed regeneration stops playback. */
+   *  quick-add"): open the existing editor prefilled with the selected word.
+   *  The player is not touched here. */
   function openDictionaryFromViewer(word: string) {
-    dictQuickAddEntry.current = selectedEntry;
-    dictQuickAddSaved.current = false;
     setDictInitialFrom(word);
     setDictModalOpened(true);
   }
 
   /** Close the dictionary editor: restore Settings when it was the opener and
-   *  offer a regeneration when a viewer quick-add session saved anything. */
+   *  bump the revision so the next editor session reloads the collections. */
   function closeDictionary() {
-    const quickAddEntry = dictQuickAddEntry.current;
-    const saved = dictQuickAddSaved.current;
-    dictQuickAddEntry.current = null;
-    dictQuickAddSaved.current = false;
     setDictModalOpened(false);
     setDictInitialFrom(null);
     setDictRevision((n) => n + 1);
@@ -651,9 +635,6 @@ export function AppShell() {
       setDictReturnToSettings(false);
       setSettingsOpened(true);
     }
-    // Only a session that wrote to the dictionary makes the recording stale;
-    // opening the editor to browse and closing it must not nag.
-    if (saved && quickAddEntry) setRegenPromptEntry(quickAddEntry);
   }
 
   // Regeneration confirm: the delete-then-synthesize sequence lives entirely
@@ -714,28 +695,8 @@ export function AppShell() {
         opened={dictModalOpened}
         initialFrom={dictInitialFrom}
         onInitialFromConsumed={() => setDictInitialFrom(null)}
-        onSaved={() => {
-          // Any successful write makes the selected recording stale; the
-          // editor is the one that knows a write succeeded.
-          if (dictQuickAddEntry.current) dictQuickAddSaved.current = true;
-        }}
         onClose={closeDictionary}
       />
-
-      <RegeneratePrompt
-        opened={regenPromptEntry !== null}
-        entryTitle={regenPromptEntry ? entryDisplayTitle(regenPromptEntry) : ''}
-        onConfirm={() => {
-          const entry = regenPromptEntry;
-          if (!entry) return;
-          setRegenPromptEntry(null);
-          // Reuse the existing regeneration path; no auto-play — the prompt
-          // only replaces the stale audio.
-          handleRegenConfirm(false, entry);
-        }}
-        onCancel={() => setRegenPromptEntry(null)}
-      />
-
       <BundlePrompt
         opened={promptEngine !== null}
         engine={promptEngine}

@@ -56,9 +56,6 @@ interface DictionaryModalProps {
   initialFrom?: string | null;
   /** Called when the prefilled `from` has been applied to the form. */
   onInitialFromConsumed?: () => void;
-  /** Called after every successful dictionary write (add, edit, delete or
-   *  import), so the caller can offer a regeneration for stale audio. */
-  onSaved?: () => void;
 }
 
 interface EditorState {
@@ -154,7 +151,6 @@ export function DictionaryModal({
   onClose,
   initialFrom,
   onInitialFromConsumed,
-  onSaved,
 }: DictionaryModalProps) {
   const tt = useT();
   const [collections, setCollections] = useState<DictionaryCollectionDto[]>([]);
@@ -485,7 +481,6 @@ export function DictionaryModal({
         );
         bumpPreviewRevision();
         setStatusSafe('saved');
-        onSaved?.();
         refreshCollections(scope).catch(() => {});
       } catch (e) {
         setStatusSafe('error');
@@ -496,7 +491,7 @@ export function DictionaryModal({
         });
       }
     },
-    [bumpPreviewRevision, onSaved, refreshCollections, scope, setStatusSafe, tt],
+    [bumpPreviewRevision, refreshCollections, scope, setStatusSafe, tt],
   );
 
   const retrySave = useCallback(() => {
@@ -599,7 +594,6 @@ export function DictionaryModal({
         await refreshCollections(scope);
         bumpPreviewRevision();
         setStatusSafe('saved');
-        onSaved?.();
         notifications.show({
           title: tt('dictionary.import.done.title'),
           message: tt('dictionary.import.done.message', [
@@ -617,7 +611,7 @@ export function DictionaryModal({
         });
       }
     },
-    [bumpPreviewRevision, onSaved, pendingImport, refreshCollections, scope, setStatusSafe, tt],
+    [bumpPreviewRevision, pendingImport, refreshCollections, scope, setStatusSafe, tt],
   );
 
   const handleExport = useCallback(async () => {

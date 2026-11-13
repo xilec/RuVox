@@ -228,14 +228,6 @@ async function waitForEditorClosed(): Promise<void> {
   });
 }
 
-/** Text of the open regeneration offer, scoped to its own dialog so the
- *  viewer text behind it cannot satisfy an assertion. */
-function promptText(): string {
-  const dialog = [...document.querySelectorAll('[role="dialog"]')].find(
-    (candidate) => candidate.textContent?.includes('Переозвучить сейчас?'),
-  );
-  return dialog?.textContent ?? '';
-}
 
 describe('viewer dictionary quick-add', () => {
   let host: HTMLDivElement;
@@ -433,10 +425,8 @@ describe('viewer dictionary quick-add', () => {
     expect(fieldValue('Слово')).toBe('');
   });
 
-  it('persists the entry and offers a regeneration only after the save', async () => {
+  it('persists the entry and regenerates nothing when the editor closes', async () => {
     await openQuickAdd('getUserData');
-    // No prompt while the editor is still open, and none before a write.
-    expect(document.body.textContent).not.toContain('Переозвучить сейчас?');
 
     await saveWord('гет юзер дата');
     expect(commands.saveDictionary).toHaveBeenCalledWith('global', [
@@ -444,126 +434,31 @@ describe('viewer dictionary quick-add', () => {
     ]);
 
     pressEscape();
-    await vi.waitFor(() => {
-      expect(document.body.textContent).toContain('Переозвучить сейчас?');
-    });
-    // The offer names the entry whose recording went stale; a legacy entry
-    // with no stored title is named by the derived first line.
-    expect(promptText()).toContain('Вызови getUserData через API');
-    // Closing the editor does not regenerate by itself.
-    expect(commands.regenerateEntry).not.toHaveBeenCalled();
-  });
+    await waitForEditorClosed();
 
-  it('names an entry with a stored title in the offer', async () => {
-    selectEntry({ ...ENTRY, title: 'Моя статья' });
-    await openQuickAdd('getUserData');
-    await saveWord('гет юзер дата');
-    pressEscape();
-    await vi.waitFor(() => {
-      expect(document.body.textContent).toContain('Переозвучить сейчас?');
-    });
-
-    expect(promptText()).toContain('Моя статья');
-  });
-
-  it('regenerates the entry only after the offer is confirmed', async () => {
-    await openQuickAdd('getUserData');
-    await saveWord('гет юзер дата');
-    pressEscape();
-    await vi.waitFor(() => {
-      expect(document.body.textContent).toContain('Переозвучить сейчас?');
-    });
-
-    clickButton('Переозвучить');
-    await vi.waitFor(() => {
-      expect(commands.regenerateEntry).toHaveBeenCalledWith(ENTRY.id, false);
-    });
-    expect(commands.regenerateEntry).toHaveBeenCalledTimes(1);
-    // The regeneration itself (backend) stops playback; the prompt does not
-    // issue a separate player command.
-    expect(commands.pausePlayback).not.toHaveBeenCalled();
-    expect(commands.stopPlayback).not.toHaveBeenCalled();
-  });
-
-  it('regenerates the entry captured when the editor opened', async () => {
-    await openQuickAdd('getUserData');
-    await saveWord('гет юзер дата');
-    // The user moves to another entry while the editor (and then the offer)
-    // is still up: the offer must target the entry that was open at capture
-    // time, not the current selection.
-    selectEntry(ENTRY_B);
-    pressEscape();
-    await vi.waitFor(() => {
-      expect(document.body.textContent).toContain('Переозвучить сейчас?');
-    });
-
-    clickButton('Переозвучить');
-    await vi.waitFor(() => {
-      expect(commands.regenerateEntry).toHaveBeenCalledWith(ENTRY.id, false);
-    });
-    expect(commands.regenerateEntry).not.toHaveBeenCalledWith(
-      ENTRY_B.id,
-      false,
-    );
-  });
-
-  it('declining the offer changes nothing and does not touch playback', async () => {
-    await openQuickAdd('getUserData');
-    await saveWord('гет юзер дата');
-    pressEscape();
-    await vi.waitFor(() => {
-      expect(document.body.textContent).toContain('Переозвучить сейчас?');
-    });
-
-    clickButton('Не сейчас');
-    // The modal keeps its content while the exit transition runs.
-    await vi.waitFor(() => {
-      expect(document.body.textContent).not.toContain('Переозвучить сейчас?');
-    });
+    // Closing the editor after a write is quiet: the recording stays stale
+    // until the user regenerates it from the entry's context menu.
+    expect(document.body.textContent).not.toContain('Переозвучить');
     expect(commands.regenerateEntry).not.toHaveBeenCalled();
     expect(commands.pausePlayback).not.toHaveBeenCalled();
     expect(commands.stopPlayback).not.toHaveBeenCalled();
-  });
-
-  it('keeps the old audio and reports the error when regeneration fails', async () => {
-    commands.regenerateEntry.mockRejectedValueOnce(new Error('boom'));
-    await openQuickAdd('getUserData');
-    await saveWord('гет юзер дата');
-    pressEscape();
-    await vi.waitFor(() => {
-      expect(document.body.textContent).toContain('Переозвучить сейчас?');
-    });
-
-    clickButton('Переозвучить');
-    await vi.waitFor(() => {
-      expect(document.body.textContent).toContain(
-        'Не удалось запустить перегенерацию',
-      );
-    });
-    // The failed command must not take the existing audio down with it, and
-    // no player command fires around it; the tree survives the rejection.
     expect(commands.deleteAudio).not.toHaveBeenCalled();
-    expect(commands.deleteEntry).not.toHaveBeenCalled();
-    expect(commands.pausePlayback).not.toHaveBeenCalled();
-    expect(commands.stopPlayback).not.toHaveBeenCalled();
     expect(commands.playEntry).not.toHaveBeenCalled();
-    expect(host.textContent).toContain('Вызови getUserData');
   });
 
-  it('closing the editor without a save raises no offer', async () => {
+  it('closing the editor without a save regenerates nothing', async () => {
     await openQuickAdd('getUserData');
 
     pressEscape();
     await waitForEditorClosed();
 
-    expect(document.body.textContent).not.toContain('Переозвучить сейчас?');
     expect(commands.regenerateEntry).not.toHaveBeenCalled();
     expect(commands.saveDictionary).not.toHaveBeenCalled();
     expect(commands.pausePlayback).not.toHaveBeenCalled();
     expect(commands.stopPlayback).not.toHaveBeenCalled();
   });
 
-  it('offers no regeneration after a save from Settings', async () => {
+  it('a save from Settings does not regenerate the recording', async () => {
     await openDictionaryFromSettings();
     await saveFromBlankForm();
 
@@ -574,11 +469,9 @@ describe('viewer dictionary quick-add', () => {
       ).not.toBeNull();
     });
 
-    expect(document.body.textContent).not.toContain('Переозвучить сейчас?');
     expect(commands.regenerateEntry).not.toHaveBeenCalled();
   });
-
-  it('offers no regeneration after a save from the preview quick-add', async () => {
+  it('a save from the preview quick-add does not regenerate the recording', async () => {
     clickButton('Добавить');
     const pane = await vi.waitFor(() => {
       const element = [...document.querySelectorAll('pre')].find((candidate) =>
@@ -623,7 +516,6 @@ describe('viewer dictionary quick-add', () => {
     pressEscape();
     await waitForEditorClosed();
 
-    expect(document.body.textContent).not.toContain('Переозвучить сейчас?');
     expect(commands.regenerateEntry).not.toHaveBeenCalled();
   });
 });
