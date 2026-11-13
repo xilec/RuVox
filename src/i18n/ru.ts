@@ -663,11 +663,6 @@ export const ru = {
   'dictionary.save.failed.title': 'Не удалось сохранить словарь',
   'dictionary.quickadd.button': 'В словарь',
   'dictionary.quickadd.hint': 'Выделите одно слово латиницей или по-русски',
-  'dictionary.quickadd.regen.title': 'Переозвучить сейчас?',
-  'dictionary.quickadd.regen.message':
-    'Запись «{0}» озвучена со старым словарём. Переозвучить её с новым произношением? Если синтез не удастся, прежнее аудио останется.',
-  'dictionary.quickadd.regen.confirm': 'Переозвучить',
-  'dictionary.quickadd.regen.cancel': 'Не сейчас',
 } as const;
 
 export type MessageKey = keyof typeof ru;

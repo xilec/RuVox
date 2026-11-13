@@ -91,7 +91,6 @@ afterEach(() => {
 interface RenderOptions {
   initialFrom?: string;
   onInitialFromConsumed?: () => void;
-  onSaved?: () => void;
 }
 
 async function renderModal(options: RenderOptions = {}) {
@@ -263,26 +262,6 @@ describe('DictionaryModal quick-add', () => {
     expect(onInitialFromConsumed).toHaveBeenCalledTimes(1);
   });
 
-  it('reports a successful save through onSaved', async () => {
-    const onSaved = vi.fn();
-    vi.mocked(commands.saveDictionary).mockClear();
-    await renderModal({ onSaved });
-    clickButton('Добавить слово');
-    typeInto('Слово', 'замок');
-    typeInto('Как произносить', 'зам+ок');
-    clickButton('Сохранить');
-
-    await vi.waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
-    expect(commands.saveDictionary).toHaveBeenCalledWith('global', [
-      { from: 'замок', to: 'зам+ок', forms: [] },
-    ]);
-  });
-
-  it('does not report a save when nothing was written', async () => {
-    const onSaved = vi.fn();
-    await renderModal({ onSaved });
-    expect(onSaved).not.toHaveBeenCalled();
-  });
 });
 
 function deferred<T>() {

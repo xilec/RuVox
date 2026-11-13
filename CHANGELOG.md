@@ -22,9 +22,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   a small in-memory cache (#349).
 - **Add a word to the pronunciation dictionary from the viewer** —
   right-click a selected word while reading (plain, Markdown or HTML) and
-  choose «В словарь»: the editor opens prefilled, and after a save the app
-  offers to re-synthesize the entry right away, keeping the old audio if the
-  synthesis fails (#348).
+  choose «В словарь»: the editor opens prefilled and the entry saves
+  immediately, keeping the old recording until it is regenerated from the
+  entry's context menu (#348).
 - **Editable title and note in the viewer** — every entry gets a title seeded
   from its first line and an editable note, shown with the date added, the
   status and the engine/voice of the current recording in a header above the

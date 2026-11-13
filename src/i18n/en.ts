@@ -658,9 +658,4 @@ export const en: Record<MessageKey, string> = {
   'dictionary.save.failed.title': 'Failed to save the dictionary',
   'dictionary.quickadd.button': 'To dictionary',
   'dictionary.quickadd.hint': 'Select a single Latin or Russian word',
-  'dictionary.quickadd.regen.title': 'Re-synthesize now?',
-  'dictionary.quickadd.regen.message':
-    'The recording "{0}" was synthesized with the old dictionary. Re-synthesize it with the new pronunciation? The previous audio stays playable if synthesis fails.',
-  'dictionary.quickadd.regen.confirm': 'Re-synthesize',
-  'dictionary.quickadd.regen.cancel': 'Not now',
 };
