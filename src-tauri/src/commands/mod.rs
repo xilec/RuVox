@@ -391,6 +391,11 @@ pub struct PreviewPronunciationResult {
 /// a pasted paragraph would keep the engine busy for seconds.
 const PREVIEW_MAX_CHARS: usize = 200;
 
+/// Cap on the WAV that `preview_play` accepts, after decoding. A 200-code-point
+/// preview renders to about 1-2 MB; the command is reachable directly, so a
+/// modified client must not be able to hand mpv an arbitrarily large file.
+const PREVIEW_MAX_WAV_BYTES: usize = 8 * 1024 * 1024;
+
 /// How old a file in the preview directory must be to count as a leftover
 /// of a crashed or killed run. The command deletes its WAV on every exit
 /// path (see [`PreviewWav`]), so nothing legitimate lives this long.
@@ -599,6 +604,61 @@ pub async fn preview_pronunciation(
         wav_base64: base64::engine::general_purpose::STANDARD.encode(bytes),
         duration_sec: output.duration_sec,
     })
+}
+
+/// Play a synthesized preview WAV through the dedicated preview player
+/// (issue #349).
+///
+/// The dialog keeps the WAV bytes in its in-memory cache and hands them back
+/// here, so the synthesis contract and the cache stay untouched; only the
+/// playback channel moves off the webview's media stack. The player writes a
+/// temporary WAV under the app cache, starts mpv, and deletes the file on
+/// [`preview_stop`], editor close or playback end.
+#[tauri::command]
+pub async fn preview_play(state: State<'_, AppState>, wav_base64: String) -> CmdResult<()> {
+    // Reject obviously oversized payloads before allocating the decoded
+    // buffer: base64 is 4/3 of the binary length, so this lower bound is
+    // exact enough to avoid a multi-megabyte decode of garbage.
+    if wav_base64.len() / 4 * 3 > PREVIEW_MAX_WAV_BYTES {
+        return Err(CommandError::internal("preview.audio_too_large", vec![]));
+    }
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(wav_base64.as_bytes())
+        .map_err(|e| {
+            CommandError::internal("preview.invalid_audio", vec![]).with_message(e.to_string())
+        })?;
+    if bytes.len() > PREVIEW_MAX_WAV_BYTES {
+        return Err(CommandError::internal("preview.audio_too_large", vec![]));
+    }
+
+    // mpv startup busy-waits up to `ipc_timeout_ms` while holding the plugin's
+    // instance map; keep that off the async runtime's workers.
+    let player = Arc::clone(&state.preview_audio);
+    tokio::task::spawn_blocking(move || player.play(&bytes))
+        .await
+        .map_err(|e| {
+            CommandError::internal("preview.play_failed", vec![])
+                .with_message(format!("preview player task failed: {e}"))
+        })?
+        .map_err(|e| {
+            CommandError::internal("preview.play_failed", vec![]).with_message(e.to_string())
+        })
+}
+
+/// Stop and release the preview player. Idempotent: the editor calls it on
+/// every close, and the playback-end timer may race a manual stop.
+#[tauri::command]
+pub async fn preview_stop(state: State<'_, AppState>) -> CmdResult<()> {
+    let player = Arc::clone(&state.preview_audio);
+    tokio::task::spawn_blocking(move || player.stop())
+        .await
+        .map_err(|e| {
+            CommandError::internal("preview.stop_failed", vec![])
+                .with_message(format!("preview player task failed: {e}"))
+        })?
+        .map_err(|e| {
+            CommandError::internal("preview.stop_failed", vec![]).with_message(e.to_string())
+        })
 }
 
 /// Return all entries sorted by created_at descending.

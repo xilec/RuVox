@@ -150,6 +150,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   on the next save (#350).
 
 ### Fixed
+- **Pronunciation preview no longer depends on the webview's media stack** —
+  the dictionary editor's preview plays its WAV in a dedicated mpv instance,
+  the same player RuVox ships for narration, instead of an HTML `<audio>`
+  element. A Linux system without GStreamer audio plugins can no longer lose
+  the window when a preview starts (#349).
 - **Word highlighting survives code blocks in HTML articles** — syntax
   highlighting rebuilt every code block from its text content, where the
   `<br>` line separators of Habr/Shiki markup contribute nothing: the block

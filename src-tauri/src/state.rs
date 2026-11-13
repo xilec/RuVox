@@ -8,7 +8,7 @@ use tokio::task::AbortHandle;
 
 use crate::dictionary::DictionaryStore;
 use crate::pipeline::TTSPipeline;
-use crate::player::PlayerBackend;
+use crate::player::{PlayerBackend, PreviewAudioBackend};
 use crate::storage::schema::EntryId;
 use crate::storage::service::StorageService;
 use crate::tray::TrayCmd;
@@ -80,6 +80,9 @@ pub struct AppState {
     /// tests), so the preview command never guesses a platform path and the
     /// files never land next to user data.
     pub preview_dir: PathBuf,
+    /// Plays the editor's preview WAVs in a dedicated mpv instance, off the
+    /// narration player and off the webview's media stack (issue #349).
+    pub preview_audio: Arc<dyn PreviewAudioBackend>,
     /// Serializes the engine between a pronunciation preview and the queue's
     /// synthesis stage, and previews among themselves. Both sides hold it
     /// around their engine call; a preview that finds it taken answers

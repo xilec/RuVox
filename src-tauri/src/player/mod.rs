@@ -32,7 +32,19 @@ use tauri_plugin_mpv::{MpvCommand, MpvConfig, MpvExt};
 use tokio::time::{Duration, interval};
 use tracing::{debug, warn};
 
+mod preview;
+
+#[cfg(test)]
+pub use preview::FakePreviewAudio;
+pub use preview::{MpvPreviewAudio, PreviewAudioBackend, PreviewAudioError};
+
 pub const WINDOW_LABEL: &str = "main";
+
+/// Plugin label of the dictionary preview's own mpv instance. It is not a
+/// window: the plugin keys instances by label, and a second label is how one
+/// app runs two independent mpv processes. The narration player always uses
+/// [`WINDOW_LABEL`].
+pub const PREVIEW_WINDOW_LABEL: &str = "preview";
 
 /// Resolve the mpv executable per platform.
 ///
@@ -48,7 +60,7 @@ pub const WINDOW_LABEL: &str = "main";
 /// back to a PATH lookup — dev runs, the nix wrapper and `.deb` installs
 /// (system mpv, pulled in via `Depends`) all land here.
 #[cfg(windows)]
-fn resolve_mpv_path(resource_dir: Option<&std::path::Path>) -> std::path::PathBuf {
+pub(crate) fn resolve_mpv_path(resource_dir: Option<&std::path::Path>) -> std::path::PathBuf {
     if let Some(dir) = resource_dir {
         let bundled = dir.join("mpv").join("mpv.exe");
         if bundled.exists() {
@@ -61,7 +73,7 @@ fn resolve_mpv_path(resource_dir: Option<&std::path::Path>) -> std::path::PathBu
 /// Non-Windows resolution — bundled `mpv/mpv` first, then PATH (see the
 /// Windows variant above for the shared rationale).
 #[cfg(not(windows))]
-fn resolve_mpv_path(_resource_dir: Option<&std::path::Path>) -> std::path::PathBuf {
+pub(crate) fn resolve_mpv_path(_resource_dir: Option<&std::path::Path>) -> std::path::PathBuf {
     if let Ok(exe) = std::env::current_exe()
         && let Some(exe_dir) = exe.parent()
         && let Some(bundled) = crate::find_bundled_mpv(exe_dir)

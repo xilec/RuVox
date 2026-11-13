@@ -34,6 +34,8 @@ vi.mock('../lib/tauri', () => ({
     previewPronunciation: vi.fn(() =>
       Promise.resolve({ spoken_text: 'тест', wav_base64: 'UklGRg==', duration_sec: 0.4 }),
     ),
+    previewPlay: vi.fn(() => Promise.resolve()),
+    previewStop: vi.fn(() => Promise.resolve()),
     pausePlayback: vi.fn(() => Promise.resolve()),
     stopPlayback: vi.fn(() => Promise.resolve()),
   },
@@ -65,12 +67,10 @@ beforeEach(() => {
   container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);
-  // jsdom has no media pipeline and no blob URLs: the preview control is
-  // tested through these two seams (issue #349).
-  HTMLMediaElement.prototype.play = vi.fn(() => Promise.resolve());
-  HTMLMediaElement.prototype.pause = vi.fn();
-  URL.createObjectURL = vi.fn(() => 'blob:preview-audio');
-  URL.revokeObjectURL = vi.fn();
+  // The preview is tested through the playback commands: the webview has no
+  // media pipeline of its own any more (issue #349).
+  vi.mocked(commands.previewPlay).mockClear();
+  vi.mocked(commands.previewStop).mockClear();
   vi.mocked(commands.previewPronunciation).mockClear();
   vi.mocked(commands.pausePlayback).mockClear();
   vi.mocked(commands.stopPlayback).mockClear();
@@ -86,7 +86,6 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
-  vi.mocked(HTMLMediaElement.prototype.play).mockClear();
 });
 
 interface RenderOptions {
@@ -431,7 +430,7 @@ describe('DictionaryModal pronunciation preview', () => {
         translate('ru', 'dictionary.preview.from.aria'),
       ),
     );
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:preview-audio');
+    expect(commands.previewStop).toHaveBeenCalled();
   });
 
   it('serves a repeated preview from the cache', async () => {
@@ -452,8 +451,9 @@ describe('DictionaryModal pronunciation preview', () => {
     await waitForPlayback('from');
 
     expect(commands.previewPronunciation).toHaveBeenCalledTimes(1);
-    // Two plays, no second synthesis: the blob URL is recreated per playback.
-    expect(URL.createObjectURL).toHaveBeenCalledTimes(2);
+    // Two plays, no second synthesis: the cached WAV is replayed through the
+    // backend player.
+    expect(commands.previewPlay).toHaveBeenCalledTimes(2);
   });
 
   it('retires the cache after a save', async () => {
@@ -592,9 +592,7 @@ describe('DictionaryModal pronunciation preview', () => {
   }
 
   it('reports a playback failure', async () => {
-    vi.mocked(HTMLMediaElement.prototype.play).mockRejectedValueOnce(
-      new Error('no audio device'),
-    );
+    vi.mocked(commands.previewPlay).mockRejectedValueOnce(new Error('no audio device'));
     await renderModal();
     await openAddForm();
     await typePlayableFrom();
@@ -605,23 +603,6 @@ describe('DictionaryModal pronunciation preview', () => {
         translate('ru', 'dictionary.preview.error.play_failed'),
       );
     });
-  });
-
-  it('ignores an aborted play instead of reporting an error', async () => {
-    vi.mocked(HTMLMediaElement.prototype.play).mockRejectedValueOnce(
-      new DOMException('The play() request was interrupted', 'AbortError'),
-    );
-    await renderModal();
-    await openAddForm();
-    await typePlayableFrom();
-    act(() => control('from')!.click());
-
-    await vi.waitFor(() => expect(commands.previewPronunciation).toHaveBeenCalledTimes(1));
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    expect(document.querySelector('[data-preview-error]')).toBeNull();
   });
 
   it('drops a response that arrives after the editor closed', async () => {
@@ -641,12 +622,11 @@ describe('DictionaryModal pronunciation preview', () => {
       pending.resolve(FIXTURE);
       await Promise.resolve();
     });
-    // The stale response must not build an object URL or start playback.
-    expect(URL.createObjectURL).not.toHaveBeenCalled();
-    expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+    // The stale response must not start playback.
+    expect(commands.previewPlay).not.toHaveBeenCalled();
   });
 
-  it('stops the preview and releases the audio when the editor closes', async () => {
+  it('stops the preview when the editor closes', async () => {
     await renderModal();
     await openAddForm();
     await typePlayableFrom();
@@ -655,9 +635,41 @@ describe('DictionaryModal pronunciation preview', () => {
 
     clickButton(CANCEL_LABEL);
     await vi.waitFor(() => expect(control('from')).toBeNull());
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:preview-audio');
-    // `releaseAudio` pauses the element before dropping its source.
-    expect(HTMLMediaElement.prototype.pause).toHaveBeenCalled();
+    expect(commands.previewStop).toHaveBeenCalled();
+  });
+
+  it('returns to the play state when the clip ends', async () => {
+    await renderModal();
+    await openAddForm();
+    await typePlayableFrom();
+    act(() => control('from')!.click());
+    await waitForPlayback('from');
+
+    // The mount/start path already called stop; only the timer may call it now.
+    vi.mocked(commands.previewStop).mockClear();
+
+    // The dialog stops the backend player after `duration_sec` plus a margin;
+    // the backend halts playback and deletes the WAV on that stop.
+    await vi.waitFor(() => expect(commands.previewStop).toHaveBeenCalledTimes(1), {
+      timeout: 3000,
+    });
+    await vi.waitFor(() =>
+      expect(control('from')!.getAttribute('aria-label')).toBe(
+        translate('ru', 'dictionary.preview.from.aria'),
+      ),
+    );
+  });
+
+  it('renders no media element', async () => {
+    await renderModal();
+    await openAddForm();
+    await typePlayableFrom();
+    act(() => control('from')!.click());
+    await waitForPlayback('from');
+
+    // The webview must not decode audio: a media element is the second audio
+    // stack whose missing plugins killed the web process (issue #349).
+    expect(document.querySelector('audio, video')).toBeNull();
   });
 
   it('places the hint right under the spoken-form field', async () => {

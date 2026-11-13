@@ -454,6 +454,8 @@ pub(crate) fn invoke_handler<R: Runtime>()
         add_text_entry,
         preview_normalize,
         preview_pronunciation,
+        preview_play,
+        preview_stop,
         get_entries,
         get_entry,
         delete_entry,
@@ -992,6 +994,12 @@ pub fn run() {
                 storage.data_dir().join("preview-cache")
             });
             spawn_audio_migration_and_cleanup(Arc::clone(&storage), preview_dir.clone());
+            // Plays preview WAVs outside the webview's media stack (issue
+            // #349). The directory is the same `<cache>/preview` the sweep
+            // above walks, so a crashed preview leaves at most one file behind.
+            let preview_audio: Arc<dyn player::PreviewAudioBackend> = Arc::new(
+                player::MpvPreviewAudio::new(app.handle().clone(), preview_dir.join("preview")),
+            );
 
             let (
                 engine_switcher,
@@ -1061,6 +1069,7 @@ pub fn run() {
                 synthesis_tasks,
                 synthesize_entered,
                 preview_dir,
+                preview_audio,
                 preview_lock,
             });
 
@@ -1124,6 +1133,14 @@ pub fn run() {
                 // unwrap on an already-removed instance.
                 if let Some(state) = app_handle.try_state::<AppState>() {
                     state.player.mark_destroyed();
+                }
+                if let Some(state) = app_handle.try_state::<AppState>() {
+                    // The preview instance is a second mpv process; exit is
+                    // the backstop when the editor never closed it. Stop
+                    // playback and destroy the process.
+                    if let Err(e) = state.preview_audio.shutdown() {
+                        tracing::warn!("preview mpv shutdown on exit failed: {e}");
+                    }
                 }
                 if let Err(e) = app_handle.mpv().destroy(player::WINDOW_LABEL) {
                     tracing::warn!("mpv destroy on exit failed: {e}");

@@ -116,6 +116,10 @@ const SCOPE_LABEL_KEY: Record<DictionaryScope, Parameters<ReturnType<typeof useT
  *  only replays a handful of words before a save retires the cache. */
 const PREVIEW_CACHE_MAX = 12;
 
+/** Extra time after the reported clip length before the dialog stops the
+ *  preview player: covers mpv startup and the audio device's latency. */
+const PREVIEW_END_MARGIN_MS = 500;
+
 /** Read a cached preview and mark it most recently used. `Map` iterates in
  *  insertion order, so re-inserting moves the entry to the end. */
 function takeCachedPreview(
@@ -145,13 +149,6 @@ function cachePreview(
   }
 }
 
-/** Decode the base64 WAV of a preview response into a playable blob. */
-function wavBlob(base64: string): Blob {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  return new Blob([bytes], { type: 'audio/wav' });
-}
 export function DictionaryModal({
   opened,
   onClose,
@@ -175,8 +172,7 @@ export function DictionaryModal({
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewEngine, setPreviewEngine] = useState<EngineKind | null>(null);
   const [previewVoice, setPreviewVoice] = useState('');
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const audioUrlRef = useRef<string | null>(null);
+  const previewTimerRef = useRef<number | null>(null);
   const previewCacheRef = useRef(new Map<string, PreviewPronunciationResult>());
   const previewSeqRef = useRef(0);
   /** Bumped on every dictionary write: a cached «Слово» reading must not
@@ -188,28 +184,28 @@ export function DictionaryModal({
     setStatus(next);
   }, []);
 
-  /** Stop the preview audio and release its object URL. */
-  const releaseAudio = useCallback(() => {
-    const audio = audioRef.current;
-    if (audio) {
-      audio.pause();
-      audio.removeAttribute('src');
-    }
-    if (audioUrlRef.current) {
-      URL.revokeObjectURL(audioUrlRef.current);
-      audioUrlRef.current = null;
+  /** Drop the pending playback-end timer without touching the player. */
+  const clearPreviewTimer = useCallback(() => {
+    if (previewTimerRef.current !== null) {
+      window.clearTimeout(previewTimerRef.current);
+      previewTimerRef.current = null;
     }
   }, []);
 
   /** Abort the current preview (playing or in flight) and clear its state. */
   const stopPreview = useCallback(() => {
+    clearPreviewTimer();
     // Invalidate an in-flight response: it must not start playing after the
     // editor moved on.
     previewSeqRef.current += 1;
-    releaseAudio();
+    // The backend player is idempotent; a stop failure (already gone, app
+    // exiting) must not break the form.
+    void commands.previewStop().catch((e) => {
+      console.warn('dictionary preview: stop failed', e);
+    });
     setPreviewBusy(null);
     setPreviewPlaying(null);
-  }, [releaseAudio]);
+  }, [clearPreviewTimer]);
 
   /** Pause narration, never stop it: the preview speaks over the pause and
    *  the user resumes where they left off. A failed pause is reported without
@@ -282,34 +278,45 @@ export function DictionaryModal({
           cachePreview(previewCacheRef.current, key, result);
         }
 
-        const audio = audioRef.current;
-        if (!audio) {
-          setPreviewBusy(null);
-          return;
-        }
-        // Second pause, right before the audio starts: a cache hit skips the
+        // Second pause, right before playback starts: a cache hit skips the
         // synthesis wait above, and a narration started in between must still
         // yield to the preview.
         await pauseNarration();
         if (seq !== previewSeqRef.current) return;
 
-        releaseAudio();
-        const url = URL.createObjectURL(wavBlob(result.wav_base64));
-        audioUrlRef.current = url;
-        audio.src = url;
+        // The backend owns the mpv instance and the temporary WAV; a failure
+        // is the same inline line the webview player used to produce.
+        setPreviewBusy(field);
+        try {
+          await commands.previewPlay(result.wav_base64);
+        } catch (e) {
+          if (seq !== previewSeqRef.current) return;
+          stopPreview();
+          console.warn('dictionary preview: play failed', e);
+          setPreviewError(tt('dictionary.preview.error.play_failed'));
+          return;
+        }
+        if (seq !== previewSeqRef.current) {
+          // The editor closed (or a newer preview won) while play was in
+          // flight: stop the clip the backend may have just started.
+          void commands.previewStop().catch(() => {});
+          return;
+        }
+
         setPreviewBusy(null);
         setPreviewPlaying(field);
-        try {
-          await audio.play();
-        } catch (e) {
-          // A fast play→stop (or a newer preview superseding this one)
-          // rejects the pending play: neither is a playback error, and a
-          // stale response must not clear the new preview's state.
-          if (seq !== previewSeqRef.current) return;
-          if (e instanceof DOMException && e.name === 'AbortError') return;
-          stopPreview();
-          setPreviewError(tt('dictionary.preview.error.play_failed'));
-        }
+        // mpv stays alive after EOF (`--idle=yes`); stop it once the reported
+        // clip length elapses, with a margin for startup and the audio device.
+        // A second click, another preview, or the editor closing clears this
+        // timer first.
+        clearPreviewTimer();
+        previewTimerRef.current = window.setTimeout(
+          () => {
+            if (seq !== previewSeqRef.current) return;
+            stopPreview();
+          },
+          result.duration_sec * 1000 + PREVIEW_END_MARGIN_MS,
+        );
       })();
     },
     [
@@ -319,7 +326,7 @@ export function DictionaryModal({
       pauseNarration,
       previewEngine,
       previewVoice,
-      releaseAudio,
+      clearPreviewTimer,
       tt,
     ],
   );
@@ -439,16 +446,24 @@ export function DictionaryModal({
     };
   }, [opened]);
 
-  // Closing the editor (or the dialog) stops the preview and releases the
-  // audio resource; a preview never outlives the form it belongs to.
+  // Closing the editor (or the dialog) stops the preview player; a preview
+  // never outlives the form it belongs to.
   const editorOpen = editor !== null;
   useEffect(() => {
     if (!opened || !editorOpen) stopPreview();
   }, [opened, editorOpen, stopPreview]);
 
-  // Unmount: never leave an object URL behind.
-  useEffect(() => () => releaseAudio(), [releaseAudio]);
-
+  // Unmount: never leave the preview mpv process or its timer running.
+  useEffect(
+    () => () => {
+      // Drop any in-flight response too: nothing may start playing after the
+      // dialog is gone.
+      previewSeqRef.current += 1;
+      if (previewTimerRef.current !== null) window.clearTimeout(previewTimerRef.current);
+      void commands.previewStop().catch(() => {});
+    },
+    [],
+  );
   /** Persist the full list (immediate save, no save button). The optimistic
    *  update lands before the request so consecutive actions always read the
    *  fresh list — a save-in-flight must never overwrite a newer edit. On
@@ -677,20 +692,6 @@ export function DictionaryModal({
       withinPortal
       zIndex={DIALOG_Z}
     >
-      {/* One audio element per dialog: starting a preview reuses it and
-          revokes the previous object URL (issue #349). */}
-      <audio
-        ref={audioRef}
-        hidden
-        onEnded={() => {
-          setPreviewPlaying(null);
-          releaseAudio();
-        }}
-        onError={() => {
-          stopPreview();
-          setPreviewError(tt('dictionary.preview.error.play_failed'));
-        }}
-      />
       <Stack gap="sm">
         <Select
           label={tt('dictionary.scope.label')}

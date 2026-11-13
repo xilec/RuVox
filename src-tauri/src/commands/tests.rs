@@ -1493,6 +1493,86 @@ async fn preview_pronunciation_rejects_text_over_the_limit() {
     }
 }
 
+/// `preview_play` decodes the WAV the dialog cached and hands the bytes to the
+/// preview player, which owns the mpv instance and the temporary file.
+#[tokio::test]
+async fn preview_play_hands_the_wav_to_the_preview_player() {
+    use crate::test_support::build_test_app;
+
+    let t = build_test_app();
+    let wav = b"RIFF....WAVEfmt ".to_vec();
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&wav);
+
+    preview_play(t.state(), encoded).await.unwrap();
+
+    assert_eq!(t.preview_audio.played(), vec![wav]);
+}
+
+/// A payload that is not base64 is a typed rejection: nothing is handed to
+/// the player, and the dialog shows its inline play-failed line.
+#[tokio::test]
+async fn preview_play_rejects_malformed_base64() {
+    use crate::test_support::build_test_app;
+
+    let t = build_test_app();
+    let err = preview_play(t.state(), "not base64!!".to_string())
+        .await
+        .unwrap_err();
+
+    match err {
+        CommandError::Internal { code, .. } => assert_eq!(code, "preview.invalid_audio"),
+        other => panic!("expected preview.invalid_audio, got {other:?}"),
+    }
+    assert!(t.preview_audio.played().is_empty());
+}
+
+/// The command is reachable directly, so a modified client must not be able to
+/// make the backend write and play an arbitrarily large file.
+#[tokio::test]
+async fn preview_play_rejects_oversized_audio() {
+    use crate::test_support::build_test_app;
+
+    let t = build_test_app();
+    let oversized = "A".repeat(super::PREVIEW_MAX_WAV_BYTES / 3 * 4 + 8);
+    let err = preview_play(t.state(), oversized).await.unwrap_err();
+
+    match err {
+        CommandError::Internal { code, .. } => assert_eq!(code, "preview.audio_too_large"),
+        other => panic!("expected preview.audio_too_large, got {other:?}"),
+    }
+    assert!(t.preview_audio.played().is_empty());
+}
+
+/// `preview_stop` is idempotent and always reaches the player: the editor
+/// calls it on every close, including when nothing was playing.
+#[tokio::test]
+async fn preview_stop_stops_the_preview_player() {
+    use crate::test_support::build_test_app;
+
+    let t = build_test_app();
+    preview_stop(t.state()).await.unwrap();
+
+    assert_eq!(t.preview_audio.stop_count(), 1);
+}
+
+/// A player failure (missing mpv, no audio device) is a typed command error,
+/// not a panic and not a silent no-op.
+#[tokio::test]
+async fn preview_play_maps_a_player_failure() {
+    use crate::test_support::build_test_app;
+
+    let t = build_test_app();
+    t.preview_audio.fail_next_play();
+    let encoded = base64::engine::general_purpose::STANDARD.encode(b"RIFF");
+
+    let err = preview_play(t.state(), encoded).await.unwrap_err();
+
+    match err {
+        CommandError::Internal { code, .. } => assert_eq!(code, "preview.play_failed"),
+        other => panic!("expected preview.play_failed, got {other:?}"),
+    }
+}
+
 /// The startup sweep removes only leftovers older than the window: a WAV of a
 /// run in flight (or one another window just wrote) must survive. A missing
 /// directory means no preview has ever run and is not an error.
