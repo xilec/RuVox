@@ -24,7 +24,7 @@ re-adds it without the six offer scenarios, keeping the rest of the contract
 
 ## Capabilities
 
-### Added Capabilities
+### Modified Capabilities
 
 - `user-dictionary`: "Viewer quick-add" is re-added without the post-save
   regeneration offer.

@@ -50,10 +50,6 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follo
   part entries keep working when no whole-word entry exists (#279).
 
 ### Changed
-- **No regeneration prompt after a dictionary quick-add** — closing the
-  pronunciation editor no longer asks «Переозвучить сейчас?»; a stale
-  recording is regenerated on demand from the entry's context menu
-  («Перегенерировать аудио»).
 - **English constructs are spelled in English on the native route** — a number
   that owns a unit, percentage, currency, date, time, version, range, reference
   or ordinal suffix inside English prose now becomes Latin English words on a

@@ -618,7 +618,6 @@ export function AppShell() {
 
   /** Viewer context menu «В словарь» (user-dictionary spec, "Viewer
    *  quick-add"): open the existing editor prefilled with the selected word
-   *  quick-add"): open the existing editor prefilled with the selected word.
    *  The player is not touched here. */
   function openDictionaryFromViewer(word: string) {
     setDictInitialFrom(word);

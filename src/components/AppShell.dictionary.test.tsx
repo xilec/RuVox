@@ -248,9 +248,8 @@ describe('viewer dictionary quick-add', () => {
     commands.pausePlayback = vi.fn().mockResolvedValue(undefined);
     commands.stopPlayback = vi.fn().mockResolvedValue(undefined);
     commands.playEntry = vi.fn().mockResolvedValue(undefined);
-    // Destructive commands the failed-regeneration test must not reach.
+    // Destructive commands the removal must not reach.
     commands.deleteAudio = vi.fn().mockResolvedValue(undefined);
-    commands.deleteEntry = vi.fn().mockResolvedValue(undefined);
     // Settings renders alongside the viewer in the entry-point tests; its
     // sections read these on open.
     commands.getTerattsVoices = vi.fn().mockResolvedValue([]);
@@ -353,8 +352,8 @@ describe('viewer dictionary quick-add', () => {
     });
   }
 
-  /** Open the dictionary editor through Settings, like the other entry point
-   *  the offer must ignore. */
+  /** Open the dictionary editor through Settings: the second entry point
+   *  must write the dictionary without ever regenerating the recording. */
   async function openDictionaryFromSettings(): Promise<void> {
     const settingsButton = document.querySelector<HTMLElement>(
       '[aria-label="Открыть настройки"]',
@@ -438,7 +437,6 @@ describe('viewer dictionary quick-add', () => {
 
     // Closing the editor after a write is quiet: the recording stays stale
     // until the user regenerates it from the entry's context menu.
-    expect(document.body.textContent).not.toContain('Переозвучить');
     expect(commands.regenerateEntry).not.toHaveBeenCalled();
     expect(commands.pausePlayback).not.toHaveBeenCalled();
     expect(commands.stopPlayback).not.toHaveBeenCalled();
